@@ -7,9 +7,9 @@ struct LandfallApp: App {
 
     init() {
         do {
-            container = try ModelContainer(for: StudyDay.self)
+            container = try ModelContainer(for: StudyDay.self, StudyItem.self, StudySession.self)
         } catch {
-            fatalError("StudyDay の ModelContainer 初期化に失敗しました: \(error)")
+            fatalError("ModelContainer の初期化に失敗しました: \(error)")
         }
         #if DEBUG
         DebugSeed.seedIfRequested(into: container)

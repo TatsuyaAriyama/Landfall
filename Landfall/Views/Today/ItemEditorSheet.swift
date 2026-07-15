@@ -1,0 +1,294 @@
+import SwiftUI
+import SwiftData
+import PhotosUI
+
+/// 項目の作成・編集シート。名前+見た目(配色×シンボル、または表紙写真)。
+struct ItemEditorSheet: View {
+    /// nil なら新規作成。
+    let existing: StudyItem?
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \StudyItem.sortOrder) private var items: [StudyItem]
+
+    @State private var name = ""
+    @State private var style: TileStyle = .midnight
+    @State private var symbol: TileSymbol = .book
+    @State private var photoData: Data?
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var confirmingDelete = false
+    @FocusState private var nameFocused: Bool
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                header
+
+                HStack {
+                    Spacer()
+                    previewTile
+                    Spacer()
+                }
+                .padding(.top, 24)
+
+                TextField("名前(例: 読書、開発)", text: $name)
+                    .font(LFFont.label(16))
+                    .foregroundStyle(LFColor.ink)
+                    .tint(LFColor.ink)
+                    .focused($nameFocused)
+                    .submitLabel(.done)
+                    .padding(.horizontal, 18)
+                    .frame(height: 52)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
+                    )
+                    .padding(.top, 24)
+
+                photoSection
+                    .padding(.top, 24)
+
+                if photoData == nil {
+                    sectionLabel("配色")
+                        .padding(.top, 24)
+                    styleRow
+                        .padding(.top, 10)
+
+                    sectionLabel("シンボル")
+                        .padding(.top, 20)
+                    symbolRow
+                        .padding(.top, 10)
+                }
+
+                saveButton
+                    .padding(.top, 32)
+
+                if existing != nil {
+                    deleteButton
+                        .padding(.top, 16)
+                }
+            }
+            .padding(LFMetrics.cardPadding)
+        }
+        .background(LFColor.paper)
+        .presentationDetents([.large])
+        .onAppear(perform: load)
+        .onChange(of: pickerItem) { _, newValue in
+            guard let newValue else { return }
+            Task { @MainActor in
+                if let data = try? await newValue.loadTransferable(type: Data.self) {
+                    photoData = Self.downscaledJPEG(data)
+                }
+                pickerItem = nil
+            }
+        }
+        .confirmationDialog(
+            "この項目を削除する?",
+            isPresented: $confirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("削除する", role: .destructive, action: deleteItem)
+            Button("やめる", role: .cancel) {}
+        } message: {
+            Text("この項目の作業記録も消える。学んだ日の記録(軌跡・Wrapped)は残る。")
+        }
+    }
+
+    // MARK: - 部品
+
+    private var header: some View {
+        HStack {
+            Text(existing == nil ? "項目を追加" : "項目を編集")
+                .font(LFFont.copy(20))
+                .foregroundStyle(LFColor.ink)
+            Spacer()
+            Button("閉じる") { dismiss() }
+                .font(LFFont.label(15))
+                .foregroundStyle(LFColor.ink.opacity(0.6))
+        }
+    }
+
+    private var previewTile: some View {
+        ZStack {
+            if let data = photoData, let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 96, height: 96)
+            } else {
+                style.background
+                TileSymbolView(symbol: symbol, fg: style.foreground, bg: style.background)
+                    .frame(width: 60, height: 60)
+            }
+        }
+        .frame(width: 96, height: 96)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(LFFont.label(13))
+            .foregroundStyle(LFColor.ink.opacity(0.5))
+    }
+
+    private var photoSection: some View {
+        HStack(spacing: 12) {
+            PhotosPicker(selection: $pickerItem, matching: .images) {
+                Text(photoData == nil ? "表紙写真を選ぶ" : "写真を差し替える")
+                    .font(LFFont.label(15))
+                    .foregroundStyle(LFColor.ink)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .stroke(LFColor.ink.opacity(0.25), lineWidth: 1)
+                    )
+            }
+            if photoData != nil {
+                Button("写真を外す") { photoData = nil }
+                    .font(LFFont.label(15))
+                    .foregroundStyle(LFColor.ink.opacity(0.5))
+            }
+            Spacer()
+        }
+    }
+
+    private var styleRow: some View {
+        HStack(spacing: 12) {
+            ForEach(TileStyle.allCases) { candidate in
+                Button {
+                    style = candidate
+                } label: {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(candidate.background)
+                        .frame(width: 40, height: 40)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(
+                                    style == candidate ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
+                                    lineWidth: style == candidate ? 3 : 1
+                                )
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var symbolRow: some View {
+        HStack(spacing: 12) {
+            ForEach(TileSymbol.allCases) { candidate in
+                Button {
+                    symbol = candidate
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(style.background)
+                        TileSymbolView(symbol: candidate, fg: style.foreground, bg: style.background)
+                            .frame(width: 26, height: 26)
+                    }
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(
+                                symbol == candidate ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
+                                lineWidth: symbol == candidate ? 3 : 1
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var saveButton: some View {
+        Button {
+            save()
+        } label: {
+            Text(existing == nil ? "この項目を追加" : "変更を保存")
+                .font(LFFont.copy(18))
+                .foregroundStyle(trimmedName.isEmpty ? LFColor.paper.opacity(0.6) : LFColor.paper)
+                .frame(maxWidth: .infinity)
+                .frame(height: 64)
+                .background(trimmedName.isEmpty ? LFColor.ink.opacity(0.3) : LFColor.ink)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(trimmedName.isEmpty)
+    }
+
+    private var deleteButton: some View {
+        Button {
+            confirmingDelete = true
+        } label: {
+            Text("この項目を削除")
+                .font(LFFont.label(15))
+                .foregroundStyle(LFColor.deepRust)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - 動作
+
+    private func load() {
+        guard let existing else { return }
+        name = existing.name
+        style = TileStyle.from(existing.styleToken)
+        symbol = TileSymbol.from(existing.symbolToken)
+        photoData = existing.photoData
+    }
+
+    private func save() {
+        guard !trimmedName.isEmpty else { return }
+        if let existing {
+            existing.name = trimmedName
+            existing.styleToken = style.rawValue
+            existing.symbolToken = symbol.rawValue
+            existing.photoData = photoData
+        } else {
+            modelContext.insert(
+                StudyItem(
+                    name: trimmedName,
+                    styleToken: style.rawValue,
+                    symbolToken: symbol.rawValue,
+                    photoData: photoData,
+                    sortOrder: (items.map(\.sortOrder).max() ?? -1) + 1
+                )
+            )
+        }
+        try? modelContext.save()
+        dismiss()
+    }
+
+    private func deleteItem() {
+        guard let existing else { return }
+        // 計測中の項目を消すならタイマーも捨てる。
+        if UserDefaults.standard.string(forKey: StudyTimer.itemKey) == existing.uuid.uuidString {
+            UserDefaults.standard.set(0, forKey: StudyTimer.startKey)
+            UserDefaults.standard.set("", forKey: StudyTimer.itemKey)
+        }
+        modelContext.delete(existing)
+        try? modelContext.save()
+        dismiss()
+    }
+
+    /// 表紙写真は長辺512pxのJPEGへ縮小して保存する。
+    static func downscaledJPEG(_ data: Data, maxSide: CGFloat = 512) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let longest = max(image.size.width, image.size.height)
+        let scale = min(1, maxSide / longest)
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let resized = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return resized.jpegData(compressionQuality: 0.85)
+    }
+}

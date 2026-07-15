@@ -1,19 +1,24 @@
 import SwiftUI
 import SwiftData
 
-/// 「今日」画面。記録は最小、催促はしない。
-/// 未記録なら日付・任意メモ・記録ボタン、記録済みなら静かな完了表示だけを出す。
+/// 「今日」画面。学習項目のタイルが並び、タップで時間+ひとことを刻む。
+/// 催促はしない。タイルは長押しドラッグで並べ替えられる。
 struct TodayView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-    @Query(sort: \StudyDay.date, order: .reverse) private var entries: [StudyDay]
+    @Query(sort: \StudyDay.date, order: .reverse) private var days: [StudyDay]
+    @Query(sort: \StudyItem.sortOrder) private var items: [StudyItem]
+    @Query private var sessions: [StudySession]
 
-    @State private var noteText = ""
     @State private var showWelcomeBack = false
     @State private var showingSettings = false
+    @State private var creatingItem = false
+    @State private var editingItem: StudyItem?
+    @State private var recordingItem: StudyItem?
     /// 「今日」。日跨ぎ後の初操作をブロックしないよう、前景復帰と日付変化で更新する。
     @State private var today = Date()
-    @FocusState private var noteFieldFocused: Bool
+
+    @AppStorage(StudyTimer.itemKey) private var timerItemID: String = ""
 
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -22,20 +27,30 @@ struct TodayView: View {
         return formatter
     }()
 
-    /// 今日の記録(あれば)。unique制約に加えUI側でも二重記録を防ぐ。
-    private var todayEntry: StudyDay? {
-        let calendar = Calendar.current
-        return entries.first { calendar.isDate($0.date, inSameDayAs: today) }
-    }
-
     var body: some View {
         ZStack {
             LFColor.paper.ignoresSafeArea()
 
-            if let entry = todayEntry {
-                recordedContent(entry: entry)
-            } else {
-                unrecordedContent
+            VStack(spacing: 0) {
+                Text(Self.dateFormatter.string(from: today))
+                    .font(LFFont.copy(20))
+                    .foregroundStyle(LFColor.ink)
+                    .padding(.top, 32)
+
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 22)], spacing: 26) {
+                        ForEach(items) { item in
+                            tileCell(item)
+                        }
+                        addTile
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.top, 36)
+                    .padding(.bottom, 24)
+                }
+
+                todaySummary
+                    .padding(.bottom, 12)
             }
 
             settingsButton
@@ -44,13 +59,23 @@ struct TodayView: View {
                 welcomeBackOverlay
             }
         }
-        .sheet(isPresented: $showingSettings) {
-            SettingsView()
+        .sheet(isPresented: $showingSettings) { SettingsView() }
+        .sheet(isPresented: $creatingItem) { ItemEditorSheet(existing: nil) }
+        .sheet(item: $editingItem) { ItemEditorSheet(existing: $0) }
+        .sheet(item: $recordingItem) { item in
+            RecordSessionSheet(
+                item: item,
+                onSaved: handleSaved,
+                onEdit: { editingItem = $0 }
+            )
         }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.environment["LANDFALL_SETTINGS"] != nil {
                 showingSettings = true
+            }
+            if ProcessInfo.processInfo.environment["LANDFALL_RECORD"] != nil {
+                recordingItem = items.first
             }
             #endif
         }
@@ -62,6 +87,93 @@ struct TodayView: View {
         }
     }
 
+    // MARK: - タイル
+
+    private func tileCell(_ item: StudyItem) -> some View {
+        Button {
+            recordingItem = item
+        } label: {
+            VStack(spacing: 8) {
+                ItemTileArt(item: item)
+                    .overlay(alignment: .topTrailing) {
+                        if timerItemID == item.uuid.uuidString {
+                            Circle()
+                                .fill(LFColor.returnOrange)
+                                .frame(width: 12, height: 12)
+                                .offset(x: 4, y: -4)
+                        }
+                    }
+                Text(item.name)
+                    .font(LFFont.label(13))
+                    .foregroundStyle(LFColor.ink)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .frame(height: 34, alignment: .top)
+            }
+        }
+        .buttonStyle(.plain)
+        .draggable(item.uuid.uuidString)
+        .dropDestination(for: String.self) { dropped, _ in
+            reorder(droppedID: dropped.first, before: item)
+        }
+    }
+
+    private var addTile: some View {
+        Button {
+            creatingItem = true
+        } label: {
+            VStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(LFColor.ink.opacity(0.25), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+                    Text("+")
+                        .font(LFFont.label(30))
+                        .foregroundStyle(LFColor.ink.opacity(0.45))
+                }
+                .aspectRatio(1, contentMode: .fit)
+                Text("追加")
+                    .font(LFFont.label(13))
+                    .foregroundStyle(LFColor.ink.opacity(0.45))
+                    .frame(height: 34, alignment: .top)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// ドラッグした項目をターゲットの位置へ差し込み、sortOrderを振り直す。
+    private func reorder(droppedID: String?, before target: StudyItem) -> Bool {
+        guard
+            let droppedID,
+            let from = items.firstIndex(where: { $0.uuid.uuidString == droppedID }),
+            let to = items.firstIndex(where: { $0.uuid == target.uuid }),
+            from != to
+        else { return false }
+        var reordered = Array(items)
+        let moved = reordered.remove(at: from)
+        reordered.insert(moved, at: to)
+        for (index, item) in reordered.enumerated() {
+            item.sortOrder = index
+        }
+        try? modelContext.save()
+        return true
+    }
+
+    // MARK: - 今日の静かなサマリー
+
+    @ViewBuilder
+    private var todaySummary: some View {
+        let calendar = Calendar.current
+        let todays = sessions.filter { calendar.isDate($0.date, inSameDayAs: today) }
+        if !todays.isEmpty {
+            let total = todays.reduce(0) { $0 + $1.minutes }
+            let itemCount = Set(todays.compactMap { $0.item?.uuid }).count
+            Text("今日 \(total)分・\(itemCount)項目")
+                .font(LFFont.label(14))
+                .monospacedDigit()
+                .foregroundStyle(LFColor.ink.opacity(0.5))
+        }
+    }
+
     // MARK: - 設定入口(右上・控えめ)
 
     private var settingsButton: some View {
@@ -69,7 +181,6 @@ struct TodayView: View {
             HStack {
                 Spacer()
                 Button {
-                    noteFieldFocused = false
                     showingSettings = true
                 } label: {
                     Image(systemName: "gearshape")
@@ -85,64 +196,6 @@ struct TodayView: View {
         .padding(.top, 8)
     }
 
-    // MARK: - 未記録状態
-
-    private var unrecordedContent: some View {
-        VStack(spacing: 0) {
-            Text(Self.dateFormatter.string(from: today))
-                .font(LFFont.copy(20))
-                .foregroundStyle(LFColor.ink)
-                .padding(.top, 32)
-
-            Spacer()
-
-            TextField("ひとこと(任意)", text: $noteText)
-                .font(LFFont.label(17))
-                .foregroundStyle(LFColor.ink)
-                .tint(LFColor.ink)
-                .focused($noteFieldFocused)
-                .submitLabel(.done)
-                .padding(.horizontal, 20)
-                .frame(height: 56)
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
-                )
-
-            Spacer()
-
-            Button(action: record) {
-                Text("今日の分を刻む")
-                    .font(LFFont.copy(18))
-                    .foregroundStyle(LFColor.paper)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 64)
-                    .background(LFColor.ink)
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .padding(.bottom, 16)
-        }
-        .padding(.horizontal, 24)
-    }
-
-    // MARK: - 記録済み状態
-
-    private func recordedContent(entry: StudyDay) -> some View {
-        VStack(spacing: 16) {
-            Text("今日の分は、刻んである。")
-                .font(LFFont.copy(20))
-                .foregroundStyle(LFColor.ink)
-            if let note = entry.note {
-                Text(note)
-                    .font(LFFont.label(15))
-                    .foregroundStyle(LFColor.ink.opacity(0.6))
-                    .multilineTextAlignment(.center)
-            }
-        }
-        .padding(.horizontal, 24)
-    }
-
     // MARK: - おかえり演出(空白2日以上のときだけ)
 
     private var welcomeBackOverlay: some View {
@@ -155,58 +208,38 @@ struct TodayView: View {
         .transition(.opacity)
     }
 
-    // MARK: - 記録
-
-    private func record() {
-        noteFieldFocused = false
-        guard todayEntry == nil else { return }
-
-        let now = Date()
-        // 保存の前に空白日数を測る(保存後だと最終記録日=今日になってしまう)。
-        let blanks = MonthStats.blankDays(since: entries.first?.date, to: now)
-
-        let trimmed = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-        modelContext.insert(StudyDay(date: now, note: trimmed.isEmpty ? nil : trimmed))
-        try? modelContext.save()
-        noteText = ""
-
-        if let blanks, blanks >= 2 {
-            Task {
-                withAnimation(.easeInOut(duration: 0.25)) { showWelcomeBack = true }
-                try? await Task.sleep(nanoseconds: 1_250_000_000)
-                withAnimation(.easeInOut(duration: 0.25)) { showWelcomeBack = false }
-            }
+    private func handleSaved(blanks: Int?) {
+        guard let blanks, blanks >= 2 else { return }
+        Task {
+            withAnimation(.easeInOut(duration: 0.25)) { showWelcomeBack = true }
+            try? await Task.sleep(nanoseconds: 1_250_000_000)
+            withAnimation(.easeInOut(duration: 0.25)) { showWelcomeBack = false }
         }
     }
 }
 
 // MARK: - Previews
 
-#Preview("未記録") {
+#Preview("項目あり") {
     let container = try! ModelContainer(
-        for: StudyDay.self,
+        for: StudyDay.self, StudyItem.self, StudySession.self,
         configurations: ModelConfiguration(isStoredInMemoryOnly: true)
     )
+    let samples = [
+        StudyItem(name: "開発", styleToken: "midnight", symbolToken: "phoenix", sortOrder: 0),
+        StudyItem(name: "読書", styleToken: "coral", symbolToken: "book", sortOrder: 1),
+        StudyItem(name: "記事作成", styleToken: "ink", symbolToken: "pen", sortOrder: 2),
+    ]
+    for item in samples { container.mainContext.insert(item) }
     return TodayView().modelContainer(container)
 }
 
-#Preview("記録済み") {
-    let container = try! ModelContainer(
-        for: StudyDay.self,
-        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-    )
-    container.mainContext.insert(StudyDay(date: Date(), note: "英単語を30個やった。"))
-    return TodayView().modelContainer(container)
-}
-
-#Preview("おかえり(3日ぶり)") {
-    let container = try! ModelContainer(
-        for: StudyDay.self,
-        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-    )
-    let calendar = Calendar.current
-    if let past = calendar.date(byAdding: .day, value: -4, to: Date()) {
-        container.mainContext.insert(StudyDay(date: past))
-    }
-    return TodayView().modelContainer(container)
+#Preview("項目なし") {
+    TodayView()
+        .modelContainer(
+            try! ModelContainer(
+                for: StudyDay.self, StudyItem.self, StudySession.self,
+                configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+            )
+        )
 }
