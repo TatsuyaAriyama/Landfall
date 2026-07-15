@@ -10,11 +10,9 @@ struct TodayView: View {
     @Query(sort: \StudyItem.sortOrder) private var items: [StudyItem]
     @Query private var sessions: [StudySession]
 
-    @State private var showWelcomeBack = false
     @State private var showingSettings = false
     @State private var creatingItem = false
-    @State private var editingItem: StudyItem?
-    @State private var recordingItem: StudyItem?
+    @State private var path = NavigationPath()
     /// 「今日」。日跨ぎ後の初操作をブロックしないよう、前景復帰と日付変化で更新する。
     @State private var today = Date()
 
@@ -28,54 +26,47 @@ struct TodayView: View {
     }()
 
     var body: some View {
-        ZStack {
-            LFColor.paper.ignoresSafeArea()
+        NavigationStack(path: $path) {
+            ZStack {
+                LFColor.paper.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                Text(Self.dateFormatter.string(from: today))
-                    .font(LFFont.copy(20))
-                    .foregroundStyle(LFColor.ink)
-                    .padding(.top, 32)
+                VStack(spacing: 0) {
+                    Text(Self.dateFormatter.string(from: today))
+                        .font(LFFont.copy(20))
+                        .foregroundStyle(LFColor.ink)
+                        .padding(.top, 32)
 
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 22)], spacing: 26) {
-                        ForEach(items) { item in
-                            tileCell(item)
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 22)], spacing: 26) {
+                            ForEach(items) { item in
+                                tileCell(item)
+                            }
+                            addTile
                         }
-                        addTile
+                        .padding(.horizontal, 28)
+                        .padding(.top, 36)
+                        .padding(.bottom, 24)
                     }
-                    .padding(.horizontal, 28)
-                    .padding(.top, 36)
-                    .padding(.bottom, 24)
+
+                    todaySummary
+                        .padding(.bottom, 12)
                 }
 
-                todaySummary
-                    .padding(.bottom, 12)
+                settingsButton
             }
-
-            settingsButton
-
-            if showWelcomeBack {
-                welcomeBackOverlay
+            .navigationDestination(for: StudyItem.self) { item in
+                ItemDetailView(item: item)
             }
         }
         .sheet(isPresented: $showingSettings) { SettingsView() }
         .sheet(isPresented: $creatingItem) { ItemEditorSheet(existing: nil) }
-        .sheet(item: $editingItem) { ItemEditorSheet(existing: $0) }
-        .sheet(item: $recordingItem) { item in
-            RecordSessionSheet(
-                item: item,
-                onSaved: handleSaved,
-                onEdit: { editingItem = $0 }
-            )
-        }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.environment["LANDFALL_SETTINGS"] != nil {
                 showingSettings = true
             }
-            if ProcessInfo.processInfo.environment["LANDFALL_RECORD"] != nil {
-                recordingItem = items.first
+            if ProcessInfo.processInfo.environment["LANDFALL_DETAIL"] != nil, let first = items.first {
+                path.append(first)
             }
             #endif
         }
@@ -91,7 +82,7 @@ struct TodayView: View {
 
     private func tileCell(_ item: StudyItem) -> some View {
         Button {
-            recordingItem = item
+            path.append(item)
         } label: {
             VStack(spacing: 8) {
                 ItemTileArt(item: item)
@@ -194,27 +185,6 @@ struct TodayView: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 8)
-    }
-
-    // MARK: - おかえり演出(空白2日以上のときだけ)
-
-    private var welcomeBackOverlay: some View {
-        ZStack {
-            LFColor.paper.opacity(0.94).ignoresSafeArea()
-            Text("おかえり。")
-                .font(LFFont.copy(26))
-                .foregroundStyle(LFColor.ink)
-        }
-        .transition(.opacity)
-    }
-
-    private func handleSaved(blanks: Int?) {
-        guard let blanks, blanks >= 2 else { return }
-        Task {
-            withAnimation(.easeInOut(duration: 0.25)) { showWelcomeBack = true }
-            try? await Task.sleep(nanoseconds: 1_250_000_000)
-            withAnimation(.easeInOut(duration: 0.25)) { showWelcomeBack = false }
-        }
     }
 }
 

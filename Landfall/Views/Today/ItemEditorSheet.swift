@@ -6,6 +6,8 @@ import PhotosUI
 struct ItemEditorSheet: View {
     /// nil なら新規作成。
     let existing: StudyItem?
+    /// 削除されたとき呼ぶ(呼び出し元の詳細画面を閉じるなど)。
+    var onDeleted: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -277,6 +279,7 @@ struct ItemEditorSheet: View {
         modelContext.delete(existing)
         try? modelContext.save()
         dismiss()
+        onDeleted?()
     }
 
     /// 表紙写真は長辺512pxのJPEGへ縮小して保存する。
