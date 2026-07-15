@@ -49,7 +49,7 @@ struct WrappedShareButton: View {
     }
 
     private var label: some View {
-        Text("共有")
+        Text("Share")
             .font(LFFont.label(15))
             .foregroundStyle(LFColor.ink)
             .padding(.horizontal, 20)

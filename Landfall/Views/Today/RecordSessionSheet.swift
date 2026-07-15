@@ -44,7 +44,7 @@ struct RecordSessionSheet: View {
             manualSection
                 .padding(.top, 28)
 
-            TextField("ひとこと(任意)", text: $note)
+            TextField("A note (optional)", text: $note)
                 .font(LFFont.label(16))
                 .foregroundStyle(LFColor.ink)
                 .tint(LFColor.ink)
@@ -79,7 +79,7 @@ struct RecordSessionSheet: View {
                 .foregroundStyle(LFColor.ink)
                 .lineLimit(2)
             Spacer()
-            Button("編集") {
+            Button("Edit") {
                 dismiss()
                 onEdit(item)
             }
@@ -103,7 +103,7 @@ struct RecordSessionSheet: View {
                     Button {
                         stopTimerAndSave()
                     } label: {
-                        Text("終了して刻む")
+                        Text("Stop & log")
                             .font(LFFont.copy(17))
                             .foregroundStyle(LFColor.paper)
                             .frame(maxWidth: .infinity)
@@ -115,7 +115,7 @@ struct RecordSessionSheet: View {
                     Button {
                         clearTimer()
                     } label: {
-                        Text("やめる")
+                        Text("Cancel")
                             .font(LFFont.label(15))
                             .foregroundStyle(LFColor.ink.opacity(0.5))
                             .padding(.horizontal, 16)
@@ -129,7 +129,7 @@ struct RecordSessionSheet: View {
                 }
             }
         } else if timerRunningElsewhere {
-            Text("別の項目で計測中。")
+            Text("Timer running on another item.")
                 .font(LFFont.label(15))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
         } else {
@@ -138,7 +138,7 @@ struct RecordSessionSheet: View {
                 timerItemID = item.uuid.uuidString
                 dismiss()
             } label: {
-                Text("タイマーで計測を始める")
+                Text("Start timer")
                     .font(LFFont.copy(17))
                     .foregroundStyle(LFColor.ink)
                     .frame(maxWidth: .infinity)
@@ -156,7 +156,7 @@ struct RecordSessionSheet: View {
 
     private var manualSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("または、時間を選んで刻む")
+            Text("Or pick a length")
                 .font(LFFont.label(13))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
             HStack(spacing: 10) {
@@ -165,7 +165,7 @@ struct RecordSessionSheet: View {
                 }
             }
             Stepper(value: $minutes, in: 0...600, step: 5) {
-                Text(minutes > 0 ? "\(minutes)分" : "0分")
+                Text(minutes > 0 ? "\(minutes) min" : "0 min")
                     .font(LFFont.copy(17))
                     .monospacedDigit()
                     .foregroundStyle(minutes > 0 ? LFColor.ink : LFColor.ink.opacity(0.35))
@@ -178,7 +178,7 @@ struct RecordSessionSheet: View {
         return Button {
             minutes = value
         } label: {
-            Text("\(value)分")
+            Text("\(value) min")
                 .font(LFFont.label(15))
                 .monospacedDigit()
                 .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
@@ -200,7 +200,7 @@ struct RecordSessionSheet: View {
         Button {
             save(minutes: minutes)
         } label: {
-            Text("この分を刻む")
+            Text("Log this")
                 .font(LFFont.copy(18))
                 .foregroundStyle(minutes > 0 ? LFColor.paper : LFColor.paper.opacity(0.6))
                 .frame(maxWidth: .infinity)

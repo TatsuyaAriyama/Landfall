@@ -28,7 +28,7 @@ struct TraceView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    CardKicker(text: "\(month.month)月の軌跡", color: LFColor.ink.opacity(0.55))
+                    CardKicker(text: "Trace of \(LF.monthName(year: month.year, month: month.month))", color: LFColor.ink.opacity(0.55))
                         .padding(.top, 8)
 
                     waveform(for: month)
@@ -78,7 +78,7 @@ struct TraceView: View {
             .frame(height: 240)
 
             if month.studiedCount == 0 {
-                Text("今月の最初のひと刻みを待っている。")
+                Text("Waiting for this month's first mark.")
                     .font(LFFont.copy(16))
                     .foregroundStyle(LFColor.ink.opacity(0.6))
         }
@@ -89,13 +89,13 @@ struct TraceView: View {
 
     private func statsRow(for month: WrappedMonth) -> some View {
         HStack(alignment: .top, spacing: 0) {
-            statBlock(label: "累積", value: month.studiedCount, unit: "日", alignment: .leading)
-            statBlock(label: "再開", value: month.resumeCount, unit: "回", alignment: .center)
-            statBlock(label: "やめた回数", value: month.quitCount, unit: "回", alignment: .trailing)
+            statBlock(label: "Total", value: month.studiedCount, unit: "days", alignment: .leading)
+            statBlock(label: "Returns", value: month.resumeCount, unit: "times", alignment: .center)
+            statBlock(label: "Times quit", value: month.quitCount, unit: "times", alignment: .trailing)
         }
     }
 
-    private func statBlock(label: String, value: Int, unit: String, alignment: HorizontalAlignment) -> some View {
+    private func statBlock(label: LocalizedStringKey, value: Int, unit: LocalizedStringKey, alignment: HorizontalAlignment) -> some View {
         VStack(alignment: alignment, spacing: 6) {
             Text(label)
                 .font(LFFont.label(13))
@@ -119,7 +119,7 @@ struct TraceView: View {
         let days = recordedDays()
         if !days.isEmpty {
             VStack(alignment: .leading, spacing: 14) {
-                Text("記録した日")
+                Text("Days logged")
                     .font(LFFont.label(13))
                     .tracking(1)
                     .foregroundStyle(LFColor.ink.opacity(0.5))
@@ -144,10 +144,10 @@ struct TraceView: View {
         } label: {
             HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(Self.dayFormatter.string(from: entry.day))
+                    Text(LF.dayMonth(entry.day))
                         .font(LFFont.copy(16))
                         .foregroundStyle(LFColor.ink)
-                    Text(Self.weekdayFormatter.string(from: entry.day))
+                    Text(LF.weekdayFull(entry.day))
                         .font(LFFont.label(11))
                         .foregroundStyle(LFColor.ink.opacity(0.4))
                 }
@@ -166,7 +166,7 @@ struct TraceView: View {
 
                 Spacer(minLength: 0)
 
-                Text(durationText(entry.minutes))
+                Text(LF.duration(minutes: entry.minutes))
                     .font(LFFont.label(15))
                     .monospacedDigit()
                     .foregroundStyle(LFColor.ink.opacity(0.6))
@@ -208,13 +208,6 @@ struct TraceView: View {
         }
     }
 
-    private func durationText(_ minutes: Int) -> String {
-        let h = minutes / 60
-        let m = minutes % 60
-        if h > 0 { return m > 0 ? "\(h)時間\(m)分" : "\(h)時間" }
-        return "\(m)分"
-    }
-
     private func frameAlignment(_ alignment: HorizontalAlignment) -> Alignment {
         switch alignment {
         case .center: .center
@@ -222,20 +215,6 @@ struct TraceView: View {
         default: .leading
         }
     }
-
-    private static let dayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "ja_JP")
-        f.dateFormat = "M月d日"
-        return f
-    }()
-
-    private static let weekdayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "ja_JP")
-        f.dateFormat = "EEEE"
-        return f
-    }()
 }
 
 /// ナビゲーション用の日付キー(Date直渡しの曖昧さを避ける)。

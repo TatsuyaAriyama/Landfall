@@ -10,8 +10,8 @@ enum AppIconOption: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .midnight: "ミッドナイト"
-        case .coral: "コーラル"
+        case .midnight: String(localized: "Midnight")
+        case .coral: String(localized: "Coral")
         }
     }
 

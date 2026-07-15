@@ -1,0 +1,126 @@
+/* Landfall — 日本語ローカライズ。キーは英語ソース文字列(コード内リテラル)。 */
+
+/* タブ・ナビ・共通アクション */
+"Home" = "ホーム";
+"Trace" = "軌跡";
+"Add" = "追加";
+"Log" = "刻む";
+"Close" = "閉じる";
+"Edit" = "編集";
+"Share" = "共有";
+"Cancel" = "やめる";
+"Delete" = "削除する";
+"Welcome back." = "おかえり。";
+
+/* 統計ラベル・単位 */
+"Total" = "累計";
+"Days" = "記録日数";
+"Sessions" = "回数";
+"Returns" = "再開";
+"Times quit" = "やめた回数";
+"days" = "日";
+"times" = "回";
+"%lld days" = "%lld日";
+"%lld sessions" = "%lld回";
+
+/* ホーム */
+"Today  %@ · %lld items" = "今日 %@・%lld項目";
+
+/* 項目ページ */
+"History" = "これまでの記録";
+"Nothing logged yet. Make your first mark." = "まだ記録がない。最初のひと刻みを。";
+
+/* 記録シート */
+"Start timer" = "タイマーで計測を始める";
+"Stop & log" = "終了して刻む";
+"Timer running on another item." = "別の項目で計測中。";
+"Or pick a length" = "または、時間を選んで刻む";
+"%lld min" = "%lld分";
+"0 min" = "0分";
+"A note (optional)" = "ひとこと(任意)";
+"Log this" = "この分を刻む";
+
+/* 項目エディタ */
+"Add item" = "項目を追加";
+"Edit item" = "項目を編集";
+"Name (e.g. Reading, Coding)" = "名前(例: 読書、開発)";
+"Choose cover photo" = "表紙写真を選ぶ";
+"Replace photo" = "写真を差し替える";
+"Remove photo" = "写真を外す";
+"Color" = "配色";
+"Symbol" = "シンボル";
+"Add this item" = "この項目を追加";
+"Save changes" = "変更を保存";
+"Delete item" = "この項目を削除";
+"Delete this item?" = "この項目を削除する?";
+"Deleting this item removes its records. Your logged days (Trace, Wrapped) stay." = "この項目の作業記録も消える。学んだ日の記録(軌跡・Wrapped)は残る。";
+
+/* 設定 */
+"Settings" = "設定";
+"App Icon" = "アプリアイコン";
+"Midnight" = "ミッドナイト";
+"Coral" = "コーラル";
+
+/* セッション編集 */
+"Edit record" = "記録を編集";
+"Time" = "時間";
+"Delete record" = "この記録を削除";
+"Delete this record?" = "この記録を削除する?";
+
+/* 日の詳細 */
+"%@ · %lld items this day" = "この日 %@・%lld項目";
+"No records left for this day." = "この日の記録は、もうない。";
+"No item" = "項目なし";
+
+/* 軌跡 */
+"Trace of %@" = "%@の軌跡";
+"Days logged" = "記録した日";
+"Waiting for this month's first mark." = "今月の最初のひと刻みを待っている。";
+
+/* 波形 */
+"Return" = "帰還";
+"%lld-day gap" = "%lld日の空白";
+"%lldd" = "%lld日";
+
+/* Wrapped 画面 */
+"Your first Wrapped arrives at month's end." = "最初のWrappedは、月末に生まれる。";
+"At month's end, the whole month becomes one page." = "月の終わりに、その月のすべてが一枚になる。";
+
+/* Wrapped カード1(事実) */
+"You, %@" = "%@のあなた";
+"studied" = "学んだ";
+"rested" = "休んだ";
+"And you never once quit." = "そして、一度もやめなかった。";
+
+/* Wrapped カード2(空白の物語) */
+"Your longest gap" = "いちばん長い空白";
+"%@–%@, you fell silent." = "%@〜%@、あなたは沈黙した。";
+"And yet on %@, you came back." = "それでも %@、戻ってきた。";
+"%lld returns this month." = "この月、帰還は%lld回。";
+"No gap this month." = "この月、空白はなかった。";
+
+/* Wrapped カード3(タイプ診断) */
+"Your comeback type" = "あなたの再開力タイプ";
+"Comeback %lld" = "再開力 %lld";
+"%lld returns" = "帰還 %lld回";
+
+/* タイプ名 */
+"Phoenix" = "不死鳥型";
+"Stone Bridge" = "石橋型";
+"Wave Rider" = "波乗り型";
+"Comet" = "彗星型";
+"Morning Calm" = "朝凪型";
+
+/* タイプ 決め台詞(1行目) */
+"Sink deep. Always return." = "深く沈み、必ず戻る。";
+"Quietly, surely, you build." = "静かに、確実に、積む。";
+"You have your own tide." = "あなたには、あなたの潮がある。";
+"When you burn, you burn all at once." = "燃えるときは、一気に。";
+"No noise, no rush, no break." = "騒がず、焦らず、途切れず。";
+
+/* タイプ 添え書き(2行目) */
+"The length of the gap is nothing to you." = "空白の長さは、あなたには関係がない。";
+"No flourish needed. What you stack remains." = "派手さはいらない。積んだものが残る。";
+"Some days ebb so others can flow." = "引く日があるから、満ちる日がある。";
+"The stillness is only your next approach." = "静けさは、次の助走にすぎない。";
+"That calm is your greatest strength." = "その静けさが、いちばん強い。";

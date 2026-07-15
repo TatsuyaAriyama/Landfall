@@ -30,13 +30,19 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $selection) {
             TodayView()
-                .tabItem { Label("ホーム", systemImage: "house") }
+                .tabItem { Label("Home", systemImage: "house") }
                 .tag(0)
             TraceView()
-                .tabItem { Label("軌跡", systemImage: "waveform") }
+                .tabItem { Label("Trace", systemImage: "waveform") }
                 .tag(1)
             WrappedView()
-                .tabItem { Label("Wrapped", systemImage: "rectangle.portrait") }
+                .tabItem {
+                    Label {
+                        Text(verbatim: "Wrapped")
+                    } icon: {
+                        Image(systemName: "rectangle.portrait")
+                    }
+                }
                 .tag(2)
         }
         .tint(LFColor.returnOrange)

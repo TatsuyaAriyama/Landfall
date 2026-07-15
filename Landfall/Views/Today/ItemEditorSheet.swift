@@ -33,7 +33,7 @@ struct ItemEditorSheet: View {
                 }
                 .padding(.top, 24)
 
-                TextField("名前(例: 読書、開発)", text: $name)
+                TextField("Name (e.g. Reading, Coding)", text: $name)
                     .font(LFFont.label(16))
                     .foregroundStyle(LFColor.ink)
                     .tint(LFColor.ink)
@@ -51,12 +51,12 @@ struct ItemEditorSheet: View {
                     .padding(.top, 24)
 
                 if photoData == nil {
-                    sectionLabel("配色")
+                    sectionLabel("Color")
                         .padding(.top, 24)
                     styleRow
                         .padding(.top, 10)
 
-                    sectionLabel("シンボル")
+                    sectionLabel("Symbol")
                         .padding(.top, 20)
                     symbolRow
                         .padding(.top, 10)
@@ -85,14 +85,14 @@ struct ItemEditorSheet: View {
             }
         }
         .confirmationDialog(
-            "この項目を削除する?",
+            "Delete this item?",
             isPresented: $confirmingDelete,
             titleVisibility: .visible
         ) {
-            Button("削除する", role: .destructive, action: deleteItem)
-            Button("やめる", role: .cancel) {}
+            Button("Delete", role: .destructive, action: deleteItem)
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("この項目の作業記録も消える。学んだ日の記録(軌跡・Wrapped)は残る。")
+            Text("Deleting this item removes its records. Your logged days (Trace, Wrapped) stay.")
         }
     }
 
@@ -100,11 +100,11 @@ struct ItemEditorSheet: View {
 
     private var header: some View {
         HStack {
-            Text(existing == nil ? "項目を追加" : "項目を編集")
+            Text(existing == nil ? "Add item" : "Edit item")
                 .font(LFFont.copy(20))
                 .foregroundStyle(LFColor.ink)
             Spacer()
-            Button("閉じる") { dismiss() }
+            Button("Close") { dismiss() }
                 .font(LFFont.label(15))
                 .foregroundStyle(LFColor.ink.opacity(0.6))
         }
@@ -127,7 +127,7 @@ struct ItemEditorSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
-    private func sectionLabel(_ text: String) -> some View {
+    private func sectionLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(LFFont.label(13))
             .foregroundStyle(LFColor.ink.opacity(0.5))
@@ -136,7 +136,7 @@ struct ItemEditorSheet: View {
     private var photoSection: some View {
         HStack(spacing: 12) {
             PhotosPicker(selection: $pickerItem, matching: .images) {
-                Text(photoData == nil ? "表紙写真を選ぶ" : "写真を差し替える")
+                Text(photoData == nil ? "Choose cover photo" : "Replace photo")
                     .font(LFFont.label(15))
                     .foregroundStyle(LFColor.ink)
                     .padding(.horizontal, 16)
@@ -147,7 +147,7 @@ struct ItemEditorSheet: View {
                     )
             }
             if photoData != nil {
-                Button("写真を外す") { photoData = nil }
+                Button("Remove photo") { photoData = nil }
                     .font(LFFont.label(15))
                     .foregroundStyle(LFColor.ink.opacity(0.5))
             }
@@ -213,7 +213,7 @@ struct ItemEditorSheet: View {
         Button {
             save()
         } label: {
-            Text(existing == nil ? "この項目を追加" : "変更を保存")
+            Text(existing == nil ? "Add this item" : "Save changes")
                 .font(LFFont.copy(18))
                 .foregroundStyle(trimmedName.isEmpty ? LFColor.paper.opacity(0.6) : LFColor.paper)
                 .frame(maxWidth: .infinity)
@@ -229,7 +229,7 @@ struct ItemEditorSheet: View {
         Button {
             confirmingDelete = true
         } label: {
-            Text("この項目を削除")
+            Text("Delete item")
                 .font(LFFont.label(15))
                 .foregroundStyle(LFColor.deepRust)
                 .frame(maxWidth: .infinity)

@@ -18,20 +18,13 @@ struct TodayView: View {
 
     @AppStorage(StudyTimer.itemKey) private var timerItemID: String = ""
 
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ja_JP")
-        formatter.dateFormat = "M月d日(E)"
-        return formatter
-    }()
-
     var body: some View {
         NavigationStack(path: $path) {
             ZStack {
                 LFColor.paper.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    Text(Self.dateFormatter.string(from: today))
+                    Text(LF.dayWithWeekday(today))
                         .font(LFFont.copy(20))
                         .foregroundStyle(LFColor.ink)
                         .padding(.top, 32)
@@ -122,7 +115,7 @@ struct TodayView: View {
                         .foregroundStyle(LFColor.ink.opacity(0.45))
                 }
                 .aspectRatio(1, contentMode: .fit)
-                Text("追加")
+                Text("Add")
                     .font(LFFont.label(13))
                     .foregroundStyle(LFColor.ink.opacity(0.45))
                     .frame(height: 34, alignment: .top)
@@ -158,7 +151,7 @@ struct TodayView: View {
         if !todays.isEmpty {
             let total = todays.reduce(0) { $0 + $1.minutes }
             let itemCount = Set(todays.compactMap { $0.item?.uuid }).count
-            Text("今日 \(total)分・\(itemCount)項目")
+            Text("Today  \(LF.duration(minutes: total)) · \(itemCount) items")
                 .font(LFFont.label(14))
                 .monospacedDigit()
                 .foregroundStyle(LFColor.ink.opacity(0.5))

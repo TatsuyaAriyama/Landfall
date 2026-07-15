@@ -9,20 +9,20 @@ struct WrappedCard1Fact: View {
     var body: some View {
         CardScaffold(background: LFColor.ink) {
             VStack(alignment: .leading, spacing: 0) {
-                CardKicker(text: "\(String(month.year))年\(month.month)月のあなた", color: .white)
+                CardKicker(text: "You, \(LF.monthYear(year: month.year, month: month.month))", color: .white)
 
                 Spacer()
 
                 VStack(alignment: .leading, spacing: 44) {
-                    FactRow(count: month.studiedCount, verb: "学んだ", accent: LFColor.sunYellow)
-                    FactRow(count: month.restedCount, verb: "休んだ", accent: LFColor.seaGreen)
+                    FactRow(count: month.studiedCount, verb: "studied", accent: LFColor.sunYellow)
+                    FactRow(count: month.restedCount, verb: "rested", accent: LFColor.seaGreen)
                 }
 
                 Spacer()
 
                 // month.quitCount は定義上 0。その事実の宣言。
                 if month.quitCount == 0 {
-                    Text("そして、一度もやめなかった。")
+                    Text("And you never once quit.")
                         .font(LFFont.copy(20))
                         .foregroundStyle(Color.white)
                 }
@@ -40,7 +40,7 @@ struct WrappedCard1Fact: View {
 /// 学んだ/休んだの1行。両者で完全に同一のレイアウトを使う。
 private struct FactRow: View {
     let count: Int
-    let verb: String
+    let verb: LocalizedStringKey
     let accent: Color
 
     var body: some View {
@@ -48,7 +48,7 @@ private struct FactRow: View {
             Text("\(count)")
                 .font(LFFont.number(64))
                 .foregroundStyle(accent)
-            Text("日")
+            Text("days")
                 .font(LFFont.copy(22))
                 .foregroundStyle(accent)
             Text(verb)

@@ -72,7 +72,7 @@ struct MonthWaveform: View {
                         .position(x: x, y: y)
 
                     if labeledResumes.contains(day) {
-                        Text("帰還")
+                        Text("Return")
                             .font(LFFont.copy(12))
                             .foregroundStyle(resumeMarkerColor)
                             .position(x: min(max(x, 14), width - 14), y: y - 20)
@@ -143,9 +143,11 @@ struct MonthWaveform: View {
         return path
     }
 
-    /// 狭いバーでは「◯日」に省略し、隣のラベルとの重なりを避ける。
+    /// 狭いバーでは「◯日」に省略し、隣のラベルとの重なりを避ける。ロケール準拠で解決。
     private func gapLabel(for gap: GapSpan, barWidth: CGFloat) -> String {
-        barWidth < shortGapLabelThreshold ? "\(gap.length)日" : "\(gap.length)日の空白"
+        barWidth < shortGapLabelThreshold
+            ? String(localized: "\(gap.length)d")
+            : String(localized: "\(gap.length)-day gap")
     }
 
     /// 「帰還」ラベルを付ける再開日。近すぎるものは先勝ちで間引く。

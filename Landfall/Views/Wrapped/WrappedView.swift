@@ -44,10 +44,10 @@ struct WrappedView: View {
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Text("最初のWrappedは、月末に生まれる。")
+            Text("Your first Wrapped arrives at month's end.")
                 .font(LFFont.copy(20))
                 .foregroundStyle(LFColor.ink)
-            Text("月の終わりに、その月のすべてが一枚になる。")
+            Text("At month's end, the whole month becomes one page.")
                 .font(LFFont.label(15))
                 .foregroundStyle(LFColor.ink.opacity(0.6))
         }
@@ -145,7 +145,7 @@ struct WrappedView: View {
     }
 
     private func title(of yearMonth: YearMonth) -> String {
-        "\(String(yearMonth.year))年\(yearMonth.month)月"
+        LF.monthYear(year: yearMonth.year, month: yearMonth.month)
     }
 
     // MARK: - カード

@@ -26,19 +26,19 @@ struct DayDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(Self.titleFormatter.string(from: day))
+                    Text(LF.dayWithWeekday(day))
                         .font(LFFont.copy(24))
                         .foregroundStyle(LFColor.ink)
 
                     if !sessions.isEmpty {
-                        Text("この日 \(durationText(totalMinutes))・\(itemCount)項目")
+                        Text("\(LF.duration(minutes: totalMinutes)) · \(itemCount) items this day")
                             .font(LFFont.label(14))
                             .foregroundStyle(LFColor.ink.opacity(0.5))
                             .padding(.top, 8)
                     }
 
                     if sessions.isEmpty {
-                        Text("この日の記録は、もうない。")
+                        Text("No records left for this day.")
                             .font(LFFont.copy(16))
                             .foregroundStyle(LFColor.ink.opacity(0.5))
                             .padding(.top, 28)
@@ -67,7 +67,7 @@ struct DayDetailView: View {
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "chevron.left")
-                        Text("軌跡")
+                        Text("Trace")
                     }
                     .font(LFFont.label(16))
                     .foregroundStyle(LFColor.ink)
@@ -95,10 +95,10 @@ struct DayDetailView: View {
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
-                        Text(session.item?.name ?? "項目なし")
+                        Text(session.item?.name ?? String(localized: "No item"))
                             .font(LFFont.copy(16))
                             .foregroundStyle(LFColor.ink)
-                        Text(durationText(session.minutes))
+                        Text(LF.duration(minutes: session.minutes))
                             .font(LFFont.label(14))
                             .monospacedDigit()
                             .foregroundStyle(LFColor.ink.opacity(0.55))
@@ -124,17 +124,4 @@ struct DayDetailView: View {
         Set(sessions.compactMap { $0.item?.persistentModelID }).count
     }
 
-    private func durationText(_ minutes: Int) -> String {
-        let h = minutes / 60
-        let m = minutes % 60
-        if h > 0 { return m > 0 ? "\(h)時間\(m)分" : "\(h)時間" }
-        return "\(m)分"
-    }
-
-    private static let titleFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "ja_JP")
-        f.dateFormat = "M月d日(E)"
-        return f
-    }()
 }

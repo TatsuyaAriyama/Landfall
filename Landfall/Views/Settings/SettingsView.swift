@@ -28,7 +28,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
-            Text("アプリアイコン")
+            Text("App Icon")
                 .font(LFFont.label(15))
                 .tracking(2)
                 .foregroundStyle(LFColor.ink.opacity(0.55))
@@ -52,11 +52,11 @@ struct SettingsView: View {
 
     private var header: some View {
         HStack {
-            Text("設定")
+            Text("Settings")
                 .font(LFFont.copy(20))
                 .foregroundStyle(LFColor.ink)
             Spacer()
-            Button("閉じる") { dismiss() }
+            Button("Close") { dismiss() }
                 .font(LFFont.label(15))
                 .foregroundStyle(LFColor.ink.opacity(0.6))
         }

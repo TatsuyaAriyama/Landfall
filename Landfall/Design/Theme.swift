@@ -47,7 +47,7 @@ enum LFFont {
 
 /// 全カード共通の上部キッカー。4枚で仕様を揃えるため必ずこれを使う。
 struct CardKicker: View {
-    var text: String
+    var text: LocalizedStringKey
     var color: Color
 
     var body: some View {

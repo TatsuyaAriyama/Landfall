@@ -8,13 +8,13 @@ struct WrappedCard2Silence: View {
     var body: some View {
         CardScaffold(background: LFColor.coral) {
             VStack(alignment: .leading, spacing: 0) {
-                CardKicker(text: "いちばん長い空白", color: LFColor.deepRust)
+                CardKicker(text: "Your longest gap", color: LFColor.deepRust)
 
                 if let gap = month.longestGap {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("\(gap.length)")
                             .font(LFFont.number(80))
-                        Text("日")
+                        Text("days")
                             .font(LFFont.copy(24))
                     }
                     .foregroundStyle(LFColor.deepRust)
@@ -22,18 +22,18 @@ struct WrappedCard2Silence: View {
 
                     Spacer()
 
-                    Text("\(month.shortDate(gap.startDay))〜\(month.shortDate(gap.endDay))、あなたは沈黙した。")
+                    Text("\(month.shortDate(gap.startDay))–\(month.shortDate(gap.endDay)), you fell silent.")
                         .font(LFFont.copy(19))
                         .foregroundStyle(LFColor.deepRust)
 
                     Spacer()
 
                     ReturnBox(
-                        returnLine: "それでも \(month.shortDate(gap.endDay + 1))、戻ってきた。",
-                        countLine: "この月、帰還は\(month.resumeCount)回。"
+                        returnLine: "And yet on \(month.shortDate(gap.endDay + 1)), you came back.",
+                        countLine: "\(month.resumeCount) returns this month."
                     )
                 } else {
-                    Text("この月、空白はなかった。")
+                    Text("No gap this month.")
                         .font(LFFont.copy(19))
                         .foregroundStyle(LFColor.deepRust)
                         .padding(.top, 16)
@@ -53,8 +53,8 @@ struct WrappedCard2Silence: View {
 
 /// 濃色の帰還ボックス。空白の物語を反転色で締める。
 private struct ReturnBox: View {
-    var returnLine: String
-    var countLine: String
+    var returnLine: LocalizedStringKey
+    var countLine: LocalizedStringKey
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

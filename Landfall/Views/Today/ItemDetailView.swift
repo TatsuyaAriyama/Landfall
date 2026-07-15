@@ -54,7 +54,7 @@ struct ItemDetailView: View {
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "chevron.left")
-                        Text("ホーム")
+                        Text("Home")
                     }
                     .font(LFFont.label(16))
                     .foregroundStyle(LFColor.ink)
@@ -92,13 +92,13 @@ struct ItemDetailView: View {
 
     private var statStrip: some View {
         HStack(alignment: .top, spacing: 0) {
-            statBlock(label: "累計", value: durationText(totalMinutes), alignment: .leading)
-            statBlock(label: "記録日数", value: "\(recordedDays)日", alignment: .center)
-            statBlock(label: "回数", value: "\(item.sessions.count)回", alignment: .trailing)
+            statBlock(label: "Total", value: LF.duration(minutes: totalMinutes), alignment: .leading)
+            statBlock(label: "Days", value: String(localized: "\(recordedDays) days"), alignment: .center)
+            statBlock(label: "Sessions", value: String(localized: "\(item.sessions.count) sessions"), alignment: .trailing)
         }
     }
 
-    private func statBlock(label: String, value: String, alignment: HorizontalAlignment) -> some View {
+    private func statBlock(label: LocalizedStringKey, value: String, alignment: HorizontalAlignment) -> some View {
         VStack(alignment: alignment, spacing: 6) {
             Text(label)
                 .font(LFFont.label(13))
@@ -116,7 +116,7 @@ struct ItemDetailView: View {
         Button {
             recording = true
         } label: {
-            Text("刻む")
+            Text("Log")
                 .font(LFFont.copy(18))
                 .foregroundStyle(LFColor.paper)
                 .frame(maxWidth: .infinity)
@@ -131,13 +131,13 @@ struct ItemDetailView: View {
 
     @ViewBuilder
     private var logSection: some View {
-        Text("これまでの記録")
+        Text("History")
             .font(LFFont.label(13))
             .tracking(1)
             .foregroundStyle(LFColor.ink.opacity(0.5))
 
         if sessions.isEmpty {
-            Text("まだ記録がない。最初のひと刻みを。")
+            Text("Nothing logged yet. Make your first mark.")
                 .font(LFFont.copy(16))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
                 .padding(.top, 16)
@@ -159,17 +159,17 @@ struct ItemDetailView: View {
     private func logRow(_ session: StudySession) -> some View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(Self.dayFormatter.string(from: session.date))
+                Text(LF.dayMonth(session.date))
                     .font(LFFont.label(14))
                     .foregroundStyle(LFColor.ink)
-                Text(Self.weekdayFormatter.string(from: session.date))
+                Text(LF.weekdayFull(session.date))
                     .font(LFFont.label(11))
                     .foregroundStyle(LFColor.ink.opacity(0.4))
             }
             .frame(width: 62, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(durationText(session.minutes))
+                Text(LF.duration(minutes: session.minutes))
                     .font(LFFont.copy(17))
                     .monospacedDigit()
                     .foregroundStyle(LFColor.ink)
@@ -190,7 +190,7 @@ struct ItemDetailView: View {
     private var welcomeBackOverlay: some View {
         ZStack {
             LFColor.paper.opacity(0.94).ignoresSafeArea()
-            Text("おかえり。")
+            Text("Welcome back.")
                 .font(LFFont.copy(26))
                 .foregroundStyle(LFColor.ink)
         }
@@ -208,13 +208,6 @@ struct ItemDetailView: View {
 
     // MARK: - 整形
 
-    private func durationText(_ minutes: Int) -> String {
-        let h = minutes / 60
-        let m = minutes % 60
-        if h > 0 { return m > 0 ? "\(h)時間\(m)分" : "\(h)時間" }
-        return "\(m)分"
-    }
-
     private func frameAlignment(_ alignment: HorizontalAlignment) -> Alignment {
         switch alignment {
         case .center: .center
@@ -222,18 +215,4 @@ struct ItemDetailView: View {
         default: .leading
         }
     }
-
-    private static let dayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "ja_JP")
-        f.dateFormat = "M月d日"
-        return f
-    }()
-
-    private static let weekdayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "ja_JP")
-        f.dateFormat = "EEEE"
-        return f
-    }()
 }

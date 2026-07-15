@@ -8,7 +8,7 @@ struct WrappedCard3Archetype: View {
     var body: some View {
         CardScaffold(background: LFColor.midnight) {
             VStack(spacing: 0) {
-                CardKicker(text: "あなたの再開力タイプ", color: LFColor.lavender)
+                CardKicker(text: "Your comeback type", color: LFColor.lavender)
 
                 Spacer()
 
@@ -34,9 +34,9 @@ struct WrappedCard3Archetype: View {
 
                 HStack(spacing: 12) {
                     if let power = month.resumePower {
-                        StatPill(text: "再開力 \(power)")
+                        StatPill(text: "Comeback \(power)")
                     }
-                    StatPill(text: "帰還 \(month.resumeCount)回")
+                    StatPill(text: "\(month.resumeCount) returns")
                 }
 
                 Spacer()
@@ -52,7 +52,7 @@ struct WrappedCard3Archetype: View {
 // MARK: - ピルバッジ
 
 private struct StatPill: View {
-    let text: String
+    let text: LocalizedStringKey
 
     var body: some View {
         Text(text)

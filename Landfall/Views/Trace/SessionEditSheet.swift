@@ -26,13 +26,13 @@ struct SessionEditSheet: View {
                         .foregroundStyle(LFColor.ink)
                 }
                 Spacer()
-                Text(Self.dateFormatter.string(from: session.date))
+                Text(LF.dayWithWeekday(session.date))
                     .font(LFFont.label(14))
                     .foregroundStyle(LFColor.ink.opacity(0.5))
             }
             .padding(.top, 24)
 
-            Text("時間")
+            Text("Time")
                 .font(LFFont.label(13))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
                 .padding(.top, 28)
@@ -45,14 +45,14 @@ struct SessionEditSheet: View {
             .padding(.top, 10)
 
             Stepper(value: $minutes, in: 1...600, step: 5) {
-                Text("\(minutes)分")
+                Text("\(minutes) min")
                     .font(LFFont.copy(17))
                     .monospacedDigit()
                     .foregroundStyle(LFColor.ink)
             }
             .padding(.top, 10)
 
-            TextField("ひとこと(任意)", text: $note)
+            TextField("A note (optional)", text: $note)
                 .font(LFFont.label(16))
                 .foregroundStyle(LFColor.ink)
                 .tint(LFColor.ink)
@@ -80,19 +80,19 @@ struct SessionEditSheet: View {
             minutes = session.minutes
             note = session.note ?? ""
         }
-        .confirmationDialog("この記録を削除する?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("削除する", role: .destructive, action: deleteSession)
-            Button("やめる", role: .cancel) {}
+        .confirmationDialog("Delete this record?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive, action: deleteSession)
+            Button("Cancel", role: .cancel) {}
         }
     }
 
     private var header: some View {
         HStack {
-            Text("記録を編集")
+            Text("Edit record")
                 .font(LFFont.copy(20))
                 .foregroundStyle(LFColor.ink)
             Spacer()
-            Button("閉じる") { dismiss() }
+            Button("Close") { dismiss() }
                 .font(LFFont.label(15))
                 .foregroundStyle(LFColor.ink.opacity(0.6))
         }
@@ -103,7 +103,7 @@ struct SessionEditSheet: View {
         return Button {
             minutes = value
         } label: {
-            Text("\(value)分")
+            Text("\(value) min")
                 .font(LFFont.label(15))
                 .monospacedDigit()
                 .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
@@ -128,7 +128,7 @@ struct SessionEditSheet: View {
             try? modelContext.save()
             dismiss()
         } label: {
-            Text("変更を保存")
+            Text("Save changes")
                 .font(LFFont.copy(18))
                 .foregroundStyle(LFColor.paper)
                 .frame(maxWidth: .infinity)
@@ -143,7 +143,7 @@ struct SessionEditSheet: View {
         Button {
             confirmingDelete = true
         } label: {
-            Text("この記録を削除")
+            Text("Delete record")
                 .font(LFFont.label(15))
                 .foregroundStyle(LFColor.deepRust)
                 .frame(maxWidth: .infinity)
@@ -159,11 +159,4 @@ struct SessionEditSheet: View {
         try? modelContext.save()
         dismiss()
     }
-
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "ja_JP")
-        f.dateFormat = "M月d日(E)"
-        return f
-    }()
 }
