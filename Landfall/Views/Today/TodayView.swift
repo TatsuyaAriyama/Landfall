@@ -10,6 +10,7 @@ struct TodayView: View {
 
     @State private var noteText = ""
     @State private var showWelcomeBack = false
+    @State private var showingSettings = false
     /// 「今日」。日跨ぎ後の初操作をブロックしないよう、前景復帰と日付変化で更新する。
     @State private var today = Date()
     @FocusState private var noteFieldFocused: Bool
@@ -37,9 +38,21 @@ struct TodayView: View {
                 unrecordedContent
             }
 
+            settingsButton
+
             if showWelcomeBack {
                 welcomeBackOverlay
             }
+        }
+        .sheet(isPresented: $showingSettings) {
+            SettingsView()
+        }
+        .onAppear {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["LANDFALL_SETTINGS"] != nil {
+                showingSettings = true
+            }
+            #endif
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { today = Date() }
@@ -47,6 +60,29 @@ struct TodayView: View {
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
             today = Date()
         }
+    }
+
+    // MARK: - 設定入口(右上・控えめ)
+
+    private var settingsButton: some View {
+        VStack {
+            HStack {
+                Spacer()
+                Button {
+                    noteFieldFocused = false
+                    showingSettings = true
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 20, weight: .regular))
+                        .foregroundStyle(LFColor.ink.opacity(0.4))
+                        .padding(8)
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
     }
 
     // MARK: - 未記録状態
