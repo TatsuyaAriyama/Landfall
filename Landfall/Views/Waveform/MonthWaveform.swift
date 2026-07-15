@@ -12,12 +12,15 @@ struct MonthWaveform: View {
     let gapBarColor: Color
     let resumeMarkerColor: Color
     var gapLabelColor: Color? = nil
+    /// 下部に日付軸(週ごとの日番号)を描くか。軌跡画面ではtrue、共有カードでは既定のfalse。
+    var showDateAxis: Bool = false
 
     // MARK: レイアウト定数
 
     private let lineWidth: CGFloat = 3
     private let resumeBandHeight: CGFloat = 34   // 上部「帰還」ラベル帯
     private let gapBandHeight: CGFloat = 46      // 下部 空白バー+ラベル帯
+    private var axisHeight: CGFloat { showDateAxis ? 22 : 0 }  // 日付軸のぶん
     private let markerDiameter: CGFloat = 9
     private let gapBarHeight: CGFloat = 7
     /// 台地の高さ: 連続1日目の高さと、連続するごとの上がり幅(帯に対する割合)
@@ -33,7 +36,7 @@ struct MonthWaveform: View {
             let width = geo.size.width
             let dayWidth = width / CGFloat(month.daysInMonth)
             let topY = resumeBandHeight
-            let baselineY = geo.size.height - gapBandHeight
+            let baselineY = geo.size.height - gapBandHeight - axisHeight
             let labeledResumes = labeledResumeDays(dayWidth: dayWidth)
 
             ZStack(alignment: .topLeading) {
@@ -75,8 +78,33 @@ struct MonthWaveform: View {
                             .position(x: min(max(x, 14), width - 14), y: y - 20)
                     }
                 }
+
+                // 日付軸: 週ごとの日番号 + 短い目盛り
+                if showDateAxis {
+                    ForEach(axisDays, id: \.self) { day in
+                        let x = (CGFloat(day) - 0.5) * dayWidth
+                        Rectangle()
+                            .fill(lineColor.opacity(0.2))
+                            .frame(width: 1, height: 5)
+                            .position(x: x, y: baselineY + gapBandHeight + 2)
+                        Text("\(day)")
+                            .font(LFFont.label(11))
+                            .monospacedDigit()
+                            .foregroundStyle(lineColor.opacity(0.4))
+                            .position(x: min(max(x, 8), width - 8), y: baselineY + gapBandHeight + 13)
+                    }
+                }
             }
         }
+    }
+
+    /// 日付軸に出す日(1日始まりで7日ごと、最終日も添える)。
+    private var axisDays: [Int] {
+        var days = Array(stride(from: 1, through: month.daysInMonth, by: 7))
+        if let last = days.last, month.daysInMonth - last >= 3 {
+            days.append(month.daysInMonth)
+        }
+        return days
     }
 
     // MARK: 導出

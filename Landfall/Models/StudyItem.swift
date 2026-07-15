@@ -69,4 +69,26 @@ enum StudyDayStore {
             context.insert(StudyDay(date: dayStart))
         }
     }
+
+    /// その日のセッションが全て消えたら「学んだ日」の刻印も外す。
+    /// セッション削除後に呼び、軌跡・統計の整合を保つ。
+    static func unmarkDayIfEmpty(_ date: Date, context: ModelContext) {
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: date)
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return }
+
+        var sessionDescriptor = FetchDescriptor<StudySession>(
+            predicate: #Predicate { $0.date >= dayStart && $0.date < dayEnd }
+        )
+        sessionDescriptor.fetchLimit = 1
+        let remaining = (try? context.fetch(sessionDescriptor)) ?? []
+        guard remaining.isEmpty else { return }
+
+        let dayDescriptor = FetchDescriptor<StudyDay>(
+            predicate: #Predicate { $0.date == dayStart }
+        )
+        for day in (try? context.fetch(dayDescriptor)) ?? [] {
+            context.delete(day)
+        }
+    }
 }

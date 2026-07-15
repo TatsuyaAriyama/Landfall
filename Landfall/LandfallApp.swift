@@ -30,7 +30,7 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $selection) {
             TodayView()
-                .tabItem { Label("今日", systemImage: "square.and.pencil") }
+                .tabItem { Label("ホーム", systemImage: "house") }
                 .tag(0)
             TraceView()
                 .tabItem { Label("軌跡", systemImage: "waveform") }

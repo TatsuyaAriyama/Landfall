@@ -54,7 +54,7 @@ struct ItemDetailView: View {
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "chevron.left")
-                        Text("今日")
+                        Text("ホーム")
                     }
                     .font(LFFont.label(16))
                     .foregroundStyle(LFColor.ink)
