@@ -92,18 +92,19 @@ struct ItemDetailView: View {
 
     private var statStrip: some View {
         HStack(alignment: .top, spacing: 0) {
-            statBlock(label: "Total", value: LF.duration(minutes: totalMinutes), alignment: .leading)
-            statBlock(label: "Days", value: String(localized: "\(recordedDays) days"), alignment: .center)
-            statBlock(label: "Sessions", value: String(localized: "\(item.sessions.count) sessions"), alignment: .trailing)
+            // 累計は整形済みの期間文字列(LFがロケール追従)。日数・回数は Text で言語追従。
+            statBlock(label: "Total", value: Text(verbatim: LF.duration(minutes: totalMinutes)), alignment: .leading)
+            statBlock(label: "Days", value: Text("\(recordedDays) days"), alignment: .center)
+            statBlock(label: "Sessions", value: Text("\(item.sessions.count) sessions"), alignment: .trailing)
         }
     }
 
-    private func statBlock(label: LocalizedStringKey, value: String, alignment: HorizontalAlignment) -> some View {
+    private func statBlock(label: LocalizedStringKey, value: Text, alignment: HorizontalAlignment) -> some View {
         VStack(alignment: alignment, spacing: 6) {
             Text(label)
                 .font(LFFont.label(13))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
-            Text(value)
+            value
                 .font(LFFont.number(26))
                 .foregroundStyle(LFColor.ink)
                 .lineLimit(1)

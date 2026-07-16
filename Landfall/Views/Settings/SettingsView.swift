@@ -22,17 +22,26 @@ enum AppIconStore {
 /// 設定シート。v1ではアプリアイコンの選択のみ。
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
     @State private var current: AppIconOption = .midnight
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
-            Text("App Icon")
-                .font(LFFont.label(15))
-                .tracking(2)
-                .foregroundStyle(LFColor.ink.opacity(0.55))
+            sectionLabel("Language")
                 .padding(.top, 32)
+                .padding(.bottom, 18)
+
+            HStack(spacing: 10) {
+                ForEach(AppLanguage.allCases) { language in
+                    languagePill(language)
+                }
+                Spacer(minLength: 0)
+            }
+
+            sectionLabel("App Icon")
+                .padding(.top, 36)
                 .padding(.bottom, 18)
 
             HStack(spacing: 16) {
@@ -47,7 +56,42 @@ struct SettingsView: View {
         .padding(LFMetrics.cardPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(LFColor.paper)
+        // シート自身も選択言語に追従させる(切替が即時に反映される)。
+        .environment(\.locale, (AppLanguage(rawValue: appLanguage) ?? .system).locale)
         .onAppear { current = AppIconStore.currentOption() }
+    }
+
+    private func sectionLabel(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(LFFont.label(15))
+            .tracking(2)
+            .foregroundStyle(LFColor.ink.opacity(0.55))
+    }
+
+    private func languagePill(_ language: AppLanguage) -> some View {
+        let selected = appLanguage == language.rawValue
+        return Button {
+            appLanguage = language.rawValue
+        } label: {
+            Group {
+                if language == .system {
+                    Text("System")
+                } else {
+                    Text(verbatim: language.nativeName)
+                }
+            }
+            .font(LFFont.label(15))
+            .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background(selected ? LFColor.ink : Color.clear)
+            .overlay(
+                Capsule(style: .continuous)
+                    .stroke(LFColor.ink.opacity(selected ? 0 : 0.25), lineWidth: 1)
+            )
+            .clipShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var header: some View {

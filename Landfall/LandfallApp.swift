@@ -25,6 +25,7 @@ struct LandfallApp: App {
 }
 
 struct ContentView: View {
+    @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
     @State private var selection = ContentView.initialTab
 
     var body: some View {
@@ -46,6 +47,17 @@ struct ContentView: View {
                 .tag(2)
         }
         .tint(LFColor.returnOrange)
+        // アプリ内の言語設定を全体に反映(端末言語に関わらず切替可能)。
+        .environment(\.locale, (AppLanguage(rawValue: appLanguage) ?? .system).locale)
+        .onAppear {
+            #if DEBUG
+            // 動作確認用: LANDFALL_LANG=en/ja/system でアプリ内言語を固定できる。
+            if let raw = ProcessInfo.processInfo.environment["LANDFALL_LANG"],
+               AppLanguage(rawValue: raw) != nil {
+                appLanguage = raw
+            }
+            #endif
+        }
     }
 
     /// 動作確認用: DEBUGビルドで LANDFALL_TAB を渡すと初期タブを固定できる。既定は「今日」。

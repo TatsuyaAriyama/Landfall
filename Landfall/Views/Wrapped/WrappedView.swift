@@ -103,6 +103,11 @@ struct WrappedView: View {
         }
         .onAppear {
             renderImageIfNeeded(for: currentPage ?? 0)
+            #if DEBUG
+            if let raw = ProcessInfo.processInfo.environment["LANDFALL_WRAPPED_PAGE"], let page = Int(raw) {
+                currentPage = page
+            }
+            #endif
         }
         .onChange(of: currentPage) { _, newPage in
             renderImageIfNeeded(for: newPage ?? 0)

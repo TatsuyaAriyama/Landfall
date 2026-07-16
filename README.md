@@ -50,6 +50,7 @@
 - 完全ローカル(バックエンド・アカウント・通知・計測SDKなし)
 - 共有画像は `ImageRenderer` でカードをPNG化 → `ShareLink`
 - ローカライズ: 英語(既定)+ 日本語(`Landfall/ja.lproj/Localizable.strings`)。日付・時間はロケール準拠(`LF` ヘルパー)
+- 言語切替: 設定シートで System / English / 日本語 を選択。`\.locale` 環境値の上書きで、端末言語に関わらずアプリ内で即時切替(`AppLanguage`)
 - App Store 提出: プライバシーマニフェスト同梱・輸出コンプライアンス宣言済み。手順は [SUBMISSION.md](SUBMISSION.md)
 
 ## ビルド

@@ -1,8 +1,11 @@
 import Foundation
 
-/// ロケール準拠の日付・時間整形。英語/日本語で表記が自動的に切り替わる。
+/// ロケール準拠の日付・時間整形。アプリ内の言語設定(AppLanguage)に追従する。
 /// 期間や日付はここに集約し、各画面で言語別の文字列を持たない。
 enum LF {
+    /// アプリ内設定で選ばれたロケール(system のときは端末ロケール)。
+    private static var appLocale: Locale { AppLanguage.current.locale }
+
     // MARK: - 期間
 
     /// 期間表示。en: "9h 15m" / ja: "9時間15分"。60分未満は分のみ。
@@ -11,6 +14,9 @@ enum LF {
         formatter.allowedUnits = minutes >= 60 ? [.hour, .minute] : [.minute]
         formatter.unitsStyle = .abbreviated
         formatter.zeroFormattingBehavior = .dropAll
+        var calendar = Calendar.current
+        calendar.locale = appLocale
+        formatter.calendar = calendar
         return formatter.string(from: TimeInterval(minutes * 60)) ?? "\(minutes)m"
     }
 
@@ -53,14 +59,16 @@ enum LF {
         return Calendar.current.date(from: comps)
     }
 
-    /// テンプレートから現在ロケールの並びで整形するフォーマッタ(テンプレート単位でキャッシュ)。
+    /// テンプレートから選択ロケールの並びで整形するフォーマッタ(ロケール×テンプレートでキャッシュ)。
     private static var cache: [String: DateFormatter] = [:]
     private static func templated(_ template: String) -> DateFormatter {
-        if let cached = cache[template] { return cached }
+        let locale = appLocale
+        let key = "\(locale.identifier)|\(template)"
+        if let cached = cache[key] { return cached }
         let formatter = DateFormatter()
-        formatter.locale = .autoupdatingCurrent
+        formatter.locale = locale
         formatter.setLocalizedDateFormatFromTemplate(template)
-        cache[template] = formatter
+        cache[key] = formatter
         return formatter
     }
 }

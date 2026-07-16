@@ -95,7 +95,14 @@ struct DayDetailView: View {
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
-                        Text(session.item?.name ?? String(localized: "No item"))
+                        // 項目名はユーザーデータ(verbatim)、無い場合のみ言語追従の代替語。
+                        Group {
+                            if let name = session.item?.name {
+                                Text(verbatim: name)
+                            } else {
+                                Text("No item")
+                            }
+                        }
                             .font(LFFont.copy(16))
                             .foregroundStyle(LFColor.ink)
                         Text(LF.duration(minutes: session.minutes))

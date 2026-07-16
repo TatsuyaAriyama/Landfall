@@ -143,11 +143,11 @@ struct MonthWaveform: View {
         return path
     }
 
-    /// 狭いバーでは「◯日」に省略し、隣のラベルとの重なりを避ける。ロケール準拠で解決。
-    private func gapLabel(for gap: GapSpan, barWidth: CGFloat) -> String {
+    /// 狭いバーでは「◯日」に省略し、隣のラベルとの重なりを避ける。Text経由で言語に追従。
+    private func gapLabel(for gap: GapSpan, barWidth: CGFloat) -> LocalizedStringKey {
         barWidth < shortGapLabelThreshold
-            ? String(localized: "\(gap.length)d")
-            : String(localized: "\(gap.length)-day gap")
+            ? "\(gap.length)d"
+            : "\(gap.length)-day gap"
     }
 
     /// 「帰還」ラベルを付ける再開日。近すぎるものは先勝ちで間引く。

@@ -1,7 +1,7 @@
-import Foundation
+import SwiftUI
 
 /// タイプ診断。判定ロジックは MonthStats 側で行い、ここでは表示語彙のみを持つ。
-/// 全タイプ肯定的。
+/// 全タイプ肯定的。表示文字列は LocalizedStringKey にして Text 経由で言語に追従させる。
 enum StudyArchetype: String, CaseIterable, Codable {
     case phoenix      // 不死鳥型
     case stoneBridge  // 石橋型
@@ -9,35 +9,35 @@ enum StudyArchetype: String, CaseIterable, Codable {
     case comet        // 彗星型
     case morningCalm  // 朝凪型
 
-    var displayName: String {
+    var displayName: LocalizedStringKey {
         switch self {
-        case .phoenix: String(localized: "Phoenix")
-        case .stoneBridge: String(localized: "Stone Bridge")
-        case .waveRider: String(localized: "Wave Rider")
-        case .comet: String(localized: "Comet")
-        case .morningCalm: String(localized: "Morning Calm")
+        case .phoenix: "Phoenix"
+        case .stoneBridge: "Stone Bridge"
+        case .waveRider: "Wave Rider"
+        case .comet: "Comet"
+        case .morningCalm: "Morning Calm"
         }
     }
 
     /// 決め台詞(1行目)。
-    var tagline: String {
+    var tagline: LocalizedStringKey {
         switch self {
-        case .phoenix: String(localized: "Sink deep. Always return.")
-        case .stoneBridge: String(localized: "Quietly, surely, you build.")
-        case .waveRider: String(localized: "You have your own tide.")
-        case .comet: String(localized: "When you burn, you burn all at once.")
-        case .morningCalm: String(localized: "No noise, no rush, no break.")
+        case .phoenix: "Sink deep. Always return."
+        case .stoneBridge: "Quietly, surely, you build."
+        case .waveRider: "You have your own tide."
+        case .comet: "When you burn, you burn all at once."
+        case .morningCalm: "No noise, no rush, no break."
         }
     }
 
     /// 添え書き(2行目)。決め台詞を受けて断言で締める。
-    var subline: String {
+    var subline: LocalizedStringKey {
         switch self {
-        case .phoenix: String(localized: "The length of the gap is nothing to you.")
-        case .stoneBridge: String(localized: "No flourish needed. What you stack remains.")
-        case .waveRider: String(localized: "Some days ebb so others can flow.")
-        case .comet: String(localized: "The stillness is only your next approach.")
-        case .morningCalm: String(localized: "That calm is your greatest strength.")
+        case .phoenix: "The length of the gap is nothing to you."
+        case .stoneBridge: "No flourish needed. What you stack remains."
+        case .waveRider: "Some days ebb so others can flow."
+        case .comet: "The stillness is only your next approach."
+        case .morningCalm: "That calm is your greatest strength."
         }
     }
 }

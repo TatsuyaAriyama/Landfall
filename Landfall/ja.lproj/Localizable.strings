@@ -57,6 +57,8 @@
 
 /* 設定 */
 "Settings" = "設定";
+"Language" = "言語";
+"System" = "システム";
 "App Icon" = "アプリアイコン";
 "Midnight" = "ミッドナイト";
 "Coral" = "コーラル";
