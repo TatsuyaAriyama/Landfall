@@ -1,10 +1,35 @@
 /* Landfall — 日本語ローカライズ。キーは英語ソース文字列(コード内リテラル)。 */
 
+/* サインイン */
+"Sign in to enter the harbor." = "サインインして、入港しましょう。";
+"Your record syncs across your devices." = "記録は、複数の端末で同期されます。";
+"Continue with Google" = "Googleで続ける";
+"Account" = "アカウント";
+"Sign out" = "サインアウト";
+"Delete account" = "アカウントを削除";
+"Delete your account?" = "アカウントを削除する?";
+"This permanently deletes your account and synced record. This cannot be undone." = "アカウントと同期された記録が完全に削除される。元に戻せない。";
+"Deleting your account failed. Please try signing in again and retry." = "アカウントの削除に失敗した。もう一度サインインしてから試して。";
+
+/* 導入(オンボーディング) */
+"Skip" = "スキップ";
+"Next" = "次へ";
+"Begin" = "始める";
+"Learning breaks off." = "学びは、途切れるもの。";
+"Landfall is built on that. Pausing is part of the voyage." = "だからLandfallは、途切れる前提で作りました。休むのも、航海のうちです。";
+"Rest stands as tall as study." = "休んだ日も、学んだ日と同じ大きさ。";
+"No ranks. No streaks. Nothing to keep unbroken." = "順位も、連続記録もありません。途切れさせない努力は、いりません。";
+"What matters is that you return." = "大事なのは、戻ってこられること。";
+"Not how long you kept going. That's why times quit is always zero." = "どれだけ続いたかより、また始められるか。だから「やめた回数」は、いつも0です。";
+"Set sail whenever you like." = "好きなときに、出航を。";
+"And whenever you drift, the harbor is still here." = "しばらく離れても、港はここで待っています。";
+
 /* タブ・ナビ・共通アクション */
 "Home" = "ホーム";
 "Trace" = "軌跡";
+"Logbook" = "航海誌";
 "Add" = "追加";
-"Log" = "刻む";
+"Set sail" = "出航する";
 "Close" = "閉じる";
 "Edit" = "編集";
 "Share" = "共有";
@@ -28,22 +53,30 @@
 
 /* 項目ページ */
 "History" = "これまでの記録";
-"Nothing logged yet. Make your first mark." = "まだ記録がない。最初のひと刻みを。";
+"No voyages yet. Set sail for the first time." = "まだ航海がない。最初の出航を。";
 
-/* 記録シート */
-"Start timer" = "タイマーで計測を始める";
-"Stop & log" = "終了して刻む";
-"Timer running on another item." = "別の項目で計測中。";
-"Or pick a length" = "または、時間を選んで刻む";
+/* 記録シート(出航) */
+"Date" = "日付";
+"Make landfall" = "着岸する";
+"Under sail on another item." = "別の項目で航海中。";
+"Or pick a voyage length" = "または、航海の長さを選んで刻む";
 "%lld min" = "%lld分";
 "0 min" = "0分";
 "A note (optional)" = "ひとこと(任意)";
-"Log this" = "この分を刻む";
+"Log this voyage" = "この航海を刻む";
+"Setting sail." = "出航。";
+"Made landfall." = "着岸。";
+"A long voyage" = "長い航海";
+"Log the whole time" = "この長さで刻む";
+"Pick the length instead" = "長さを選び直す";
+"Keep sailing" = "航海を続ける";
+"You've been under sail for %@. Did you forget to make landfall? Log this whole time?" = "%@ 航海しています。着岸し忘れていませんか？この長さをすべて刻みますか？";
 
 /* 項目エディタ */
 "Add item" = "項目を追加";
 "Edit item" = "項目を編集";
 "Name (e.g. Reading, Coding)" = "名前(例: 読書、開発)";
+"An item with this name already exists." = "この名前の項目は、すでにある。";
 "Choose cover photo" = "表紙写真を選ぶ";
 "Replace photo" = "写真を差し替える";
 "Remove photo" = "写真を外す";
@@ -53,13 +86,17 @@
 "Save changes" = "変更を保存";
 "Delete item" = "この項目を削除";
 "Delete this item?" = "この項目を削除する?";
-"Deleting this item removes its records. Your logged days (Trace, Wrapped) stay." = "この項目の作業記録も消える。学んだ日の記録(軌跡・Wrapped)は残る。";
+"Deleting this item removes its records. Your logged days (Trace, Logbook) stay." = "この項目の作業記録も消える。学んだ日の記録(軌跡・航海誌)は残る。";
 
 /* 設定 */
 "Settings" = "設定";
 "Language" = "言語";
 "System" = "システム";
+"Appearance" = "外観";
+"Light" = "ライト";
+"Dark" = "ダーク";
 "App Icon" = "アプリアイコン";
+"Dusk" = "夕暮れ";
 "Midnight" = "ミッドナイト";
 "Coral" = "コーラル";
 
@@ -74,6 +111,31 @@
 "No records left for this day." = "この日の記録は、もうない。";
 "No item" = "項目なし";
 
+/* プレイヤーカード */
+"Player card" = "プレイヤーカード";
+"Player name" = "プレイヤー名";
+"Resolve" = "決意";
+"One line you sail by (optional)" = "航海の指針になる、ひとこと(任意)";
+"Save this card" = "このカードで行く";
+"Come sail with me in \"%@\" on Landfall. Harbor code: %@" = "Landfallの港「%@」で、一緒に学びませんか。招待コード: %@";
+
+/* 港 */
+"Harbor" = "港";
+"Sign in to enter a harbor." = "サインインすると、港に入れる。";
+"Share your study records with friends and see theirs." = "仲間と、お互いの学習の記録を見せ合える場所です。";
+"Open a harbor" = "港をひらく";
+"Enter with a code" = "コードで入る";
+"Leave this harbor" = "この港を出る";
+"You" = "あなた";
+"Share this code to invite others." = "このコードを共有して、仲間を招く。";
+"Harbor name" = "港の名前";
+"Open" = "ひらく";
+"Code (6 letters)" = "コード(6文字)";
+"Enter" = "入る";
+"Sailor" = "船乗り";
+"No harbor found for this code." = "このコードの港は見つからなかった。";
+"Couldn't open a harbor just now. Please try again." = "港をひらけなかった。もう一度試して。";
+
 /* 軌跡 */
 "Trace of %@" = "%@の軌跡";
 "Days logged" = "記録した日";
@@ -85,19 +147,26 @@
 "%lldd" = "%lld日";
 
 /* Wrapped 画面 */
-"Your first Wrapped arrives at month's end." = "最初のWrappedは、月末に生まれる。";
+"Your first Logbook arrives at month's end." = "最初の航海誌は、月末に生まれる。";
 "At month's end, the whole month becomes one page." = "月の終わりに、その月のすべてが一枚になる。";
 
 /* Wrapped カード1(事実) */
 "You, %@" = "%@のあなた";
 "studied" = "学んだ";
 "rested" = "休んだ";
-"And you never once quit." = "そして、一度もやめなかった。";
+/* カード1の締め(月の形で出し分け。日数ベース判定) */
+"You were out at sea all month." = "ひと月まるごと、海に出ていた。";
+"You sailed almost every day." = "ほとんど毎日、航海に出た。";
+"You set sail, even once. That's enough." = "一度でも、海に出た。それでいい。";
+"Away for a long stretch — and back again." = "長く離れても、戻ってきた。";
+"You drifted off many times, and returned each time." = "何度も離れて、何度も戻ってきた。";
+"Days of study, days of rest — both were this month." = "学ぶ日も、休む日も。どちらもこの月。";
+"Even after resting, you're still here." = "休んでも、あなたはここにいる。";
 
 /* Wrapped カード2(空白の物語) */
 "Your longest gap" = "いちばん長い空白";
-"%@–%@, you fell silent." = "%@〜%@、あなたは沈黙した。";
-"And yet on %@, you came back." = "それでも %@、戻ってきた。";
+"%@–%@, you rested at harbor." = "%@〜%@、港で休んでいた。";
+"And on %@, you set sail again." = "そして %@、また海へ出た。";
 "%lld returns this month." = "この月、帰還は%lld回。";
 "No gap this month." = "この月、空白はなかった。";
 
@@ -114,15 +183,21 @@
 "Morning Calm" = "朝凪型";
 
 /* タイプ 決め台詞(1行目) */
-"Sink deep. Always return." = "深く沈み、必ず戻る。";
+"Sink for long, then rise again." = "深く沈んでも、また浮かび上がる。";
 "Quietly, surely, you build." = "静かに、確実に、積む。";
 "You have your own tide." = "あなたには、あなたの潮がある。";
 "When you burn, you burn all at once." = "燃えるときは、一気に。";
 "No noise, no rush, no break." = "騒がず、焦らず、途切れず。";
 
 /* タイプ 添え書き(2行目) */
-"The length of the gap is nothing to you." = "空白の長さは、あなたには関係がない。";
+"However long the gap, you begin again." = "空白がどれだけ長くても、また始められる。";
 "No flourish needed. What you stack remains." = "派手さはいらない。積んだものが残る。";
 "Some days ebb so others can flow." = "引く日があるから、満ちる日がある。";
 "The stillness is only your next approach." = "静けさは、次の助走にすぎない。";
 "That calm is your greatest strength." = "その静けさが、いちばん強い。";
+
+/* 通知(そっと戻れる) */
+"Notifications" = "通知";
+"Gentle reminder" = "そっと戻れる通知";
+"A quiet nudge, never a nag. If you already showed up today, it stays silent." = "煽らない、そっとした声かけ。今日もう寄っていたら、黙っています。";
+"Time" = "時刻";

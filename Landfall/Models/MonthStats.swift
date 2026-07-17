@@ -29,16 +29,23 @@ enum MonthStats {
     // MARK: - WrappedMonth 生成
 
     /// 記録からWrappedMonthを組み立てる(タイプ診断込み)。
+    /// sessions を渡すと、その月の合計学習時間(分)も算出してカードに添える。
     static func wrappedMonth(
-        year: Int, month: Int, entries: [StudyDay], calendar: Calendar = .current
+        year: Int, month: Int, entries: [StudyDay],
+        sessions: [StudySession] = [], calendar: Calendar = .current
     ) -> WrappedMonth {
         let studied = studiedDaySet(year: year, month: month, entries: entries, calendar: calendar)
+        let minutes = sessions.reduce(0) { sum, session in
+            let comps = calendar.dateComponents([.year, .month], from: session.date)
+            return (comps.year == year && comps.month == month) ? sum + session.minutes : sum
+        }
         return WrappedMonth(
             year: year,
             month: month,
             daysInMonth: daysInMonth(year: year, month: month, calendar: calendar),
             studiedDays: studied,
-            archetype: diagnose(year: year, month: month, studiedDays: studied, calendar: calendar)
+            archetype: diagnose(year: year, month: month, studiedDays: studied, calendar: calendar),
+            totalMinutes: minutes
         )
     }
 
@@ -101,6 +108,36 @@ enum MonthStats {
     }
 
     // MARK: - Wrapped 利用可能月
+
+    /// 航海誌を閲覧できる月(振り返り用の保存庫)。記録が1日以上ある月Mについて、
+    /// today が「Mの最終日」以上なら閲覧可能。過去分は無期限に残る。新しい順。
+    static func completedWrappedMonths(
+        entries: [StudyDay], today: Date, calendar: Calendar = .current
+    ) -> [YearMonth] {
+        let todayDay = calendar.startOfDay(for: today)
+
+        var recordedMonths: Set<YearMonth> = []
+        for entry in entries {
+            let comps = calendar.dateComponents([.year, .month], from: entry.date)
+            if let y = comps.year, let m = comps.month {
+                recordedMonths.insert(YearMonth(year: y, month: m))
+            }
+        }
+
+        var result: [YearMonth] = []
+        for ym in recordedMonths {
+            guard
+                let monthStart = calendar.date(from: DateComponents(year: ym.year, month: ym.month, day: 1)),
+                let lastDay = lastDayOfMonth(containing: monthStart, calendar: calendar)
+            else { continue }
+            if todayDay >= lastDay {
+                result.append(ym)
+            }
+        }
+        return result.sorted {
+            $0.year != $1.year ? $0.year > $1.year : $0.month > $1.month
+        }
+    }
 
     /// Wrappedを生成できる月。記録が1日以上ある月Mについて、
     /// today が「Mの最終日」以上かつ「M+1月の末日」以下のとき利用可能。新しい順。

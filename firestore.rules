@@ -1,0 +1,54 @@
+rules_version = '2';
+
+// Landfall Firestore セキュリティルール。
+// 方針:
+//  - users/{uid}/** … 本人だけが読み書きできる私的バックアップ。
+//  - rooms/{code}   … 招待コード(=ドキュメントID)を知る者が入れる友人向けの港。
+//                      コードそのものが合鍵。中身は港名とメンバー一覧のみ。
+//  - members/…      … 同じ港のメンバー同士だけが互いのカード・記録を読める。
+//                      書き込めるのは本人だけ。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 私的バックアップ: 本人のみ
+    match /users/{userId}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 港(ルーム)
+    match /rooms/{roomId} {
+      // コードを知っていれば存在確認・参加のために読める(サインイン必須)。
+      allow read: if request.auth != null;
+
+      // 作成: 自分だけをメンバーに入れて作る。
+      allow create: if request.auth != null
+        && request.resource.data.memberIds is list
+        && request.auth.uid in request.resource.data.memberIds;
+
+      // 更新: 参加(自分を加える) または 退出(元メンバーが自分を外す)。
+      allow update: if request.auth != null
+        && ( request.auth.uid in request.resource.data.memberIds
+          || request.auth.uid in resource.data.memberIds );
+
+      // 港ドキュメント自体の削除は不可。
+      allow delete: if false;
+
+      function isMember() {
+        return request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.memberIds;
+      }
+
+      // メンバーのプレイヤーカード
+      match /members/{memberId} {
+        allow read: if isMember();
+        allow write: if request.auth != null && request.auth.uid == memberId;
+
+        // 月ごとの共有記録
+        match /months/{monthId} {
+          allow read: if isMember();
+          allow write: if request.auth != null && request.auth.uid == memberId;
+        }
+      }
+    }
+  }
+}

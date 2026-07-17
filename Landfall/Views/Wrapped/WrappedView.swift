@@ -5,6 +5,7 @@ import SwiftData
 /// 縦スワイプのページングで1枚ずつめくり、各カードの下から共有できる。
 struct WrappedView: View {
     @Query(sort: \StudyDay.date) private var entries: [StudyDay]
+    @Query private var sessions: [StudySession]
     @Environment(\.scenePhase) private var scenePhase
 
     /// ユーザーが明示的に選んだ月。nilなら最新月。
@@ -17,7 +18,7 @@ struct WrappedView: View {
     @State private var today = Date()
 
     private var availableMonths: [YearMonth] {
-        MonthStats.availableWrappedMonths(entries: entries, today: today)
+        MonthStats.completedWrappedMonths(entries: entries, today: today)
     }
 
     /// 選択が失効していたら最新月に戻す。
@@ -44,7 +45,7 @@ struct WrappedView: View {
 
     private var emptyState: some View {
         VStack(spacing: 12) {
-            Text("Your first Wrapped arrives at month's end.")
+            Text("Your first Logbook arrives at month's end.")
                 .font(LFFont.copy(20))
                 .foregroundStyle(LFColor.ink)
             Text("At month's end, the whole month becomes one page.")
@@ -59,7 +60,7 @@ struct WrappedView: View {
 
     private func wrappedPager(for yearMonth: YearMonth) -> some View {
         let wrapped = MonthStats.wrappedMonth(
-            year: yearMonth.year, month: yearMonth.month, entries: entries
+            year: yearMonth.year, month: yearMonth.month, entries: entries, sessions: sessions
         )
 
         return VStack(spacing: 0) {
@@ -157,12 +158,17 @@ struct WrappedView: View {
 
     @ViewBuilder
     private func card(index: Int, month: WrappedMonth) -> some View {
-        switch index {
-        case 0: WrappedCard1Fact(month: month)
-        case 1: WrappedCard2Silence(month: month)
-        case 2: WrappedCard3Archetype(month: month)
-        default: WrappedCard4Trace(month: month)
+        Group {
+            switch index {
+            case 0: WrappedCard1Fact(month: month)
+            case 1: WrappedCard2Silence(month: month)
+            case 2: WrappedCard3Archetype(month: month)
+            default: WrappedCard4Trace(month: month)
+            }
         }
+        // 航海誌カードは固定デザインの「絵はがき」。端末のダーク設定に関わらず常にライトで描き、
+        // 画面表示と共有画像の見た目を一致させる(ink/paper が反転しないようにする)。
+        .environment(\.colorScheme, .light)
     }
 
     // MARK: - 共有画像(表示したページから遅延生成)
@@ -179,7 +185,7 @@ struct WrappedView: View {
         let key = cacheKey(yearMonth, cardIndex: index)
         guard imageCache[key] == nil else { return }
         let month = MonthStats.wrappedMonth(
-            year: yearMonth.year, month: yearMonth.month, entries: entries
+            year: yearMonth.year, month: yearMonth.month, entries: entries, sessions: sessions
         )
         imageCache[key] = WrappedShare.render(
             card: card(index: index, month: month),

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Wrappedカード2「空白の物語」。
-/// いちばん長い空白の長さと期間を大きく示し、それでも戻ってきた事実で締める。
+/// いちばん長い空白の長さと期間を大きく示し、港で休み、また海へ出た事実で締める。
 struct WrappedCard2Silence: View {
     let month: WrappedMonth
 
@@ -22,14 +22,14 @@ struct WrappedCard2Silence: View {
 
                     Spacer()
 
-                    Text("\(month.shortDate(gap.startDay))–\(month.shortDate(gap.endDay)), you fell silent.")
+                    Text("\(month.shortDate(gap.startDay))–\(month.shortDate(gap.endDay)), you rested at harbor.")
                         .font(LFFont.copy(19))
                         .foregroundStyle(LFColor.deepRust)
 
                     Spacer()
 
                     ReturnBox(
-                        returnLine: "And yet on \(month.shortDate(gap.endDay + 1)), you came back.",
+                        returnLine: "And on \(month.shortDate(gap.endDay + 1)), you set sail again.",
                         countLine: "\(month.resumeCount) returns this month."
                     )
                 } else {

@@ -5,17 +5,26 @@ import SwiftData
 /// 動作確認専用のサンプル投入。Releaseビルドには含まれない(#if DEBUG)。
 /// 環境変数 LANDFALL_SEED を渡したときだけ実行する。本番の起動経路には一切影響しない。
 enum DebugSeed {
+    /// 1プロセスにつき一度だけ投入する。App の init が複数回走っても重複を作らない。
+    private static var didSeed = false
+
+    /// UI が読むのと同じ mainContext に投入するため MainActor で実行する。
+    /// 別コンテキストだと mainContext が削除を認識せず、autosave で項目が復活して重複する。
+    @MainActor
     static func seedIfRequested(into container: ModelContainer) {
         guard ProcessInfo.processInfo.environment["LANDFALL_SEED"] != nil else { return }
+        guard !didSeed else { return }
+        didSeed = true
 
-        let context = ModelContext(container)
+        let context = container.mainContext
         let calendar = Calendar.current
         let today = Date()
 
-        // 既存を消してから決定的に入れ直す(何度起動しても同じ状態になる)。
-        try? context.delete(model: StudySession.self)
-        try? context.delete(model: StudyItem.self)
-        try? context.delete(model: StudyDay.self)
+        // ストアは投入前に makeContainer 側で消去済み。念のため残っていれば消してから入れる。
+        for session in (try? context.fetch(FetchDescriptor<StudySession>())) ?? [] { context.delete(session) }
+        for day in (try? context.fetch(FetchDescriptor<StudyDay>())) ?? [] { context.delete(day) }
+        for item in (try? context.fetch(FetchDescriptor<StudyItem>())) ?? [] { context.delete(item) }
+        try? context.save()
 
         // ストア用スクリーンショットは英語/日本語ロケール両方で撮るため、項目名・メモも実行時ロケールに合わせる。
         let isJapanese = Locale.preferredLanguages.first?.hasPrefix("ja") ?? false

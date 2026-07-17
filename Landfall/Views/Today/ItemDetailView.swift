@@ -60,6 +60,16 @@ struct ItemDetailView: View {
                     .foregroundStyle(LFColor.ink)
                 }
             }
+            // 項目の編集・削除への直接の入口。記録シートの奥に埋もれていたのを表に出す。
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    editing = true
+                } label: {
+                    Text("Edit")
+                        .font(LFFont.label(16))
+                        .foregroundStyle(LFColor.ink)
+                }
+            }
         }
         .toolbarBackground(LFColor.paper, for: .navigationBar)
         .sheet(isPresented: $recording) {
@@ -71,6 +81,13 @@ struct ItemDetailView: View {
         }
         .sheet(isPresented: $editing) {
             ItemEditorSheet(existing: item, onDeleted: { dismiss() })
+        }
+        .onAppear {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["LANDFALL_RECORD"] != nil {
+                recording = true
+            }
+            #endif
         }
     }
 
@@ -117,7 +134,7 @@ struct ItemDetailView: View {
         Button {
             recording = true
         } label: {
-            Text("Log")
+            Text("Set sail")
                 .font(LFFont.copy(18))
                 .foregroundStyle(LFColor.paper)
                 .frame(maxWidth: .infinity)
@@ -138,7 +155,7 @@ struct ItemDetailView: View {
             .foregroundStyle(LFColor.ink.opacity(0.5))
 
         if sessions.isEmpty {
-            Text("Nothing logged yet. Make your first mark.")
+            Text("No voyages yet. Set sail for the first time.")
                 .font(LFFont.copy(16))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
                 .padding(.top, 16)

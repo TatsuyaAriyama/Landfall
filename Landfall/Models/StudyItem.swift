@@ -16,6 +16,8 @@ final class StudyItem {
     /// グリッド上の並び順(ドラッグで並べ替え)。
     var sortOrder: Int
     var createdAt: Date
+    /// 端末間の競合解決(Last-Write-Wins)に使う最終更新時刻。既定値で軽量マイグレーション可。
+    var updatedAt: Date = Date.distantPast
 
     @Relationship(deleteRule: .cascade, inverse: \StudySession.item)
     var sessions: [StudySession] = []
@@ -35,6 +37,7 @@ final class StudyItem {
         self.photoData = photoData
         self.sortOrder = sortOrder
         self.createdAt = createdAt
+        self.updatedAt = Date()
     }
 }
 
@@ -42,17 +45,24 @@ final class StudyItem {
 /// 記録された日は StudyDay として「学んだ日」に刻まれる(日ベースの土台はそのまま)。
 @Model
 final class StudySession {
+    /// 端末をまたいだ同期(Firestore)で使う安定ID。
+    /// 既定値を持たせ、uuidを持たない旧バージョンのストアからも軽量マイグレーションできるようにする。
+    var uuid: UUID = UUID()
     /// 作業の開始日時。日への帰属はこの日付で決まる。
     var date: Date
     var minutes: Int
     var note: String?
     var item: StudyItem?
+    /// 端末間の競合解決(Last-Write-Wins)に使う最終更新時刻。
+    var updatedAt: Date = Date.distantPast
 
     init(date: Date, minutes: Int, note: String? = nil, item: StudyItem? = nil) {
+        self.uuid = UUID()
         self.date = date
         self.minutes = minutes
         self.note = note
         self.item = item
+        self.updatedAt = Date()
     }
 }
 
@@ -66,8 +76,20 @@ enum StudyDayStore {
         descriptor.fetchLimit = 1
         let existing = (try? context.fetch(descriptor)) ?? []
         if existing.isEmpty {
-            context.insert(StudyDay(date: dayStart))
+            let day = StudyDay(date: dayStart)
+            context.insert(day)
+            Task { @MainActor in SyncService.shared.push(day) }
         }
+    }
+
+    /// 今日すでに「学んだ日」の刻印があるか。通知のスケジュールで使う。
+    static func recordedToday(context: ModelContext) -> Bool {
+        let dayStart = Calendar.current.startOfDay(for: Date())
+        var descriptor = FetchDescriptor<StudyDay>(
+            predicate: #Predicate { $0.date == dayStart }
+        )
+        descriptor.fetchLimit = 1
+        return !((try? context.fetch(descriptor)) ?? []).isEmpty
     }
 
     /// その日のセッションが全て消えたら「学んだ日」の刻印も外す。
@@ -90,5 +112,6 @@ enum StudyDayStore {
         for day in (try? context.fetch(dayDescriptor)) ?? [] {
             context.delete(day)
         }
+        Task { @MainActor in SyncService.shared.deleteDay(dayStart) }
     }
 }

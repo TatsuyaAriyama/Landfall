@@ -11,12 +11,34 @@ struct TraceView: View {
     var calendar: Calendar = .current
     /// 「今日」。日跨ぎ・月跨ぎに追従できるよう State に持ち、前景復帰と日付変化で更新する。
     @State private var today = Date()
+    /// 表示中の月のオフセット(0=当月、-1=先月...)。過去の軌跡を辿れる。
+    @State private var monthOffset = 0
     @State private var path = NavigationPath()
 
+    private var displayedDate: Date {
+        calendar.date(byAdding: .month, value: monthOffset, to: today) ?? today
+    }
+
     private var yearMonth: (year: Int, month: Int) {
-        let comps = calendar.dateComponents([.year, .month], from: today)
+        let comps = calendar.dateComponents([.year, .month], from: displayedDate)
         return (comps.year ?? 2026, comps.month ?? 1)
     }
+
+    /// 記録がある最古の月。これより前へは戻さない。
+    private var earliestRecordedYearMonth: YearMonth? {
+        guard let minDate = entries.map(\.date).min() else { return nil }
+        let c = calendar.dateComponents([.year, .month], from: minDate)
+        guard let y = c.year, let m = c.month else { return nil }
+        return YearMonth(year: y, month: m)
+    }
+
+    private var canGoBack: Bool {
+        guard let earliest = earliestRecordedYearMonth else { return false }
+        return yearMonth.year * 12 + yearMonth.month > earliest.year * 12 + earliest.month
+    }
+
+    /// 当月より先(未来)へは進めない。
+    private var canGoForward: Bool { monthOffset < 0 }
 
     private var month: WrappedMonth {
         MonthStats.wrappedMonth(year: yearMonth.year, month: yearMonth.month, entries: entries, calendar: calendar)
@@ -28,7 +50,7 @@ struct TraceView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    CardKicker(text: "Trace of \(LF.monthName(year: month.year, month: month.month))", color: LFColor.ink.opacity(0.55))
+                    monthHeader(for: month)
                         .padding(.top, 8)
 
                     waveform(for: month)
@@ -49,6 +71,9 @@ struct TraceView: View {
         }
         .onAppear {
             #if DEBUG
+            if let raw = ProcessInfo.processInfo.environment["LANDFALL_MONTH_OFFSET"], let o = Int(raw) {
+                monthOffset = o
+            }
             if ProcessInfo.processInfo.environment["LANDFALL_DAY"] != nil,
                let first = recordedDays().first {
                 path.append(DayKey(date: first.day))
@@ -61,6 +86,36 @@ struct TraceView: View {
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
             today = Date()
         }
+    }
+
+    // MARK: - 月ヘッダー(前後の月へ)
+
+    private func monthHeader(for month: WrappedMonth) -> some View {
+        HStack(spacing: 10) {
+            navButton(system: "chevron.left", enabled: canGoBack) {
+                if canGoBack { monthOffset -= 1 }
+            }
+            CardKicker(
+                text: "Trace of \(LF.monthName(year: month.year, month: month.month))",
+                color: LFColor.ink.opacity(0.55)
+            )
+            navButton(system: "chevron.right", enabled: canGoForward) {
+                if canGoForward { monthOffset += 1 }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func navButton(system: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: system)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(LFColor.ink.opacity(enabled ? 0.7 : 0.18))
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
     }
 
     // MARK: - 波形

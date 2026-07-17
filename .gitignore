@@ -12,3 +12,6 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+# Firebase client config (obtain from Firebase console; required to build)
+GoogleService-Info.plist

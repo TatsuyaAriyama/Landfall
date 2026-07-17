@@ -139,6 +139,9 @@ struct TodayView: View {
             item.sortOrder = index
         }
         try? modelContext.save()
+        for item in reordered {
+            SyncService.shared.push(item)
+        }
         return true
     }
 

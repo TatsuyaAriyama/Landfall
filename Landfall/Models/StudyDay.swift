@@ -6,9 +6,12 @@ import SwiftData
 final class StudyDay {
     @Attribute(.unique) var date: Date
     var note: String?
+    /// 端末間の競合解決(Last-Write-Wins)に使う最終更新時刻。
+    var updatedAt: Date = Date.distantPast
 
     init(date: Date, note: String? = nil) {
         self.date = Calendar.current.startOfDay(for: date)
         self.note = note
+        self.updatedAt = Date()
     }
 }

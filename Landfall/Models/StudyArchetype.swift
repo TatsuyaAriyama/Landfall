@@ -22,7 +22,7 @@ enum StudyArchetype: String, CaseIterable, Codable {
     /// 決め台詞(1行目)。
     var tagline: LocalizedStringKey {
         switch self {
-        case .phoenix: "Sink deep. Always return."
+        case .phoenix: "Sink for long, then rise again."
         case .stoneBridge: "Quietly, surely, you build."
         case .waveRider: "You have your own tide."
         case .comet: "When you burn, you burn all at once."
@@ -33,7 +33,7 @@ enum StudyArchetype: String, CaseIterable, Codable {
     /// 添え書き(2行目)。決め台詞を受けて断言で締める。
     var subline: LocalizedStringKey {
         switch self {
-        case .phoenix: "The length of the gap is nothing to you."
+        case .phoenix: "However long the gap, you begin again."
         case .stoneBridge: "No flourish needed. What you stack remains."
         case .waveRider: "Some days ebb so others can flow."
         case .comet: "The stillness is only your next approach."

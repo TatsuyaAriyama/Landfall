@@ -15,7 +15,7 @@ struct ItemEditorSheet: View {
 
     @State private var name = ""
     @State private var style: TileStyle = .midnight
-    @State private var symbol: TileSymbol = .book
+    @State private var symbol: TileSymbol = .compass
     @State private var photoData: Data?
     @State private var pickerItem: PhotosPickerItem?
     @State private var confirmingDelete = false
@@ -43,9 +43,16 @@ struct ItemEditorSheet: View {
                     .frame(height: 52)
                     .background(
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
+                            .stroke(isDuplicateName ? LFColor.deepRust.opacity(0.6) : LFColor.ink.opacity(0.2), lineWidth: 1)
                     )
                     .padding(.top, 24)
+
+                if isDuplicateName {
+                    Text("An item with this name already exists.")
+                        .font(LFFont.label(13))
+                        .foregroundStyle(LFColor.deepRust)
+                        .padding(.top, 8)
+                }
 
                 photoSection
                     .padding(.top, 24)
@@ -92,7 +99,7 @@ struct ItemEditorSheet: View {
             Button("Delete", role: .destructive, action: deleteItem)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Deleting this item removes its records. Your logged days (Trace, Wrapped) stay.")
+            Text("Deleting this item removes its records. Your logged days (Trace, Logbook) stay.")
         }
     }
 
@@ -179,29 +186,32 @@ struct ItemEditorSheet: View {
     }
 
     private var symbolRow: some View {
-        HStack(spacing: 12) {
-            ForEach(TileSymbol.allCases) { candidate in
-                Button {
-                    symbol = candidate
-                } label: {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(style.background)
-                        TileSymbolView(symbol: candidate, fg: style.foreground, bg: style.background)
-                            .frame(width: 26, height: 26)
+        // 数が増えたので横スクロール。
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(TileSymbol.allCases) { candidate in
+                    Button {
+                        symbol = candidate
+                    } label: {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(style.background)
+                            TileSymbolView(symbol: candidate, fg: style.foreground, bg: style.background)
+                                .frame(width: 26, height: 26)
+                        }
+                        .frame(width: 40, height: 40)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(
+                                    symbol == candidate ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
+                                    lineWidth: symbol == candidate ? 3 : 1
+                                )
+                        )
                     }
-                    .frame(width: 40, height: 40)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(
-                                symbol == candidate ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
-                                lineWidth: symbol == candidate ? 3 : 1
-                            )
-                    )
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
-            Spacer(minLength: 0)
+            .padding(.vertical, 4)
         }
     }
 
@@ -209,20 +219,32 @@ struct ItemEditorSheet: View {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 他の項目(自分自身は除く)と大小文字・前後空白を無視して同名かどうか。
+    private var isDuplicateName: Bool {
+        guard !trimmedName.isEmpty else { return false }
+        return items.contains { other in
+            other.persistentModelID != existing?.persistentModelID
+                && other.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .caseInsensitiveCompare(trimmedName) == .orderedSame
+        }
+    }
+
+    private var saveDisabled: Bool { trimmedName.isEmpty || isDuplicateName }
+
     private var saveButton: some View {
         Button {
             save()
         } label: {
             Text(existing == nil ? "Add this item" : "Save changes")
                 .font(LFFont.copy(18))
-                .foregroundStyle(trimmedName.isEmpty ? LFColor.paper.opacity(0.6) : LFColor.paper)
+                .foregroundStyle(saveDisabled ? LFColor.paper.opacity(0.6) : LFColor.paper)
                 .frame(maxWidth: .infinity)
                 .frame(height: 64)
-                .background(trimmedName.isEmpty ? LFColor.ink.opacity(0.3) : LFColor.ink)
+                .background(saveDisabled ? LFColor.ink.opacity(0.3) : LFColor.ink)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(trimmedName.isEmpty)
+        .disabled(saveDisabled)
     }
 
     private var deleteButton: some View {
@@ -248,24 +270,27 @@ struct ItemEditorSheet: View {
     }
 
     private func save() {
-        guard !trimmedName.isEmpty else { return }
+        guard !saveDisabled else { return }
+        let saved: StudyItem
         if let existing {
             existing.name = trimmedName
             existing.styleToken = style.rawValue
             existing.symbolToken = symbol.rawValue
             existing.photoData = photoData
+            saved = existing
         } else {
-            modelContext.insert(
-                StudyItem(
-                    name: trimmedName,
-                    styleToken: style.rawValue,
-                    symbolToken: symbol.rawValue,
-                    photoData: photoData,
-                    sortOrder: (items.map(\.sortOrder).max() ?? -1) + 1
-                )
+            let item = StudyItem(
+                name: trimmedName,
+                styleToken: style.rawValue,
+                symbolToken: symbol.rawValue,
+                photoData: photoData,
+                sortOrder: (items.map(\.sortOrder).max() ?? -1) + 1
             )
+            modelContext.insert(item)
+            saved = item
         }
         try? modelContext.save()
+        SyncService.shared.push(saved)
         dismiss()
     }
 
@@ -276,6 +301,7 @@ struct ItemEditorSheet: View {
             UserDefaults.standard.set(0, forKey: StudyTimer.startKey)
             UserDefaults.standard.set("", forKey: StudyTimer.itemKey)
         }
+        SyncService.shared.delete(existing)
         modelContext.delete(existing)
         try? modelContext.save()
         dismiss()

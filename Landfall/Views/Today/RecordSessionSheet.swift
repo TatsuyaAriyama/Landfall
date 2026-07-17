@@ -5,6 +5,8 @@ import SwiftData
 enum StudyTimer {
     static let startKey = "landfall.timer.start"
     static let itemKey = "landfall.timer.item"
+    /// これを超える航海は「閉じ忘れ」の可能性が高いので、着岸時に確認する。
+    static let longSessionMinutes = 8 * 60
 }
 
 /// 項目をタップして開く記録シート。タイマー計測か手入力で時間を決め、ひとことを添えて刻む。
@@ -24,6 +26,11 @@ struct RecordSessionSheet: View {
 
     @State private var minutes = 0
     @State private var note = ""
+    /// 記録する日時。既定は今。過去日の後追い記録(バックフィル)に使う。
+    @State private var recordDate = Date()
+    /// 閉じ忘れ疑いの長時間航海を着岸するときの確認。
+    @State private var confirmingLong = false
+    @State private var pendingMinutes = 0
     @FocusState private var noteFocused: Bool
 
     private var timerRunningHere: Bool {
@@ -66,6 +73,27 @@ struct RecordSessionSheet: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(LFColor.paper)
         .presentationDetents([.large])
+        .alert("A long voyage", isPresented: $confirmingLong) {
+            Button("Log the whole time") {
+                clearTimer()
+                save(minutes: pendingMinutes, date: Date())
+            }
+            Button("Pick the length instead") {
+                clearTimer()
+                minutes = 0   // 手入力モードに切り替え、長さを選び直せる。
+            }
+            Button("Keep sailing", role: .cancel) { }   // タイマーは残す。
+        } message: {
+            Text("You've been under sail for \(LF.duration(minutes: pendingMinutes)). Did you forget to make landfall? Log this whole time?")
+        }
+        .onAppear {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["LANDFALL_CONFIRM_LONG"] == "1" {
+                pendingMinutes = 613   // 10時間13分
+                confirmingLong = true
+            }
+            #endif
+        }
     }
 
     // MARK: - ヘッダー(タイル+名前+編集)
@@ -103,7 +131,7 @@ struct RecordSessionSheet: View {
                     Button {
                         stopTimerAndSave()
                     } label: {
-                        Text("Stop & log")
+                        Text("Make landfall")
                             .font(LFFont.copy(17))
                             .foregroundStyle(LFColor.paper)
                             .frame(maxWidth: .infinity)
@@ -129,7 +157,7 @@ struct RecordSessionSheet: View {
                 }
             }
         } else if timerRunningElsewhere {
-            Text("Timer running on another item.")
+            Text("Under sail on another item.")
                 .font(LFFont.label(15))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
         } else {
@@ -137,8 +165,11 @@ struct RecordSessionSheet: View {
                 timerStart = Date().timeIntervalSince1970
                 timerItemID = item.uuid.uuidString
                 dismiss()
+                Haptics.tap(.medium)
+                // 出航の瞬間: 帆船が海へ漕ぎ出す。
+                SailAnimator.shared.play(.departure)
             } label: {
-                Text("Start timer")
+                Text("Set sail")
                     .font(LFFont.copy(17))
                     .foregroundStyle(LFColor.ink)
                     .frame(maxWidth: .infinity)
@@ -156,7 +187,23 @@ struct RecordSessionSheet: View {
 
     private var manualSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Or pick a length")
+            // 記録する日(既定は今日)。過去日も選べる=後からつけられる。
+            HStack {
+                Text("Date")
+                    .font(LFFont.label(13))
+                    .foregroundStyle(LFColor.ink.opacity(0.5))
+                Spacer()
+                DatePicker(
+                    "",
+                    selection: $recordDate,
+                    in: ...Date(),
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+                .labelsHidden()
+                .tint(LFColor.ink)
+            }
+
+            Text("Or pick a voyage length")
                 .font(LFFont.label(13))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
             HStack(spacing: 10) {
@@ -198,9 +245,9 @@ struct RecordSessionSheet: View {
 
     private var saveButton: some View {
         Button {
-            save(minutes: minutes)
+            save(minutes: minutes, date: recordDate)
         } label: {
-            Text("Log this")
+            Text("Log this voyage")
                 .font(LFFont.copy(18))
                 .foregroundStyle(minutes > 0 ? LFColor.paper : LFColor.paper.opacity(0.6))
                 .frame(maxWidth: .infinity)
@@ -220,8 +267,15 @@ struct RecordSessionSheet: View {
     private func stopTimerAndSave() {
         let elapsed = Date().timeIntervalSince1970 - timerStart
         let measured = max(1, Int((elapsed / 60).rounded()))
+        // 閉じ忘れ疑いの長時間は、そのまま巨大記録にせず確認する(タイマーは残したまま)。
+        if measured >= StudyTimer.longSessionMinutes {
+            pendingMinutes = measured
+            confirmingLong = true
+            return
+        }
         clearTimer()
-        save(minutes: measured)
+        // タイマーは「今」終えた記録なので現在時刻で刻む(バックフィルの日付は使わない)。
+        save(minutes: measured, date: Date())
     }
 
     private func clearTimer() {
@@ -229,20 +283,31 @@ struct RecordSessionSheet: View {
         timerItemID = ""
     }
 
-    private func save(minutes: Int) {
+    private func save(minutes: Int, date: Date) {
         guard minutes > 0 else { return }
         noteFocused = false
-        let now = Date()
+        let isToday = Calendar.current.isDateInToday(date)
+        // 空白明け(おかえり)判定は「今日つけたとき」だけ。過去日の後追い記録では出さない。
         // 保存の前に空白日数を測る(保存後だと最終記録日=今日になってしまう)。
-        let blanks = MonthStats.blankDays(since: days.first?.date, to: now)
+        let blanks = isToday ? MonthStats.blankDays(since: days.first?.date, to: date) : nil
 
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        modelContext.insert(
-            StudySession(date: now, minutes: minutes, note: trimmed.isEmpty ? nil : trimmed, item: item)
-        )
-        StudyDayStore.markDay(now, context: modelContext)
+        let session = StudySession(date: date, minutes: minutes, note: trimmed.isEmpty ? nil : trimmed, item: item)
+        modelContext.insert(session)
+        StudyDayStore.markDay(date, context: modelContext)
         try? modelContext.save()
+        SyncService.shared.push(session)
+        RoomService.shared.publishCurrentMonth(context: modelContext)
+        WidgetBridge.refresh(context: modelContext)
+        // 今日つけたなら、今日のそっと通知は取り下げる(来た人はつつかない)。
+        let recorded = StudyDayStore.recordedToday(context: modelContext)
+        Task { await NotificationService.reschedule(recordedToday: recorded) }
         dismiss()
+        Haptics.success()
+        // 着岸アニメと「おかえり」は今日つけたときだけ。過去の後追いは静かに保存する。
+        if isToday, (blanks ?? 0) < 2 {
+            SailAnimator.shared.play(.arrival)
+        }
         onSaved(blanks)
     }
 }

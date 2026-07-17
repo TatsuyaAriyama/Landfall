@@ -6,9 +6,63 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1A0000101A0000101A000010 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000151A0000151A000015 /* FirebaseCore */; };
+		1A0000111A0000111A000011 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000161A0000161A000016 /* FirebaseAuth */; };
+		1A0000121A0000121A000012 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000171A0000171A000017 /* FirebaseFirestore */; };
+		1A0000131A0000131A000013 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000181A0000181A000018 /* GoogleSignIn */; };
+		1A0000141A0000141A000014 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000191A0000191A000019 /* GoogleSignInSwift */; };
+		8C5F799B29E371BE9DF4EF4A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83D091F7808839D2AAD83DA7 /* Foundation.framework */; };
+		AAB7F4C12963ECE37A7EC71A /* LandfallWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 390B82C03A4EDDF85ABEE205 /* LandfallWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AF4D1EF4ED836B22D527989B /* LandfallWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBBF0F136DA55F0239611EF4 /* LandfallWidget.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		45FB2D3EEA1863158D197EE9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1A00000A1A00000A1A00000A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EF7B54B6E3C34F361D0DC502;
+			remoteInfo = LandfallWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		3C17FCA65F68D3E7AFF30BCF /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AAB7F4C12963ECE37A7EC71A /* LandfallWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		390B82C03A4EDDF85ABEE205 /* LandfallWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LandfallWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		83D091F7808839D2AAD83DA7 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		EBBF0F136DA55F0239611EF4 /* LandfallWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LandfallWidget.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1A00001C1A00001C1A00001C /* Exceptions for "Landfall" folder in "Landfall" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 1A0000061A0000061A000006 /* Landfall */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1A0000011A0000011A000001 /* Landfall */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1A00001C1A00001C1A00001C /* Exceptions for "Landfall" folder in "Landfall" target */,
+			);
 			path = Landfall;
 			sourceTree = "<group>";
 		};
@@ -19,26 +73,65 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A0000101A0000101A000010 /* FirebaseCore in Frameworks */,
+				1A0000111A0000111A000011 /* FirebaseAuth in Frameworks */,
+				1A0000121A0000121A000012 /* FirebaseFirestore in Frameworks */,
+				1A0000131A0000131A000013 /* GoogleSignIn in Frameworks */,
+				1A0000141A0000141A000014 /* GoogleSignInSwift in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1EA95C2C0958D1D0CA0B86EE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8C5F799B29E371BE9DF4EF4A /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0400074E282333F590239451 /* LandfallWidget */ = {
+			isa = PBXGroup;
+			children = (
+				EBBF0F136DA55F0239611EF4 /* LandfallWidget.swift */,
+			);
+			path = LandfallWidget;
+			sourceTree = "<group>";
+		};
 		1A0000031A0000031A000003 = {
 			isa = PBXGroup;
 			children = (
 				1A0000011A0000011A000001 /* Landfall */,
 				1A0000041A0000041A000004 /* Products */,
+				F56AEC83DEDA72AF9133EB9A /* Frameworks */,
+				0400074E282333F590239451 /* LandfallWidget */,
 			);
 			sourceTree = "<group>";
 		};
 		1A0000041A0000041A000004 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				1A0000051A0000051A000005 /* Landfall.app */,
+				390B82C03A4EDDF85ABEE205 /* LandfallWidget.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		F56AEC83DEDA72AF9133EB9A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				FE4E9C7D69FAFFBAF7499E3B /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		FE4E9C7D69FAFFBAF7499E3B /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				83D091F7808839D2AAD83DA7 /* Foundation.framework */,
+			);
+			name = iOS;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -51,20 +144,43 @@
 				1A0000081A0000081A000008 /* Sources */,
 				1A0000021A0000021A000002 /* Frameworks */,
 				1A0000091A0000091A000009 /* Resources */,
+				3C17FCA65F68D3E7AFF30BCF /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				2809EA8ABF0AFC3CEF54A162 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				1A0000011A0000011A000001 /* Landfall */,
 			);
 			name = Landfall;
 			packageProductDependencies = (
+				1A0000151A0000151A000015 /* FirebaseCore */,
+				1A0000161A0000161A000016 /* FirebaseAuth */,
+				1A0000171A0000171A000017 /* FirebaseFirestore */,
+				1A0000181A0000181A000018 /* GoogleSignIn */,
+				1A0000191A0000191A000019 /* GoogleSignInSwift */,
 			);
 			productName = Landfall;
-			productReference = 1A0000051A0000051A000005 /* Landfall.app */;
 			productType = "com.apple.product-type.application";
+		};
+		EF7B54B6E3C34F361D0DC502 /* LandfallWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B3C231B9F53BC93AE88CFC19 /* Build configuration list for PBXNativeTarget "LandfallWidget" */;
+			buildPhases = (
+				9AB127290A4218F1D1694E32 /* Sources */,
+				1EA95C2C0958D1D0CA0B86EE /* Frameworks */,
+				59BE92A5D9A07CB2ED3A65E2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LandfallWidget;
+			productName = LandfallWidget;
+			productReference = 390B82C03A4EDDF85ABEE205 /* LandfallWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -78,6 +194,13 @@
 				TargetAttributes = {
 					1A0000061A0000061A000006 = {
 						CreatedOnToolsVersion = 16.2;
+						DevelopmentTeam = SZ343VGXTL;
+						ProvisioningStyle = Automatic;
+					};
+					EF7B54B6E3C34F361D0DC502 = {
+						CreatedOnToolsVersion = 16.2;
+						DevelopmentTeam = SZ343VGXTL;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
@@ -91,18 +214,30 @@
 			);
 			mainGroup = 1A0000031A0000031A000003;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1A00001A1A00001A1A00001A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				1A00001B1A00001B1A00001B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1A0000041A0000041A000004 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				1A0000061A0000061A000006 /* Landfall */,
+				EF7B54B6E3C34F361D0DC502 /* LandfallWidget */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		1A0000091A0000091A000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		59BE92A5D9A07CB2ED3A65E2 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -119,7 +254,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9AB127290A4218F1D1694E32 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AF4D1EF4ED836B22D527989B /* LandfallWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2809EA8ABF0AFC3CEF54A162 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LandfallWidget;
+			target = EF7B54B6E3C34F361D0DC502 /* LandfallWidget */;
+			targetProxy = 45FB2D3EEA1863158D197EE9 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		1A00000C1A00000C1A00000C /* Debug */ = {
@@ -180,11 +332,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = Landfall/Landfall.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = SZ343VGXTL;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SZ343VGXTL;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Landfall/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -199,7 +353,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -208,11 +362,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = SZ343VGXTL;
+				CODE_SIGN_ENTITLEMENTS = Landfall/Landfall.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SZ343VGXTL;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Landfall/Info.plist;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -225,9 +382,69 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.tatsuyaariyama.Landfall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "Landfall App Store";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1";
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		49CADA152CEE961A7C15F499 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = LandfallWidget/LandfallWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SZ343VGXTL;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LandfallWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tatsuyaariyama.Landfall.LandfallWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EF3F21DEABACFC279074E928 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = LandfallWidget/LandfallWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = SZ343VGXTL;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = LandfallWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tatsuyaariyama.Landfall.LandfallWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -252,7 +469,63 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		B3C231B9F53BC93AE88CFC19 /* Build configuration list for PBXNativeTarget "LandfallWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EF3F21DEABACFC279074E928 /* Release */,
+				49CADA152CEE961A7C15F499 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1A00001A1A00001A1A00001A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
+		};
+		1A00001B1A00001B1A00001B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1A0000151A0000151A000015 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A00001A1A00001A1A00001A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		1A0000161A0000161A000016 /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A00001A1A00001A1A00001A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		1A0000171A0000171A000017 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A00001A1A00001A1A00001A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		1A0000181A0000181A000018 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A00001B1A00001B1A00001B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		1A0000191A0000191A000019 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A00001B1A00001B1A00001B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1A00000A1A00000A1A00000A /* Project object */;
 }

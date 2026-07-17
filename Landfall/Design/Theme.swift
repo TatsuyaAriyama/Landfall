@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 extension Color {
     init(hex: UInt) {
@@ -12,10 +13,20 @@ extension Color {
     }
 }
 
+private func adaptiveColor(light: UInt, dark: UInt) -> Color {
+    Color(uiColor: UIColor { trait in
+        UIColor(Color(hex: trait.userInterfaceStyle == .dark ? dark : light))
+    })
+}
+
 /// Landfall パレット。グラデーション・影は使わない。
+/// ink / paper は明暗に追従する意味色(地＝paper、文字/線＝ink)。ボタンは ink 地 + paper 文字で自然に反転する。
+/// ブランド色(harborTeal, coral, midnight, sunYellow ...)は固定。航海誌カードは固定デザインのため常にライトで描く。
 enum LFColor {
-    static let ink = Color(hex: 0x141414)          // カード1背景
-    static let paper = Color.white                 // カード4背景
+    static let ink = adaptiveColor(light: 0x141414, dark: 0xF4F1EC)     // 文字・線・濃地(暗所で反転)
+    static let paper = adaptiveColor(light: 0xFFFFFF, dark: 0x161412)   // 画面の地(暗所で暗く)
+    static let inkFixed = Color(hex: 0x141414)     // 反転しない固定の黒
+    static let tileInk = adaptiveColor(light: 0x141414, dark: 0x2C2A28)  // 黒タイル: 暗所では地から少し持ち上げて識別できるように
     static let sunYellow = Color(hex: 0xFFD84D)    // 学んだ日数
     static let seaGreen = Color(hex: 0x5DCAA5)     // 休んだ日数(学んだ日と同格)
     static let coral = Color(hex: 0xF0997B)        // カード2背景・空白バー
@@ -24,6 +35,31 @@ enum LFColor {
     static let lavender = Color(hex: 0xCECBF6)     // カード3決め台詞
     static let violet = Color(hex: 0x534AB7)       // カード3ピル枠線
     static let returnOrange = Color(hex: 0xF5822A) // 帰還マーカー
+    // アプリアイコン(Landfall図案)専用色
+    static let harborTeal = Color(hex: 0x184A40)   // Landfall アイコン背景(既定)
+    static let harborSand = Color(hex: 0xEADEBD)   // Landfall アイコン前景(帆と陸)
+    static let emberGold = Color(hex: 0xF3C065)    // Landfall 暖色版の前景
+}
+
+/// 外観(ライト/ダーク)。言語設定と同じく、端末設定に関わらずアプリ内で切り替えられる。
+enum AppTheme: String, CaseIterable, Identifiable {
+    case system, light, dark
+    static let storageKey = "appTheme"
+    var id: String { rawValue }
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+    var label: LocalizedStringKey {
+        switch self {
+        case .system: "System"
+        case .light: "Light"
+        case .dark: "Dark"
+        }
+    }
 }
 
 enum LFMetrics {
@@ -63,7 +99,7 @@ struct CardBrandmark: View {
     var color: Color
 
     var body: some View {
-        Text("Landfall")
+        Text(verbatim: "Landfall-StudyLog")
             .font(LFFont.label(13))
             .foregroundStyle(color.opacity(0.4))
     }

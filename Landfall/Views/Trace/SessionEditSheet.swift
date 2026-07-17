@@ -126,6 +126,8 @@ struct SessionEditSheet: View {
             let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
             session.note = trimmed.isEmpty ? nil : trimmed
             try? modelContext.save()
+            SyncService.shared.push(session)
+            WidgetBridge.refresh(context: modelContext)
             dismiss()
         } label: {
             Text("Save changes")
@@ -153,10 +155,14 @@ struct SessionEditSheet: View {
 
     private func deleteSession() {
         let date = session.date
+        SyncService.shared.delete(session)
         modelContext.delete(session)
         // その日の記録が全て消えたら「学んだ日」も外す。
         StudyDayStore.unmarkDayIfEmpty(date, context: modelContext)
         try? modelContext.save()
+        // 学んだ日が変わった可能性があるので、港の軌跡も更新する。
+        RoomService.shared.publishCurrentMonth(context: modelContext)
+        WidgetBridge.refresh(context: modelContext)
         dismiss()
     }
 }
