@@ -64,9 +64,8 @@ struct WrappedView: View {
         )
 
         return VStack(spacing: 0) {
-            if availableMonths.count > 1 {
-                monthMenu(current: yearMonth)
-            }
+            // 月ヘッダは常設。カード2・3には月名が無いため、どの月の航海誌かを常に上部で示す。
+            monthHeader(current: yearMonth)
 
             GeometryReader { geo in
                 // 共有ボタンとその間隔ぶんを差し引いて、カードが必ず収まる縮小率を出す。
@@ -100,6 +99,10 @@ struct WrappedView: View {
                 .scrollTargetBehavior(.paging)
                 .scrollPosition(id: $currentPage)
                 .scrollIndicators(.hidden)
+                // ページがスナップした瞬間だけ、静かな手応え(システムの触覚設定を尊重)。
+                .sensoryFeedback(.selection, trigger: currentPage)
+                // 4枚あることを示す縦インジケータ。縦めくりは非慣習的なので見つけやすさを補う。
+                .overlay(alignment: .trailing) { pageIndicator }
             }
         }
         .onAppear {
@@ -133,21 +136,56 @@ struct WrappedView: View {
 
     // MARK: - 月選択
 
-    private func monthMenu(current: YearMonth) -> some View {
-        Menu {
-            ForEach(availableMonths) { yearMonth in
-                Button(title(of: yearMonth)) {
-                    selectedMonth = yearMonth
+    @ViewBuilder
+    private func monthHeader(current: YearMonth) -> some View {
+        if availableMonths.count > 1 {
+            // 複数月あるときは選べる。押せると分かるよう chevron.down を添える。
+            Menu {
+                ForEach(availableMonths) { yearMonth in
+                    Button(title(of: yearMonth)) {
+                        selectedMonth = yearMonth
+                    }
                 }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(title(of: current))
+                        .font(LFFont.copy(17))
+                        .foregroundStyle(LFColor.ink)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(LFColor.ink.opacity(0.5))
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
             }
-        } label: {
+            .padding(.top, 8)
+            .accessibilityLabel(Text("Month"))
+            .accessibilityValue(Text(verbatim: title(of: current)))
+        } else {
+            // 1月ぶんだけなら、そのまま月名を示す(操作なし)。
             Text(title(of: current))
                 .font(LFFont.copy(17))
                 .foregroundStyle(LFColor.ink)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
+                .padding(.top, 8)
         }
-        .padding(.top, 8)
+    }
+
+    /// 縦4点のページインジケータ。現在ページだけ縦に伸ばして示す。
+    private var pageIndicator: some View {
+        VStack(spacing: 8) {
+            ForEach(0..<4, id: \.self) { index in
+                let active = (currentPage ?? 0) == index
+                Capsule(style: .continuous)
+                    .fill(LFColor.ink.opacity(active ? 0.8 : 0.22))
+                    .frame(width: 6, height: active ? 16 : 6)
+            }
+        }
+        .padding(.trailing, 6)
+        .animation(.easeInOut(duration: 0.2), value: currentPage)
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)   // 装飾。右端のスワイプめくりを妨げない。
     }
 
     private func title(of yearMonth: YearMonth) -> String {
@@ -169,6 +207,9 @@ struct WrappedView: View {
         // 航海誌カードは固定デザインの「絵はがき」。端末のダーク設定に関わらず常にライトで描き、
         // 画面表示と共有画像の見た目を一致させる(ink/paper が反転しないようにする)。
         .environment(\.colorScheme, .light)
+        // 固定寸法(390x693)の絵はがきなので、端末の文字サイズに関わらずレイアウトを一定に保つ。
+        // LFFont の *Fixed は .large 相当で焼き付けるため、共有部品もこのフラグで固定側を選ぶ。
+        .environment(\.lfFixedType, true)
     }
 
     // MARK: - 共有画像(表示したページから遅延生成)

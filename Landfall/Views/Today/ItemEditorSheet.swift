@@ -39,6 +39,7 @@ struct ItemEditorSheet: View {
                     .tint(LFColor.ink)
                     .focused($nameFocused)
                     .submitLabel(.done)
+                    .onSubmit { if !saveDisabled { save() } }
                     .padding(.horizontal, 18)
                     .frame(height: 52)
                     .background(
@@ -262,7 +263,11 @@ struct ItemEditorSheet: View {
     // MARK: - 動作
 
     private func load() {
-        guard let existing else { return }
+        guard let existing else {
+            // 新規追加は名前入力から始まる。開いた瞬間にキーボードを出して1タップ省く。
+            nameFocused = true
+            return
+        }
         name = existing.name
         style = TileStyle.from(existing.styleToken)
         symbol = TileSymbol.from(existing.symbolToken)
@@ -291,6 +296,7 @@ struct ItemEditorSheet: View {
         }
         try? modelContext.save()
         SyncService.shared.push(saved)
+        Haptics.success()
         dismiss()
     }
 

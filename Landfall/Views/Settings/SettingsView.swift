@@ -67,17 +67,20 @@ struct SettingsView: View {
 
                 notificationSection
 
-                sectionLabel("App Icon")
-                    .padding(.top, 36)
-                    .padding(.bottom, 18)
+                // 代替アイコン非対応の文脈では、押しても無反応な節を出さない。
+                if AppIconStore.isSupported {
+                    sectionLabel("App Icon")
+                        .padding(.top, 36)
+                        .padding(.bottom, 18)
 
-                LazyVGrid(
-                    columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)],
-                    alignment: .leading,
-                    spacing: 22
-                ) {
-                    ForEach(AppIconOption.allCases) { option in
-                        iconTile(option)
+                    LazyVGrid(
+                        columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)],
+                        alignment: .leading,
+                        spacing: 22
+                    ) {
+                        ForEach(AppIconOption.allCases) { option in
+                            iconTile(option)
+                        }
                     }
                 }
 
@@ -140,7 +143,7 @@ struct SettingsView: View {
 
             if notifyEnabled {
                 HStack {
-                    Text("Time")
+                    Text("Time of day")
                         .font(LFFont.copy(16))
                         .foregroundStyle(LFColor.ink)
                     Spacer(minLength: 0)
@@ -217,26 +220,30 @@ struct SettingsView: View {
     private func themePill(_ theme: AppTheme) -> some View {
         let selected = appTheme == theme.rawValue
         return Button {
+            Haptics.tap()
             appTheme = theme.rawValue
         } label: {
             Text(theme.label)
                 .font(LFFont.label(15))
                 .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 9)
+                .frame(minHeight: 44)
                 .background(selected ? LFColor.ink : Color.clear)
                 .overlay(
                     Capsule(style: .continuous)
                         .stroke(LFColor.ink.opacity(selected ? 0 : 0.25), lineWidth: 1)
                 )
                 .clipShape(Capsule(style: .continuous))
+                .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func languagePill(_ language: AppLanguage) -> some View {
         let selected = appLanguage == language.rawValue
         return Button {
+            Haptics.tap()
             appLanguage = language.rawValue
         } label: {
             Group {
@@ -249,15 +256,17 @@ struct SettingsView: View {
             .font(LFFont.label(15))
             .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
             .padding(.horizontal, 16)
-            .padding(.vertical, 9)
+            .frame(minHeight: 44)
             .background(selected ? LFColor.ink : Color.clear)
             .overlay(
                 Capsule(style: .continuous)
                     .stroke(LFColor.ink.opacity(selected ? 0 : 0.25), lineWidth: 1)
             )
             .clipShape(Capsule(style: .continuous))
+            .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var header: some View {
@@ -277,7 +286,10 @@ struct SettingsView: View {
         return Button {
             guard option != current else { return }
             AppIconStore.select(option) { ok in
-                if ok { current = option }
+                if ok {
+                    current = option
+                    Haptics.tap()
+                }
             }
         } label: {
             VStack(spacing: 10) {
@@ -297,6 +309,9 @@ struct SettingsView: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(option.displayName))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 

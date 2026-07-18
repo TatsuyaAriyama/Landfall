@@ -218,6 +218,7 @@ struct ProfileEditorSheet: View {
                 Button {
                     // ローカルは@AppStorageで保存済み。港にも反映して閉じる。
                     RoomService.shared.pushProfileToAllRooms()
+                    Haptics.success()
                     onSaved()
                     dismiss()
                 } label: {

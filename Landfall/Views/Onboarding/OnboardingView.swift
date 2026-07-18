@@ -20,7 +20,7 @@ struct OnboardingView: View {
                     Spacer()
                     Button("Skip") { onDone() }
                         .font(LFFont.label(15))
-                        .foregroundStyle(LFColor.ink.opacity(0.4))
+                        .foregroundStyle(LFColor.ink.opacity(0.55))
                 }
                 .padding(.horizontal, LFMetrics.cardPadding)
                 .padding(.top, 12)
@@ -47,8 +47,10 @@ struct OnboardingView: View {
 
                 Button {
                     if page < pages.count - 1 {
+                        Haptics.tap()
                         withAnimation { page += 1 }
                     } else {
+                        Haptics.success()   // 入港の節目。
                         onDone()
                     }
                 } label: {

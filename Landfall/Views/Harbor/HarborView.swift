@@ -12,6 +12,10 @@ struct HarborView: View {
     @State private var joining = false
     @State private var editingProfile = false
     @State private var membersByRoom: [String: [HarborMember]] = [:]
+    /// 初回ロードが済むまでは空状態CTAを出さない(在港者に「空です」を一瞬見せないため)。
+    @State private var hasLoaded = false
+    /// 退港の確認対象(タップ即実行しない)。
+    @State private var leavingRoom: HarborRoom?
 
     // 自分のプレイヤーカード(ローカル先行)。編集の保存で更新される。
     @AppStorage(PlayerProfile.nameKey) private var playerName = ""
@@ -52,6 +56,11 @@ struct HarborView: View {
                             .font(LFFont.copy(16))
                             .foregroundStyle(LFColor.ink.opacity(0.5))
                             .padding(.top, 28)
+                    } else if !hasLoaded {
+                        ProgressView()
+                            .tint(LFColor.ink)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 60)
                     } else if service.rooms.isEmpty {
                         emptyState
                     } else {
@@ -81,6 +90,23 @@ struct HarborView: View {
         .sheet(isPresented: $editingProfile) {
             ProfileEditorSheet { Task { await reload() } }
         }
+        .confirmationDialog(
+            "Leave this harbor?",
+            isPresented: Binding(get: { leavingRoom != nil }, set: { if !$0 { leavingRoom = nil } }),
+            titleVisibility: .visible,
+            presenting: leavingRoom
+        ) { room in
+            Button("Leave this harbor", role: .destructive) {
+                Task {
+                    await service.leaveRoom(room.id)
+                    Haptics.tap()
+                    await reload()
+                }
+            }
+            Button("Cancel", role: .cancel) { leavingRoom = nil }
+        } message: { _ in
+            Text("You'll stop sharing here and won't see this harbor's members. You can rejoin with the code.")
+        }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.environment["LANDFALL_PROFILE"] == "1" {
@@ -97,6 +123,7 @@ struct HarborView: View {
         }
         // 港に入っている間は、開くたびに自分の当月を公開し直す(取りこぼし防止)。
         service.publishCurrentMonth(context: modelContext)
+        hasLoaded = true
     }
 
     // MARK: - 空の状態
@@ -152,14 +179,20 @@ struct HarborView: View {
                     .font(LFFont.copy(22))
                     .foregroundStyle(LFColor.ink)
                 Spacer()
-                // 招待コード。タップで招待文ごと共有できる。
+                // 招待コード。タップで招待文ごと共有できる。共有できると分かるようグリフを添える。
                 ShareLink(item: inviteMessage(for: room)) {
-                    Text(verbatim: room.id)
-                        .font(LFFont.label(15))
-                        .tracking(2)
-                        .monospacedDigit()
-                        .foregroundStyle(LFColor.returnOrange)
+                    HStack(spacing: 6) {
+                        Text(verbatim: room.id)
+                            .font(LFFont.label(15))
+                            .tracking(2)
+                            .monospacedDigit()
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundStyle(LFColor.returnOrange)
                 }
+                .accessibilityLabel(Text("Invite code \(room.id)"))
+                .accessibilityHint(Text("Share"))
             }
 
             VStack(spacing: 0) {
@@ -175,10 +208,7 @@ struct HarborView: View {
             }
 
             Button {
-                Task {
-                    await service.leaveRoom(room.id)
-                    await reload()
-                }
+                leavingRoom = room
             } label: {
                 Text("Leave this harbor")
                     .font(LFFont.label(14))
@@ -533,6 +563,7 @@ struct RoomCreateSheet: View {
                                 named: name.trimmingCharacters(in: .whitespaces),
                                 context: modelContext
                             )
+                            Haptics.success()
                             await onDone()
                         } catch {
                             errorText = error.localizedDescription
@@ -598,6 +629,7 @@ struct RoomJoinSheet: View {
                     defer { working = false }
                     do {
                         try await RoomService.shared.joinRoom(code: code, context: modelContext)
+                        Haptics.success()
                         await onDone()
                         dismiss()
                     } catch {

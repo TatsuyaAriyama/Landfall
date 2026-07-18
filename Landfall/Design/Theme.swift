@@ -69,15 +69,53 @@ enum LFMetrics {
 }
 
 /// 太字は使わない。weight は .medium(500)まで。
+/// 既定サイズは端末の文字サイズ設定(Dynamic Type)に追従する(UIFontMetricsで基準サイズをスケール)。
+/// 航海誌カードは固定寸法の絵はがきなので、`*Fixed` を使い .large 相当に焼き付けてレイアウトを保つ
+///(`\.lfFixedType` 環境が true の場所では共有部品も自動で固定側を選ぶ)。
 enum LFFont {
-    static func number(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .medium).monospacedDigit()
+    // 追従(端末の文字サイズに合わせて拡大)。
+    static func number(_ size: CGFloat) -> Font { scaled(.monospacedDigitSystemFont(ofSize: size, weight: .medium)) }
+    static func copy(_ size: CGFloat) -> Font { scaled(.systemFont(ofSize: size, weight: .medium)) }
+    static func label(_ size: CGFloat) -> Font { scaled(.systemFont(ofSize: size, weight: .regular)) }
+
+    // 固定(絵はがき用。文字サイズ設定に依存せず .large 相当で焼く)。
+    static func numberFixed(_ size: CGFloat) -> Font { pinned(.monospacedDigitSystemFont(ofSize: size, weight: .medium)) }
+    static func copyFixed(_ size: CGFloat) -> Font { pinned(.systemFont(ofSize: size, weight: .medium)) }
+    static func labelFixed(_ size: CGFloat) -> Font { pinned(.systemFont(ofSize: size, weight: .regular)) }
+
+    // 環境フラグでどちらかを選ぶ(共有部品用)。
+    static func number(_ size: CGFloat, fixed: Bool) -> Font { fixed ? numberFixed(size) : number(size) }
+    static func copy(_ size: CGFloat, fixed: Bool) -> Font { fixed ? copyFixed(size) : copy(size) }
+    static func label(_ size: CGFloat, fixed: Bool) -> Font { fixed ? labelFixed(size) : label(size) }
+
+    private static func scaled(_ base: UIFont) -> Font {
+        Font(UIFontMetrics.default.scaledFont(for: base))
     }
-    static func copy(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .medium)
+    private static let cardTrait = UITraitCollection(preferredContentSizeCategory: .large)
+    private static func pinned(_ base: UIFont) -> Font {
+        Font(UIFontMetrics.default.scaledFont(for: base, compatibleWith: cardTrait))
     }
-    static func label(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .regular)
+}
+
+/// この環境が true の subtree では、文字サイズ設定に追従せず固定寸法で描く。
+/// 固定寸法の航海誌カード(絵はがき/共有画像)で使い、共有部品(CardKicker等)も固定側を選ばせる。
+private struct LFFixedTypeKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var lfFixedType: Bool {
+        get { self[LFFixedTypeKey.self] }
+        set { self[LFFixedTypeKey.self] = newValue }
+    }
+}
+
+/// 押した瞬間だけ、ほんの少し沈む。タップの手応えを視覚でも返す(影は使わない)。
+/// タイルや行など、頻度の高いタップ対象に添える。
+struct LFPressableButtonStyle: ButtonStyle {
+    var scale: CGFloat = 0.96
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -85,10 +123,11 @@ enum LFFont {
 struct CardKicker: View {
     var text: LocalizedStringKey
     var color: Color
+    @Environment(\.lfFixedType) private var fixedType
 
     var body: some View {
         Text(text)
-            .font(LFFont.label(15))
+            .font(LFFont.label(15, fixed: fixedType))
             .tracking(2)
             .foregroundStyle(color)
     }
@@ -97,10 +136,11 @@ struct CardKicker: View {
 /// 全カード共通のブランド表記。そのカードの主前景色の40%で置く。
 struct CardBrandmark: View {
     var color: Color
+    @Environment(\.lfFixedType) private var fixedType
 
     var body: some View {
         Text(verbatim: "Landfall-StudyLog")
-            .font(LFFont.label(13))
+            .font(LFFont.label(13, fixed: fixedType))
             .foregroundStyle(color.opacity(0.4))
     }
 }

@@ -26,14 +26,14 @@ struct WrappedCard1Fact: View {
                         .foregroundStyle(Color.white.opacity(0.6))
                         .monospacedDigit()
                 }
-                .font(LFFont.label(14))
+                .font(LFFont.labelFixed(14))
                 .padding(.top, 22)
 
                 Spacer()
 
                 // その月の形に合わせた締め(日数ベースで判定)。
                 Text(closingLine)
-                    .font(LFFont.copy(20))
+                    .font(LFFont.copyFixed(20))
                     .foregroundStyle(Color.white)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -69,13 +69,13 @@ private struct FactRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("\(count)")
-                .font(LFFont.number(64))
+                .font(LFFont.numberFixed(64))
                 .foregroundStyle(accent)
             Text("days")
-                .font(LFFont.copy(22))
+                .font(LFFont.copyFixed(22))
                 .foregroundStyle(accent)
             Text(verb)
-                .font(LFFont.copy(22))
+                .font(LFFont.copyFixed(22))
                 .foregroundStyle(Color.white)
         }
     }

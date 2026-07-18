@@ -14,6 +14,8 @@ struct MonthWaveform: View {
     var gapLabelColor: Color? = nil
     /// 下部に日付軸(週ごとの日番号)を描くか。軌跡画面ではtrue、共有カードでは既定のfalse。
     var showDateAxis: Bool = false
+    /// 固定寸法のカード内では文字サイズ設定に追従させない(絵はがきのレイアウトを保つ)。
+    @Environment(\.lfFixedType) private var fixedType
 
     // MARK: レイアウト定数
 
@@ -56,7 +58,7 @@ struct MonthWaveform: View {
                         .position(x: midX, y: baselineY + 14 + gapBarHeight / 2)
 
                     Text(gapLabel(for: gap, barWidth: endX - startX))
-                        .font(LFFont.label(11))
+                        .font(LFFont.label(11, fixed: fixedType))
                         .foregroundStyle(gapLabelColor ?? lineColor.opacity(0.55))
                         .position(x: midX, y: baselineY + 14 + gapBarHeight + 14)
                 }
@@ -73,7 +75,7 @@ struct MonthWaveform: View {
 
                     if labeledResumes.contains(day) {
                         Text("Return")
-                            .font(LFFont.copy(12))
+                            .font(LFFont.copy(12, fixed: fixedType))
                             .foregroundStyle(resumeMarkerColor)
                             .position(x: min(max(x, 14), width - 14), y: y - 20)
                     }
@@ -88,7 +90,7 @@ struct MonthWaveform: View {
                             .frame(width: 1, height: 5)
                             .position(x: x, y: baselineY + gapBandHeight + 2)
                         Text("\(day)")
-                            .font(LFFont.label(11))
+                            .font(LFFont.label(11, fixed: fixedType))
                             .monospacedDigit()
                             .foregroundStyle(lineColor.opacity(0.4))
                             .position(x: min(max(x, 8), width - 8), y: baselineY + gapBandHeight + 13)
