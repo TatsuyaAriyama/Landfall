@@ -133,7 +133,7 @@ struct SessionEditSheet: View {
         Button {
             noteFocused = false
             session.minutes = max(1, minutes)
-            let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmed = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
             session.note = trimmed.isEmpty ? nil : trimmed
             try? modelContext.save()
             SyncService.shared.push(session)

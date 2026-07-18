@@ -291,7 +291,7 @@ struct RecordSessionSheet: View {
         // 保存の前に空白日数を測る(保存後だと最終記録日=今日になってしまう)。
         let blanks = isToday ? MonthStats.blankDays(since: days.first?.date, to: date) : nil
 
-        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
         let session = StudySession(date: date, minutes: minutes, note: trimmed.isEmpty ? nil : trimmed, item: item)
         modelContext.insert(session)
         StudyDayStore.markDay(date, context: modelContext)

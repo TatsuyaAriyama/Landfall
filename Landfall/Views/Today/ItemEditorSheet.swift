@@ -274,8 +274,12 @@ struct ItemEditorSheet: View {
         photoData = existing.photoData
     }
 
+    /// 保存する項目名。前後空白を除き、上限で切り詰める(肥大化した同期データを防ぐ)。
+    private var nameToSave: String { String(trimmedName.prefix(60)) }
+
     private func save() {
         guard !saveDisabled else { return }
+        let trimmedName = nameToSave
         let saved: StudyItem
         if let existing {
             existing.name = trimmedName
