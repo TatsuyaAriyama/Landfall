@@ -200,4 +200,16 @@
 "Notifications" = "通知";
 "Gentle reminder" = "そっと戻れる通知";
 "A quiet nudge, never a nag. If you already showed up today, it stays silent." = "煽らない、そっとした声かけ。今日もう寄っていたら、黙っています。";
-"Time" = "時刻";
+"Time of day" = "時刻";
+
+/* UX改善: 追加の文言 */
+"Done" = "完了";
+"Month" = "月";
+"Previous month" = "前の月";
+"Next month" = "次の月";
+"Edit this record" = "この記録を編集する。";
+"Add your first thing, and set sail." = "最初のひとつを追加して、出航しましょう。";
+"Under sail: %@" = "航海中:%@";
+"Invite code %@" = "招待コード %@";
+"Leave this harbor?" = "この港を出ますか?";
+"You'll stop sharing here and won't see this harbor's members. You can rejoin with the code." = "共有をやめ、この港のメンバーも見えなくなります。コードでまた入れます。";

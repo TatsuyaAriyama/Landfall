@@ -92,30 +92,34 @@ struct TraceView: View {
 
     private func monthHeader(for month: WrappedMonth) -> some View {
         HStack(spacing: 10) {
-            navButton(system: "chevron.left", enabled: canGoBack) {
+            navButton(system: "chevron.left", label: "Previous month", enabled: canGoBack) {
                 if canGoBack { monthOffset -= 1 }
             }
             CardKicker(
                 text: "Trace of \(LF.monthName(year: month.year, month: month.month))",
                 color: LFColor.ink.opacity(0.55)
             )
-            navButton(system: "chevron.right", enabled: canGoForward) {
+            navButton(system: "chevron.right", label: "Next month", enabled: canGoForward) {
                 if canGoForward { monthOffset += 1 }
             }
             Spacer(minLength: 0)
         }
     }
 
-    private func navButton(system: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    private func navButton(system: String, label: LocalizedStringKey, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap(.light)
+            action()
+        } label: {
             Image(systemName: system)
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(LFColor.ink.opacity(enabled ? 0.7 : 0.18))
-                .frame(width: 30, height: 30)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
+        .accessibilityLabel(Text(label))
     }
 
     // MARK: - 波形

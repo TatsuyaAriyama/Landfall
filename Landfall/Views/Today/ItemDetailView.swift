@@ -10,6 +10,8 @@ struct ItemDetailView: View {
     @State private var recording = false
     @State private var editing = false
     @State private var showWelcomeBack = false
+    /// タップした記録行。ここから時間・ひとことを直せる(訂正導線)。
+    @State private var editingSession: StudySession?
 
     /// 新しい順のセッション。
     private var sessions: [StudySession] {
@@ -32,8 +34,11 @@ struct ItemDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
-                    statStrip
-                        .padding(.top, 28)
+                    // 記録が1件でもあれば累計を出す。0件のときは空欄のTotalを出さない。
+                    if !item.sessions.isEmpty {
+                        statStrip
+                            .padding(.top, 28)
+                    }
                     recordButton
                         .padding(.top, 24)
                     logSection
@@ -81,6 +86,9 @@ struct ItemDetailView: View {
         }
         .sheet(isPresented: $editing) {
             ItemEditorSheet(existing: item, onDeleted: { dismiss() })
+        }
+        .sheet(item: $editingSession) { session in
+            SessionEditSheet(session: session)
         }
         .onAppear {
             #if DEBUG
@@ -175,32 +183,44 @@ struct ItemDetailView: View {
     }
 
     private func logRow(_ session: StudySession) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(LF.dayMonth(session.date))
-                    .font(LFFont.label(14))
-                    .foregroundStyle(LFColor.ink)
-                Text(LF.weekdayFull(session.date))
-                    .font(LFFont.label(11))
-                    .foregroundStyle(LFColor.ink.opacity(0.4))
-            }
-            .frame(width: 62, alignment: .leading)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(LF.duration(minutes: session.minutes))
-                    .font(LFFont.copy(17))
-                    .monospacedDigit()
-                    .foregroundStyle(LFColor.ink)
-                if let note = session.note, !note.isEmpty {
-                    Text(note)
-                        .font(LFFont.label(15))
-                        .foregroundStyle(LFColor.ink.opacity(0.65))
-                        .fixedSize(horizontal: false, vertical: true)
+        Button {
+            Haptics.tap(.light)
+            editingSession = session
+        } label: {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(LF.dayMonth(session.date))
+                        .font(LFFont.label(14))
+                        .foregroundStyle(LFColor.ink)
+                    Text(LF.weekdayFull(session.date))
+                        .font(LFFont.label(11))
+                        .foregroundStyle(LFColor.ink.opacity(0.4))
                 }
+                .frame(width: 62, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(LF.duration(minutes: session.minutes))
+                        .font(LFFont.copy(17))
+                        .monospacedDigit()
+                        .foregroundStyle(LFColor.ink)
+                    if let note = session.note, !note.isEmpty {
+                        Text(note)
+                            .font(LFFont.label(15))
+                            .foregroundStyle(LFColor.ink.opacity(0.65))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(LFColor.ink.opacity(0.22))
             }
-            Spacer(minLength: 0)
+            .padding(.vertical, 16)
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 16)
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(Text("Edit this record"))
     }
 
     // MARK: - おかえり演出

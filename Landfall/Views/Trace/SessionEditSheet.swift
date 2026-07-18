@@ -75,7 +75,17 @@ struct SessionEditSheet: View {
         .padding(LFMetrics.cardPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(LFColor.paper)
+        // 余白タップでキーボードを収め、保存/削除が隠れないようにする。
+        .contentShape(Rectangle())
+        .onTapGesture { noteFocused = false }
         .presentationDetents([.large])
+        // キーボード上の明示的な「完了」。ひとこと入力中に保存ボタンが隠れても閉じられる。
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { noteFocused = false }
+            }
+        }
         .onAppear {
             minutes = session.minutes
             note = session.note ?? ""

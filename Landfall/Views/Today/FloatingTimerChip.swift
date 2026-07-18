@@ -76,6 +76,10 @@ struct FloatingTimerChip: View {
         .background(LFColor.harborTeal)
         .clipShape(Capsule(style: .continuous))
         .frame(maxWidth: 230)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(Text("Under sail: \(item.name)"))
+        .accessibilityHint(Text("Make landfall"))
     }
 
     private func elapsedText(at now: Date) -> String {

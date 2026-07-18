@@ -46,14 +46,14 @@ struct WrappedCard4Trace: View {
     private func statBlock(label: LocalizedStringKey, value: Int, unit: LocalizedStringKey, alignment: HorizontalAlignment) -> some View {
         VStack(alignment: alignment, spacing: 6) {
             Text(label)
-                .font(LFFont.label(13))
+                .font(LFFont.labelFixed(13))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
             HStack(alignment: .lastTextBaseline, spacing: 2) {
                 Text(verbatim: "\(value)")
-                    .font(LFFont.number(30))
+                    .font(LFFont.numberFixed(30))
                     .foregroundStyle(LFColor.ink)
                 Text(unit)
-                    .font(LFFont.copy(14))
+                    .font(LFFont.copyFixed(14))
                     .foregroundStyle(LFColor.ink)
             }
         }

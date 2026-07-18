@@ -13,9 +13,9 @@ struct WrappedCard2Silence: View {
                 if let gap = month.longestGap {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text("\(gap.length)")
-                            .font(LFFont.number(80))
+                            .font(LFFont.numberFixed(80))
                         Text("days")
-                            .font(LFFont.copy(24))
+                            .font(LFFont.copyFixed(24))
                     }
                     .foregroundStyle(LFColor.deepRust)
                     .padding(.top, 16)
@@ -23,7 +23,7 @@ struct WrappedCard2Silence: View {
                     Spacer()
 
                     Text("\(month.shortDate(gap.startDay))–\(month.shortDate(gap.endDay)), you rested at harbor.")
-                        .font(LFFont.copy(19))
+                        .font(LFFont.copyFixed(19))
                         .foregroundStyle(LFColor.deepRust)
 
                     Spacer()
@@ -34,7 +34,7 @@ struct WrappedCard2Silence: View {
                     )
                 } else {
                     Text("No gap this month.")
-                        .font(LFFont.copy(19))
+                        .font(LFFont.copyFixed(19))
                         .foregroundStyle(LFColor.deepRust)
                         .padding(.top, 16)
 
@@ -59,10 +59,10 @@ private struct ReturnBox: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(returnLine)
-                .font(LFFont.copy(19))
+                .font(LFFont.copyFixed(19))
                 .foregroundStyle(LFColor.coral)
             Text(countLine)
-                .font(LFFont.label(15))
+                .font(LFFont.labelFixed(15))
                 .foregroundStyle(LFColor.coral)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

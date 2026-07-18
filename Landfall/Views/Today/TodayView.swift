@@ -30,6 +30,16 @@ struct TodayView: View {
                         .padding(.top, 32)
 
                     ScrollView {
+                        if items.isEmpty {
+                            // 初回のホーム。破線の「+」だけにせず、静かに次の一歩を言葉で示す。
+                            Text("Add your first thing, and set sail.")
+                                .font(LFFont.copy(16))
+                                .foregroundStyle(LFColor.ink.opacity(0.5))
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 28)
+                                .padding(.top, 44)
+                        }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 22)], spacing: 26) {
                             ForEach(items) { item in
                                 tileCell(item)
@@ -37,7 +47,7 @@ struct TodayView: View {
                             addTile
                         }
                         .padding(.horizontal, 28)
-                        .padding(.top, 36)
+                        .padding(.top, items.isEmpty ? 24 : 36)
                         .padding(.bottom, 24)
                     }
 
@@ -95,7 +105,10 @@ struct TodayView: View {
                     .frame(height: 34, alignment: .top)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LFPressableButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(item.name))
+        .accessibilityHint(Text("Open"))
         .draggable(item.uuid.uuidString)
         .dropDestination(for: String.self) { dropped, _ in
             reorder(droppedID: dropped.first, before: item)
@@ -121,7 +134,8 @@ struct TodayView: View {
                     .frame(height: 34, alignment: .top)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(LFPressableButtonStyle())
+        .accessibilityLabel(Text("Add item"))
     }
 
     /// ドラッグした項目をターゲットの位置へ差し込み、sortOrderを振り直す。
@@ -142,6 +156,7 @@ struct TodayView: View {
         for item in reordered {
             SyncService.shared.push(item)
         }
+        Haptics.tap(.rigid)   // 並べ替え成立を軽い手応えで返す。
         return true
     }
 
@@ -173,9 +188,11 @@ struct TodayView: View {
                     Image(systemName: "gearshape")
                         .font(.system(size: 20, weight: .regular))
                         .foregroundStyle(LFColor.ink.opacity(0.4))
-                        .padding(8)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(Text("Settings"))
             }
             Spacer()
         }

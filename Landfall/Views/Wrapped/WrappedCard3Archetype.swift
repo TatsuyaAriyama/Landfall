@@ -18,14 +18,14 @@ struct WrappedCard3Archetype: View {
                     .frame(height: 40)
 
                 Text(month.archetype.displayName)
-                    .font(LFFont.copy(36))
+                    .font(LFFont.copyFixed(36))
                     .foregroundStyle(.white)
 
                 VStack(spacing: 9) {
                     Text(month.archetype.tagline)
                     Text(month.archetype.subline)
                 }
-                .font(LFFont.copy(17))
+                .font(LFFont.copyFixed(17))
                 .foregroundStyle(LFColor.lavender)
                 .multilineTextAlignment(.center)
                 .padding(.top, 18)
@@ -56,7 +56,7 @@ private struct StatPill: View {
 
     var body: some View {
         Text(text)
-            .font(LFFont.label(14))
+            .font(LFFont.labelFixed(14))
             .monospacedDigit()
             .foregroundStyle(LFColor.lavender)
             .padding(.horizontal, 16)
