@@ -15,6 +15,7 @@
 		8C5F799B29E371BE9DF4EF4A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83D091F7808839D2AAD83DA7 /* Foundation.framework */; };
 		AAB7F4C12963ECE37A7EC71A /* LandfallWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 390B82C03A4EDDF85ABEE205 /* LandfallWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AF4D1EF4ED836B22D527989B /* LandfallWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBBF0F136DA55F0239611EF4 /* LandfallWidget.swift */; };
+		DF5EA7BE5D626062CD306B7A /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 41FF8BA48B8E0BE3DBB313AB /* FirebaseAppCheck */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -78,6 +79,7 @@
 				1A0000121A0000121A000012 /* FirebaseFirestore in Frameworks */,
 				1A0000131A0000131A000013 /* GoogleSignIn in Frameworks */,
 				1A0000141A0000141A000014 /* GoogleSignInSwift in Frameworks */,
+				DF5EA7BE5D626062CD306B7A /* FirebaseAppCheck in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -161,6 +163,7 @@
 				1A0000171A0000171A000017 /* FirebaseFirestore */,
 				1A0000181A0000181A000018 /* GoogleSignIn */,
 				1A0000191A0000191A000019 /* GoogleSignInSwift */,
+				41FF8BA48B8E0BE3DBB313AB /* FirebaseAppCheck */,
 			);
 			productName = Landfall;
 			productType = "com.apple.product-type.application";
@@ -524,6 +527,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 1A00001B1A00001B1A00001B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignInSwift;
+		};
+		41FF8BA48B8E0BE3DBB313AB /* FirebaseAppCheck */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A00001A1A00001A1A00001A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAppCheck;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

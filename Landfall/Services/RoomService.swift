@@ -42,20 +42,30 @@ final class RoomService: ObservableObject {
     private var db: Firestore { Firestore.firestore() }
     private var uid: String? { Auth.auth().currentUser?.uid }
 
-    /// 表示名。プレイヤーカードの名前 > Authの表示名 > 「船乗り」。
-    private var displayName: String {
-        if !PlayerProfile.name.isEmpty { return PlayerProfile.name }
-        let name = Auth.auth().currentUser?.displayName?.trimmingCharacters(in: .whitespaces)
-        return (name?.isEmpty == false ? name! : String(localized: "Sailor"))
+    // 書き込む文字列の上限(Firestoreルールの検証値と一致させる。多重防御)。
+    private enum Limit {
+        static let roomName = 80
+        static let displayName = 60
+        static let resolve = 80
+        static let note = 500
+        static let itemName = 60
     }
 
-    /// メンバードキュメントに書くプロフィール一式。
+    /// 表示名。プレイヤーカードの名前 > Authの表示名 > 「船乗り」。
+    private var displayName: String {
+        if !PlayerProfile.name.isEmpty { return String(PlayerProfile.name.prefix(Limit.displayName)) }
+        let name = Auth.auth().currentUser?.displayName?.trimmingCharacters(in: .whitespaces)
+        let resolved = (name?.isEmpty == false ? name! : String(localized: "Sailor"))
+        return String(resolved.prefix(Limit.displayName))
+    }
+
+    /// メンバードキュメントに書くプロフィール一式(長さを上限で切り詰めてから書く)。
     private var profileData: [String: Any] {
         [
             "displayName": displayName,
             "styleToken": PlayerProfile.styleToken,
             "symbolToken": PlayerProfile.symbolToken,
-            "resolve": PlayerProfile.resolve,
+            "resolve": String(PlayerProfile.resolve.prefix(Limit.resolve)),
         ]
     }
 
@@ -84,9 +94,10 @@ final class RoomService: ObservableObject {
     /// 港を作る。招待コード(=ルームID)を返す。
     func createRoom(named name: String, context: ModelContext) async throws -> String {
         guard let uid else { throw RoomError.notSignedIn }
+        let cappedName = String(name.prefix(Limit.roomName))
         let code = try await reserveUnusedCode()
         try await db.collection("rooms").document(code).setData([
-            "name": name,
+            "name": cappedName,
             "memberIds": [uid],
             "createdAt": FieldValue.serverTimestamp(),
         ])
@@ -190,9 +201,9 @@ final class RoomService: ObservableObject {
             let c = calendar.dateComponents([.year, .month, .day], from: session.date)
             guard c.year == year, c.month == month, let day = c.day else { return nil }
             var dict: [String: Any] = ["day": day, "minutes": session.minutes, "date": session.date]
-            if let note = session.note, !note.isEmpty { dict["note"] = note }
+            if let note = session.note, !note.isEmpty { dict["note"] = String(note.prefix(Limit.note)) }
             if let item = session.item {
-                dict["itemName"] = item.name
+                dict["itemName"] = String(item.name.prefix(Limit.itemName))
                 dict["styleToken"] = item.styleToken
                 dict["symbolToken"] = item.symbolToken
             }

@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import FirebaseCore
+import FirebaseAppCheck
 import FirebaseFirestore
 import GoogleSignIn
 
@@ -18,6 +19,9 @@ struct LandfallApp: App {
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
 
     init() {
+        // App Check は FirebaseApp.configure() の前に工場を差し込む必要がある。
+        // 本物のアプリからのアクセスであることを裏で証明し、バックエンド濫用を防ぐ。
+        AppCheck.setAppCheckProviderFactory(LandfallAppCheckProviderFactory())
         FirebaseApp.configure()
         // オフライン永続を明示。ネットに繋がらない間の書き込みも端末に貯め、
         // 再起動をまたいで保持し、オンライン復帰時に自動送信する。
