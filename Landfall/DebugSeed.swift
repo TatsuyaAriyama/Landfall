@@ -40,23 +40,24 @@ enum DebugSeed {
 
         // 当月: 軌跡画面が空白・帰還を含む形に見えるパターン(今日は未記録のまま残す)。
         if let monthStart = calendar.dateInterval(of: .month, for: today)?.start {
+            // 9日目は6日の空白明け。「また戻れた」がこのアプリの主題なので、そこに一番いい一行を置く。
             let plan: [(Int, StudyItem, Int, String?)] = isJapanese ? [
-                (0, development, 45, "環境構築をやり切った。"),
+                (0, development, 45, "はじめの準備で手間取った。それでも動いた。"),
                 (1, reading, 30, nil),
-                (2, development, 60, "画面を1枚組んだ。"),
-                (9, reading, 20, "積んでいた本に戻れた。"),
+                (2, development, 60, "画面を1枚、形にできた。"),
+                (9, reading, 20, "しばらく置いていた本に、また手が伸びた。"),
                 (10, writing, 40, nil),
                 (13, development, 30, nil),
-                (14, security, 25, "午前問題を10問。"),
+                (14, security, 25, "今日は少しだけ。開いたことが大事。"),
                 (15, reading, 35, nil),
             ] : [
-                (0, development, 45, "Got the environment set up."),
+                (0, development, 45, "Setup took longer than I thought. It runs now."),
                 (1, reading, 30, nil),
-                (2, development, 60, "Built one screen."),
-                (9, reading, 20, "Picked the book back up."),
+                (2, development, 60, "Got one screen into shape."),
+                (9, reading, 20, "Reached for the book I'd set down. Again."),
                 (10, writing, 40, nil),
                 (13, development, 30, nil),
-                (14, security, 25, "Ten practice questions."),
+                (14, security, 25, "Only a little today. Opening it was the point."),
                 (15, reading, 35, nil),
             ]
             for (offset, item, minutes, note) in plan {
@@ -72,14 +73,17 @@ enum DebugSeed {
         // 今日: 複数項目+ひとことを入れて、その日の共有カードとホームの導線を確認できる形にする。
         // LANDFALL_SEED_TODAY=0 を渡すと今日は未記録のまま(帰還・空白の見え方を確認したいとき)。
         if ProcessInfo.processInfo.environment["LANDFALL_SEED_TODAY"] != "0" {
+            // 共有カード・ストア用スクリーンショットに写る文章。専門用語を避け、
+            // 「自分も書きそう」と思える一行にする(達成・没頭・続きへ、で感情に幅を出す)。
+            // 記録ごとのひとことは、いつもどおりそれぞれに残す。
             let todayPlan: [(StudyItem, Int, String?)] = isJapanese ? [
-                (development, 95, "同期まわりを直した。手強かった。"),
-                (reading, 40, "積んでいた本を30ページ。"),
-                (security, 30, "午前問題を15問。半分は落とした。"),
+                (development, 95, "詰まっていた所が、やっと動いた。"),
+                (reading, 40, "続きが気になって、寝る前にもう少し。"),
+                (security, 30, "わからない所に印をつけた。次はそこから。"),
             ] : [
-                (development, 95, "Fixed the sync layer. Tough one."),
-                (reading, 40, "Thirty pages of the book I'd left."),
-                (security, 30, "Fifteen practice questions. Missed half."),
+                (development, 95, "The part I was stuck on finally moved."),
+                (reading, 40, "Couldn't put it down. A few more pages before bed."),
+                (security, 30, "Marked what I didn't get. I'll start there next time."),
             ]
             for (index, entry) in todayPlan.enumerated() {
                 let (item, minutes, note) = entry
@@ -88,6 +92,12 @@ enum DebugSeed {
                 context.insert(StudySession(date: date, minutes: minutes, note: note, item: item))
             }
             StudyDayStore.markDay(today, context: context)
+            // その日のカード用のひとこと(記録ごとのメモとは別物)。
+            StudyDayStore.setComment(
+                isJapanese ? "久しぶりに読書に没頭できた。"
+                           : "Lost myself in a book for the first time in a while.",
+                for: today, context: context
+            )
         }
 
         // 前月: Wrapped が生成できる(前月は常に利用可能)。不死鳥型が出る配置。

@@ -91,6 +91,8 @@ struct LandfallApp: App {
             .task { DebugSeed.seedIfRequested(into: container) }
             #endif
             .onOpenURL { url in
+                // 招待リンク(入港証)を先に見る。該当しなければサインインの折り返しとして扱う。
+                if DeepLinkRouter.shared.handle(url) { return }
                 GIDSignIn.sharedInstance.handle(url)
             }
             .onAppear {
@@ -146,6 +148,7 @@ struct ContentView: View {
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
     @State private var selection = ContentView.initialTab
     @StateObject private var sailAnimator = SailAnimator.shared
+    @StateObject private var router = DeepLinkRouter.shared
 
     var body: some View {
         TabView(selection: $selection) {
@@ -178,6 +181,13 @@ struct ContentView: View {
             if let kind = sailAnimator.kind {
                 SailingOverlay(kind: kind)
                     .transition(.opacity)
+            }
+        }
+        // 招待リンクで開かれたら港タブへ運ぶ。
+        .onChange(of: router.wantsHarborTab) { _, wants in
+            if wants {
+                selection = 2
+                router.wantsHarborTab = false
             }
         }
         // アプリ内の言語設定を全体に反映(端末言語に関わらず切替可能)。

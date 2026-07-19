@@ -94,7 +94,7 @@ struct DayDetailView: View {
             SessionEditSheet(session: session)
         }
         .sheet(isPresented: $sharing) {
-            DayShareSheet(log: DayLog.make(date: day, sessions: allSessions))
+            DayShareSheet(date: day)
         }
         .onAppear {
             #if DEBUG

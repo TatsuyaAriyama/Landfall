@@ -1,95 +1,99 @@
 import SwiftUI
 
-/// 共有カードの配色。すべて固定色(明暗に追従しない)なので、
-/// 端末の外観設定に関わらず書き出した絵柄が変わらない。
+/// 共有カードの配色。港の一日の時間帯として選ぶ。
+/// すべて固定色(明暗に追従しない)なので、端末の外観設定に関わらず書き出した絵柄が変わらない。
 enum DayCardTheme: String, CaseIterable, Identifiable {
-    case paper
-    case ink
+    /// 昼の海。ティールの海に砂色の帆(サインイン画面と同じ情景)。
     case harbor
+    /// 夜の海。ミッドナイトの海にラベンダーの空気。
+    case ink
+    /// 朝の海。白い靄の海にティールの帆。
+    case paper
 
     var id: String { rawValue }
 
     var label: LocalizedStringKey {
         switch self {
-        case .paper: "Paper"
-        case .ink: "Ink"
         case .harbor: "Sea"
+        case .ink: "Night"
+        case .paper: "Morning"
         }
     }
 
-    var background: Color {
+    /// 海(カード上部)の色。
+    var sea: Color {
         switch self {
-        case .paper: .white
-        case .ink: LFColor.inkFixed
         case .harbor: LFColor.harborTeal
+        case .ink: LFColor.midnight
+        case .paper: .white
         }
     }
 
-    /// 主文字色。
-    var primary: Color {
+    /// 海の上に置く文字の色。
+    var seaText: Color {
         switch self {
-        case .paper: LFColor.inkFixed
-        case .ink: .white
         case .harbor: LFColor.harborSand
+        case .ink: LFColor.lavender
+        case .paper: LFColor.harborTeal
         }
     }
 
-    /// 数字・強調に置く色。
-    var accent: Color {
+    /// 合計時間(主役)の色。
+    var hero: Color {
         switch self {
+        case .harbor, .ink: LFColor.sunYellow
         case .paper: LFColor.returnOrange
-        case .ink: LFColor.sunYellow
-        case .harbor: LFColor.sunYellow
         }
     }
 
-    /// 罫線の色。
-    var hairline: Color { primary.opacity(0.15) }
+    /// 帆船の色。
+    var boat: Color {
+        switch self {
+        case .harbor, .ink: LFColor.harborSand
+        case .paper: LFColor.harborTeal
+        }
+    }
 
-    /// 白背景のSNSに貼っても輪郭が消えないよう、明るい配色にだけ縁を付ける。
+    /// 陸(カード下部)。どの時間帯でも砂浜は同じ色。
+    var land: Color { LFColor.harborSand }
+
+    /// 陸の上に置く文字の色。ティール×砂は港の基本の組み合わせ。
+    var landInk: Color { LFColor.harborTeal }
+
+    /// 白背景のSNSに貼っても輪郭が消えないよう、朝(白い海)にだけ縁を付ける。
     var border: Color {
         switch self {
         case .paper: LFColor.inkFixed.opacity(0.12)
-        case .ink, .harbor: .clear
+        case .harbor, .ink: .clear
         }
     }
 }
 
-/// その日の記録を1枚に畳んだ共有カード。
-/// 幅は固定・高さは中身で伸びる(その日の記録を省略せずに載せるため)。
-/// 固定寸法の絵はがきと同じく、文字サイズ設定と外観設定の影響を受けない。
+/// その日の記録を、港の情景に載せた絵はがき。
+/// 構図: 海(日付と時間が浮かぶ)→ 帆船が海岸へ着く情景 → 陸(記録が荷降ろしされている)。
+/// 「着岸したから、記録が陸にある」という一枚。
+/// 固定寸法の絵はがきなので、文字サイズ・外観設定の影響を受けない。
 struct DayLogCard: View {
     let log: DayLog
-    var theme: DayCardTheme = .paper
+    var theme: DayCardTheme = .harbor
 
-    /// ひとことが多すぎる日でも画像が肥大しないよう、ここまでを載せる。
-    private let noteLimit = 10
+    /// 情景の帯の高さ。下端が汀(みぎわ)=陸との境界。
+    private let sceneHeight: CGFloat = 116
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // 日付
-            Text(verbatim: LF.dayWithWeekday(log.date))
-                .font(LFFont.labelFixed(15))
-                .tracking(2)
-                .foregroundStyle(theme.primary.opacity(0.55))
-
-            if log.isRestDay {
-                restBody
-            } else {
-                workBody
-            }
-
-            // 記録の量ぶんだけ伸びる。少ない日に空洞を作らないよう最小高は低く抑える。
-            Spacer(minLength: 32)
-
-            Text(verbatim: "Landfall-StudyLog")
-                .font(LFFont.labelFixed(13))
-                .foregroundStyle(theme.primary.opacity(0.4))
+        VStack(spacing: 0) {
+            seaSection
+            scene
+            landSection
         }
-        .padding(LFMetrics.cardPadding)
-        .frame(width: LFMetrics.cardSize.width, alignment: .topLeading)
-        .frame(minHeight: 360, alignment: .topLeading)
-        .background(theme.background)
+        .frame(width: LFMetrics.cardSize.width)
+        .background(
+            // 海と陸を継ぎ目なく塗り分ける(情景の帯は海の続き)。
+            VStack(spacing: 0) {
+                theme.sea
+                theme.land.frame(height: 8)   // 端数対策。陸側は landSection が塗る。
+            }
+        )
         .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous)
@@ -100,108 +104,145 @@ struct DayLogCard: View {
         .environment(\.colorScheme, .light)
     }
 
-    // MARK: - 記録のある日
+    // MARK: - 海(日付・合計時間)
 
-    private var workBody: some View {
+    private var seaSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // 合計時間を主役に置く。
-            Text(verbatim: LF.duration(minutes: log.totalMinutes))
-                .font(LFFont.numberFixed(46))
-                .foregroundStyle(theme.accent)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-                .padding(.top, 18)
-
-            Text("\(log.sessionCount) sessions · \(log.itemCount) items")
+            Text(verbatim: LF.dayWithWeekday(log.date))
                 .font(LFFont.labelFixed(14))
-                .foregroundStyle(theme.primary.opacity(0.5))
-                .padding(.top, 4)
+                .tracking(2)
+                .foregroundStyle(theme.seaText.opacity(0.65))
 
-            rule.padding(.top, 24)
-
-            // 項目ごとの内訳(長い順)。
-            VStack(spacing: 0) {
-                ForEach(Array(log.entries.enumerated()), id: \.element.id) { index, entry in
-                    if index > 0 { rule }
-                    entryRow(entry)
-                }
-            }
-
-            if !log.notes.isEmpty {
-                rule
-                notesSection.padding(.top, 20)
+            if log.isRestDay {
+                Text("Rested.")
+                    .font(LFFont.copyFixed(34))
+                    .foregroundStyle(LFColor.seaGreen)
+                    .padding(.top, 16)
+                Text("A day at harbor is part of the voyage.")
+                    .font(LFFont.copyFixed(15))
+                    .foregroundStyle(theme.seaText.opacity(0.7))
+                    .padding(.top, 8)
+            } else {
+                Text(verbatim: LF.duration(minutes: log.totalMinutes))
+                    .font(LFFont.numberFixed(54))
+                    .foregroundStyle(theme.hero)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
+                    .padding(.top, 14)
+                Text("\(log.sessionCount) sessions · \(log.itemCount) items")
+                    .font(LFFont.labelFixed(14))
+                    .foregroundStyle(theme.seaText.opacity(0.65))
+                    .padding(.top, 6)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, LFMetrics.cardPadding)
+        .padding(.top, 34)
+        .padding(.bottom, 6)
+        .background(theme.sea)
+    }
+
+    // MARK: - 情景(帆船と海岸)
+
+    /// 凪いだ海を渡ってきた帆船が、右手の海岸に着こうとしている。
+    /// 休んだ日は、船は岸のそばに停泊している。
+    private var scene: some View {
+        ZStack {
+            theme.sea
+
+            // 凪の水面。サインイン画面と同じ言葉づかい。
+            waterLine(width: 150, height: 6, opacity: 0.30)
+                .position(x: 150, y: sceneHeight - 20)
+            waterLine(width: 84, height: 5, opacity: 0.18)
+                .position(x: 96, y: sceneHeight - 9)
+
+            // 迎える海岸(右手)。裾は右端へ断ち落とす。
+            CoastShape()
+                .fill(theme.land)
+                .frame(width: 216, height: 74)
+                .position(x: 322, y: sceneHeight - 37)
+
+            // 帆船。休んだ日は岸のそば(重ならない手前)で停泊、それ以外は海の上。
+            BoatShape()
+                .fill(theme.boat)
+                .frame(width: 46, height: 85)
+                .position(x: log.isRestDay ? 178 : 128, y: sceneHeight - 52)
+        }
+        .frame(width: LFMetrics.cardSize.width, height: sceneHeight)
+        .clipped()
+    }
+
+    private func waterLine(width: CGFloat, height: CGFloat, opacity: Double) -> some View {
+        Capsule(style: .continuous)
+            .fill(theme.seaText.opacity(opacity))
+            .frame(width: width, height: height)
+    }
+
+    // MARK: - 陸(荷降ろしされた記録)
+
+    private var landSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if !log.entries.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(log.entries.enumerated()), id: \.element.id) { index, entry in
+                        if index > 0 {
+                            Rectangle()
+                                .fill(theme.landInk.opacity(0.12))
+                                .frame(height: 1)
+                        }
+                        entryRow(entry)
+                    }
+                }
+                .padding(.top, 10)
+            }
+
+            // その日について書いた一行だけを載せる(記録ごとのメモは載せない)。
+            if let comment = log.comment, !comment.isEmpty {
+                HStack(alignment: .top, spacing: 10) {
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(LFColor.returnOrange)
+                        .frame(width: 3)
+                    Text(verbatim: comment)
+                        .font(LFFont.copyFixed(16))
+                        .foregroundStyle(theme.landInk.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, log.entries.isEmpty ? 24 : 20)
+            }
+
+            Text(verbatim: "Landfall-StudyLog")
+                .font(LFFont.labelFixed(12))
+                .foregroundStyle(theme.landInk.opacity(0.5))
+                .padding(.top, log.isRestDay && log.comment == nil ? 22 : 26)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, LFMetrics.cardPadding)
+        .padding(.bottom, 24)
+        .background(theme.land)
     }
 
     private func entryRow(_ entry: DayLog.Entry) -> some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 13) {
             TokenTile(
                 styleToken: entry.styleToken,
                 symbolToken: entry.symbolToken,
                 photoData: entry.photoData
             )
-            .frame(width: 38, height: 38)
+            .frame(width: 36, height: 36)
 
             Text(verbatim: entry.name)
-                .font(LFFont.copyFixed(17))
-                .foregroundStyle(theme.primary)
+                .font(LFFont.copyFixed(16))
+                .foregroundStyle(theme.landInk)
                 .lineLimit(1)
 
             Spacer(minLength: 8)
 
             Text(verbatim: LF.duration(minutes: entry.minutes))
-                .font(LFFont.numberFixed(16))
-                .foregroundStyle(theme.primary.opacity(0.65))
+                .font(LFFont.numberFixed(15))
+                .foregroundStyle(theme.landInk.opacity(0.7))
         }
-        .padding(.vertical, 13)
-    }
-
-    private var notesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(log.notes.prefix(noteLimit).enumerated()), id: \.offset) { _, note in
-                HStack(alignment: .top, spacing: 10) {
-                    // 引用の目印。装飾ではなく行頭の細い罫。
-                    Rectangle()
-                        .fill(theme.accent)
-                        .frame(width: 2)
-                    Text(verbatim: note)
-                        .font(LFFont.copyFixed(15))
-                        .foregroundStyle(theme.primary.opacity(0.8))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            if log.notes.count > noteLimit {
-                Text("and \(log.notes.count - noteLimit) more.")
-                    .font(LFFont.labelFixed(13))
-                    .foregroundStyle(theme.primary.opacity(0.45))
-            }
-        }
-    }
-
-    // MARK: - 休んだ日
-
-    /// 休んだ日も同じ体裁で1枚になる。学んだ日と同格に扱う。
-    private var restBody: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Rested.")
-                .font(LFFont.copyFixed(34))
-                .foregroundStyle(LFColor.seaGreen)
-                .padding(.top, 20)
-
-            Text("A day at harbor is part of the voyage.")
-                .font(LFFont.copyFixed(16))
-                .foregroundStyle(theme.primary.opacity(0.6))
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 12)
-        }
-    }
-
-    private var rule: some View {
-        Rectangle()
-            .fill(theme.hairline)
-            .frame(height: 1)
+        .padding(.vertical, 12)
     }
 }
 
@@ -232,8 +273,32 @@ private struct TokenTile: View {
                 }
             }
             .frame(width: s, height: s)
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .aspectRatio(1, contentMode: .fit)
     }
+}
+
+#Preview("学んだ日") {
+    DayLogCard(
+        log: DayLog(
+            date: .now,
+            entries: [
+                .init(id: "1", name: "開発", styleToken: "midnight", symbolToken: "phoenix", photoData: nil, minutes: 95),
+                .init(id: "2", name: "読書", styleToken: "coral", symbolToken: "book", photoData: nil, minutes: 40),
+            ],
+            notes: [],
+            comment: "久しぶりに読書に没頭できた。",
+            totalMinutes: 135,
+            sessionCount: 2
+        ),
+        theme: .harbor
+    )
+}
+
+#Preview("休んだ日") {
+    DayLogCard(
+        log: DayLog(date: .now, entries: [], notes: [], comment: nil, totalMinutes: 0, sessionCount: 0),
+        theme: .harbor
+    )
 }
