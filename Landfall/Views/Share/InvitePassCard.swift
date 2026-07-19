@@ -70,6 +70,7 @@ struct InvitePassCard: View {
         .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
         .environment(\.lfFixedType, true)
         .environment(\.colorScheme, .light)
+        .environment(\.locale, AppLanguage.current.locale)
     }
 
     /// QRは「濃い図形 / 明るい地」でないと読めないので、必ず明るい下敷きに置く。

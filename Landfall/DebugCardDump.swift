@@ -24,7 +24,7 @@ enum DebugCardDump {
         if ProcessInfo.processInfo.environment["LANDFALL_REST_DUMP"] == "1" {
             let rest = DayLog(
                 date: Date(), entries: [], notes: [], comment: nil,
-                totalMinutes: 0, sessionCount: 0
+                totalMinutes: 0, sessionCount: 0, daysSinceLastVoyage: nil
             )
             for theme in DayCardTheme.allCases {
                 let card = DayLogCard(log: rest, theme: theme)

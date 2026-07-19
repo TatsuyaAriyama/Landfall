@@ -216,7 +216,7 @@
 
 /* その日の共有カード */
 "Share this day" = "この日を共有する";
-"%lld sessions · %lld items" = "%lld回・%lld項目";
+"First sail in %lld days." = "%lld日ぶりの航海。";
 "Rested." = "休んだ日。";
 "A day at harbor is part of the voyage." = "港で休むのも、航海のうちです。";
 "and %lld more." = "ほか%lld件。";

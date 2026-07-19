@@ -85,13 +85,18 @@ enum DebugSeed {
                 (reading, 40, "Couldn't put it down. A few more pages before bed."),
                 (security, 30, "Marked what I didn't get. I'll start there next time."),
             ]
+            // 「今」から引くと、深夜に動かしたとき前日へこぼれる(記録とひとことの日がずれる)。
+            // その日の始まりからの固定時刻に置き、必ず当日に収める。
+            let dayStart = calendar.startOfDay(for: today)
+            let hours = [9, 13, 20]
             for (index, entry) in todayPlan.enumerated() {
                 let (item, minutes, note) = entry
-                // 同じ日の中で時刻をずらし、記録された順が分かるようにする。
-                let date = calendar.date(byAdding: .hour, value: -(todayPlan.count - index) * 2, to: today) ?? today
+                let date = calendar.date(byAdding: .hour, value: hours[index % hours.count], to: dayStart) ?? today
                 context.insert(StudySession(date: date, minutes: minutes, note: note, item: item))
             }
             StudyDayStore.markDay(today, context: context)
+            // setComment は既存の StudyDay を引いて書き換えるので、先に確定させる。
+            try? context.save()
             // その日のカード用のひとこと(記録ごとのメモとは別物)。
             StudyDayStore.setComment(
                 isJapanese ? "久しぶりに読書に没頭できた。"

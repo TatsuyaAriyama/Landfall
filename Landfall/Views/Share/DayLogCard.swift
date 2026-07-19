@@ -102,6 +102,9 @@ struct DayLogCard: View {
         // 絵はがきなので、端末の文字サイズ・外観に関わらず一定に描く。
         .environment(\.lfFixedType, true)
         .environment(\.colorScheme, .light)
+        // 日付・単位(LF/heroTime)はアプリ内の言語設定に従うので、翻訳文もそこに揃える。
+        // これが無いと、端末言語とアプリ内言語が違うときにカード内で言語が混ざる。
+        .environment(\.locale, AppLanguage.current.locale)
     }
 
     // MARK: - 海(日付・合計時間)
@@ -125,10 +128,14 @@ struct DayLogCard: View {
             } else {
                 heroTime
                     .padding(.top, 16)
-                Text("\(log.sessionCount) sessions · \(log.itemCount) items")
-                    .font(LFFont.labelFixed(14))
-                    .foregroundStyle(theme.seaText.opacity(0.65))
-                    .padding(.top, 8)
+                // 空きが空いた日にだけ、戻ってきたことを言葉にする。
+                // 普段の日は何も足さない(日付と時間だけの静かな面を保つ)。
+                if let gap = log.daysSinceLastVoyage, gap >= 2 {
+                    Text("First sail in \(gap) days.")
+                        .font(LFFont.copyFixed(16))
+                        .foregroundStyle(LFColor.sunYellow.opacity(0.9))
+                        .padding(.top, 10)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -317,7 +324,8 @@ private struct TokenTile: View {
             notes: [],
             comment: "久しぶりに読書に没頭できた。",
             totalMinutes: 135,
-            sessionCount: 2
+            sessionCount: 2,
+            daysSinceLastVoyage: 6
         ),
         theme: .harbor
     )
@@ -325,7 +333,7 @@ private struct TokenTile: View {
 
 #Preview("休んだ日") {
     DayLogCard(
-        log: DayLog(date: .now, entries: [], notes: [], comment: nil, totalMinutes: 0, sessionCount: 0),
+        log: DayLog(date: .now, entries: [], notes: [], comment: nil, totalMinutes: 0, sessionCount: 0, daysSinceLastVoyage: nil),
         theme: .harbor
     )
 }

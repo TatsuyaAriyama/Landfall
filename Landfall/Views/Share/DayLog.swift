@@ -24,6 +24,9 @@ struct DayLog {
     let comment: String?
     let totalMinutes: Int
     let sessionCount: Int
+    /// 前に記録した日から何日ぶりか。初めての記録なら nil。
+    /// このアプリの主題は再開力なので、空きが空いた日にだけカードで言葉にする。
+    let daysSinceLastVoyage: Int?
 
     var isRestDay: Bool { sessionCount == 0 }
     var itemCount: Int { entries.count }
@@ -75,13 +78,23 @@ struct DayLog {
 
         let trimmedComment = comment?.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // 前に記録した日を探して、何日ぶりかを測る。
+        let dayStart = calendar.startOfDay(for: date)
+        let previous = Set(sessions.map { calendar.startOfDay(for: $0.date) })
+            .filter { $0 < dayStart }
+            .max()
+        let sinceLast = previous.flatMap {
+            calendar.dateComponents([.day], from: $0, to: dayStart).day
+        }
+
         return DayLog(
             date: date,
             entries: entries,
             notes: notes,
             comment: (trimmedComment?.isEmpty ?? true) ? nil : trimmedComment,
             totalMinutes: ofDay.reduce(0) { $0 + $1.minutes },
-            sessionCount: ofDay.count
+            sessionCount: ofDay.count,
+            daysSinceLastVoyage: sinceLast
         )
     }
 }

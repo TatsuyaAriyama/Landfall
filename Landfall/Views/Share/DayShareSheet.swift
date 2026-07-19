@@ -30,8 +30,10 @@ struct DayShareSheet: View {
         return .harbor
     }
 
-    private var log: DayLog {
-        DayLog.make(date: date, sessions: allSessions, comment: comment)
+    private var log: DayLog { log(with: comment) }
+
+    private func log(with text: String) -> DayLog {
+        DayLog.make(date: date, sessions: allSessions, comment: text)
     }
 
     var body: some View {
@@ -75,14 +77,17 @@ struct DayShareSheet: View {
             }
         }
         .onAppear {
-            comment = StudyDayStore.comment(for: date, context: modelContext) ?? ""
-            renderedComment = comment
-            renderIfNeeded()
+            // @State は同じクロージャ内では反映されないので、読んだ値を明示的に渡す。
+            // 状態経由にすると最初の書き出しからひとことが抜ける。
+            let stored = StudyDayStore.comment(for: date, context: modelContext) ?? ""
+            comment = stored
+            renderedComment = stored
+            renderIfNeeded(using: stored)
             #if DEBUG
-            dumpAllThemesIfRequested()
+            dumpAllThemesIfRequested(using: stored)
             #endif
         }
-        .onChange(of: theme) { _, _ in renderIfNeeded() }
+        .onChange(of: theme) { _, _ in renderIfNeeded(using: comment) }
         // 入力が終わったら保存し、画像を作り直す(打鍵のたびには作らない)。
         .onChange(of: commentFocused) { _, focused in
             if !focused { commitComment() }
@@ -195,14 +200,14 @@ struct DayShareSheet: View {
         guard comment != renderedComment else { return }
         renderedComment = comment
         images.removeAll()
-        renderIfNeeded()
+        renderIfNeeded(using: comment)
     }
 
     @MainActor
-    private func renderIfNeeded() {
+    private func renderIfNeeded(using text: String) {
         guard images[theme] == nil else { return }
         images[theme] = WrappedShare.render(
-            card: DayLogCard(log: log, theme: theme),
+            card: DayLogCard(log: log(with: text), theme: theme),
             fileName: Self.fileName(for: date)
         )
     }
@@ -210,12 +215,12 @@ struct DayShareSheet: View {
     #if DEBUG
     /// 動作確認用: LANDFALL_CARD_DUMP=1 で全配色のPNGを Documents に書き出す。
     @MainActor
-    private func dumpAllThemesIfRequested() {
+    private func dumpAllThemesIfRequested(using text: String) {
         guard ProcessInfo.processInfo.environment["LANDFALL_CARD_DUMP"] == "1" else { return }
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         for candidate in DayCardTheme.allCases {
             guard let image = WrappedShare.render(
-                card: DayLogCard(log: log, theme: candidate),
+                card: DayLogCard(log: log(with: text), theme: candidate),
                 fileName: Self.fileName(for: date)
             ) else { continue }
             try? image.data.write(to: dir.appendingPathComponent("card-\(candidate.rawValue).png"))
