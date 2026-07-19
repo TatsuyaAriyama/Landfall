@@ -123,16 +123,12 @@ struct DayLogCard: View {
                     .foregroundStyle(theme.seaText.opacity(0.7))
                     .padding(.top, 8)
             } else {
-                Text(verbatim: LF.duration(minutes: log.totalMinutes))
-                    .font(LFFont.numberFixed(54))
-                    .foregroundStyle(theme.hero)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.55)
-                    .padding(.top, 14)
+                heroTime
+                    .padding(.top, 16)
                 Text("\(log.sessionCount) sessions · \(log.itemCount) items")
                     .font(LFFont.labelFixed(14))
                     .foregroundStyle(theme.seaText.opacity(0.65))
-                    .padding(.top, 6)
+                    .padding(.top, 8)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -140,6 +136,37 @@ struct DayLogCard: View {
         .padding(.top, 34)
         .padding(.bottom, 6)
         .background(theme.sea)
+    }
+
+    /// 合計時間。数字を大きく・単位を小さく置く(全部同じ大きさで並べると野暮ったい)。
+    /// 数字は主役色、単位は海の文字色で一歩引かせる。
+    private var heroTime: some View {
+        let hours = log.totalMinutes / 60
+        let minutes = log.totalMinutes % 60
+        let isJa = AppLanguage.current.locale.identifier.hasPrefix("ja")
+        let hourUnit = isJa ? "時間" : "h"
+        let minuteUnit = isJa ? "分" : "m"
+        return HStack(alignment: .firstTextBaseline, spacing: 2) {
+            if hours > 0 {
+                Text(verbatim: "\(hours)")
+                    .font(LFFont.numberFixed(60))
+                    .foregroundStyle(theme.hero)
+                Text(verbatim: hourUnit)
+                    .font(LFFont.copyFixed(18))
+                    .foregroundStyle(theme.seaText.opacity(0.85))
+                    .padding(.trailing, hours > 0 && minutes > 0 ? 8 : 0)
+            }
+            if minutes > 0 || hours == 0 {
+                Text(verbatim: "\(minutes)")
+                    .font(LFFont.numberFixed(60))
+                    .foregroundStyle(theme.hero)
+                Text(verbatim: minuteUnit)
+                    .font(LFFont.copyFixed(18))
+                    .foregroundStyle(theme.seaText.opacity(0.85))
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.6)
     }
 
     // MARK: - 情景(帆船と海岸)

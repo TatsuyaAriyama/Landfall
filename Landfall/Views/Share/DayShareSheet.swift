@@ -123,35 +123,37 @@ struct DayShareSheet: View {
     }
 
     private var themeRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 16) {
             ForEach(DayCardTheme.allCases) { candidate in
-                themePill(candidate)
+                themeSwatch(candidate)
             }
             Spacer(minLength: 0)
         }
     }
 
-    private func themePill(_ candidate: DayCardTheme) -> some View {
+    /// 配色はカードの縮図(海と砂の水平線が入った丸)で見せる。名前は読み上げ専用。
+    private func themeSwatch(_ candidate: DayCardTheme) -> some View {
         let selected = candidate == theme
         return Button {
             Haptics.tap()
             commentFocused = false
             theme = candidate
         } label: {
-            Text(candidate.label)
-                .font(LFFont.label(15))
-                .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
-                .padding(.horizontal, 16)
-                .frame(minHeight: 44)
-                .background(selected ? LFColor.ink : Color.clear)
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke(LFColor.ink.opacity(selected ? 0 : 0.25), lineWidth: 1)
-                )
-                .clipShape(Capsule(style: .continuous))
-                .contentShape(Capsule(style: .continuous))
+            VStack(spacing: 0) {
+                candidate.sea
+                candidate.land.frame(height: 11)
+            }
+            .frame(width: 34, height: 34)
+            .clipShape(Circle())
+            // 白い海(朝)が地に溶けないよう、常に淡い輪郭を敷く。
+            .overlay(Circle().stroke(LFColor.ink.opacity(0.12), lineWidth: 1))
+            .padding(5)
+            // 選択中は一回り外にリング。
+            .overlay(Circle().stroke(selected ? LFColor.ink : .clear, lineWidth: 1.5))
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(Text(candidate.label))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
