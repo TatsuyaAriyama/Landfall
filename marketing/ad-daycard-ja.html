@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1320px; height: 2868px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .panel {
+    position: relative;
+    width: 1320px; height: 2868px;
+    background: #184A40;            /* harborTeal の海 */
+    overflow: hidden;
+  }
+  .kicker {
+    position: absolute; left: 112px; top: 150px;
+    font-size: 26px; font-weight: 400; letter-spacing: 7px;
+    color: rgba(234,222,189,0.60);  /* harborSand */
+  }
+  h1 {
+    position: absolute; left: 108px; top: 216px;
+    font-size: 88px; font-weight: 500; line-height: 1.38;
+    color: #EADEBD; letter-spacing: 2px;
+  }
+  .sub {
+    position: absolute; left: 112px; top: 500px;
+    font-size: 33px; font-weight: 400; line-height: 1.9;
+    color: rgba(234,222,189,0.72); letter-spacing: 1px;
+  }
+  /* 海のなかの静かな水面 */
+  .line { position: absolute; border-radius: 99px; background: #EADEBD; }
+
+  /* 絵はがき二枚。ポストカードの白縁で「物」として立たせる */
+  .card {
+    position: absolute;
+    background: #F7F3EA; border: 18px solid #F7F3EA; border-radius: 48px;
+  }
+  .card.back  { width: 620px; left: 556px; top: 930px;  transform: rotate(4.5deg); }
+  .card.front { width: 750px; left: 104px; top: 1090px; transform: rotate(-3deg); }
+  .card img { display: block; width: 100%; border-radius: 30px; }
+
+  /* 岸と船 */
+  .coast { position: absolute; right: -120px; bottom: 158px; }
+  .boat  { position: absolute; left: 170px; bottom: 186px; }
+
+  /* 砂の帯(陸) */
+  .ground {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 170px;
+    background: #EADEBD;
+  }
+  .ground p {
+    position: absolute; left: 112px; top: 62px;
+    font-size: 30px; font-weight: 400; letter-spacing: 2px;
+    color: #184A40;
+  }
+</style>
+</head>
+<body>
+<div class="panel">
+  <div class="kicker">Landfall-StudyLog</div>
+  <h1>今日という航海を、<br>一枚の絵はがきに。</h1>
+  <p class="sub">学んだ時間も、その日のひとことも。<br>そのまま贈れる一枚になります。</p>
+
+  <!-- 凪の水面(上の海) -->
+  <div class="line" style="width:280px; height:10px; left:892px;  top:700px;  opacity:.22;"></div>
+  <div class="line" style="width:150px; height:9px;  left:1030px; top:748px;  opacity:.13;"></div>
+  <div class="line" style="width:210px; height:9px;  left:120px;  top:930px;  opacity:.16;"></div>
+
+  <!-- 絵はがき: 奥に朝、手前に海 -->
+  <div class="card back"><img src="card-paper.png" alt=""></div>
+  <div class="card front"><img src="card-harbor.png" alt=""></div>
+
+  <!-- 凪の水面(岸のそば) -->
+  <div class="line" style="width:300px; height:12px; left:250px; bottom:252px; opacity:.30;"></div>
+  <div class="line" style="width:170px; height:10px; left:150px; bottom:214px; opacity:.18;"></div>
+
+  <!-- 迎える岸(右手) -->
+  <svg class="coast" width="560" height="300" viewBox="430 340 422 408" preserveAspectRatio="none">
+    <path fill="#EADEBD" d="M430,748 Q452,512 556,386 Q590,350 624,386 Q676,486 705,612 Q742,548 788,524 Q832,642 852,748 L430,748 Z"/>
+  </svg>
+
+  <!-- 帆船 -->
+  <svg class="boat" width="120" height="222" viewBox="215 386 190 351">
+    <path fill="#EADEBD" d="M318,386 Q376,524 404,668 L302,668 Q300,522 318,386 Z
+                             M215,650 Q320,646 404,700 Q300,778 215,650 Z"/>
+  </svg>
+
+  <!-- 陸 -->
+  <div class="ground">
+    <p>休んだ日も、おなじ一枚になります。</p>
+  </div>
+</div>
+</body>
+</html>
