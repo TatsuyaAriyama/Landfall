@@ -213,3 +213,14 @@
 "Invite code %@" = "招待コード %@";
 "Leave this harbor?" = "この港を出ますか?";
 "You'll stop sharing here and won't see this harbor's members. You can rejoin with the code." = "共有をやめ、この港のメンバーも見えなくなります。コードでまた入れます。";
+
+/* その日の共有カード */
+"Share this day" = "この日を共有する";
+"%lld sessions · %lld items" = "%lld回・%lld項目";
+"Rested." = "休んだ日。";
+"A day at harbor is part of the voyage." = "港で休むのも、航海のうちです。";
+"and %lld more." = "ほか%lld件。";
+"Preparing…" = "準備中です。";
+"Paper" = "紙";
+"Ink" = "墨";
+"Sea" = "海";

@@ -69,6 +69,27 @@ enum DebugSeed {
             }
         }
 
+        // 今日: 複数項目+ひとことを入れて、その日の共有カードとホームの導線を確認できる形にする。
+        // LANDFALL_SEED_TODAY=0 を渡すと今日は未記録のまま(帰還・空白の見え方を確認したいとき)。
+        if ProcessInfo.processInfo.environment["LANDFALL_SEED_TODAY"] != "0" {
+            let todayPlan: [(StudyItem, Int, String?)] = isJapanese ? [
+                (development, 95, "同期まわりを直した。手強かった。"),
+                (reading, 40, "積んでいた本を30ページ。"),
+                (security, 30, "午前問題を15問。半分は落とした。"),
+            ] : [
+                (development, 95, "Fixed the sync layer. Tough one."),
+                (reading, 40, "Thirty pages of the book I'd left."),
+                (security, 30, "Fifteen practice questions. Missed half."),
+            ]
+            for (index, entry) in todayPlan.enumerated() {
+                let (item, minutes, note) = entry
+                // 同じ日の中で時刻をずらし、記録された順が分かるようにする。
+                let date = calendar.date(byAdding: .hour, value: -(todayPlan.count - index) * 2, to: today) ?? today
+                context.insert(StudySession(date: date, minutes: minutes, note: note, item: item))
+            }
+            StudyDayStore.markDay(today, context: context)
+        }
+
         // 前月: Wrapped が生成できる(前月は常に利用可能)。不死鳥型が出る配置。
         if let monthStart = calendar.dateInterval(of: .month, for: today)?.start,
            let prevStart = calendar.date(byAdding: .month, value: -1, to: monthStart) {
