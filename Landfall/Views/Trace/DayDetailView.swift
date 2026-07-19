@@ -8,6 +8,7 @@ struct DayDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Query private var allSessions: [StudySession]
     @State private var editingSession: StudySession?
+    @State private var sharing = false
 
     private var sessions: [StudySession] {
         let calendar = Calendar.current
@@ -73,10 +74,35 @@ struct DayDetailView: View {
                     .foregroundStyle(LFColor.ink)
                 }
             }
+            // その日ぶんを1枚のカードにして持ち出す。
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Haptics.tap()
+                    sharing = true
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(LFColor.ink)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(Text("Share this day"))
+            }
         }
         .toolbarBackground(LFColor.paper, for: .navigationBar)
         .sheet(item: $editingSession) { session in
             SessionEditSheet(session: session)
+        }
+        .sheet(isPresented: $sharing) {
+            DayShareSheet(log: DayLog.make(date: day, sessions: allSessions))
+        }
+        .onAppear {
+            #if DEBUG
+            // 動作確認用: LANDFALL_SHARE=1 でその日の共有カードを直接開く。
+            if ProcessInfo.processInfo.environment["LANDFALL_SHARE"] == "1" {
+                sharing = true
+            }
+            #endif
         }
         // 最後の記録を消したら詳細を閉じる。
         .onChange(of: sessions.isEmpty) { _, empty in

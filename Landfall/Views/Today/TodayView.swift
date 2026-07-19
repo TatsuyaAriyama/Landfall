@@ -12,6 +12,7 @@ struct TodayView: View {
 
     @State private var showingSettings = false
     @State private var creatingItem = false
+    @State private var sharingToday = false
     @State private var path = NavigationPath()
     /// 「今日」。日跨ぎ後の初操作をブロックしないよう、前景復帰と日付変化で更新する。
     @State private var today = Date()
@@ -63,6 +64,9 @@ struct TodayView: View {
         }
         .sheet(isPresented: $showingSettings) { SettingsView() }
         .sheet(isPresented: $creatingItem) { ItemEditorSheet(existing: nil) }
+        .sheet(isPresented: $sharingToday) {
+            DayShareSheet(log: DayLog.make(date: today, sessions: sessions))
+        }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.environment["LANDFALL_SETTINGS"] != nil {
@@ -169,10 +173,24 @@ struct TodayView: View {
         if !todays.isEmpty {
             let total = todays.reduce(0) { $0 + $1.minutes }
             let itemCount = Set(todays.compactMap { $0.item?.uuid }).count
-            Text("Today  \(LF.duration(minutes: total)) · \(itemCount) items")
-                .font(LFFont.label(14))
-                .monospacedDigit()
+            // タップで今日ぶんを1枚にして持ち出せる。
+            Button {
+                Haptics.tap()
+                sharingToday = true
+            } label: {
+                HStack(spacing: 8) {
+                    Text("Today  \(LF.duration(minutes: total)) · \(itemCount) items")
+                        .font(LFFont.label(14))
+                        .monospacedDigit()
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 12, weight: .regular))
+                }
                 .foregroundStyle(LFColor.ink.opacity(0.5))
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Share this day"))
         }
     }
 
