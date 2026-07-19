@@ -21,14 +21,15 @@
     color: rgba(234,222,189,0.60);  /* harborSand */
   }
   h1 {
-    position: absolute; left: 108px; top: 216px;
-    font-size: 88px; font-weight: 500; line-height: 1.38;
-    color: #EADEBD; letter-spacing: 2px;
+    position: absolute; left: 108px; top: 252px;
+    font-size: 94px; font-weight: 500; line-height: 1.30;
+    color: #EADEBD; letter-spacing: 1px;
   }
-  .sub {
-    position: absolute; left: 112px; top: 500px;
-    font-size: 33px; font-weight: 400; line-height: 1.9;
-    color: rgba(234,222,189,0.72); letter-spacing: 1px;
+  /* 見出しを受ける短い罫。版面に句読点を打つ */
+  .stroke {
+    position: absolute; left: 112px; top: 560px;
+    width: 92px; height: 3px; border-radius: 99px;
+    background: rgba(234,222,189,0.45);
   }
   /* 海のなかの静かな水面 */
   .line { position: absolute; border-radius: 99px; background: #EADEBD; }
@@ -38,8 +39,8 @@
     position: absolute;
     background: #F7F3EA; border: 18px solid #F7F3EA; border-radius: 48px;
   }
-  .card.back  { width: 620px; left: 556px; top: 930px;  transform: rotate(4.5deg); }
-  .card.front { width: 750px; left: 104px; top: 1090px; transform: rotate(-3deg); }
+  .card.back  { width: 620px; left: 570px; top: 828px;  transform: rotate(4.5deg); }
+  .card.front { width: 750px; left: 104px; top: 986px;  transform: rotate(-3deg); }
   .card img { display: block; width: 100%; border-radius: 30px; }
 
   /* 岸と船 */
@@ -62,15 +63,20 @@
 <div class="panel">
   <div class="kicker">Landfall-StudyLog</div>
   <h1>今日の学びを、<br>友達とシェアしよう。</h1>
+  <div class="stroke"></div>
 
   <!-- 凪の水面(上の海) -->
-  <div class="line" style="width:280px; height:10px; left:892px;  top:700px;  opacity:.22;"></div>
-  <div class="line" style="width:150px; height:9px;  left:1030px; top:748px;  opacity:.13;"></div>
-  <div class="line" style="width:210px; height:9px;  left:120px;  top:930px;  opacity:.16;"></div>
+  <div class="line" style="width:280px; height:10px; left:900px;  top:640px;  opacity:.20;"></div>
+  <div class="line" style="width:150px; height:9px;  left:1046px; top:686px;  opacity:.12;"></div>
+  <div class="line" style="width:210px; height:9px;  left:118px;  top:742px;  opacity:.14;"></div>
 
   <!-- 絵はがき: 奥に朝、手前に海 -->
   <div class="card back"><img src="card-paper.png" alt=""></div>
   <div class="card front"><img src="card-harbor.png" alt=""></div>
+
+  <!-- 凪の水面(下の海) -->
+  <div class="line" style="width:240px; height:10px; left:820px; top:2270px; opacity:.16;"></div>
+  <div class="line" style="width:140px; height:9px;  left:960px; top:2318px; opacity:.10;"></div>
 
   <!-- 凪の水面(岸のそば) -->
   <div class="line" style="width:300px; height:12px; left:250px; bottom:252px; opacity:.30;"></div>
@@ -89,6 +95,7 @@
 
   <!-- 陸 -->
   <div class="ground">
+    <p>休んだ日も、おなじ一枚になります。</p>
   </div>
 </div>
 </body>
