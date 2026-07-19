@@ -65,10 +65,11 @@ struct TodayView: View {
         .sheet(isPresented: $showingSettings) { SettingsView() }
         .sheet(isPresented: $creatingItem) { ItemEditorSheet(existing: nil) }
         .sheet(isPresented: $sharingToday) {
-            DayShareSheet(log: DayLog.make(date: today, sessions: sessions))
+            DayShareSheet(date: today)
         }
         .onAppear {
             #if DEBUG
+            DebugCardDump.runIfRequested()
             if ProcessInfo.processInfo.environment["LANDFALL_SETTINGS"] != nil {
                 showingSettings = true
             }

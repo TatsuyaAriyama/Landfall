@@ -82,6 +82,34 @@ enum StudyDayStore {
         }
     }
 
+    /// その日のカードに添えるひとこと(記録ごとのメモとは別物)。
+    static func comment(for date: Date, context: ModelContext) -> String? {
+        day(for: date, context: context)?.note
+    }
+
+    /// その日のひとことを書き換える。
+    /// StudyDay の存在そのものが「学んだ日」を意味するので、記録の無い日には作らない
+    /// (ひとことのために休んだ日を学んだ日に変えてしまわないため)。
+    static func setComment(_ text: String?, for date: Date, context: ModelContext) {
+        guard let day = day(for: date, context: context) else { return }
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = (trimmed?.isEmpty ?? true) ? nil : String(trimmed!.prefix(120))
+        guard day.note != value else { return }
+        day.note = value
+        day.updatedAt = Date()
+        try? context.save()
+        Task { @MainActor in SyncService.shared.push(day) }
+    }
+
+    private static func day(for date: Date, context: ModelContext) -> StudyDay? {
+        let dayStart = Calendar.current.startOfDay(for: date)
+        var descriptor = FetchDescriptor<StudyDay>(
+            predicate: #Predicate { $0.date == dayStart }
+        )
+        descriptor.fetchLimit = 1
+        return (try? context.fetch(descriptor))?.first
+    }
+
     /// 今日すでに「学んだ日」の刻印があるか。通知のスケジュールで使う。
     static func recordedToday(context: ModelContext) -> Bool {
         let dayStart = Calendar.current.startOfDay(for: Date())

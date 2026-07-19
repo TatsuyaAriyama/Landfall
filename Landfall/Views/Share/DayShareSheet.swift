@@ -1,12 +1,23 @@
 import SwiftUI
+import SwiftData
 
 /// その日の記録を1枚のカードにして共有するシート。
-/// 配色を選び、そのままSNSや友人へ送り出せる。
+/// この日についてのひとことを一行だけ添えられる(記録ごとのメモとは別物)。
 struct DayShareSheet: View {
-    let log: DayLog
+    let date: Date
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
+    @Query private var allSessions: [StudySession]
+
     @State private var theme: DayCardTheme = DayShareSheet.initialTheme
+    /// 入力中のひとこと。プレビューには即座に効く。
+    @State private var comment = ""
+    /// 画像を書き出したときのひとこと。これが変わったら作り直す。
+    @State private var renderedComment = ""
+    @FocusState private var commentFocused: Bool
+    /// 配色ごとに書き出した画像。ひとことが変わると捨てる。
+    @State private var images: [DayCardTheme: WrappedCardImage] = [:]
 
     /// 動作確認用: LANDFALL_CARD_THEME=paper/ink/harbor で初期の配色を固定できる。
     private static var initialTheme: DayCardTheme {
@@ -16,10 +27,12 @@ struct DayShareSheet: View {
             return theme
         }
         #endif
-        return .paper
+        return .harbor
     }
-    /// 配色ごとに書き出した画像を持っておき、選び直しても作り直さない。
-    @State private var images: [DayCardTheme: WrappedCardImage] = [:]
+
+    private var log: DayLog {
+        DayLog.make(date: date, sessions: allSessions, comment: comment)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,8 +53,13 @@ struct DayShareSheet: View {
                 .background(LFColor.ink.opacity(0.06))
             }
 
+            commentField
+                .padding(.horizontal, LFMetrics.cardPadding)
+                .padding(.top, 18)
+
             themeRow
                 .padding(.horizontal, LFMetrics.cardPadding)
+                .padding(.top, 16)
                 .padding(.bottom, 16)
 
             shareButton
@@ -50,8 +68,25 @@ struct DayShareSheet: View {
         }
         .background(LFColor.paper)
         .presentationDetents([.large])
-        .onAppear { renderIfNeeded() }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { commentFocused = false }
+            }
+        }
+        .onAppear {
+            comment = StudyDayStore.comment(for: date, context: modelContext) ?? ""
+            renderedComment = comment
+            renderIfNeeded()
+            #if DEBUG
+            dumpAllThemesIfRequested()
+            #endif
+        }
         .onChange(of: theme) { _, _ in renderIfNeeded() }
+        // 入力が終わったら保存し、画像を作り直す(打鍵のたびには作らない)。
+        .onChange(of: commentFocused) { _, focused in
+            if !focused { commitComment() }
+        }
     }
 
     // MARK: - 部品
@@ -70,6 +105,23 @@ struct DayShareSheet: View {
         .padding(.top, 24)
     }
 
+    private var commentField: some View {
+        TextField("A word about this day (optional)", text: $comment, axis: .vertical)
+            .font(LFFont.label(16))
+            .foregroundStyle(LFColor.ink)
+            .tint(LFColor.ink)
+            .lineLimit(1...3)
+            .focused($commentFocused)
+            .submitLabel(.done)
+            .onSubmit { commentFocused = false }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous)
+                    .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
+            )
+    }
+
     private var themeRow: some View {
         HStack(spacing: 10) {
             ForEach(DayCardTheme.allCases) { candidate in
@@ -83,6 +135,7 @@ struct DayShareSheet: View {
         let selected = candidate == theme
         return Button {
             Haptics.tap()
+            commentFocused = false
             theme = candidate
         } label: {
             Text(candidate.label)
@@ -104,13 +157,20 @@ struct DayShareSheet: View {
 
     @ViewBuilder
     private var shareButton: some View {
-        if let image = images[theme] {
+        // 入力途中(未確定)のときは、まず確定させてから共有させる。
+        if let image = images[theme], comment == renderedComment {
             ShareLink(item: image, preview: SharePreview(image.fileName)) {
                 shareLabel(ready: true)
             }
             .simultaneousGesture(TapGesture().onEnded { Haptics.success() })
         } else {
-            shareLabel(ready: false)
+            Button {
+                commentFocused = false
+                commitComment()
+            } label: {
+                shareLabel(ready: false)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -124,16 +184,42 @@ struct DayShareSheet: View {
             .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
     }
 
-    // MARK: - 書き出し
+    // MARK: - 保存と書き出し
+
+    /// ひとことを保存し、画像を作り直す。
+    @MainActor
+    private func commitComment() {
+        StudyDayStore.setComment(comment, for: date, context: modelContext)
+        guard comment != renderedComment else { return }
+        renderedComment = comment
+        images.removeAll()
+        renderIfNeeded()
+    }
 
     @MainActor
     private func renderIfNeeded() {
         guard images[theme] == nil else { return }
         images[theme] = WrappedShare.render(
             card: DayLogCard(log: log, theme: theme),
-            fileName: Self.fileName(for: log.date)
+            fileName: Self.fileName(for: date)
         )
     }
+
+    #if DEBUG
+    /// 動作確認用: LANDFALL_CARD_DUMP=1 で全配色のPNGを Documents に書き出す。
+    @MainActor
+    private func dumpAllThemesIfRequested() {
+        guard ProcessInfo.processInfo.environment["LANDFALL_CARD_DUMP"] == "1" else { return }
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        for candidate in DayCardTheme.allCases {
+            guard let image = WrappedShare.render(
+                card: DayLogCard(log: log, theme: candidate),
+                fileName: Self.fileName(for: date)
+            ) else { continue }
+            try? image.data.write(to: dir.appendingPathComponent("card-\(candidate.rawValue).png"))
+        }
+    }
+    #endif
 
     /// 「Landfall-2026-07-18.png」形式。
     static func fileName(for date: Date) -> String {

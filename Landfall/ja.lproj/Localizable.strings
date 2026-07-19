@@ -221,6 +221,14 @@
 "A day at harbor is part of the voyage." = "港で休むのも、航海のうちです。";
 "and %lld more." = "ほか%lld件。";
 "Preparing…" = "準備中です。";
-"Paper" = "紙";
-"Ink" = "墨";
 "Sea" = "海";
+"Night" = "夜";
+"Morning" = "朝";
+"A word about this day (optional)" = "この日について、ひとこと(任意)";
+
+/* 入港証 */
+"Harbor pass" = "入港証";
+"Harbor code" = "合鍵";
+"Open this harbor with the code above." = "この合鍵で、港に入れます。";
+"Send the pass" = "入港証を渡す";
+"Send as text" = "文章で送る";

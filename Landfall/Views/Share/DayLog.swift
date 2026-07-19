@@ -18,8 +18,10 @@ struct DayLog {
     let date: Date
     /// 項目ごとに合算し、長い順。
     let entries: [Entry]
-    /// その日に書いたひとこと(空は除く)。書いた順。
+    /// 記録ごとに書いたひとこと(空は除く)。書いた順。カードには載せない。
     let notes: [String]
+    /// その日のカードに添える一行。記録ごとのメモとは別に、この日について書くもの。
+    let comment: String?
     let totalMinutes: Int
     let sessionCount: Int
 
@@ -27,7 +29,13 @@ struct DayLog {
     var itemCount: Int { entries.count }
 
     /// その日のセッションから組み立てる。項目ごとに合算し、ひとことは順に拾う。
-    static func make(date: Date, sessions: [StudySession], calendar: Calendar = .current) -> DayLog {
+    /// comment はその日のカード用の一行(StudyDay.note)。
+    static func make(
+        date: Date,
+        sessions: [StudySession],
+        comment: String? = nil,
+        calendar: Calendar = .current
+    ) -> DayLog {
         let ofDay = sessions
             .filter { calendar.isDate($0.date, inSameDayAs: date) }
             .sorted { $0.date < $1.date }
@@ -65,10 +73,13 @@ struct DayLog {
             return note
         }
 
+        let trimmedComment = comment?.trimmingCharacters(in: .whitespacesAndNewlines)
+
         return DayLog(
             date: date,
             entries: entries,
             notes: notes,
+            comment: (trimmedComment?.isEmpty ?? true) ? nil : trimmedComment,
             totalMinutes: ofDay.reduce(0) { $0 + $1.minutes },
             sessionCount: ofDay.count
         )

@@ -16,6 +16,11 @@ struct HarborView: View {
     @State private var hasLoaded = false
     /// 退港の確認対象(タップ即実行しない)。
     @State private var leavingRoom: HarborRoom?
+    /// 入港証を出す対象の港。
+    @State private var invitingRoom: HarborRoom?
+    /// 招待リンクから受け取ったコード(参加シートに引き渡す)。
+    @StateObject private var router = DeepLinkRouter.shared
+    @State private var incomingCode: String?
 
     // 自分のプレイヤーカード(ローカル先行)。編集の保存で更新される。
     @AppStorage(PlayerProfile.nameKey) private var playerName = ""
@@ -85,7 +90,24 @@ struct HarborView: View {
             RoomCreateSheet { await reload() }
         }
         .sheet(isPresented: $joining) {
-            RoomJoinSheet { await reload() }
+            RoomJoinSheet(prefilledCode: incomingCode) { await reload() }
+        }
+        .sheet(item: $invitingRoom) { room in
+            InvitePassSheet(roomName: room.name, code: room.id)
+        }
+        // 入港証のリンクから開かれたら、コードを入れた状態で参加シートを出す。
+        .onChange(of: router.pendingJoinCode) { _, code in
+            guard let code else { return }
+            incomingCode = code
+            router.pendingJoinCode = nil
+            joining = true
+        }
+        .onAppear {
+            if let code = router.pendingJoinCode {
+                incomingCode = code
+                router.pendingJoinCode = nil
+                joining = true
+            }
         }
         .sheet(isPresented: $editingProfile) {
             ProfileEditorSheet { Task { await reload() } }
@@ -154,6 +176,8 @@ struct HarborView: View {
             }
             .buttonStyle(.plain)
             Button {
+                // 手で開くときは、以前リンクから受け取ったコードを持ち越さない。
+                incomingCode = nil
                 joining = true
             } label: {
                 Text("Enter with a code")
@@ -179,8 +203,11 @@ struct HarborView: View {
                     .font(LFFont.copy(22))
                     .foregroundStyle(LFColor.ink)
                 Spacer()
-                // 招待コード。タップで招待文ごと共有できる。共有できると分かるようグリフを添える。
-                ShareLink(item: inviteMessage(for: room)) {
+                // 招待コード。タップで入港証(コード+QRの一枚)を開いて渡せる。
+                Button {
+                    Haptics.tap()
+                    invitingRoom = room
+                } label: {
                     HStack(spacing: 6) {
                         Text(verbatim: room.id)
                             .font(LFFont.label(15))
@@ -190,7 +217,10 @@ struct HarborView: View {
                             .font(.system(size: 13, weight: .medium))
                     }
                     .foregroundStyle(LFColor.returnOrange)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .accessibilityLabel(Text("Invite code \(room.id)"))
                 .accessibilityHint(Text("Share"))
             }
@@ -216,14 +246,6 @@ struct HarborView: View {
             }
             .buttonStyle(.plain)
         }
-    }
-
-    /// 招待文。コード単体ではなく、誘い文ごと共有する。
-    private func inviteMessage(for room: HarborRoom) -> String {
-        String(
-            format: String(localized: "Come sail with me in \"%@\" on Landfall. Harbor code: %@"),
-            room.name, room.id
-        )
     }
 
     private func memberRow(roomId: String, member: HarborMember) -> some View {
@@ -590,6 +612,8 @@ struct RoomCreateSheet: View {
 }
 
 struct RoomJoinSheet: View {
+    /// 入港証のリンクから来たときに入れておくコード。手入力の手間を省く。
+    var prefilledCode: String? = nil
     var onDone: () async -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -653,5 +677,8 @@ struct RoomJoinSheet: View {
         .padding(LFMetrics.cardPadding)
         .background(LFColor.paper)
         .presentationDetents([.medium])
+        .onAppear {
+            if let prefilledCode, code.isEmpty { code = prefilledCode }
+        }
     }
 }
