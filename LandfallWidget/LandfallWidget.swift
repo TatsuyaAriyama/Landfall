@@ -51,14 +51,80 @@ struct LandfallWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: LandfallEntry
 
+    private var isAccessory: Bool {
+        family == .accessoryCircular || family == .accessoryRectangular || family == .accessoryInline
+    }
+
     var body: some View {
-        Group {
-            switch family {
-            case .systemMedium: medium
-            default: small
+        content
+            // ロック画面(accessory)はモノクロ/ヴィブラント描画なので固定色は効かない。
+            // 地は clear にし、ホーム画面(system)だけティール地にする。
+            .containerBackground(for: .widget) {
+                isAccessory ? Color.clear : Color.wTeal
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch family {
+        case .accessoryCircular: circular
+        case .accessoryRectangular: rectangular
+        case .accessoryInline: inline
+        case .systemMedium: medium
+        default: small
+        }
+    }
+
+    // MARK: - ロック画面(accessory)
+
+    /// 円形。学と休を対等に二段で。比率ゲージにはしない(学>休 の含意を作らない)。
+    private var circular: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            VStack(spacing: 0) {
+                accessoryCount("学", entry.studied)
+                accessoryCount("休", entry.rested)
             }
         }
-        .containerBackground(Color.wTeal, for: .widget)
+    }
+
+    private func accessoryCount(_ label: String, _ n: Int) -> some View {
+        HStack(spacing: 2) {
+            Text(label).font(.system(size: 11))
+            Text("\(n)").font(.system(size: 16, weight: .medium)).monospacedDigit()
+        }
+    }
+
+    /// 横長。月・学/休・やめた0。数字は同じ大きさで並べる。
+    private var rectangular: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("\(entry.month)月のあなた")
+                .font(.system(size: 12, weight: .medium))
+                .widgetAccentable()
+            HStack(spacing: 12) {
+                accessoryDays("学", entry.studied)
+                accessoryDays("休", entry.rested)
+            }
+            Text("やめた回数 0").font(.system(size: 11)).opacity(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func accessoryDays(_ label: String, _ n: Int) -> some View {
+        HStack(spacing: 2) {
+            Text(label).font(.system(size: 12))
+            Text("\(n)").font(.system(size: 18, weight: .medium)).monospacedDigit()
+            Text("日").font(.system(size: 11))
+        }
+    }
+
+    /// 一行(時計の隣)。督促ではなく静かな事実として。
+    private var inline: some View {
+        Label {
+            Text("学\(entry.studied) 休\(entry.rested)・やめた0")
+        } icon: {
+            Image(systemName: "sailboat")
+        }
     }
 
     private var small: some View {
@@ -108,7 +174,10 @@ struct LandfallWidget: Widget {
         }
         .configurationDisplayName("Landfall")
         .description("今月の学んだ日・休んだ日を同じ大きさで。")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .supportedFamilies([
+            .systemSmall, .systemMedium,
+            .accessoryCircular, .accessoryRectangular, .accessoryInline,
+        ])
     }
 }
 

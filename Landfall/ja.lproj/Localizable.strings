@@ -232,3 +232,6 @@
 "Open this harbor with the code above." = "この合鍵で、港に入れます。";
 "Send the pass" = "入港証を渡す";
 "Send as text" = "文章で送る";
+
+/* おかえりの瞬間の共有(帰還時のみ) */
+"Keep this return." = "この帰りを、一枚に。";
