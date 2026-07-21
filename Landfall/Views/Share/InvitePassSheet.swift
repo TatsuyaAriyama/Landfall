@@ -14,8 +14,9 @@ struct InvitePassSheet: View {
             format: String(localized: "Come sail with me in \"%@\" on Landfall. Harbor code: %@"),
             roomName, code
         )
-        guard LandfallLink.canShowQR else { return base }
-        return base + "\n" + LandfallLink.invite(code: code).absoluteString
+        // 未インストールの人向けに入手ページを添える(コードは手入力)。公開前は付けない。
+        guard let download = LandfallLink.downloadURL else { return base }
+        return base + "\n" + download.absoluteString
     }
 
     var body: some View {
