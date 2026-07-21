@@ -7,7 +7,8 @@ struct InvitePassCard: View {
     let roomName: String
     let code: String
 
-    private var inviteURL: URL { LandfallLink.invite(code: code) }
+    /// QRはアプリの入手ページへ(未インストールの人が辿り着ける)。参加は上の6文字コードで。
+    private var qrURL: URL? { LandfallLink.downloadURL }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -38,7 +39,7 @@ struct InvitePassCard: View {
                 }
                 Spacer(minLength: 0)
                 // 行き先が決まっていないうちはQRを描かない(死んだQRを配らない)。
-                if LandfallLink.canShowQR, let qr = LandfallLink.qrImage(for: inviteURL) {
+                if let qrURL, let qr = LandfallLink.qrImage(for: qrURL) {
                     qrBlock(qr)
                 }
             }

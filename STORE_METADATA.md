@@ -1,5 +1,12 @@
 # App Store 掲載文(ドラフト)
 
+> **【最優先・審査リスク】App Privacy の是正が必要。**
+> このアプリはサインイン(Apple/Google)・端末間同期・港での共有を持ち、`PrivacyInfo.xcprivacy` は
+> メール/名前/ユーザーID/ユーザーコンテンツの収集(Linked・非トラッキング・App機能目的)を宣言している。
+> 一方、下の説明文と App Privacy 回答は「収集なし・完全ローカル」と書いており **バイナリと矛盾**する。
+> これは審査(5.1.1 / 2.3.1)で拒否される典型。**App Store Connect で App Privacy 回答を今すぐ修正すること**
+> (下の「App Privacy」節に正しい回答を記載)。説明文の該当箇所も本ファイルで是正済み。
+
 ## App Name / アプリ名
 - EN: `Landfall`
 - JA: `Landfall`
@@ -33,8 +40,13 @@ See your month as a single line: a skyline of the days you showed up, gaps where
 WRAPPED
 At the end of each month, Landfall turns the whole month into four cards: the facts (days studied, days rested, and the fact that you never once quit), the story of your longest gap, a comeback "type" built from your own pattern, and a one-page trace of everything. Share any card as an image.
 
+HARBOR (optional)
+Sign in to sync your records across your devices, and to open a small "harbor" with friends. In a harbor you can see each other's days — never ranked, never compared, everyone the same size.
+
 WHAT LANDFALL WILL NEVER DO
-No streak counters. No "don't break the chain." No push notifications nagging you back. No comparisons to other users. No accounts, no ads, no analytics — everything stays on your device.
+No streak counters. No "don't break the chain." No nagging notifications. No leaderboards, no comparisons, no ads, and no tracking — your data is never sold or used to follow you across apps.
+
+Your records live on your device. Signing in is optional and only powers sync and harbors.
 
 Landfall is for anyone who has ever quit a habit app out of guilt. This one keeps the door open instead.
 ```
@@ -54,8 +66,13 @@ Landfallは、休んだ日を隠さない学習ログです。
 ■ Wrapped
 月末になると、その月の全てが4枚のカードになります。事実(学んだ日数・休んだ日数、そして一度もやめなかったという事実)、いちばん長い空白の物語、あなた自身のパターンから導かれる「再開力タイプ」、そして軌跡の一枚絵。どのカードも画像として共有できます。
 
+■ 港(任意)
+サインインすると、記録を複数の端末で同期でき、友人と小さな「港」をひらけます。港では互いの学んだ日を見せ合えます — 順位もランキングもなく、全員が同じ大きさ。
+
 ■ 作らないと決めていること
-連続日数の表示、「鎖を切らない」といった煽り、催促の通知、他ユーザーとの比較。アカウントも広告も計測も一切なし — すべてはあなたの端末の中だけで完結します。
+連続日数の表示、「鎖を切らない」といった煽り、催促の通知、順位・他ユーザーとの比較。広告もトラッキングもありません — あなたのデータを売ったり、アプリを横断して追跡したりはしません。
+
+記録はあなたの端末の中にあります。サインインは任意で、同期と港のためだけに使います。
 
 罪悪感で習慣アプリをやめてしまったことがある人へ。Landfallは、扉を閉じません。
 ```
@@ -71,9 +88,19 @@ Landfallは、休んだ日を隠さない学習ログです。
 ## Copyright
 - `© 2026 Tatsuya Ariyama`
 
-## App Privacy(質問票の回答方針)
-- データ収集: **なし**(Data Not Collected)
-- 完全ローカル、アカウント不要、通信なし
+## App Privacy(質問票の回答 — `PrivacyInfo.xcprivacy` と一致させる)
+
+**「Data Not Collected」は誤り。以下を App Store Connect に入力すること。**
+
+- Tracking: **No**(トラッキングなし。IDFA/広告なし)
+- 収集するデータ(いずれも **Linked to identity=Yes / Used for tracking=No / 用途=App Functionality**):
+  1. **Contact Info → Email Address**(Apple/Google サインイン)
+  2. **Contact Info → Name**(表示名・プレイヤー名)
+  3. **Identifiers → User ID**(Firebase UID)
+  4. **User Content → Other User Content**(学習記録・ひとこと・港での共有)
+
+> 記録の中核は端末内(SwiftData)だが、サインイン時に上記が Firebase(Auth/Firestore)へ同期・共有されるため
+> 収集扱いになる。トラッキングは一切していない(NSPrivacyTracking=false)。
 
 ## Age Rating
 - 暴力・成人向け要素なし → 4+ 相当を想定

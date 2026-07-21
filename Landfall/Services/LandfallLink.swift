@@ -14,8 +14,16 @@ enum LandfallLink {
 
     // MARK: - 設定するのはここだけ
 
-    /// アプリの入口。例: URL(string: "https://apps.apple.com/jp/app/idXXXXXXXXX")
-    /// nil のあいだは共有画像にQR・URLを描かない。
+    /// App Store の数値ID。App Store Connect でアプリを作成した時点で採番される
+    /// (審査中でも確認できる)。App情報 → 一般情報 → 「Apple ID」。
+    /// **公開されたら**この2箇所を埋めるだけで、共有カードと入港証にQR・リンクが出る:
+    ///   1. `appStoreID` に数値IDを入れる
+    ///   2. `isPubliclyAvailable` を true にする(= 審査通過・配信開始後)
+    /// ※ 公開前に true にすると、まだ開けないURLのQRが共有画像に焼き込まれてしまう。
+    static let appStoreID: String? = nil            // 例: "6612345678"
+    static let isPubliclyAvailable = false          // 配信開始後に true
+
+    /// アプリの入口。公開後は App Store のページ、それまでは nil(QR/URLを描かない)。
     static let site: URL? = {
         #if DEBUG
         // 動作確認用: LANDFALL_SITE=https://… で行き先を差し替えられる。
@@ -24,7 +32,8 @@ enum LandfallLink {
             return url
         }
         #endif
-        return nil
+        guard isPubliclyAvailable, let id = appStoreID, !id.isEmpty else { return nil }
+        return URL(string: "https://apps.apple.com/app/id\(id)")
     }()
 
     /// アプリが入っている端末で直接開くためのカスタムURLスキーム。
@@ -44,14 +53,15 @@ enum LandfallLink {
 
     // MARK: - 港の招待
 
-    /// 港の招待リンク。Webの入口があればそちら(未インストールでも辿り着ける)、
-    /// 無ければカスタムスキーム(インストール済みの人だけ開ける)。
+    /// アプリを入手できるページ(共有物のQR先)。公開後のみ。
+    static var downloadURL: URL? { site }
+
+    /// 港の招待の deep link。インストール済みの端末で開くと参加シートが出る。
+    /// 未インストールの人向けには App Store の downloadURL を別に見せ、6文字コードは手入力
+    /// (App Store のURLは経路にコードを載せられないため)。真の universal link には
+    /// 自前ドメイン + apple-app-site-association のホストが要る(未整備)。
     static func invite(code: String) -> URL {
-        let cleaned = normalize(code)
-        if let site {
-            return site.appendingPathComponent("j").appendingPathComponent(cleaned)
-        }
-        return URL(string: "\(scheme)://join?code=\(cleaned)")!
+        URL(string: "\(scheme)://join?code=\(normalize(code))")!
     }
 
     /// 受け取ったURLから港のコードを取り出す。landfall://join?code=XXXXXX と https://…/j/XXXXXX の両方。
