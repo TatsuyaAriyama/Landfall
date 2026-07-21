@@ -78,12 +78,46 @@ Landfallは、休んだ日を隠さない学習ログです。
 ```
 
 ## Keywords(100文字以内、カンマ区切り、スペース節約)/ キーワード
-- EN: `study,habit,log,streak,journal,focus,timer,productivity,reading,comeback,rest,tracker`
-- JA: `学習,習慣,記録,日記,タイマー,勉強,読書,再開,休憩,集中,ジャーナル`
+- EN: `study,habit,log,streak,journal,focus,timer,reading,comeback,tracker,exam,routine`
+- JA: `勉強,学習,記録,勉強垢,習慣,タイマー,受験,資格,読書,日記,再開,継続`
+  - ※「勉強垢」「受験」「資格」は日本の学習ユーザーの検索意図が強い高価値語。app名・サブタイトルは
+    別途インデックスされるので keyword には入れない。100文字/カンマ区切り(スペースは入れない)。
 
-## What's New(初回リリースは空欄可、参考文)
+## What's New
+
+### v1.0(初回)
 - EN: `Landfall v1.0 — Home, Trace, and Wrapped. Your first Wrapped arrives at the end of your first month.`
 - JA: `Landfall v1.0 — ホーム・軌跡・Wrapped。最初のWrappedは、記録した月の終わりに届きます。`
+
+### 次のアップデート(v1.0 承認後に提出。ローカル main に実装済み)
+> v1.0 以降に積んだもの一式(同期・ダークモード・ウィジェット・通知・共有カード・港の磨き込み・
+> アクセシビリティ・セキュリティ強化)。提出時に MARKETING_VERSION / CURRENT_PROJECT_VERSION を上げること。
+- EN:
+```
+You can now carry your voyage with you.
+
+• Sync — sign in to keep your records across your devices.
+• Harbor — open a small harbor with friends and see each other's days. No ranks, no comparison.
+• Share a day — turn any day into a postcard of the harbor and share it.
+• Home widget — your month, at a glance.
+• A gentle nudge — an optional, never-nagging reminder. Off by default.
+• Dark mode, larger text support, and dozens of small refinements.
+
+Still no streaks. Still no guilt. Times quit: still zero.
+```
+- JA:
+```
+航海を、持ち歩けるようになりました。
+
+・同期 — サインインで、記録を複数の端末に。
+・港 — 友人と小さな港をひらき、互いの学んだ日を見せ合えます。順位も比較もありません。
+・その日を共有 — 一日を港の絵はがきにして贈れます。
+・ホームウィジェット — 今月を、ひと目で。
+・そっと戻れる通知 — 煽らない、任意のリマインド(既定はオフ)。
+・ダークモード、文字サイズ対応、そして数十の細かな磨き込み。
+
+連続日数はやっぱりありません。罪悪感もなし。やめた回数は、いつも0のまま。
+```
 
 ## Copyright
 - `© 2026 Tatsuya Ariyama`
