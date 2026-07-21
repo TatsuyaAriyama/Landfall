@@ -10,6 +10,10 @@ struct ItemDetailView: View {
     @State private var recording = false
     @State private var editing = false
     @State private var showWelcomeBack = false
+    /// おかえり演出から共有へ橋を架けるとき。
+    @State private var sharingReturn = false
+    /// おかえり演出の自動退場タスク(共有を選んだら止める)。
+    @State private var welcomeTask: Task<Void, Never>?
     /// タップした記録行。ここから時間・ひとことを直せる(訂正導線)。
     @State private var editingSession: StudySession?
 
@@ -90,10 +94,17 @@ struct ItemDetailView: View {
         .sheet(item: $editingSession) { session in
             SessionEditSheet(session: session)
         }
+        .sheet(isPresented: $sharingReturn) {
+            DayShareSheet(date: Date())
+        }
         .onAppear {
             #if DEBUG
             if ProcessInfo.processInfo.environment["LANDFALL_RECORD"] != nil {
                 recording = true
+            }
+            // 動作確認用: LANDFALL_WELCOME=1 でおかえり演出を出す。
+            if ProcessInfo.processInfo.environment["LANDFALL_WELCOME"] == "1" {
+                handleSaved(blanks: 6)
             }
             #endif
         }
@@ -228,20 +239,50 @@ struct ItemDetailView: View {
     private var welcomeBackOverlay: some View {
         ZStack {
             LFColor.paper.opacity(0.94).ignoresSafeArea()
-            Text("Welcome back.")
-                .font(LFFont.copy(26))
-                .foregroundStyle(LFColor.ink)
+                .contentShape(Rectangle())
+                .onTapGesture { dismissWelcome() }
+            VStack(spacing: 22) {
+                Text("Welcome back.")
+                    .font(LFFont.copy(26))
+                    .foregroundStyle(LFColor.ink)
+                // 戻ってきた瞬間にだけ、そっと差し出す。押さなければ静かに消える(誘いであって圧ではない)。
+                Button {
+                    welcomeTask?.cancel()
+                    withAnimation(.easeInOut(duration: 0.2)) { showWelcomeBack = false }
+                    sharingReturn = true
+                } label: {
+                    HStack(spacing: 7) {
+                        Text("Keep this return.")
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 13, weight: .regular))
+                    }
+                    .font(LFFont.label(15))
+                    .foregroundStyle(LFColor.returnOrange)
+                    .padding(.horizontal, 20)
+                    .frame(height: 44)
+                    .overlay(Capsule(style: .continuous).stroke(LFColor.returnOrange.opacity(0.45), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
         }
         .transition(.opacity)
     }
 
     private func handleSaved(blanks: Int?) {
         guard let blanks, blanks >= 2 else { return }
-        Task {
+        welcomeTask?.cancel()
+        welcomeTask = Task {
             withAnimation(.easeInOut(duration: 0.25)) { showWelcomeBack = true }
-            try? await Task.sleep(nanoseconds: 1_250_000_000)
+            // 押す間を残す。押されなければ静かにフェードして消える。
+            try? await Task.sleep(nanoseconds: 2_800_000_000)
+            if Task.isCancelled { return }
             withAnimation(.easeInOut(duration: 0.25)) { showWelcomeBack = false }
         }
+    }
+
+    private func dismissWelcome() {
+        welcomeTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.25)) { showWelcomeBack = false }
     }
 
     // MARK: - 整形
