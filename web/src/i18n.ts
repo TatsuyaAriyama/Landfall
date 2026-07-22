@@ -551,6 +551,11 @@ export function remainingDaysLabel(days: number): string {
   return lang === "ja" ? `あと${days}日` : `${days} days to go`;
 }
 
+/// チャットの発言時刻。「14:32」。
+export function chatTimeLabel(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 /// 共同航海の残り表示。「あと◯時間」(1時間未満は分)。
 export function voyageRemainingLabel(remainingMinutes: number): string {
   const m = Math.max(remainingMinutes, 0);

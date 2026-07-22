@@ -966,6 +966,13 @@ textarea {
   color: var(--paper);
 }
 
+.chat-time {
+  margin-top: 3px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--ink) 40%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
 .chat-auto {
   align-self: center;
   text-align: center;

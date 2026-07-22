@@ -52,7 +52,7 @@ import { ProfileEditor } from "./ProfileEditor";
 import { MemberTrace } from "./MemberTrace";
 import { VoyageChartPanel } from "./VoyageChart";
 import { Modal, askConfirm, showToast } from "../overlays";
-import { chatLandfallLine, chatReturnLine, t } from "../i18n";
+import { chatLandfallLine, chatReturnLine, chatTimeLabel, t } from "../i18n";
 
 // three.js を含む「みんなの海」は重いので、プライベートの港を開いたときだけ読み込む。
 const HarborWorld = lazy(() => import("../three/HarborWorld"));
@@ -82,6 +82,9 @@ class HarborWorldBoundary extends Component<{ children?: ReactNode }, { failed: 
     return this.state.failed ? null : this.props.children;
   }
 }
+
+/// チャットの発言を削除できる猶予(firestore.rulesの一時間窓と同じ)。
+const CHAT_DELETE_WINDOW_MS = 60 * 60 * 1000;
 
 type HarborNav =
   | { type: "root" }
@@ -696,6 +699,14 @@ function RoomDetail({
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // 削除できる一時間の窓を、新着メッセージが無くても数え切れるように
+  // 1分おきに再評価する(でないと1時間を過ぎても削除ボタンが残り続ける)。
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNowTick(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   // ---- 共同航海 ----
   // voyage/current を購読し、進捗は全メンバーの months から導出する。
   // undefined=読込中、null=航海なし。
@@ -930,7 +941,7 @@ function RoomDetail({
             name={nameOf(m.uid)}
             onReact={(token) => void reactChat(room.id, m, token)}
             onDelete={
-              m.uid === uid
+              m.uid === uid && nowTick - m.createdAt.getTime() < CHAT_DELETE_WINDOW_MS
                 ? async () => {
                     if (
                       await askConfirm({
@@ -939,7 +950,7 @@ function RoomDetail({
                         danger: true,
                       })
                     ) {
-                      void deleteChat(room.id, m.id);
+                      await deleteChat(room.id, m.id).catch(() => showToast(t("errGeneric")));
                     }
                   }
                 : undefined
@@ -1052,6 +1063,7 @@ function ChatRow({
       >
         {message.text}
       </div>
+      <span className="chat-time">{chatTimeLabel(message.createdAt)}</span>
       {actionsOpen && (
         <div className="chat-actions">
           {onDelete && (
