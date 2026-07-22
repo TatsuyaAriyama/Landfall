@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { dayId, startOfDay, type StudyDay } from "../types";
 import type { UserData } from "../data";
-import { deleteSession } from "../data";
+import { deleteSession, setDayNote } from "../data";
 import { SessionRow } from "./TodayView";
 import { lang, t } from "../i18n";
 
@@ -128,26 +128,73 @@ export function TraceView({ uid, data }: { uid: string; data: UserData }) {
       </div>
 
       <p className="section-label">{selectedTitle}</p>
-      {selectedDay?.note && <p className="page-sub">{selectedDay.note}</p>}
       {selectedSessions.length === 0 ? (
         <p className="empty-note">{t("noDayRecords")}</p>
       ) : (
-        <div className="rows">
-          {selectedSessions.map((s) => (
-            <SessionRow
-              key={s.id}
-              session={s}
-              item={data.items.find((i) => i.id === s.itemUUID)}
-              onDelete={async () => {
-                if (confirm(t("deleteSessionConfirm"))) {
-                  await deleteSession(uid, s, data.sessions);
-                }
-              }}
-            />
-          ))}
-        </div>
+        <>
+          {/* この日のひとこと(学んだ日にだけ書ける。iOS の setComment と同じ) */}
+          {selectedDay && (
+            <DayNoteField key={selectedDay.id} uid={uid} day={selectedDay} data={data} />
+          )}
+          <div className="rows">
+            {selectedSessions.map((s) => (
+              <SessionRow
+                key={s.id}
+                session={s}
+                item={data.items.find((i) => i.id === s.itemUUID)}
+                onDelete={async () => {
+                  if (confirm(t("deleteSessionConfirm"))) {
+                    await deleteSession(uid, s, data);
+                  }
+                }}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
+  );
+}
+
+function DayNoteField({
+  uid,
+  day,
+  data,
+}: {
+  uid: string;
+  day: StudyDay;
+  data: UserData;
+}) {
+  const [note, setNote] = useState(day.note ?? "");
+
+  // 他端末からの同期でひとことが変わったら追従する(編集中は上書きしない)。
+  const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    if (!editing) setNote(day.note ?? "");
+  }, [day.note, editing]);
+
+  const commit = async () => {
+    setEditing(false);
+    const value = note.trim();
+    if (value === (day.note ?? "")) return;
+    await setDayNote(uid, day, value || null, data);
+  };
+
+  return (
+    <input
+      className="field day-note-field"
+      value={note}
+      onChange={(e) => setNote(e.target.value)}
+      onFocus={() => setEditing(true)}
+      onBlur={() => void commit()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+          (e.target as HTMLInputElement).blur();
+        }
+      }}
+      placeholder={t("dayNotePlaceholder")}
+      maxLength={120}
+    />
   );
 }
 

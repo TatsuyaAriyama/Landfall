@@ -1,0 +1,808 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  CHAT_REACTIONS,
+  HarborError,
+  PUBLIC_HARBORS,
+  blockUser,
+  cachedPublicJoined,
+  createRoom,
+  deleteChat,
+  fetchMembers,
+  fetchPublicJoined,
+  fetchRooms,
+  joinPublic,
+  joinRoom,
+  leavePublic,
+  leaveRoom,
+  listenChat,
+  loadBlocked,
+  reactChat,
+  reportUser,
+  sendChat,
+  type ChatMessage,
+  type HarborMember,
+  type HarborRoom,
+  type PublicHarborInfo,
+} from "../harbor";
+import type { UserData } from "../data";
+import { PlayerProfile } from "../profile";
+import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
+import { PlayerAvatar, TileSymbolSvg } from "../symbols";
+import { ProfileEditor } from "./ProfileEditor";
+import { MemberTrace } from "./MemberTrace";
+import { chatLandfallLine, chatReturnLine, t } from "../i18n";
+
+type HarborNav =
+  | { type: "root" }
+  | { type: "public"; harbor: PublicHarborInfo }
+  | { type: "room"; roomId: string }
+  | {
+      type: "member";
+      root: "rooms" | "publicHarbors";
+      containerId: string;
+      member: HarborMember;
+      back: HarborNav;
+    };
+
+function errText(e: unknown): string {
+  if (e instanceof HarborError) {
+    switch (e.code) {
+      case "roomFull":
+        return t("errRoomFull");
+      case "tooManyRooms":
+        return t("errTooManyRooms");
+      case "alreadyOwnsRoom":
+        return t("errAlreadyOwns");
+      case "roomNotFound":
+        return t("errRoomNotFound");
+      default:
+        return t("errGeneric");
+    }
+  }
+  return t("errGeneric");
+}
+
+export function HarborView({ uid, data }: { uid: string; data: UserData }) {
+  const [nav, setNav] = useState<HarborNav>({ type: "root" });
+  const [rooms, setRooms] = useState<HarborRoom[]>([]);
+  const [publicJoined, setPublicJoined] = useState<Set<string>>(cachedPublicJoined());
+  const [blocked, setBlocked] = useState<Set<string>>(new Set());
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileTick, setProfileTick] = useState(0);
+
+  const reload = useCallback(async () => {
+    const [r, p, b] = await Promise.all([
+      fetchRooms().catch(() => [] as HarborRoom[]),
+      fetchPublicJoined().catch(() => cachedPublicJoined()),
+      loadBlocked(),
+    ]);
+    setRooms(r);
+    setPublicJoined(p);
+    setBlocked(b);
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  if (nav.type === "member") {
+    return (
+      <MemberTrace
+        root={nav.root}
+        containerId={nav.containerId}
+        member={nav.member}
+        onBack={() => setNav(nav.back)}
+      />
+    );
+  }
+
+  if (nav.type === "public") {
+    return (
+      <PublicDetail
+        uid={uid}
+        harbor={nav.harbor}
+        joined={publicJoined.has(nav.harbor.slug)}
+        blocked={blocked}
+        data={data}
+        onBack={() => {
+          setNav({ type: "root" });
+          void reload();
+        }}
+        onOpenMember={(member) =>
+          setNav({
+            type: "member",
+            root: "publicHarbors",
+            containerId: nav.harbor.slug,
+            member,
+            back: nav,
+          })
+        }
+        onBlockedChanged={(b) => setBlocked(b)}
+      />
+    );
+  }
+
+  if (nav.type === "room") {
+    const room = rooms.find((r) => r.id === nav.roomId);
+    if (!room) {
+      setNav({ type: "root" });
+      return null;
+    }
+    return (
+      <RoomDetail
+        uid={uid}
+        room={room}
+        blocked={blocked}
+        onBack={() => {
+          setNav({ type: "root" });
+          void reload();
+        }}
+        onOpenMember={(member) =>
+          setNav({ type: "member", root: "rooms", containerId: room.id, member, back: nav })
+        }
+        onBlockedChanged={(b) => setBlocked(b)}
+      />
+    );
+  }
+
+  return (
+    <HarborRoot
+      key={profileTick}
+      rooms={rooms}
+      publicJoined={publicJoined}
+      data={data}
+      onOpenPublic={(harbor) => setNav({ type: "public", harbor })}
+      onOpenRoom={(roomId) => setNav({ type: "room", roomId })}
+      onEditProfile={() => setEditingProfile(true)}
+      onChanged={reload}
+      editingProfile={editingProfile}
+      onCloseProfile={() => {
+        setEditingProfile(false);
+        setProfileTick((n) => n + 1);
+      }}
+    />
+  );
+}
+
+// ---- ルート(一覧) ----
+
+function HarborRoot({
+  rooms,
+  publicJoined,
+  data,
+  onOpenPublic,
+  onOpenRoom,
+  onEditProfile,
+  onChanged,
+  editingProfile,
+  onCloseProfile,
+}: {
+  rooms: HarborRoom[];
+  publicJoined: Set<string>;
+  data: UserData;
+  onOpenPublic: (harbor: PublicHarborInfo) => void;
+  onOpenRoom: (roomId: string) => void;
+  onEditProfile: () => void;
+  onChanged: () => Promise<void>;
+  editingProfile: boolean;
+  onCloseProfile: () => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const cardStyle = STYLE_COLORS[normalizeStyle(PlayerProfile.styleToken)];
+
+  return (
+    <div>
+      {/* プレイヤーカード */}
+      <button
+        className="player-card player-card-button"
+        style={{ background: cardStyle.bg, color: cardStyle.fg }}
+        onClick={onEditProfile}
+      >
+        <PlayerAvatar
+          styleToken={PlayerProfile.styleToken}
+          symbolToken={PlayerProfile.symbolToken}
+          size={56}
+        />
+        <div className="player-card-texts">
+          <div className="player-card-name">{PlayerProfile.displayName}</div>
+          {PlayerProfile.resolve && (
+            <div className="player-card-resolve">{PlayerProfile.resolve}</div>
+          )}
+        </div>
+        <span className="player-card-edit">{t("edit")}</span>
+      </button>
+
+      {/* パブリック */}
+      <p className="section-label">{t("publicSection")}</p>
+      <div className="rows">
+        {PUBLIC_HARBORS.map((harbor) => {
+          const style = STYLE_COLORS[normalizeStyle(harbor.styleToken)];
+          return (
+            <button key={harbor.slug} className="row row-button" onClick={() => onOpenPublic(harbor)}>
+              <span className="harbor-tile" style={{ background: style.bg }}>
+                <TileSymbolSvg
+                  symbol={normalizeSymbol(harbor.symbolToken)}
+                  fg={style.fg}
+                  bg={style.bg}
+                />
+              </span>
+              <div className="row-main">
+                <div className="row-title">{t(harbor.titleKey)}</div>
+                <div className="row-sub">{t(harbor.taglineKey)}</div>
+              </div>
+              {publicJoined.has(harbor.slug) && (
+                <span className="badge">{t("inHarbor")}</span>
+              )}
+              <span className="chevron">›</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* プライベート */}
+      <p className="section-label">{t("privateSection")}</p>
+      {rooms.length > 0 && (
+        <div className="rows">
+          {rooms.map((room) => (
+            <button key={room.id} className="row row-button" onClick={() => onOpenRoom(room.id)}>
+              <div className="row-main">
+                <div className="row-title">{room.name}</div>
+                <div className="row-sub">
+                  {room.memberIds.length}/4 · {room.id}
+                </div>
+              </div>
+              <span className="chevron">›</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="chip-row" style={{ marginTop: 12 }}>
+        <button className="chip" onClick={() => setCreating(true)}>
+          {t("openHarbor")}
+        </button>
+        <button className="chip" onClick={() => setJoining(true)}>
+          {t("joinByCode")}
+        </button>
+      </div>
+
+      {creating && (
+        <CreateRoomDialog
+          data={data}
+          onClose={async (changed) => {
+            setCreating(false);
+            if (changed) await onChanged();
+          }}
+        />
+      )}
+      {joining && (
+        <JoinRoomDialog
+          data={data}
+          onClose={async (changed) => {
+            setJoining(false);
+            if (changed) await onChanged();
+          }}
+        />
+      )}
+      {editingProfile && <ProfileEditor onClose={onCloseProfile} />}
+    </div>
+  );
+}
+
+function CreateRoomDialog({
+  data,
+  onClose,
+}: {
+  data: UserData;
+  onClose: (changed: boolean) => void;
+}) {
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+
+  const create = async () => {
+    if (!name.trim() || working) return;
+    setWorking(true);
+    try {
+      await createRoom(name.trim(), data);
+      onClose(true);
+    } catch (e) {
+      setError(errText(e));
+      setWorking(false);
+    }
+  };
+
+  return (
+    <div className="overlay" onClick={() => onClose(false)}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+        <h2 className="dialog-title">{t("openHarbor")}</h2>
+        <p className="section-label">{t("harborName")}</p>
+        <input
+          className="field"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={80}
+          autoFocus
+        />
+        {error && <p className="harbor-error">{error}</p>}
+        <div style={{ height: 24 }} />
+        <button className="primary-button" onClick={create} disabled={!name.trim() || working}>
+          {t("create")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function JoinRoomDialog({
+  data,
+  onClose,
+}: {
+  data: UserData;
+  onClose: (changed: boolean) => void;
+}) {
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+
+  const join = async () => {
+    if (code.trim().length < 6 || working) return;
+    setWorking(true);
+    try {
+      await joinRoom(code, data);
+      onClose(true);
+    } catch (e) {
+      setError(errText(e));
+      setWorking(false);
+    }
+  };
+
+  return (
+    <div className="overlay" onClick={() => onClose(false)}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+        <h2 className="dialog-title">{t("joinByCode")}</h2>
+        <p className="section-label">{t("inviteCode")}</p>
+        <input
+          className="field code-field"
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          placeholder={t("codePlaceholder")}
+          maxLength={6}
+          autoCapitalize="characters"
+          autoCorrect="off"
+          autoFocus
+        />
+        {error && <p className="harbor-error">{error}</p>}
+        <div style={{ height: 24 }} />
+        <button
+          className="primary-button"
+          onClick={join}
+          disabled={code.trim().length < 6 || working}
+        >
+          {t("join")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---- パブリックの港の中 ----
+
+function PublicDetail({
+  uid,
+  harbor,
+  joined,
+  blocked,
+  data,
+  onBack,
+  onOpenMember,
+  onBlockedChanged,
+}: {
+  uid: string;
+  harbor: PublicHarborInfo;
+  joined: boolean;
+  blocked: Set<string>;
+  data: UserData;
+  onBack: () => void;
+  onOpenMember: (member: HarborMember) => void;
+  onBlockedChanged: (blocked: Set<string>) => void;
+}) {
+  const [members, setMembers] = useState<HarborMember[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [isJoined, setIsJoined] = useState(joined);
+  const [working, setWorking] = useState(false);
+  const style = STYLE_COLORS[normalizeStyle(harbor.styleToken)];
+
+  const reload = useCallback(async () => {
+    setMembers(await fetchMembers("publicHarbors", harbor.slug));
+    setLoaded(true);
+  }, [harbor.slug]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const join = async () => {
+    if (working) return;
+    setWorking(true);
+    try {
+      await joinPublic(harbor.slug, data);
+      setIsJoined(true);
+      await reload();
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const leave = async () => {
+    if (working || !confirm(t("leavePublicConfirm"))) return;
+    setWorking(true);
+    try {
+      await leavePublic(harbor.slug);
+      setIsJoined(false);
+      await reload();
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const report = async (member: HarborMember) => {
+    if (!confirm(`${t("reportSailorTitle")}\n${t("reportNote")}`)) return;
+    await reportUser(harbor.slug, member.id).catch(() => {});
+  };
+
+  const block = async (member: HarborMember) => {
+    if (!confirm(`${t("blockTitle")}\n${t("blockNote")}`)) return;
+    await blockUser(member.id).catch(() => {});
+    const next = new Set(blocked);
+    next.add(member.id);
+    onBlockedChanged(next);
+  };
+
+  const visible = members.filter((m) => !blocked.has(m.id));
+
+  return (
+    <div>
+      <button className="quiet-button" onClick={onBack}>
+        ‹ {t("back")}
+      </button>
+
+      <div className="member-head">
+        <span className="harbor-tile harbor-tile-lg" style={{ background: style.bg }}>
+          <TileSymbolSvg symbol={normalizeSymbol(harbor.symbolToken)} fg={style.fg} bg={style.bg} />
+        </span>
+        <div>
+          <div className="page-title">{t(harbor.titleKey)}</div>
+          <div className="page-sub">{t(harbor.taglineKey)}</div>
+        </div>
+      </div>
+
+      {isJoined ? (
+        <button className="quiet-button" onClick={leave} disabled={working}>
+          {t("leaveHarbor")}
+        </button>
+      ) : (
+        <div style={{ marginTop: 8 }}>
+          <button className="primary-button" onClick={join} disabled={working}>
+            {t("joinHarbor")}
+          </button>
+          <p className="page-sub" style={{ marginTop: 10 }}>
+            {t("joinDisclosure")}
+          </p>
+        </div>
+      )}
+
+      <p className="section-label">{t("sailors")}</p>
+      {!loaded ? (
+        <p className="empty-note">{t("loading")}</p>
+      ) : visible.length === 0 ? (
+        <p className="empty-note">{t("noSailors")}</p>
+      ) : (
+        <div className="rows">
+          {visible.map((member) => (
+            <div key={member.id} className="row">
+              <button className="row-tap" onClick={() => onOpenMember(member)}>
+                <PlayerAvatar
+                  styleToken={member.styleToken}
+                  symbolToken={member.symbolToken}
+                  size={38}
+                />
+                <div className="row-main">
+                  <div className="row-title">
+                    {member.displayName}
+                    {member.id === uid && <span className="you-tag">{t("you")}</span>}
+                  </div>
+                  {member.resolve && <div className="row-sub">{member.resolve}</div>}
+                </div>
+                <span className="chevron">›</span>
+              </button>
+              {member.id !== uid && (
+                <MemberActions onReport={() => report(member)} onBlock={() => block(member)} />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MemberActions({ onReport, onBlock }: { onReport: () => void; onBlock: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="member-actions">
+      <button className="quiet-button" onClick={() => setOpen((v) => !v)} aria-label="actions">
+        …
+      </button>
+      {open && (
+        <>
+          <button
+            className="quiet-button"
+            onClick={() => {
+              setOpen(false);
+              onReport();
+            }}
+          >
+            {t("report")}
+          </button>
+          <button
+            className="quiet-button danger-text"
+            onClick={() => {
+              setOpen(false);
+              onBlock();
+            }}
+          >
+            {t("block")}
+          </button>
+        </>
+      )}
+    </span>
+  );
+}
+
+// ---- プライベートの港の中(メンバー+チャット) ----
+
+function RoomDetail({
+  uid,
+  room,
+  blocked,
+  onBack,
+  onOpenMember,
+  onBlockedChanged,
+}: {
+  uid: string;
+  room: HarborRoom;
+  blocked: Set<string>;
+  onBack: () => void;
+  onOpenMember: (member: HarborMember) => void;
+  onBlockedChanged: (blocked: Set<string>) => void;
+}) {
+  const [members, setMembers] = useState<HarborMember[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [copied, setCopied] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    void fetchMembers("rooms", room.id).then(setMembers);
+    return listenChat(room.id, setMessages);
+  }, [room.id]);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ block: "end" });
+  }, [messages.length]);
+
+  const memberById = new Map(members.map((m) => [m.id, m]));
+  const nameOf = (id: string) => memberById.get(id)?.displayName ?? t("sailor");
+  const visibleMessages = messages.filter((m) => !blocked.has(m.uid));
+
+  const send = async () => {
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    await sendChat(room.id, text).catch(() => {});
+  };
+
+  const copyCode = async () => {
+    await navigator.clipboard.writeText(room.id).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+
+  const leave = async () => {
+    if (!confirm(t("leaveRoomConfirm"))) return;
+    await leaveRoom(room.id);
+    onBack();
+  };
+
+  const reportMsg = async (m: ChatMessage) => {
+    if (!confirm(`${t("reportMessageTitle")}\n${t("reportNote")}`)) return;
+    await reportUser(room.id, m.uid, m.id).catch(() => {});
+  };
+
+  const blockMsgAuthor = async (m: ChatMessage) => {
+    if (!confirm(`${t("blockTitle")}\n${t("blockNote")}`)) return;
+    await blockUser(m.uid).catch(() => {});
+    const next = new Set(blocked);
+    next.add(m.uid);
+    onBlockedChanged(next);
+  };
+
+  return (
+    <div>
+      <button className="quiet-button" onClick={onBack}>
+        ‹ {t("back")}
+      </button>
+
+      <div className="member-head">
+        <div style={{ flex: 1 }}>
+          <div className="page-title">{room.name}</div>
+          <div className="page-sub">
+            {t("inviteCode")}: {room.id}{" "}
+            <button className="quiet-button" onClick={copyCode}>
+              {copied ? t("copied") : t("copy")}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* メンバー(タップで軌跡へ) */}
+      <div className="chip-row" style={{ marginTop: 8 }}>
+        {members.map((m) => (
+          <button key={m.id} className="member-chip" onClick={() => onOpenMember(m)}>
+            <PlayerAvatar styleToken={m.styleToken} symbolToken={m.symbolToken} size={30} />
+            <span>{m.displayName}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* チャット */}
+      <p className="section-label">{t("chatTitle")}</p>
+      <div className="chat-box">
+        {visibleMessages.length === 0 && (
+          <p className="empty-note">{t("chatEmpty")}</p>
+        )}
+        {visibleMessages.map((m) => (
+          <ChatRow
+            key={m.id}
+            uid={uid}
+            message={m}
+            name={nameOf(m.uid)}
+            onReact={(token) => void reactChat(room.id, m, token)}
+            onDelete={
+              m.uid === uid
+                ? () => {
+                    if (confirm(t("deleteSessionConfirm"))) void deleteChat(room.id, m.id);
+                  }
+                : undefined
+            }
+            onReport={m.uid !== uid ? () => void reportMsg(m) : undefined}
+            onBlock={m.uid !== uid ? () => void blockMsgAuthor(m) : undefined}
+          />
+        ))}
+        <div ref={endRef} />
+      </div>
+      <div className="chat-input">
+        <input
+          className="field"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={t("chatPlaceholder")}
+          maxLength={500}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) void send();
+          }}
+        />
+        <button className="chip" onClick={send} disabled={!draft.trim()}>
+          {t("send")}
+        </button>
+      </div>
+
+      <div style={{ marginTop: 28 }}>
+        <button className="quiet-button danger-text" onClick={leave}>
+          {t("leaveHarbor")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ChatRow({
+  uid,
+  message,
+  name,
+  onReact,
+  onDelete,
+  onReport,
+  onBlock,
+}: {
+  uid: string;
+  message: ChatMessage;
+  name: string;
+  onReact: (token: string) => void;
+  onDelete?: () => void;
+  onReport?: () => void;
+  onBlock?: () => void;
+}) {
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const mine = message.uid === uid;
+
+  const counts = new Map<string, number>();
+  for (const token of Object.values(message.reactions)) {
+    counts.set(token, (counts.get(token) ?? 0) + 1);
+  }
+  const myReaction = message.reactions[uid];
+
+  const reactions = (
+    <div className="chat-reactions">
+      {CHAT_REACTIONS.map((token) => {
+        const style = STYLE_COLORS[normalizeStyle("midnight")];
+        const count = counts.get(token) ?? 0;
+        return (
+          <button
+            key={token}
+            className={`reaction${myReaction === token ? " selected" : ""}`}
+            onClick={() => onReact(token)}
+            aria-label={token}
+          >
+            <span className="reaction-symbol">
+              <TileSymbolSvg
+                symbol={normalizeSymbol(token)}
+                fg="currentColor"
+                bg={style.bg}
+              />
+            </span>
+            {count > 0 && <span>{count}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  if (message.kind !== "text") {
+    const line =
+      message.kind === "return"
+        ? chatReturnLine(name, message.gapDays ?? 0)
+        : chatLandfallLine(name, message.itemName ?? "—", message.minutes ?? 0);
+    return (
+      <div className={`chat-auto${message.kind === "return" ? " return" : ""}`}>
+        <span>{line}</span>
+        {reactions}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`chat-msg${mine ? " mine" : ""}`}>
+      {!mine && <div className="chat-name">{name}</div>}
+      <div
+        className="chat-bubble"
+        onClick={() => setActionsOpen((v) => !v)}
+        role="button"
+        tabIndex={0}
+      >
+        {message.text}
+      </div>
+      {actionsOpen && (
+        <div className="chat-actions">
+          {onDelete && (
+            <button className="quiet-button danger-text" onClick={onDelete}>
+              {t("delete")}
+            </button>
+          )}
+          {onReport && (
+            <button className="quiet-button" onClick={onReport}>
+              {t("report")}
+            </button>
+          )}
+          {onBlock && (
+            <button className="quiet-button danger-text" onClick={onBlock}>
+              {t("block")}
+            </button>
+          )}
+        </div>
+      )}
+      {reactions}
+    </div>
+  );
+}

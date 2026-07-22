@@ -89,7 +89,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
                 item={s.itemUUID ? itemById.get(s.itemUUID) : undefined}
                 onDelete={async () => {
                   if (confirm(t("deleteSessionConfirm"))) {
-                    await deleteSession(uid, s, data.sessions);
+                    await deleteSession(uid, s, data);
                   }
                 }}
               />
@@ -102,7 +102,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         <RecordDialog
           uid={uid}
           item={recording}
-          dayIds={new Set(data.days.map((d) => d.id))}
+          data={data}
           onClose={() => setRecording(null)}
         />
       )}
@@ -115,7 +115,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
               ? 0
               : Math.max(...data.items.map((i) => i.sortOrder)) + 1
           }
-          allSessions={data.sessions}
+          data={data}
           onClose={() => {
             setCreating(false);
             setEditing(null);
@@ -159,12 +159,12 @@ export function SessionRow({
 function RecordDialog({
   uid,
   item,
-  dayIds,
+  data,
   onClose,
 }: {
   uid: string;
   item: StudyItem;
-  dayIds: Set<string>;
+  data: UserData;
   onClose: () => void;
 }) {
   const [minutes, setMinutes] = useState(30);
@@ -177,8 +177,8 @@ function RecordDialog({
     setWorking(true);
     await recordSession(
       uid,
-      { itemId: item.id, minutes: Math.min(minutes, 6000), note },
-      dayIds,
+      { item, minutes: Math.min(minutes, 6000), note },
+      data,
     );
     onClose();
   };

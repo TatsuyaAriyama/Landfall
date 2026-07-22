@@ -20,12 +20,19 @@
   --radius: 20px;
 }
 
+/* 外観: 既定は端末設定に追従。設定で選ぶと data-theme が優先される。 */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --ink: #f4f1ec;
     --paper: #161412;
     --tile-ink: #2c2a28;
   }
+}
+
+:root[data-theme="dark"] {
+  --ink: #f4f1ec;
+  --paper: #161412;
+  --tile-ink: #2c2a28;
 }
 
 * {
@@ -493,6 +500,289 @@ textarea {
   .danger-button {
     color: var(--coral);
   }
+}
+
+/* ---- 港タブ ---- */
+
+.player-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 20px;
+  border-radius: var(--radius);
+  text-align: left;
+  margin-top: 4px;
+}
+
+.player-card-button {
+  transition: transform 0.12s ease-out, opacity 0.12s ease-out;
+}
+
+.player-card-button:active {
+  transform: scale(0.98);
+  opacity: 0.9;
+}
+
+.player-card-texts {
+  flex: 1;
+  min-width: 0;
+}
+
+.player-card-name {
+  font-size: 20px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-card-resolve {
+  font-size: 14px;
+  opacity: 0.8;
+  margin-top: 4px;
+}
+
+.player-card-edit {
+  font-size: 13px;
+  opacity: 0.6;
+  flex: none;
+}
+
+.row-button,
+.row-tap {
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+}
+
+.row-tap {
+  flex: 1;
+  min-width: 0;
+}
+
+.harbor-tile {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.harbor-tile svg {
+  width: 60%;
+  height: 60%;
+}
+
+.harbor-tile-lg {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius);
+}
+
+.badge {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sea-green) 30%, transparent);
+  color: var(--ink);
+  flex: none;
+}
+
+.chevron {
+  color: color-mix(in srgb, var(--ink) 25%, transparent);
+  font-size: 17px;
+  flex: none;
+}
+
+.you-tag {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--ink) 40%, transparent);
+  margin-left: 8px;
+}
+
+.member-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 16px 0 8px;
+}
+
+.member-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.member-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.dot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.dot-day {
+  height: 34px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--ink) 35%, transparent);
+}
+
+.dot-day.studied {
+  background: var(--sun-yellow);
+  color: var(--ink-fixed);
+}
+
+.danger-text {
+  color: var(--deep-rust);
+}
+
+:root[data-theme="dark"] .danger-text {
+  color: var(--coral);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .danger-text {
+    color: var(--coral);
+  }
+}
+
+.code-field {
+  letter-spacing: 4px;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+}
+
+.day-note-field {
+  margin-bottom: 14px;
+}
+
+/* ---- チャット ---- */
+
+.chat-box {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 8px;
+  min-height: 120px;
+  max-height: 48vh;
+  overflow-y: auto;
+}
+
+.chat-msg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 82%;
+}
+
+.chat-msg.mine {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-name {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--ink) 45%, transparent);
+  margin-bottom: 4px;
+}
+
+.chat-bubble {
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.chat-msg.mine .chat-bubble {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.chat-auto {
+  align-self: center;
+  text-align: center;
+  font-size: 13px;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.chat-auto.return {
+  color: var(--return-orange);
+}
+
+.chat-reactions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.reaction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.reaction.selected {
+  border-color: var(--return-orange);
+  color: var(--return-orange);
+}
+
+.reaction-symbol {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+}
+
+.chat-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.chat-input {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.chat-input .field {
+  flex: 1;
 }
 
 /* ---- サインイン(夜の入港) ----

@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { signOut } from "firebase/auth";
-import { auth } from "./firebase";
 import { useAuthUser, useUserData } from "./data";
 import { SignInView } from "./views/SignInView";
 import { TodayView } from "./views/TodayView";
 import { TraceView } from "./views/TraceView";
+import { HarborView } from "./views/HarborView";
+import { SettingsDialog } from "./views/SettingsDialog";
 import { BrandMark } from "./symbols";
 import { t } from "./i18n";
 import { demoData, isDemo } from "./demo";
 
-type Tab = "today" | "trace";
+type Tab = "today" | "trace" | "harbor";
 
 export default function App() {
   const { user, loading } = useAuthUser();
@@ -22,6 +22,7 @@ export default function App() {
 
 function Main({ uid }: { uid: string }) {
   const [tab, setTab] = useState<Tab>("today");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const live = useUserData(uid, !isDemo);
   const data = isDemo ? demoData() : live;
 
@@ -32,8 +33,8 @@ function Main({ uid }: { uid: string }) {
           <BrandMark size={28} />
           {t("appName")}
         </span>
-        <button className="quiet-button" onClick={() => signOut(auth)}>
-          {t("signOut")}
+        <button className="quiet-button" onClick={() => setSettingsOpen(true)}>
+          {t("settings")}
         </button>
       </header>
 
@@ -50,15 +51,25 @@ function Main({ uid }: { uid: string }) {
         >
           {t("trace")}
         </button>
+        <button
+          className={`tab${tab === "harbor" ? " selected" : ""}`}
+          onClick={() => setTab("harbor")}
+        >
+          {t("harbor")}
+        </button>
       </nav>
 
       {!data.ready ? (
         <p className="empty-note">{t("loading")}</p>
       ) : tab === "today" ? (
         <TodayView uid={uid} data={data} />
-      ) : (
+      ) : tab === "trace" ? (
         <TraceView uid={uid} data={data} />
+      ) : (
+        <HarborView uid={uid} data={data} />
       )}
+
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

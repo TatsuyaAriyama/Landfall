@@ -6,9 +6,8 @@ import {
   normalizeStyle,
   normalizeSymbol,
   type StudyItem,
-  type StudySession,
 } from "../types";
-import { deleteItemDeep, saveItem } from "../data";
+import { deleteItemDeep, saveItem, type UserData } from "../data";
 import { TileSymbolSvg } from "../symbols";
 import { t } from "../i18n";
 
@@ -16,13 +15,13 @@ export function ItemEditor({
   uid,
   item,
   nextSortOrder,
-  allSessions,
+  data,
   onClose,
 }: {
   uid: string;
   item: StudyItem | null;
   nextSortOrder: number;
-  allSessions: StudySession[];
+  data: UserData;
   onClose: () => void;
 }) {
   const [name, setName] = useState(item?.name ?? "");
@@ -49,7 +48,7 @@ export function ItemEditor({
     if (!item || working) return;
     if (!confirm(t("deleteItemConfirm"))) return;
     setWorking(true);
-    await deleteItemDeep(uid, item.id, allSessions);
+    await deleteItemDeep(uid, item.id, data);
     onClose();
   };
 

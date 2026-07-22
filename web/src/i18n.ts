@@ -1,5 +1,5 @@
-// 最小限の i18n。iOS と同じく英語をキー言語にせず、辞書キーで引く。
-// 言語はブラウザ設定から判定(ja 以外は英語)。
+// 最小限の i18n。iOS と同じく辞書キーで引く。
+// 言語は設定(localStorage)→ブラウザ設定の順で決まる(ja 以外は英語)。
 
 const ja = {
   appName: "Landfall",
@@ -9,6 +9,7 @@ const ja = {
   signInWithGoogle: "Googleで続ける",
   today: "今日",
   trace: "軌跡",
+  harbor: "港",
   signOut: "サインアウト",
   loading: "読み込み中…",
   items: "作業項目",
@@ -37,7 +38,81 @@ const ja = {
   quitCount: "やめた回数",
   noDayRecords: "この日の記録はありません。休んだ日も、航海のうち。",
   dayNote: "この日のひとこと",
+  dayNotePlaceholder: "この日のひとこと(任意)",
   signInFailed: "サインインに失敗しました。もう一度お試しください。",
+
+  // プレイヤーカード
+  sailor: "船乗り",
+  playerCard: "プレイヤーカード",
+  edit: "編集",
+  playerName: "プレイヤー名",
+  resolve: "決意",
+  resolvePlaceholder: "座右の一文(任意)",
+  saveCard: "このカードで保存",
+
+  // 港
+  publicSection: "パブリック",
+  privateSection: "プライベート",
+  inHarbor: "入港中",
+  harborLanguage: "語学",
+  harborCertification: "資格",
+  harborStudent: "学生",
+  harborReading: "読書",
+  harborMaking: "制作",
+  tagLanguage: "言葉を手に、世界へ飛び出そう。",
+  tagCertification: "合格までの長い航海を、ひとりにしない。",
+  tagStudent: "教室の外にも、学びは続いていく。",
+  tagReading: "一冊が、知らない景色へ連れていく。",
+  tagMaking: "つくるほど、世界が広がっていく。",
+  joinHarbor: "この港に入る",
+  joinDisclosure: "参加すると、名前・アイコン・作業記録がこの港に表示されます。",
+  leaveHarbor: "この港を出る",
+  leavePublicConfirm: "あなたの名前と共有した記録が、この港から消えます。いつでも戻れます。",
+  sailors: "在港の船乗り",
+  noSailors: "まだ誰もいません。最初の錨を下ろしませんか。",
+  you: "あなた",
+  report: "通報する",
+  reportSailorTitle: "この船乗りを通報しますか。",
+  reportMessageTitle: "この発言を通報しますか。",
+  reportNote: "開発者に送られ、確認されます。",
+  block: "ブロックする",
+  blockTitle: "この船乗りをブロックしますか。",
+  blockNote: "この人が見えなくなります。相手に通知はされません。",
+  openHarbor: "港をひらく",
+  joinByCode: "コードで入る",
+  harborName: "港の名前",
+  codePlaceholder: "コード(6文字)",
+  create: "ひらく",
+  join: "入る",
+  inviteCode: "招待コード",
+  copy: "コピー",
+  copied: "コピーしました",
+  leaveRoomConfirm: "この港から出ます。招待コードがあれば、いつでも戻れます。",
+  chatTitle: "みんなの航海",
+  chatEmpty: "記録はひとりでに流れ着きます。言葉は、添えたいときだけ。",
+  chatPlaceholder: "港にひとこと(任意)",
+  send: "送る",
+  reactionLighthouse: "見てるよ。",
+  reactionAnchor: "ゆっくり休んで。",
+  reactionPhoenix: "おかえり。",
+  errRoomFull: "この港は満員です(4人まで)。",
+  errTooManyRooms: "入れる港は、3つまでです。",
+  errAlreadyOwns: "ひらける港は、ひとつまで。あなたの港が、もう海のどこかにあります。",
+  errRoomNotFound: "その港は見つかりませんでした。コードを確かめてください。",
+  errGeneric: "うまくいきませんでした。もう一度お試しください。",
+  back: "戻る",
+
+  // 設定
+  settings: "設定",
+  language: "言語",
+  system: "システム",
+  appearance: "外観",
+  light: "ライト",
+  dark: "ダーク",
+  account: "アカウント",
+  deleteAccount: "アカウント削除",
+  deleteAccountConfirm: "アカウントと同期された記録が完全に削除されます。元に戻せません。",
+  deleteFailed: "削除に失敗しました。サインインし直してから、もう一度お試しください。",
 } as const;
 
 export type I18nKey = keyof typeof ja;
@@ -50,6 +125,7 @@ const en: Record<I18nKey, string> = {
   signInWithGoogle: "Continue with Google",
   today: "Today",
   trace: "Trace",
+  harbor: "Harbor",
   signOut: "Sign out",
   loading: "Loading…",
   items: "Items",
@@ -78,14 +154,115 @@ const en: Record<I18nKey, string> = {
   quitCount: "Times quit",
   noDayRecords: "No records this day. Rest is part of the voyage.",
   dayNote: "A word about this day",
+  dayNotePlaceholder: "A word about this day (optional)",
   signInFailed: "Sign-in failed. Please try again.",
-};
 
-export const lang: "ja" | "en" =
-  typeof navigator !== "undefined" && navigator.language.startsWith("ja") ? "ja" : "en";
+  sailor: "Sailor",
+  playerCard: "Player card",
+  edit: "Edit",
+  playerName: "Player name",
+  resolve: "Resolve",
+  resolvePlaceholder: "One line you sail by (optional)",
+  saveCard: "Save this card",
+
+  publicSection: "Public",
+  privateSection: "Private",
+  inHarbor: "In harbor",
+  harborLanguage: "Languages",
+  harborCertification: "Certifications",
+  harborStudent: "Students",
+  harborReading: "Reading",
+  harborMaking: "Making",
+  tagLanguage: "Take these words, and step out into the world.",
+  tagCertification: "A long voyage to the pass line, never alone.",
+  tagStudent: "Learning keeps going, even outside the classroom.",
+  tagReading: "One book can carry you somewhere new.",
+  tagMaking: "Everything you make widens your world.",
+  joinHarbor: "Join this harbor",
+  joinDisclosure: "Joining shares your name, icon, and study records here.",
+  leaveHarbor: "Leave this harbor",
+  leavePublicConfirm:
+    "Your name and shared records will be removed from this harbor. You can rejoin anytime.",
+  sailors: "Sailors in harbor",
+  noSailors: "No one is in this harbor yet. Be the first to drop anchor.",
+  you: "You",
+  report: "Report",
+  reportSailorTitle: "Report this sailor?",
+  reportMessageTitle: "Report this message?",
+  reportNote: "This sends a report to the developer for review.",
+  block: "Block",
+  blockTitle: "Block this sailor?",
+  blockNote: "You won't see them anymore. They won't be told.",
+  openHarbor: "Open a harbor",
+  joinByCode: "Enter with a code",
+  harborName: "Harbor name",
+  codePlaceholder: "Code (6 letters)",
+  create: "Open",
+  join: "Enter",
+  inviteCode: "Invite code",
+  copy: "Copy",
+  copied: "Copied",
+  leaveRoomConfirm: "You'll leave this harbor. With the code, you can return anytime.",
+  chatTitle: "The voyage together",
+  chatEmpty: "Records land here on their own. Words are optional.",
+  chatPlaceholder: "A word to the harbor (optional)",
+  send: "Send",
+  reactionLighthouse: "I see you.",
+  reactionAnchor: "Rest easy.",
+  reactionPhoenix: "Welcome back.",
+  errRoomFull: "This harbor is full (up to 4 sailors).",
+  errTooManyRooms: "You can be in up to 3 harbors.",
+  errAlreadyOwns: "You can open one harbor. Yours is already out there.",
+  errRoomNotFound: "That harbor could not be found. Check the code.",
+  errGeneric: "Something went wrong. Please try again.",
+  back: "Back",
+
+  settings: "Settings",
+  language: "Language",
+  system: "System",
+  appearance: "Appearance",
+  light: "Light",
+  dark: "Dark",
+  account: "Account",
+  deleteAccount: "Delete account",
+  deleteAccountConfirm:
+    "This permanently deletes your account and synced record. This cannot be undone.",
+  deleteFailed: "Deleting your account failed. Please sign in again and retry.",
+} as const;
+
+export const LANGUAGE_KEY = "appLanguage";
+
+function resolveLang(): "ja" | "en" {
+  const saved =
+    typeof localStorage !== "undefined" ? localStorage.getItem(LANGUAGE_KEY) : null;
+  if (saved === "ja" || saved === "en") return saved;
+  return typeof navigator !== "undefined" && navigator.language.startsWith("ja")
+    ? "ja"
+    : "en";
+}
+
+export const lang: "ja" | "en" = resolveLang();
 
 const dict = lang === "ja" ? ja : en;
 
 export function t(key: I18nKey): string {
   return dict[key];
+}
+
+/// 書式付き文字列({name} 形式の穴埋め)。チャットの自動行などに使う。
+export function tf(template: string, vars: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
+}
+
+/// チャットの自動行。iOS の書式と同じ文になるようにする。
+export function chatLandfallLine(name: string, item: string, minutes: number): string {
+  return lang === "ja"
+    ? `${name}が着岸 — ${item}、${minutes}分`
+    : `${name} made landfall — ${item}, ${minutes} min`;
+}
+
+export function chatReturnLine(name: string, gapDays: number): string {
+  return lang === "ja"
+    ? `${name}が帰還 — ${gapDays}日ぶりの航海。`
+    : `${name} returned — first sail in ${gapDays} days.`;
 }

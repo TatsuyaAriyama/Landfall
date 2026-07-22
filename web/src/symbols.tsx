@@ -1,4 +1,4 @@
-import type { TileSymbolToken } from "./types";
+import { STYLE_COLORS, normalizeStyle, normalizeSymbol, type TileSymbolToken } from "./types";
 
 // iOS の TileSymbolView(200x200 設計座標)を SVG に移植。フラット塗りのみ。
 // fg/bg を注入してどの配色でも成立させる。
@@ -176,6 +176,38 @@ export function CoastSvg() {
     <svg viewBox="430 340 422 408" preserveAspectRatio="none" aria-hidden="true">
       <path d={COAST} fill="#EADEBD" />
     </svg>
+  );
+}
+
+/// 丸いプレイヤーアイコン。項目タイル(角丸四角)と区別するため円にする(iOS と同じ)。
+export function PlayerAvatar({
+  styleToken,
+  symbolToken,
+  size,
+}: {
+  styleToken: string;
+  symbolToken: string;
+  size: number;
+}) {
+  const style = STYLE_COLORS[normalizeStyle(styleToken)];
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        background: style.bg,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flex: "none",
+      }}
+    >
+      <span style={{ width: size * 0.56, height: size * 0.56, display: "inline-flex" }}>
+        <TileSymbolSvg symbol={normalizeSymbol(symbolToken)} fg={style.fg} bg={style.bg} />
+      </span>
+    </span>
   );
 }
 
