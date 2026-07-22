@@ -29,7 +29,7 @@ import { t } from "../i18n";
 // 保存/削除/検証はDestinationDialogと同等。世界観はVoyageScene/BoatStudioと同じ。
 
 export interface VoyageWorldProps {
-  dest: Destination;
+  dest: Destination | null; // null = 新規作成(世界の中でそのまま設定する)
   data: UserData;
   uid: string;
   onClose: () => void;
@@ -384,16 +384,16 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   const [phase, setPhase] = useState<Phase>(animate ? "enter" : "idle");
 
   // ---- 編集状態(DestinationDialogと同等) ----
-  const [name, setName] = useState(dest.name);
-  const [itemUUID, setItemUUID] = useState<string | undefined>(dest.itemUUID);
+  const [name, setName] = useState(dest?.name ?? "");
+  const [itemUUID, setItemUUID] = useState<string | undefined>(dest?.itemUUID);
   const [kind, setKind] = useState<"hours" | "date">(
-    dest.targetDate && !dest.targetMinutes ? "date" : "hours",
+    dest?.targetDate && !dest?.targetMinutes ? "date" : "hours",
   );
   const [hours, setHours] = useState(
-    dest.targetMinutes ? String(Math.round(dest.targetMinutes / 60)) : "20",
+    dest?.targetMinutes ? String(Math.round(dest.targetMinutes / 60)) : "20",
   );
   const [dateStr, setDateStr] = useState(
-    dest.targetDate ? dest.targetDate.toISOString().slice(0, 10) : "",
+    dest?.targetDate ? dest.targetDate.toISOString().slice(0, 10) : "",
   );
   const [working, setWorking] = useState(false);
   const confirmingRef = useRef(false);
@@ -405,7 +405,7 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     (kind === "hours" ? hoursNum > 0 && hoursNum <= 10000 : dateStr.length === 10);
 
   // ---- 世界の配置(カードと同じ航路・島) ----
-  const ratio = destinationProgress(dest, data.sessions).ratio;
+  const ratio = dest ? destinationProgress(dest, data.sessions).ratio : 0;
   const boatX = X_START + Math.min(Math.max(ratio, 0), 1) * (X_END - X_START);
 
   // ---- 閉じる(退場演出→onClose。reduced-motionはジャンプカット) ----
@@ -447,19 +447,19 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     if (!valid || working) return;
     setWorking(true);
     await saveDestination(uid, {
-      id: dest.id,
+      id: dest?.id,
       name: trimmed,
       itemUUID,
       targetMinutes: kind === "hours" ? Math.round(hoursNum * 60) : undefined,
       targetDate: kind === "date" ? new Date(`${dateStr}T00:00:00`) : undefined,
-      createdAt: dest.createdAt,
+      createdAt: dest?.createdAt,
     });
     showToast(t("savedToast"));
     requestClose();
   };
 
   const remove = async () => {
-    if (working) return;
+    if (!dest || working) return;
     confirmingRef.current = true;
     const ok = await askConfirm({
       title: t("deleteDestination"),
@@ -601,9 +601,11 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
           >
             {t("save")}
           </button>
-          <button className="danger-button" onClick={remove} disabled={working}>
-            {t("deleteDestination")}
-          </button>
+          {dest && (
+            <button className="danger-button" onClick={remove} disabled={working}>
+              {t("deleteDestination")}
+            </button>
+          )}
         </div>
       </div>
     </div>
