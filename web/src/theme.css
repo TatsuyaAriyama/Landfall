@@ -1081,6 +1081,293 @@ textarea {
   }
 }
 
+/* ---- 目的地(島)。夜の海図カード ---- */
+
+.dest-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dest-card {
+  position: relative;
+  height: 116px;
+  border-radius: var(--radius);
+  background: var(--harbor-teal);
+  overflow: hidden;
+  text-align: left;
+  transition: transform 0.12s ease-out;
+}
+
+.dest-card:active {
+  transform: scale(0.99);
+}
+
+.dest-star {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--harbor-sand);
+  opacity: 0.35;
+  animation: harbor-twinkle 3.6s ease-in-out infinite alternate;
+}
+
+.dest-head {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  right: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  z-index: 1;
+}
+
+.dest-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--harbor-sand);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dest-item {
+  font-weight: 400;
+  opacity: 0.6;
+}
+
+.dest-remaining {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--harbor-sand) 65%, transparent);
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.dest-horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 26px;
+  height: 2px;
+  background: color-mix(in srgb, var(--harbor-sand) 25%, transparent);
+}
+
+.dest-coast {
+  position: absolute;
+  right: 10px;
+  bottom: 27px;
+  width: 92px;
+  height: 30px;
+}
+
+.dest-coast svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.dest-boat {
+  position: absolute;
+  bottom: 25px;
+  width: 30px;
+  /* 記録すると船が前へ進む。ゆっくり滑るのが気持ちいい。 */
+  transition: left 1.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dest-boat svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.dest-add {
+  min-height: 44px;
+  border-radius: var(--radius);
+  border: 1.5px dashed color-mix(in srgb, var(--ink) 25%, transparent);
+  color: color-mix(in srgb, var(--ink) 50%, transparent);
+  font-size: 14px;
+}
+
+.dest-add:hover {
+  border-color: color-mix(in srgb, var(--ink) 45%, transparent);
+  color: color-mix(in srgb, var(--ink) 70%, transparent);
+}
+
+/* 復習の提案 */
+
+.review-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.review-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  font-size: 14px;
+  color: color-mix(in srgb, var(--ink) 65%, transparent);
+  min-height: 32px;
+}
+
+.review-line:hover {
+  color: var(--ink);
+}
+
+/* ---- 着岸の一枚(お祝い) ---- */
+
+.landfall-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  background: var(--harbor-teal);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  animation: landfall-fade 0.4s ease-out;
+  overflow: hidden;
+}
+
+@keyframes landfall-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.landfall-sea {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 38%;
+}
+
+.landfall-horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 30%;
+  height: 2px;
+  background: color-mix(in srgb, var(--harbor-sand) 25%, transparent);
+}
+
+.landfall-coast {
+  position: absolute;
+  right: 6%;
+  top: calc(30% - 64px);
+  width: 200px;
+  height: 66px;
+}
+
+.landfall-coast svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.landfall-boat {
+  position: absolute;
+  top: calc(30% - 128px);
+  width: 72px;
+  left: -80px;
+  animation:
+    landfall-sail 2.4s cubic-bezier(0.3, 0, 0.2, 1) forwards,
+    harbor-bob 2.4s ease-in-out infinite alternate;
+}
+
+.landfall-boat svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@keyframes landfall-sail {
+  from {
+    left: -80px;
+  }
+  to {
+    left: calc(94% - 280px);
+  }
+}
+
+.landfall-words {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 0 24px;
+  margin-bottom: 16vh;
+  opacity: 0;
+  animation: landfall-words-in 0.8s ease-out 1.9s forwards;
+}
+
+@keyframes landfall-words-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.landfall-title {
+  font-size: 44px;
+  font-weight: 500;
+  color: var(--harbor-sand);
+}
+
+.landfall-line {
+  font-size: 17px;
+  color: color-mix(in srgb, var(--harbor-sand) 90%, transparent);
+  margin: 16px 0 0;
+}
+
+.landfall-sub {
+  font-size: 14px;
+  color: color-mix(in srgb, var(--harbor-sand) 55%, transparent);
+  margin: 6px 0 0;
+}
+
+.landfall-close {
+  margin-top: 32px;
+  min-height: 48px;
+  padding: 0 36px;
+  border-radius: var(--radius);
+  background: var(--harbor-sand);
+  color: var(--harbor-teal);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+/* 到達した島の印(航海誌) */
+
+.island-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--harbor-teal);
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landfall-boat {
+    animation: landfall-sail 0.01s forwards;
+  }
+  .dest-star {
+    animation: none;
+  }
+}
+
 /* ---- タイマー(計測中の浮きチップ) ---- */
 
 .timer-chip {

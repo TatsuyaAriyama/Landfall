@@ -57,6 +57,33 @@ export function LogbookView({ data }: { data: UserData }) {
         <VoyageCard month={month} />
         <ArchetypeCard month={month} />
       </div>
+
+      <ReachedIslands data={data} />
+    </div>
+  );
+}
+
+/// 到達した島。目的地に着岸した記録が、ここに残り続ける。
+function ReachedIslands({ data }: { data: UserData }) {
+  const reached = data.destinations
+    .filter((d) => d.achievedAt)
+    .sort((a, b) => (b.achievedAt?.getTime() ?? 0) - (a.achievedAt?.getTime() ?? 0));
+  if (reached.length === 0) return null;
+  const fmt = new Intl.DateTimeFormat(lang, { year: "numeric", month: "long", day: "numeric" });
+  return (
+    <div>
+      <p className="section-label">{t("reachedIslands")}</p>
+      <div className="rows">
+        {reached.map((d) => (
+          <div key={d.id} className="row">
+            <span className="island-mark" aria-hidden="true" />
+            <div className="row-main">
+              <div className="row-title">{d.name}</div>
+              <div className="row-sub">{d.achievedAt ? fmt.format(d.achievedAt) : ""}</div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

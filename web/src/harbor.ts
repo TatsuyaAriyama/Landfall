@@ -553,7 +553,7 @@ export async function deleteEverything(): Promise<void> {
   const rooms = await fetchRooms().catch(() => [] as HarborRoom[]);
   for (const room of rooms) await leaveRoom(room.id);
   await leaveAllPublic().catch(() => {});
-  for (const sub of ["items", "sessions", "days", "blocks"]) {
+  for (const sub of ["items", "sessions", "days", "destinations", "blocks"]) {
     const snap = await getDocs(collection(db, "users", u, sub)).catch(() => null);
     for (const d of snap?.docs ?? []) await deleteDoc(d.ref).catch(() => {});
   }

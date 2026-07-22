@@ -38,6 +38,10 @@ const ja = {
   restedDays: "休んだ日",
   quitCount: "やめた回数",
   noDayRecords: "この日の記録はありません。休んだ日も、航海のうち。",
+  calendarTab: "カレンダー",
+  indexTab: "索引",
+  searchNotes: "ひとことを検索",
+  noNotes: "ひとことは、まだありません。記録に一言添えると、ここに集まります。",
   dayNote: "この日のひとこと",
   dayNotePlaceholder: "この日のひとこと(任意)",
   signInFailed: "サインインに失敗しました。もう一度お試しください。",
@@ -115,6 +119,26 @@ const ja = {
   setNameFirst: "先にプレイヤーカードを整えましょう。",
   moveEarlier: "前へ",
   moveLater: "後ろへ",
+
+  // 目的地(島)
+  destinations: "目的地",
+  addDestination: "目的地を追加",
+  destinationTitle: "目的地",
+  islandName: "島の名前",
+  islandNamePlaceholder: "例: TOEIC、読了、資格試験",
+  goalKind: "目標",
+  goalHours: "累計時間",
+  goalDate: "期日",
+  hoursUnit: "時間",
+  countsToward: "対象の項目",
+  allItems: "すべての項目",
+  landfallExcl: "着岸。",
+  reachedIsland: "{name}に到達しました。",
+  voyageStays: "この航海は、航海誌に残ります。",
+  reachedIslands: "到達した島",
+  deleteDestination: "この目的地を削除",
+  deleteDestinationConfirm: "この目的地を削除しますか。作業の記録は消えません。",
+  close: "閉じる",
 
   // タイマー
   startTimer: "計測をはじめる",
@@ -196,6 +220,10 @@ const en: Record<I18nKey, string> = {
   restedDays: "Days rested",
   quitCount: "Times quit",
   noDayRecords: "No records this day. Rest is part of the voyage.",
+  calendarTab: "Calendar",
+  indexTab: "Index",
+  searchNotes: "Search notes",
+  noNotes: "No notes yet. Add a word to a record and it gathers here.",
   dayNote: "A word about this day",
   dayNotePlaceholder: "A word about this day (optional)",
   signInFailed: "Sign-in failed. Please try again.",
@@ -272,6 +300,25 @@ const en: Record<I18nKey, string> = {
   moveEarlier: "Move up",
   moveLater: "Move down",
 
+  destinations: "Destinations",
+  addDestination: "Add a destination",
+  destinationTitle: "Destination",
+  islandName: "Island name",
+  islandNamePlaceholder: "e.g. TOEIC, finish the book",
+  goalKind: "Goal",
+  goalHours: "Total hours",
+  goalDate: "Target date",
+  hoursUnit: "hours",
+  countsToward: "Counts toward",
+  allItems: "All items",
+  landfallExcl: "Landfall.",
+  reachedIsland: "You reached {name}.",
+  voyageStays: "This voyage stays in your Logbook.",
+  reachedIslands: "Islands reached",
+  deleteDestination: "Delete this destination",
+  deleteDestinationConfirm: "Delete this destination? Your records stay.",
+  close: "Close",
+
   startTimer: "Start the clock",
   timerFinish: "Finish",
   timerDiscardConfirm: "Stop timing? Nothing will be recorded.",
@@ -333,6 +380,25 @@ export function t(key: I18nKey): string {
 /// 書式付き文字列({name} 形式の穴埋め)。チャットの自動行などに使う。
 export function tf(template: string, vars: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
+}
+
+/// 目的地の残り表示。「あと3時間20分」「あと12日」。
+export function remainingHoursLabel(remainingMinutes: number): string {
+  const h = Math.floor(remainingMinutes / 60);
+  const m = remainingMinutes % 60;
+  if (lang === "ja") return `あと${h > 0 ? `${h}時間` : ""}${m > 0 || h === 0 ? `${m}分` : ""}`;
+  return `${h > 0 ? `${h}h ` : ""}${m}m to go`;
+}
+
+export function remainingDaysLabel(days: number): string {
+  return lang === "ja" ? `あと${days}日` : `${days} days to go`;
+}
+
+/// 復習の提案。意味が一読で分かる、責めない文にする。
+export function reviewLine(name: string, gapDays: number): string {
+  return lang === "ja"
+    ? `${name}は${gapDays}日休んでいます。少し触れると、思い出しやすくなります。`
+    : `${name} has rested for ${gapDays} days. A short visit makes it easier to remember.`;
 }
 
 /// チャットの自動行。iOS の書式と同じ文になるようにする。

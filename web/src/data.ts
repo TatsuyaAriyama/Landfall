@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { completeRedirectSignIn } from "./auth";
+import { listenDestinations, type Destination } from "./destinations";
 import {
   gapDaysBeforeToday,
   publishChatLog,
@@ -52,6 +53,7 @@ export interface UserData {
   items: StudyItem[];
   sessions: StudySession[];
   days: StudyDay[];
+  destinations: Destination[];
   ready: boolean;
 }
 
@@ -59,6 +61,7 @@ export function useUserData(uid: string, enabled = true): UserData {
   const [items, setItems] = useState<StudyItem[]>([]);
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [days, setDays] = useState<StudyDay[]>([]);
+  const [destinations, setDestinations] = useState<Destination[]>([]);
   const [readyCount, setReadyCount] = useState(0);
 
   useEffect(() => {
@@ -66,6 +69,7 @@ export function useUserData(uid: string, enabled = true): UserData {
     setItems([]);
     setSessions([]);
     setDays([]);
+    setDestinations([]);
     setReadyCount(0);
     const bump = () => setReadyCount((n) => Math.min(n + 1, 3));
 
@@ -123,14 +127,17 @@ export function useUserData(uid: string, enabled = true): UserData {
       bump();
     });
 
+    const offDestinations = listenDestinations(uid, setDestinations);
+
     return () => {
       offItems();
       offSessions();
       offDays();
+      offDestinations();
     };
   }, [uid, enabled]);
 
-  return { items, sessions, days, ready: readyCount >= 3 };
+  return { items, sessions, days, destinations, ready: readyCount >= 3 };
 }
 
 // ---- 書き込み(iOS の DTO 形に一致させる。undefined は書かない) ----

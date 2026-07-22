@@ -10,6 +10,121 @@ import { lang, t } from "../i18n";
 // やめた回数はいつも0。
 
 export function TraceView({ uid, data }: { uid: string; data: UserData }) {
+  const [view, setView] = useState<"calendar" | "index">("calendar");
+
+  return (
+    <div>
+      <div className="chip-row" style={{ marginBottom: 20 }}>
+        <button
+          className={`chip${view === "calendar" ? " selected" : ""}`}
+          onClick={() => setView("calendar")}
+        >
+          {t("calendarTab")}
+        </button>
+        <button
+          className={`chip${view === "index" ? " selected" : ""}`}
+          onClick={() => setView("index")}
+        >
+          {t("indexTab")}
+        </button>
+      </div>
+      {view === "calendar" ? (
+        <CalendarView uid={uid} data={data} />
+      ) : (
+        <NotesIndex data={data} />
+      )}
+    </div>
+  );
+}
+
+/// 学びの索引。ひとこと(記録+日)を検索・項目で絞って一覧する。
+/// 記録が消費ではなく、あとから引ける資産になる。
+function NotesIndex({ data }: { data: UserData }) {
+  const [query, setQuery] = useState("");
+  const [itemFilter, setItemFilter] = useState<string | null>(null);
+
+  const entries = useMemo(() => {
+    const itemById = new Map(data.items.map((i) => [i.id, i]));
+    const list: {
+      date: Date;
+      note: string;
+      itemName?: string;
+      itemStyle?: string;
+      itemId?: string;
+    }[] = [];
+    for (const s of data.sessions) {
+      if (!s.note) continue;
+      const item = s.itemUUID ? itemById.get(s.itemUUID) : undefined;
+      list.push({
+        date: s.date,
+        note: s.note,
+        itemName: item?.name,
+        itemStyle: item?.styleToken,
+        itemId: item?.id,
+      });
+    }
+    for (const d of data.days) {
+      if (d.note) list.push({ date: d.date, note: d.note });
+    }
+    return list.sort((a, b) => b.date.getTime() - a.date.getTime());
+  }, [data.items, data.sessions, data.days]);
+
+  const q = query.trim().toLowerCase();
+  const visible = entries.filter(
+    (e) =>
+      (!q || e.note.toLowerCase().includes(q)) &&
+      (!itemFilter || e.itemId === itemFilter),
+  );
+
+  const fmt = new Intl.DateTimeFormat(lang, { month: "short", day: "numeric" });
+
+  return (
+    <div>
+      <input
+        className="field"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder={t("searchNotes")}
+      />
+      {data.items.length > 0 && (
+        <div className="chip-row" style={{ marginTop: 12 }}>
+          {data.items.map((item) => (
+            <button
+              key={item.id}
+              className={`chip${itemFilter === item.id ? " selected" : ""}`}
+              onClick={() => setItemFilter(itemFilter === item.id ? null : item.id)}
+            >
+              {item.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {visible.length === 0 ? (
+        <p className="empty-note" style={{ marginTop: 24 }}>
+          {t("noNotes")}
+        </p>
+      ) : (
+        <div className="rows" style={{ marginTop: 8 }}>
+          {visible.map((e, i) => (
+            <div key={i} className="row">
+              <div className="row-main">
+                <div className="row-sub" style={{ marginBottom: 2 }}>
+                  {fmt.format(e.date)}
+                  {e.itemName ? ` · ${e.itemName}` : ""}
+                </div>
+                <div className="row-title" style={{ fontWeight: 400, fontSize: 15 }}>
+                  {e.note}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CalendarView({ uid, data }: { uid: string; data: UserData }) {
   const today = startOfDay(new Date());
   const [monthStart, setMonthStart] = useState(
     new Date(today.getFullYear(), today.getMonth(), 1),

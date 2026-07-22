@@ -1,0 +1,318 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  MAX_ACTIVE_DESTINATIONS,
+  deleteDestination,
+  destinationProgress,
+  saveDestination,
+  type Destination,
+} from "../destinations";
+import type { UserData } from "../data";
+import { BoatSvg, CoastSvg } from "../symbols";
+import { Modal, askConfirm, showToast } from "../overlays";
+import {
+  remainingDaysLabel,
+  remainingHoursLabel,
+  t,
+  tf,
+} from "../i18n";
+
+// 目的地(島)。海図カードの上を、記録するたび船が島へ近づいていく。
+// 到達したら「着岸。」の一枚(夜の入港と同じ世界)で祝う。
+
+export function DestinationsSection({ uid, data }: { uid: string; data: UserData }) {
+  const [editing, setEditing] = useState<Destination | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [celebrating, setCelebrating] = useState<Destination | null>(null);
+  const celebratedRef = useRef<Set<string>>(new Set());
+
+  const active = data.destinations.filter((d) => !d.achievedAt);
+
+  // 到達の検知。達成した瞬間に achievedAt を刻み、着岸の一枚を出す。
+  useEffect(() => {
+    for (const dest of active) {
+      const progress = destinationProgress(dest, data.sessions);
+      if (progress.reached && !celebratedRef.current.has(dest.id)) {
+        celebratedRef.current.add(dest.id);
+        void saveDestination(uid, { ...dest, achievedAt: new Date() });
+        setCelebrating(dest);
+        break;
+      }
+    }
+  }, [active, data.sessions, uid]);
+
+  if (active.length === 0 && data.items.length === 0) return null;
+
+  return (
+    <>
+      <p className="section-label">{t("destinations")}</p>
+      <div className="dest-stack">
+        {active.map((dest) => (
+          <DestinationCard
+            key={dest.id}
+            dest={dest}
+            data={data}
+            onClick={() => setEditing(dest)}
+          />
+        ))}
+        {active.length < MAX_ACTIVE_DESTINATIONS && (
+          <button className="dest-add" onClick={() => setCreating(true)}>
+            + {t("addDestination")}
+          </button>
+        )}
+      </div>
+
+      {(creating || editing) && (
+        <DestinationDialog
+          uid={uid}
+          dest={editing}
+          data={data}
+          onClose={() => {
+            setCreating(false);
+            setEditing(null);
+          }}
+        />
+      )}
+      {celebrating && (
+        <LandfallCelebration
+          dest={celebrating}
+          onClose={() => setCelebrating(null)}
+        />
+      )}
+    </>
+  );
+}
+
+/// 海図カード。夜の海に水平線、右端に島、進捗の位置に船。
+function DestinationCard({
+  dest,
+  data,
+  onClick,
+}: {
+  dest: Destination;
+  data: UserData;
+  onClick: () => void;
+}) {
+  const progress = destinationProgress(dest, data.sessions);
+  const label =
+    progress.remainingMinutes !== undefined
+      ? remainingHoursLabel(progress.remainingMinutes)
+      : progress.remainingDays !== undefined
+        ? remainingDaysLabel(progress.remainingDays)
+        : "";
+  const item = dest.itemUUID ? data.items.find((i) => i.id === dest.itemUUID) : undefined;
+
+  return (
+    <button className="dest-card" onClick={onClick}>
+      <span className="dest-star" style={{ top: "18%", left: "12%" }} />
+      <span className="dest-star" style={{ top: "30%", left: "38%" }} />
+      <span className="dest-star" style={{ top: "14%", left: "60%" }} />
+      <div className="dest-head">
+        <span className="dest-name">
+          {dest.name}
+          {item && <span className="dest-item"> · {item.name}</span>}
+        </span>
+        <span className="dest-remaining">{label}</span>
+      </div>
+      <div className="dest-horizon" />
+      <div className="dest-coast">
+        <CoastSvg />
+      </div>
+      <div
+        className="dest-boat"
+        style={{ left: `calc(5% + ${Math.round(progress.ratio * 100) * 0.72}%)` }}
+      >
+        <div className="harbor-boat">
+          <BoatSvg />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/// 目的地の作成・編集。名前、対象の項目、目標(累計時間 or 期日)。
+function DestinationDialog({
+  uid,
+  dest,
+  data,
+  onClose,
+}: {
+  uid: string;
+  dest: Destination | null;
+  data: UserData;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(dest?.name ?? "");
+  const [itemUUID, setItemUUID] = useState<string | undefined>(dest?.itemUUID);
+  const [kind, setKind] = useState<"hours" | "date">(
+    dest?.targetDate && !dest?.targetMinutes ? "date" : "hours",
+  );
+  const [hours, setHours] = useState(
+    dest?.targetMinutes ? String(Math.round(dest.targetMinutes / 60)) : "20",
+  );
+  const [dateStr, setDateStr] = useState(
+    dest?.targetDate ? dest.targetDate.toISOString().slice(0, 10) : "",
+  );
+  const [working, setWorking] = useState(false);
+
+  const trimmed = name.replace(/^[\s　]+|[\s　]+$/g, "");
+  const hoursNum = Number(hours);
+  const valid =
+    trimmed.length > 0 &&
+    (kind === "hours" ? hoursNum > 0 && hoursNum <= 10000 : dateStr.length === 10);
+
+  const save = async () => {
+    if (!valid || working) return;
+    setWorking(true);
+    await saveDestination(uid, {
+      id: dest?.id,
+      name: trimmed,
+      itemUUID,
+      targetMinutes: kind === "hours" ? Math.round(hoursNum * 60) : undefined,
+      targetDate: kind === "date" ? new Date(`${dateStr}T00:00:00`) : undefined,
+      createdAt: dest?.createdAt,
+    });
+    showToast(t("savedToast"));
+    onClose();
+  };
+
+  const remove = async () => {
+    if (!dest || working) return;
+    const ok = await askConfirm({
+      title: t("deleteDestination"),
+      message: t("deleteDestinationConfirm"),
+      confirmLabel: t("delete"),
+      danger: true,
+    });
+    if (!ok) return;
+    setWorking(true);
+    await deleteDestination(uid, dest.id);
+    onClose();
+  };
+
+  return (
+    <Modal onClose={onClose}>
+      <>
+        <h2 className="dialog-title">{t("destinationTitle")}</h2>
+
+        <p className="section-label">{t("islandName")}</p>
+        <input
+          className="field"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t("islandNamePlaceholder")}
+          maxLength={60}
+          autoFocus={!dest}
+        />
+
+        <p className="section-label">{t("countsToward")}</p>
+        <div className="chip-row">
+          <button
+            className={`chip${itemUUID === undefined ? " selected" : ""}`}
+            onClick={() => setItemUUID(undefined)}
+          >
+            {t("allItems")}
+          </button>
+          {data.items.map((item) => (
+            <button
+              key={item.id}
+              className={`chip${itemUUID === item.id ? " selected" : ""}`}
+              onClick={() => setItemUUID(item.id)}
+            >
+              {item.name}
+            </button>
+          ))}
+        </div>
+
+        <p className="section-label">{t("goalKind")}</p>
+        <div className="chip-row">
+          <button
+            className={`chip${kind === "hours" ? " selected" : ""}`}
+            onClick={() => setKind("hours")}
+          >
+            {t("goalHours")}
+          </button>
+          <button
+            className={`chip${kind === "date" ? " selected" : ""}`}
+            onClick={() => setKind("date")}
+          >
+            {t("goalDate")}
+          </button>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          {kind === "hours" ? (
+            <div className="stepper-row" style={{ justifyContent: "flex-start" }}>
+              <span className="stepper-value">
+                <input
+                  className="stepper-input"
+                  type="text"
+                  inputMode="numeric"
+                  value={hours}
+                  onChange={(e) => setHours(e.target.value.replace(/[^0-9]/g, ""))}
+                  aria-label={t("goalHours")}
+                />
+                <span className="stepper-unit">{t("hoursUnit")}</span>
+              </span>
+            </div>
+          ) : (
+            <input
+              className="field"
+              type="date"
+              value={dateStr}
+              min={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setDateStr(e.target.value)}
+            />
+          )}
+        </div>
+
+        <div style={{ height: 28 }} />
+        <button className="primary-button" onClick={save} disabled={!valid || working}>
+          {t("save")}
+        </button>
+        {dest && (
+          <button className="danger-button" onClick={remove} disabled={working}>
+            {t("deleteDestination")}
+          </button>
+        )}
+      </>
+    </Modal>
+  );
+}
+
+/// 着岸の一枚。夜の海を船が島まで走り、「着岸。」の言葉が浮かぶ。
+function LandfallCelebration({
+  dest,
+  onClose,
+}: {
+  dest: Destination;
+  onClose: () => void;
+}) {
+  return (
+    <div className="landfall-overlay" onClick={onClose}>
+      <span className="harbor-star" style={{ top: "14%", left: "16%", width: 4, height: 4 }} />
+      <span className="harbor-star" style={{ top: "8%", left: "42%", width: 3, height: 3 }} />
+      <span className="harbor-star" style={{ top: "18%", left: "70%", width: 4, height: 4 }} />
+      <span className="harbor-star" style={{ top: "28%", left: "88%", width: 3, height: 3 }} />
+      <span className="harbor-moon" style={{ top: "10%", right: "14%" }} />
+
+      <div className="landfall-sea">
+        <div className="landfall-horizon" />
+        <div className="landfall-coast">
+          <CoastSvg />
+        </div>
+        <div className="landfall-boat">
+          <BoatSvg />
+        </div>
+      </div>
+
+      <div className="landfall-words">
+        <div className="landfall-title">{t("landfallExcl")}</div>
+        <p className="landfall-line">{tf(t("reachedIsland"), { name: dest.name })}</p>
+        <p className="landfall-sub">{t("voyageStays")}</p>
+        <button className="landfall-close" onClick={onClose}>
+          {t("close")}
+        </button>
+      </div>
+    </div>
+  );
+}

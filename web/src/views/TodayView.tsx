@@ -8,10 +8,12 @@ import {
   type StudySession,
 } from "../types";
 import { deleteSession, recordSession, saveItem, type UserData } from "../data";
+import { reviewSuggestions } from "../destinations";
 import { TileSymbolSvg } from "../symbols";
 import { ItemEditor } from "./ItemEditor";
+import { DestinationsSection } from "./DestinationsSection";
 import { Modal, askConfirm, showToast } from "../overlays";
-import { lang, t } from "../i18n";
+import { lang, reviewLine, t } from "../i18n";
 
 const MINUTE_PRESETS = [15, 30, 45, 60, 90];
 
@@ -107,9 +109,35 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     weekday: "long",
   }).format(new Date());
 
+  const suggestions = useMemo(
+    () => reviewSuggestions(data.items, data.sessions),
+    [data.items, data.sessions],
+  );
+
   return (
     <div>
       <h1 className="page-title">{heading}</h1>
+
+      <DestinationsSection uid={uid} data={data} />
+
+      {/* 復習の提案。事実と「戻ると思い出しやすい」だけを、静かに言う。 */}
+      {suggestions.length > 0 && (
+        <div className="review-lines">
+          {suggestions.map((s) => (
+            <button
+              key={s.item.id}
+              className="review-line"
+              onClick={() => setRecording(s.item)}
+            >
+              <span
+                className="row-dot"
+                style={{ background: STYLE_COLORS[normalizeStyle(s.item.styleToken)].bg }}
+              />
+              {reviewLine(s.item.name, s.gapDays)}
+            </button>
+          ))}
+        </div>
+      )}
 
       <p className="section-label">{t("items")}</p>
       {data.items.length === 0 && <p className="empty-note">{t("emptyToday")}</p>}

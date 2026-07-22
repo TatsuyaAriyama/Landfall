@@ -46,7 +46,7 @@ export function demoData(): UserData {
   const sessions = [
     { id: "S-1", date: at(0, 9), minutes: 30, note: "朝の30分。", itemUUID: "DEMO-1", updatedAt: at(0) },
     { id: "S-2", date: at(0, 21), minutes: 45, itemUUID: "DEMO-2", updatedAt: at(0) },
-    { id: "S-3", date: at(2), minutes: 60, itemUUID: "DEMO-3", updatedAt: at(2) },
+    { id: "S-3", date: at(5), minutes: 60, itemUUID: "DEMO-3", updatedAt: at(5) },
     { id: "S-4", date: at(3), minutes: 25, itemUUID: "DEMO-1", updatedAt: at(3) },
     { id: "S-5", date: at(7), minutes: 90, note: "戻ってきた。", itemUUID: "DEMO-2", updatedAt: at(7) },
     { id: "S-6", date: at(8), minutes: 40, itemUUID: "DEMO-1", updatedAt: at(8) },
@@ -65,5 +65,24 @@ export function demoData(): UserData {
     date: startOfDay(new Date(id)),
     updatedAt: now,
   }));
-  return { items, sessions, days, ready: true };
+  const destinations = [
+    {
+      id: "DEST-1",
+      name: "TOEIC",
+      itemUUID: "DEMO-1",
+      targetMinutes: 20 * 60,
+      createdAt: at(40),
+      updatedAt: now,
+    },
+    {
+      id: "DEST-2",
+      name: "『百年の孤独』読了",
+      itemUUID: "DEMO-2",
+      targetMinutes: 10 * 60,
+      createdAt: at(50),
+      achievedAt: at(10),
+      updatedAt: now,
+    },
+  ];
+  return { items, sessions, days, destinations, ready: true };
 }
