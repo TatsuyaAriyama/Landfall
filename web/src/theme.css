@@ -1126,6 +1126,125 @@ textarea {
   flex: none;
 }
 
+/* ---- 船のアニメーション(浮遊・旗のなびき・航跡・プレビュー) ---- */
+
+.boat-anim {
+  animation: boat-float 3.2s ease-in-out infinite alternate;
+  transform-origin: 50% 82%;
+}
+
+.boat-anim svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@keyframes boat-float {
+  from {
+    transform: translateY(-2.5px) rotate(-1.8deg);
+  }
+  to {
+    transform: translateY(2.5px) rotate(1.8deg);
+  }
+}
+
+.boat-flag {
+  animation: flag-flutter 1.6s ease-in-out infinite alternate;
+  transform-box: fill-box;
+  transform-origin: left center;
+}
+
+@keyframes flag-flutter {
+  from {
+    transform: skewY(-5deg);
+  }
+  to {
+    transform: skewY(5deg);
+  }
+}
+
+/* 航跡: 船のうしろへ流れて消える水の線 */
+.dest-boat::before,
+.dest-boat::after {
+  content: "";
+  position: absolute;
+  bottom: 2px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--harbor-sand);
+  animation: wake-drift 2.6s linear infinite;
+}
+
+.dest-boat::before {
+  left: -16px;
+  width: 22px;
+  opacity: 0.22;
+}
+
+.dest-boat::after {
+  left: -30px;
+  width: 14px;
+  opacity: 0.14;
+  animation-delay: -1.3s;
+}
+
+@keyframes wake-drift {
+  from {
+    transform: translateX(6px);
+    opacity: 0.28;
+  }
+  to {
+    transform: translateX(-16px);
+    opacity: 0;
+  }
+}
+
+/* 設定の船プレビュー(夜の海の小さな舞台) */
+.boat-stage {
+  position: relative;
+  height: 130px;
+  border-radius: var(--radius);
+  background: var(--harbor-teal);
+  overflow: hidden;
+}
+
+.boat-stage-star {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--harbor-sand);
+  opacity: 0.35;
+  animation: harbor-twinkle 3.6s ease-in-out infinite alternate;
+}
+
+.boat-stage-horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 30px;
+  height: 2px;
+  background: color-mix(in srgb, var(--harbor-sand) 25%, transparent);
+}
+
+.boat-stage-boat {
+  position: absolute;
+  left: 50%;
+  bottom: 27px;
+  width: 84px;
+  margin-left: -42px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boat-anim,
+  .boat-flag,
+  .dest-boat::before,
+  .dest-boat::after,
+  .boat-stage-star {
+    animation: none;
+  }
+}
+
 /* ---- 目的地(島)。夜の海図カード ---- */
 
 .dest-stack {

@@ -7,7 +7,7 @@ import {
   type Destination,
 } from "../destinations";
 import type { UserData } from "../data";
-import { boatFlag, boatSail } from "../boat";
+import { boatProps } from "../boat";
 import { BoatSvg, CoastSvg } from "../symbols";
 import { Modal, askConfirm, showToast } from "../overlays";
 import {
@@ -122,8 +122,8 @@ function DestinationCard({
         className="dest-boat"
         style={{ left: `calc(5% + ${Math.round(progress.ratio * 100) * 0.72}%)` }}
       >
-        <div className="harbor-boat">
-          <BoatSvg sail={boatSail()} flag={boatFlag()} />
+        <div className="boat-anim">
+          <BoatSvg {...boatProps()} />
         </div>
       </div>
     </button>
@@ -302,7 +302,7 @@ function LandfallCelebration({
           <CoastSvg />
         </div>
         <div className="landfall-boat">
-          <BoatSvg sail={boatSail()} flag={boatFlag()} />
+          <BoatSvg {...boatProps()} />
         </div>
       </div>
 

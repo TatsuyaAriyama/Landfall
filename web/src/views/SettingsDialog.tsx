@@ -4,12 +4,12 @@ import { auth } from "../firebase";
 import { deleteEverything } from "../harbor";
 import type { UserData } from "../data";
 import {
-  FLAG_OPTIONS,
-  SAIL_OPTIONS,
-  boatFlag,
-  boatSailId,
-  setBoat,
+  BOAT_OPTIONS,
+  boatPartId,
+  boatProps,
+  setBoatPart,
   totalMinutes,
+  type BoatPart,
 } from "../boat";
 import { BoatSvg } from "../symbols";
 import { Modal, askConfirm } from "../overlays";
@@ -37,8 +37,7 @@ export function SettingsDialog({
 }) {
   const [language, setLanguage] = useState(localStorage.getItem(LANGUAGE_KEY) ?? "system");
   const [theme, setTheme] = useState(localStorage.getItem(THEME_KEY) ?? "system");
-  const [sailId, setSailId] = useState(boatSailId());
-  const [flagId, setFlagId] = useState(boatFlag());
+  const [boatTick, setBoatTick] = useState(0);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -154,71 +153,77 @@ export function SettingsDialog({
         </div>
 
         <p className="section-label">{t("boatSection")}</p>
-        <div className="boat-preview">
-          <span className="boat-preview-sea">
-            <span style={{ width: 44, display: "inline-flex" }}>
-              <BoatSvg
-                sail={SAIL_OPTIONS.find((o) => o.id === sailId)?.color}
-                flag={flagId}
-              />
-            </span>
-          </span>
-          <span className="row-sub">
-            {t("totalVoyage")}: {totalLabel}
-          </span>
+        {/* 生きたプレビュー: 夜の海で静かに揺れる、いまの自分の船。 */}
+        <div className="boat-stage" key={boatTick}>
+          <span className="boat-stage-star" style={{ top: "22%", left: "14%" }} />
+          <span className="boat-stage-star" style={{ top: "14%", left: "72%" }} />
+          <div className="boat-stage-horizon" />
+          <div className="boat-stage-boat boat-anim">
+            <BoatSvg {...boatProps()} />
+          </div>
         </div>
-        <p className="row-sub" style={{ margin: "10px 0 6px" }}>
-          {t("sailColor")}
+        <p className="row-sub" style={{ marginTop: 8 }}>
+          {t("totalVoyage")}: {totalLabel}
         </p>
-        <div className="chip-row">
-          {SAIL_OPTIONS.map((o) => {
-            const locked = total < o.unlockMinutes;
-            return (
-              <button
-                key={o.id}
-                className={`swatch${sailId === o.id ? " selected" : ""}`}
-                style={{ background: o.color, opacity: locked ? 0.3 : 1 }}
-                disabled={locked}
-                title={locked ? unlockAtLabel(o.unlockMinutes / 60) : undefined}
-                onClick={() => {
-                  setSailId(o.id);
-                  setBoat(o.id, flagId);
-                }}
-                aria-label={o.id}
-              />
-            );
-          })}
-        </div>
-        <p className="row-sub" style={{ margin: "14px 0 6px" }}>
-          {t("flagLabel")}
-        </p>
-        <div className="chip-row">
-          {FLAG_OPTIONS.map((o) => {
-            const locked = total < o.unlockMinutes;
-            const label = t(
-              (o.id === "none"
-                ? "flagNone"
-                : o.id === "pennant"
-                  ? "flagPennant"
-                  : "flagSwallow") as I18nKey,
-            );
-            return (
-              <button
-                key={o.id}
-                className={`chip${flagId === o.id ? " selected" : ""}`}
-                disabled={locked}
-                style={locked ? { opacity: 0.4 } : undefined}
-                onClick={() => {
-                  setFlagId(o.id);
-                  setBoat(sailId, o.id);
-                }}
-              >
-                {label}
-                {locked ? ` · ${unlockAtLabel(o.unlockMinutes / 60)}` : ""}
-              </button>
-            );
-          })}
-        </div>
+        {(
+          [
+            ["sail", "sailColor"],
+            ["jib", "jibLabel"],
+            ["hull", "hullLabel"],
+            ["stripe", "stripeLabel"],
+            ["flag", "flagLabel"],
+          ] as [BoatPart, I18nKey][]
+        ).map(([part, labelKey]) => (
+          <div key={part}>
+            <p className="row-sub" style={{ margin: "14px 0 6px" }}>
+              {t(labelKey)}
+            </p>
+            <div className="chip-row">
+              {BOAT_OPTIONS[part].map((o) => {
+                const locked = total < o.unlockMinutes;
+                const selected = boatPartId(part) === o.id;
+                if (o.color) {
+                  return (
+                    <button
+                      key={o.id}
+                      className={`swatch${selected ? " selected" : ""}`}
+                      style={{ background: o.color, opacity: locked ? 0.3 : 1 }}
+                      disabled={locked}
+                      title={locked ? unlockAtLabel(o.unlockMinutes / 60) : o.id}
+                      onClick={() => {
+                        setBoatPart(part, o.id);
+                        setBoatTick((n) => n + 1);
+                      }}
+                      aria-label={o.id}
+                    />
+                  );
+                }
+                const label = t(
+                  (o.id === "none"
+                    ? "flagNone"
+                    : o.id === "pennant"
+                      ? "flagPennant"
+                      : "flagSwallow") as I18nKey,
+                );
+                return (
+                  <button
+                    key={o.id}
+                    className={`chip${selected ? " selected" : ""}`}
+                    disabled={locked}
+                    style={locked ? { opacity: 0.4 } : undefined}
+                    onClick={() => {
+                      setBoatPart(part, o.id);
+                      setBoatTick((n) => n + 1);
+                    }}
+                  >
+                    {label}
+                    {locked ? ` · ${unlockAtLabel(o.unlockMinutes / 60)}` : ""}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
 
         <p className="section-label">{t("dataSection")}</p>
         <div className="chip-row">

@@ -159,6 +159,9 @@ const ja = {
   // 船
   boatSection: "船",
   sailColor: "帆の色",
+  jibLabel: "前帆",
+  hullLabel: "船体",
+  stripeLabel: "ライン",
   flagLabel: "旗",
   flagNone: "なし",
   flagPennant: "三角の旗",
@@ -360,6 +363,9 @@ const en: Record<I18nKey, string> = {
 
   boatSection: "Boat",
   sailColor: "Sail color",
+  jibLabel: "Jib",
+  hullLabel: "Hull",
+  stripeLabel: "Stripe",
   flagLabel: "Flag",
   flagNone: "None",
   flagPennant: "Pennant",

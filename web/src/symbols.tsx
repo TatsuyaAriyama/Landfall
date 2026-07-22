@@ -160,22 +160,61 @@ export const COAST =
   "M430 748 Q452 512 556 386 Q590 350 624 386 Q676 486 705 612 " +
   "Q742 548 788 524 Q832 642 852 748 L430 748 Z";
 
-/// 入港する帆船(帆+船体)。帆の色と旗は船のカスタマイズ(累計時間で解放)に対応。
-export function BoatSvg({
+export interface BoatParts {
+  sail?: string; // メインセイル
+  jib?: string; // 前帆
+  hull?: string; // 船体
+  stripe?: string; // 船体のライン("none"で無し)
+  flag?: string; // 旗("none" | "pennant" | "swallow")
+}
+
+/// 船の本体(SVGグループ、設計座標 0 0 260 320)。
+/// マスト+メインセイル+ジブ+船体+ライン+旗の多層構造。フラット塗りのみ。
+/// 他のSVG(年間海図など)へは <g transform> で埋め込める。
+export function BoatGroup({
   sail = "#EADEBD",
+  jib = "#EADEBD",
+  hull = "#EADEBD",
+  stripe = "none",
   flag = "none",
-}: {
-  sail?: string;
-  flag?: string;
-} = {}) {
+}: BoatParts = {}) {
   return (
-    <svg viewBox="215 335 190 402" aria-hidden="true">
-      {flag === "pennant" && <polygon points="318,344 366,357 318,370" fill="#F5822A" />}
-      {flag === "swallow" && (
-        <polygon points="318,344 370,344 352,357 370,370 318,370" fill="#F0997B" />
+    <g>
+      {/* マスト */}
+      <rect x="126" y="26" width="8" height="200" rx="4" fill={hull} />
+      {/* 旗(マストの頂でなびく) */}
+      {flag === "pennant" && (
+        <polygon className="boat-flag" points="134,20 186,33 134,46" fill="#F5822A" />
       )}
-      <path d={SAIL} fill={sail} />
-      <path d={HULL} fill="#EADEBD" />
+      {flag === "swallow" && (
+        <polygon
+          className="boat-flag"
+          points="134,20 188,20 168,33 188,46 134,46"
+          fill="#F0997B"
+        />
+      )}
+      {/* メインセイル(マストの後ろへ膨らむ) */}
+      <path d="M 140 42 Q 216 124 208 220 L 140 220 Q 149 132 140 42 Z" fill={sail} />
+      {/* ジブ(前帆) */}
+      <path d="M 118 74 Q 54 152 60 222 L 118 222 Q 111 152 118 74 Z" fill={jib} />
+      {/* 船体(舳先の上がった三日月) */}
+      <path d="M 26 240 Q 130 230 234 240 Q 220 294 130 300 Q 40 294 26 240 Z" fill={hull} />
+      {/* 船体のライン */}
+      {stripe !== "none" && (
+        <path
+          d="M 40 254 Q 130 245 220 254 L 216 265 Q 130 256 44 265 Z"
+          fill={stripe}
+        />
+      )}
+    </g>
+  );
+}
+
+/// 入港する帆船。単体で使うためのSVGラッパー。
+export function BoatSvg(parts: BoatParts = {}) {
+  return (
+    <svg viewBox="0 0 260 320" aria-hidden="true">
+      <BoatGroup {...parts} />
     </svg>
   );
 }

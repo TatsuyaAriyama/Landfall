@@ -6,8 +6,8 @@ import {
   type Archetype,
   type WrappedMonth,
 } from "../wrapped";
-import { ArchetypeSymbolSvg, COAST, HULL, SAIL } from "../symbols";
-import { boatFlag, boatSail } from "../boat";
+import { ArchetypeSymbolSvg, BoatGroup, COAST } from "../symbols";
+import { boatProps } from "../boat";
 import { drawCard, saveCanvas, type CardKind } from "../share";
 import { lang, t, yearChartTitle, type I18nKey } from "../i18n";
 
@@ -223,18 +223,9 @@ function YearChart({ data }: { data: UserData }) {
 
           {/* いまの位置の船 */}
           <g
-            transform={`translate(${px(currentMonth) - 15}, ${py(currentMonth) - 62}) scale(0.16)`}
+            transform={`translate(${px(currentMonth) - 18}, ${py(currentMonth) - 44}) scale(0.14)`}
           >
-            <g transform="translate(-215, -335)">
-              {boatFlag() === "pennant" && (
-                <polygon points="318,344 366,357 318,370" fill="#F5822A" />
-              )}
-              {boatFlag() === "swallow" && (
-                <polygon points="318,344 370,344 352,357 370,370 318,370" fill="#F0997B" />
-              )}
-              <path d={SAIL} fill={boatSail()} />
-              <path d={HULL} fill="#EADEBD" />
-            </g>
+            <BoatGroup {...boatProps()} />
           </g>
         </svg>
       </div>
