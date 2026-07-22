@@ -6,7 +6,7 @@ import {
   type Archetype,
   type WrappedMonth,
 } from "../wrapped";
-import { ArchetypeSymbolSvg, BoatGroup, COAST } from "../symbols";
+import { ArchetypeSymbolSvg, BoatGroup } from "../symbols";
 import { boatProps } from "../boat";
 import { drawCard, saveCanvas, type CardKind } from "../share";
 import { lang, t, yearChartTitle, type I18nKey } from "../i18n";
@@ -184,38 +184,35 @@ function YearChart({ data }: { data: UserData }) {
             strokeLinecap="round"
           />
 
-          {counts.map((count, m) => (
-            <g key={m}>
-              <circle
-                cx={px(m)}
-                cy={py(m)}
-                r={count > 0 ? 9 : 5}
-                fill="#EADEBD"
-                opacity={count > 0 ? 0.35 + Math.min(0.65, count / 20) : 0.15}
-              />
-              <text
-                x={px(m)}
-                y={py(m) + 34}
-                fill="#EADEBD"
-                opacity="0.5"
-                fontSize="15"
-                textAnchor="middle"
-              >
-                {m + 1}
-              </text>
-            </g>
-          ))}
-
-          {/* 到達した島(その月の航路のそばに浮かぶ) */}
-          {islands.map((d) => {
-            const m = d.achievedAt!.getMonth();
+          {counts.map((count, m) => {
+            // その月に到達した島があれば、名前は出さず小さな灯りの印だけ点す
+            // (名前・日付は下のReachedIslandsが読みやすい一覧として持つ — ここで
+            //  フルサイズの島+文字を重ねると、細い年間航路の上で潰れて読めなくなる)。
+            const landed = islands.some((d) => d.achievedAt!.getMonth() === m);
             return (
-              <g key={d.id} transform={`translate(${px(m) - 34}, ${py(m) - 92})`}>
-                <g transform="scale(0.16) translate(-430, -340)">
-                  <path d={COAST} fill="#EADEBD" />
-                </g>
-                <text x="34" y="-12" fill="#EADEBD" fontSize="15" textAnchor="middle">
-                  {d.name}
+              <g key={m}>
+                <circle
+                  cx={px(m)}
+                  cy={py(m)}
+                  r={count > 0 ? 9 : 5}
+                  fill="#EADEBD"
+                  opacity={count > 0 ? 0.35 + Math.min(0.65, count / 20) : 0.15}
+                />
+                {landed && (
+                  <path
+                    d={`M ${px(m) - 6} ${py(m) - 9} L ${px(m)} ${py(m) - 20} L ${px(m) + 6} ${py(m) - 9} Z`}
+                    fill="#F5822A"
+                  />
+                )}
+                <text
+                  x={px(m)}
+                  y={py(m) + 34}
+                  fill="#EADEBD"
+                  opacity="0.5"
+                  fontSize="15"
+                  textAnchor="middle"
+                >
+                  {m + 1}
                 </text>
               </g>
             );
