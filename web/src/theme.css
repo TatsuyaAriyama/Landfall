@@ -1,0 +1,536 @@
+/* Landfall Web テーマ。
+   原則は iOS と同じ: フラット塗りのみ・影/グラデーション/絵文字なし・角丸20px・font-weight ≤500。
+   ink/paper は明暗に追従する意味色。ブランド色は固定。 */
+
+:root {
+  --ink: #141414;
+  --paper: #ffffff;
+  --tile-ink: #141414;
+  --sun-yellow: #ffd84d;
+  --sea-green: #5dcaa5;
+  --coral: #f0997b;
+  --deep-rust: #4a1b0c;
+  --midnight: #1a1130;
+  --lavender: #cecbf6;
+  --violet: #534ab7;
+  --return-orange: #f5822a;
+  --harbor-teal: #184a40;
+  --harbor-sand: #eadebd;
+  --ink-fixed: #141414;
+  --radius: 20px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ink: #f4f1ec;
+    --paper: #161412;
+    --tile-ink: #2c2a28;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+    "Noto Sans JP", sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: var(--ink);
+  background: transparent;
+}
+
+/* ---- レイアウト ---- */
+
+.shell {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 24px 96px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 0 8px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.brand svg {
+  border-radius: 8px;
+  display: block;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0 28px;
+}
+
+.tab {
+  font-size: 15px;
+  padding: 0 16px;
+  min-height: 40px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
+  color: var(--ink);
+}
+
+.tab.selected {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: transparent;
+}
+
+.quiet-button {
+  font-size: 14px;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+  min-height: 44px;
+}
+
+/* ---- 見出し・ラベル ---- */
+
+.section-label {
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: color-mix(in srgb, var(--ink) 50%, transparent);
+  margin: 32px 0 12px;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.page-sub {
+  font-size: 14px;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+  margin-top: 6px;
+}
+
+/* ---- 今日: タイル ---- */
+
+.tile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 18px;
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  transition: transform 0.12s ease-out, opacity 0.12s ease-out;
+}
+
+.tile:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+
+.tile-art {
+  aspect-ratio: 1;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tile-art svg {
+  width: 62%;
+  height: 62%;
+}
+
+.tile-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-edit {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  font-size: 15px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+.tile:hover .tile-edit {
+  display: flex;
+}
+
+.tile-add {
+  aspect-ratio: 1;
+  border-radius: var(--radius);
+  border: 1.5px dashed color-mix(in srgb, var(--ink) 30%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--ink) 45%, transparent);
+  align-self: start;
+}
+
+/* ---- リスト行 ---- */
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.row:first-child {
+  border-top: none;
+}
+
+.row-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex: none;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-title {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.row-sub {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--ink) 50%, transparent);
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.row-minutes {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--ink) 70%, transparent);
+  flex: none;
+}
+
+.empty-note {
+  font-size: 15px;
+  color: color-mix(in srgb, var(--ink) 50%, transparent);
+  line-height: 1.7;
+}
+
+/* ---- 軌跡: カレンダー ---- */
+
+.month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.month-title {
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.month-arrow {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.month-arrow:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.calendar {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  row-gap: 10px;
+  justify-items: center;
+}
+
+.weekday {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--ink) 45%, transparent);
+  padding-bottom: 4px;
+}
+
+.day-cell {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  border: 1px solid transparent;
+}
+
+.day-cell.studied {
+  background: var(--sun-yellow);
+  color: var(--ink-fixed);
+}
+
+.day-cell.rested {
+  background: var(--sea-green);
+  color: var(--ink-fixed);
+}
+
+.day-cell.future {
+  color: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.day-cell.today {
+  border-color: var(--return-orange);
+}
+
+.day-cell.selected {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.stat-strip {
+  display: flex;
+  gap: 28px;
+  margin: 24px 0 8px;
+}
+
+.stat .stat-number {
+  font-size: 28px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.stat .stat-label {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+}
+
+.stat.sun .stat-number { color: var(--sun-yellow); }
+.stat.sea .stat-number { color: var(--sea-green); }
+
+/* ---- ダイアログ ---- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--ink-fixed) 40%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 10;
+}
+
+.dialog {
+  width: 100%;
+  max-width: 420px;
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--paper);
+  border-radius: var(--radius);
+  padding: 28px;
+}
+
+.dialog-title {
+  font-size: 20px;
+  font-weight: 500;
+  margin: 0 0 4px;
+}
+
+.field {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+  border-radius: var(--radius);
+  padding: 14px 18px;
+  font-size: 16px;
+  outline: none;
+}
+
+.field:focus {
+  border-color: color-mix(in srgb, var(--ink) 45%, transparent);
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.chip {
+  font-size: 15px;
+  padding: 0 16px;
+  min-height: 40px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.chip.selected {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: transparent;
+}
+
+.swatch {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.swatch.selected {
+  border: 3px solid var(--return-orange);
+}
+
+.symbol-pick {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid transparent;
+}
+
+.symbol-pick svg {
+  width: 26px;
+  height: 26px;
+}
+
+.symbol-pick.selected {
+  border-color: var(--return-orange);
+}
+
+.primary-button {
+  width: 100%;
+  min-height: 56px;
+  border-radius: var(--radius);
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 17px;
+  font-weight: 500;
+  transition: transform 0.12s ease-out, opacity 0.12s ease-out;
+}
+
+.primary-button:active {
+  transform: scale(0.98);
+  opacity: 0.85;
+}
+
+.primary-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.danger-button {
+  width: 100%;
+  min-height: 44px;
+  font-size: 15px;
+  color: var(--deep-rust);
+}
+
+@media (prefers-color-scheme: dark) {
+  .danger-button {
+    color: var(--coral);
+  }
+}
+
+/* ---- サインイン ---- */
+
+.signin {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.signin-mark {
+  border-radius: 28px;
+  display: block;
+}
+
+.signin-title {
+  font-size: 28px;
+  font-weight: 500;
+  margin: 12px 0 0;
+}
+
+.signin-tagline {
+  font-size: 15px;
+  color: color-mix(in srgb, var(--ink) 60%, transparent);
+  margin: 0 0 24px;
+  line-height: 1.8;
+}
+
+.signin .primary-button {
+  max-width: 320px;
+}
+
+.error-text {
+  font-size: 13px;
+  color: var(--coral);
+}
