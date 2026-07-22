@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import {
+  getFirestore,
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
@@ -19,10 +20,21 @@ export const app = initializeApp({
 
 export const auth = getAuth(app);
 
-// オフライン永続化を有効にする。オフライン中の書き込みは端末にキューされ、
-// 接続が戻ると自動で同期される(複数タブ間でも1つのキャッシュを共有)。
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-});
+// オフライン永続化(IndexedDB)を試みる。プライベートブラウジングや
+// トラッキング防止が厳しいSafari・一部の拡張機能ではIndexedDBがブロックされ、
+// initializeFirestore がここで同期的に例外を投げることがある。これを
+// キャッチせずにいると、Reactが一度もマウントされないまま(=真っ黒な画面の
+// まま再読込しても変わらない)アプリ全体が起動不能になるため、必ずフォールバックする。
+function createFirestore() {
+  try {
+    return initializeFirestore(app, {
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+    });
+  } catch {
+    return getFirestore(app);
+  }
+}
+
+export const db = createFirestore();
 
 export const googleProvider = new GoogleAuthProvider();
