@@ -1,10 +1,78 @@
 import { dayId, startOfDay } from "./types";
 import type { UserData } from "./data";
+import type { HarborMember, HarborRoom } from "./harbor";
 
 // URLに #demo を付けたときだけ使う見本データ(デザイン確認用。Firestoreには触れない)。
 
 export const isDemo =
   typeof window !== "undefined" && window.location.hash === "#demo";
+
+// ---- 港のデモ(プライベートの港と「みんなの海」の見本) ----
+
+export function demoRoom(): HarborRoom {
+  return {
+    id: "DEMO42",
+    name: "夜光虫の港",
+    memberIds: ["demo", "D-2", "D-3", "D-4"],
+    ownerUid: "demo",
+  };
+}
+
+export function demoHarborMembers(): HarborMember[] {
+  return [
+    {
+      id: "demo",
+      displayName: "ハル",
+      styleToken: "seaGreen",
+      symbolToken: "compass",
+      resolve: "毎日は無理でも、また戻る。",
+      boatSail: "coral",
+      boatJib: "sand",
+      boatHull: "sand",
+      boatStripe: "returnOrange",
+      boatFlag: "pennant",
+    },
+    {
+      id: "D-2",
+      displayName: "ミナト",
+      styleToken: "midnight",
+      symbolToken: "lighthouse",
+      resolve: "",
+      boatSail: "sunYellow",
+      boatJib: "seaGreen",
+      boatHull: "coral",
+      boatStripe: "none",
+      boatFlag: "none",
+    },
+    {
+      id: "D-3",
+      displayName: "ヨル",
+      styleToken: "violet",
+      symbolToken: "book",
+      resolve: "",
+      boatSail: "lavender",
+      boatJib: "coral",
+      boatHull: "deepRust",
+      boatStripe: "deepRust",
+      boatFlag: "swallow",
+    },
+    {
+      id: "D-4",
+      displayName: "アオイ",
+      styleToken: "sunYellow",
+      symbolToken: "pen",
+      resolve: "",
+      boatSail: "seaGreen",
+      boatJib: "sunYellow",
+      boatHull: "sand",
+      boatStripe: "none",
+      boatFlag: "none",
+    },
+  ];
+}
+
+/// 「今日走った」ことにするデモメンバー(みんなの海のランタン見本)。
+export const demoLitMemberIds: ReadonlySet<string> = new Set(["demo", "D-3"]);
 
 export function demoData(): UserData {
   const now = new Date();

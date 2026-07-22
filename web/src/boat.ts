@@ -73,3 +73,38 @@ export function boatProps(): BoatParts {
     flag: boatPartId("flag"),
   };
 }
+
+// ---- 港への「見た目」の共有 ----
+// 港のメンバードキュメントには色そのものではなく部位の id を書く
+// (スキーマは docs/SCHEMA.md、検証は firestore.rules)。
+
+/// 港のメンバードキュメントに載せる、いまの船の部位id一式。
+export function boatShareData(): Record<string, string> {
+  return {
+    boatSail: boatPartId("sail"),
+    boatJib: boatPartId("jib"),
+    boatHull: boatPartId("hull"),
+    boatStripe: boatPartId("stripe"),
+    boatFlag: boatPartId("flag"),
+  };
+}
+
+/// 共有された部位idを BoatParts(色)へ解決する。
+/// 未知・欠損の id は各部位の既定(砂色/なし)に静かに落とす。
+export function boatPartsFromIds(ids: {
+  boatSail?: string;
+  boatJib?: string;
+  boatHull?: string;
+  boatStripe?: string;
+  boatFlag?: string;
+}): BoatParts {
+  const pick = (part: BoatPart, id: string | undefined): BoatOption =>
+    BOAT_OPTIONS[part].find((o) => o.id === id) ?? BOAT_OPTIONS[part][0];
+  return {
+    sail: pick("sail", ids.boatSail).color,
+    jib: pick("jib", ids.boatJib).color,
+    hull: pick("hull", ids.boatHull).color,
+    stripe: pick("stripe", ids.boatStripe).color ?? "none",
+    flag: pick("flag", ids.boatFlag).id,
+  };
+}

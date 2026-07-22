@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Component,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   CHAT_REACTIONS,
   HarborError,
@@ -25,6 +34,7 @@ import {
   type PublicHarborInfo,
 } from "../harbor";
 import type { UserData } from "../data";
+import { demoHarborMembers, demoRoom, isDemo } from "../demo";
 import { PlayerProfile } from "../profile";
 import { STYLE_COLORS, normalizeStyle, normalizeSymbol, trimAll } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
@@ -32,6 +42,35 @@ import { ProfileEditor } from "./ProfileEditor";
 import { MemberTrace } from "./MemberTrace";
 import { Modal, askConfirm, showToast } from "../overlays";
 import { chatLandfallLine, chatReturnLine, t } from "../i18n";
+
+// three.js を含む「みんなの海」は重いので、プライベートの港を開いたときだけ読み込む。
+const HarborWorld = lazy(() => import("../three/HarborWorld"));
+
+/// WebGLが使えるか(一度だけ判定)。使えない環境では3Dを出さない。
+let webglCache: boolean | null = null;
+function canUseWebGL(): boolean {
+  if (webglCache !== null) return webglCache;
+  try {
+    const c = document.createElement("canvas");
+    webglCache = Boolean(
+      window.WebGLRenderingContext && (c.getContext("webgl2") || c.getContext("webgl")),
+    );
+  } catch {
+    webglCache = false;
+  }
+  return webglCache;
+}
+
+/// 3Dの描画に失敗したら、何も表示しない(港の他の機能はそのまま)。
+class HarborWorldBoundary extends Component<{ children?: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 type HarborNav =
   | { type: "root" }
@@ -72,6 +111,11 @@ export function HarborView({ uid, data }: { uid: string; data: UserData }) {
   const [profileTick, setProfileTick] = useState(0);
 
   const reload = useCallback(async () => {
+    // デモ(#demo)はFirestoreに触れず、見本の港をひとつ見せる。
+    if (isDemo) {
+      setRooms([demoRoom()]);
+      return;
+    }
     const [r, p, b] = await Promise.all([
       fetchRooms().catch(() => [] as HarborRoom[]),
       fetchPublicJoined().catch(() => cachedPublicJoined()),
@@ -624,6 +668,11 @@ function RoomDetail({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // デモ(#demo)は見本のメンバーだけ(チャットは購読しない)。
+    if (isDemo) {
+      setMembers(demoHarborMembers());
+      return;
+    }
     void fetchMembers("rooms", room.id).then(setMembers);
     return listenChat(room.id, setMessages);
   }, [room.id]);
@@ -709,6 +758,16 @@ function RoomDetail({
           </div>
         </div>
       </div>
+
+      {/* みんなの海: メンバー全員の船が同じ夜の海で島へ並走する3D。
+          船をタップするとその人の軌跡へ。失敗時は静かに何も出さない。 */}
+      {canUseWebGL() && (
+        <HarborWorldBoundary>
+          <Suspense fallback={<div className="harbor-world-fallback" />}>
+            <HarborWorld room={room} members={members} onSelectMember={onOpenMember} />
+          </Suspense>
+        </HarborWorldBoundary>
+      )}
 
       {/* メンバー(タップで軌跡へ) */}
       <div className="chip-row" style={{ marginTop: 8 }}>

@@ -2132,3 +2132,93 @@ textarea {
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* ---- 港の「みんなの海」(プライベートの港の3D) ---- */
+
+.harbor-world,
+.harbor-world-fallback {
+  position: relative;
+  height: 260px;
+  margin-top: 14px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #123830;
+}
+
+.harbor-world canvas {
+  display: block;
+}
+
+/* 船の上の名前(drei Htmlでアンカー)。sandの小さなピル。 */
+.harbor-world-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #123830 55%, transparent);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 島の上の港名。名前ピルよりさらに控えめに。 */
+.harbor-world-island {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  color: color-mix(in srgb, var(--harbor-sand) 80%, transparent);
+  background: color-mix(in srgb, #123830 55%, transparent);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 写真ボタン。シーン右下に小さく。 */
+.harbor-world-camera {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 62%, transparent);
+  border: 1px solid color-mix(in srgb, #eadebd 22%, transparent);
+  cursor: pointer;
+}
+
+/* 撮影のフラッシュ(0.3sで消える白) */
+.harbor-world-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: #fff;
+  pointer-events: none;
+  animation: harbor-flash 0.3s ease-out forwards;
+}
+
+@keyframes harbor-flash {
+  from {
+    opacity: 0.85;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harbor-world-flash {
+    animation-duration: 0.01s;
+  }
+}
+
+/* 灯の説明の一行 */
+.harbor-world-hint {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+}

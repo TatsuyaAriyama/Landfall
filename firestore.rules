@@ -86,10 +86,12 @@ service cloud.firestore {
 
         // 書けるのは、その港のメンバー本人だけ。フィールドは既知のものに限り、型と長さを検証する
         // (未参加の港へのドキュメント設置や、余計なフィールド・肥大データの注入を防ぐ)。
+        // boat* は船の見た目(部位id)。任意フィールド=hasOnly のサブセット規則により、
+        // これらを書かない旧クライアント(iOS)の従来5フィールド書き込みもそのまま通る。
         allow create, update: if request.auth != null
           && request.auth.uid == memberId
           && isMember()
-          && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'joinedAt'])
+          && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'joinedAt', 'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag'])
           && request.resource.data.displayName is string
           && request.resource.data.displayName.size() <= 60
           && request.resource.data.styleToken is string
@@ -97,7 +99,17 @@ service cloud.firestore {
           && request.resource.data.symbolToken is string
           && request.resource.data.symbolToken.size() <= 24
           && request.resource.data.resolve is string
-          && request.resource.data.resolve.size() <= 80;
+          && request.resource.data.resolve.size() <= 80
+          && ( !('boatSail' in request.resource.data)
+            || (request.resource.data.boatSail is string && request.resource.data.boatSail.size() <= 24) )
+          && ( !('boatJib' in request.resource.data)
+            || (request.resource.data.boatJib is string && request.resource.data.boatJib.size() <= 24) )
+          && ( !('boatHull' in request.resource.data)
+            || (request.resource.data.boatHull is string && request.resource.data.boatHull.size() <= 24) )
+          && ( !('boatStripe' in request.resource.data)
+            || (request.resource.data.boatStripe is string && request.resource.data.boatStripe.size() <= 24) )
+          && ( !('boatFlag' in request.resource.data)
+            || (request.resource.data.boatFlag is string && request.resource.data.boatFlag.size() <= 24) );
 
         // 退港時に自分のカードを消す。
         allow delete: if request.auth != null && request.auth.uid == memberId;
@@ -168,10 +180,11 @@ service cloud.firestore {
       match /members/{memberId} {
         allow read: if request.auth != null;
 
+        // boat* は船の見た目(部位id)。任意フィールドなので旧クライアントの書き込みも通る。
         allow create, update: if request.auth != null
           && request.auth.uid == memberId
           && validSlug()
-          && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'joinedAt'])
+          && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'joinedAt', 'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag'])
           && request.resource.data.displayName is string
           && request.resource.data.displayName.size() <= 60
           && request.resource.data.styleToken is string
@@ -179,7 +192,17 @@ service cloud.firestore {
           && request.resource.data.symbolToken is string
           && request.resource.data.symbolToken.size() <= 24
           && request.resource.data.resolve is string
-          && request.resource.data.resolve.size() <= 80;
+          && request.resource.data.resolve.size() <= 80
+          && ( !('boatSail' in request.resource.data)
+            || (request.resource.data.boatSail is string && request.resource.data.boatSail.size() <= 24) )
+          && ( !('boatJib' in request.resource.data)
+            || (request.resource.data.boatJib is string && request.resource.data.boatJib.size() <= 24) )
+          && ( !('boatHull' in request.resource.data)
+            || (request.resource.data.boatHull is string && request.resource.data.boatHull.size() <= 24) )
+          && ( !('boatStripe' in request.resource.data)
+            || (request.resource.data.boatStripe is string && request.resource.data.boatStripe.size() <= 24) )
+          && ( !('boatFlag' in request.resource.data)
+            || (request.resource.data.boatFlag is string && request.resource.data.boatFlag.size() <= 24) );
 
         // 退港・削除は本人のみ。
         allow delete: if request.auth != null && request.auth.uid == memberId;

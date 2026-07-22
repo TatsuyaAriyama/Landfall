@@ -108,6 +108,10 @@ const ja = {
   errGeneric: "うまくいきませんでした。もう一度お試しください。",
   back: "戻る",
 
+  // みんなの海(港の3D)
+  takePhoto: "写真を撮る",
+  lanternHint: "今日走った船には、灯がともる。",
+
   // フィードバック
   recordedToast: "記録しました。",
   joinedToast: "入港しました。",
@@ -320,6 +324,9 @@ const en: Record<I18nKey, string> = {
   errRoomNotFound: "That harbor could not be found. Check the code.",
   errGeneric: "Something went wrong. Please try again.",
   back: "Back",
+
+  takePhoto: "Take a photo",
+  lanternHint: "Boats that sailed today carry a light.",
 
   recordedToast: "Recorded.",
   joinedToast: "You're in the harbor.",

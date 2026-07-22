@@ -1,3 +1,4 @@
+import { boatShareData } from "./boat";
 import { t } from "./i18n";
 import { trimAll } from "./types";
 
@@ -37,12 +38,17 @@ export const PlayerProfile = {
 
   /// 港(プライベート/パブリック共通)のメンバードキュメントに書くプロフィール一式。
   /// 長さは Firestore ルールの上限に合わせて切り詰める(iOS の harborProfileData と同じ)。
+  /// 船の見た目(部位id)も一緒に載せ、港の「みんなの海」に自分の船で並ぶ。
   harborProfileData(): Record<string, string> {
+    const boat = Object.fromEntries(
+      Object.entries(boatShareData()).map(([key, id]) => [key, id.slice(0, 24)]),
+    );
     return {
       displayName: this.displayName.slice(0, 60),
       styleToken: this.styleToken.slice(0, 24),
       symbolToken: this.symbolToken.slice(0, 24),
       resolve: this.resolve.slice(0, 80),
+      ...boat,
     };
   },
 };

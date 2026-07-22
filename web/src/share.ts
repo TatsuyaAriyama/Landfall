@@ -189,9 +189,10 @@ export async function saveCanvas(canvas: HTMLCanvasElement, filename: string) {
     try {
       await navigator.share({ files: [file] });
       return;
-    } catch {
-      // 共有をやめた場合はダウンロードにも進まない
-      return;
+    } catch (err) {
+      // 共有をやめた場合(AbortError)はダウンロードにも進まない。
+      // それ以外(ジェスチャ切れ等)は無言で終わらせずダウンロードへ。
+      if (err instanceof DOMException && err.name === "AbortError") return;
     }
   }
   const url = URL.createObjectURL(blob);

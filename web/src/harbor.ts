@@ -64,6 +64,12 @@ export interface HarborMember {
   styleToken: string;
   symbolToken: string;
   resolve: string;
+  // 船の見た目(部位id)。古いクライアントが書いたカードには無い。
+  boatSail?: string;
+  boatJib?: string;
+  boatHull?: string;
+  boatStripe?: string;
+  boatFlag?: string;
 }
 
 export interface SharedSession {
@@ -306,6 +312,7 @@ export async function fetchMembers(
     query(collection(db, root, id, "members"), orderBy("joinedAt", "desc"), limit(200)),
   ).catch(() => null);
   if (!snap) return [];
+  const str = (value: unknown) => (typeof value === "string" ? value : undefined);
   return snap.docs.map((d) => {
     const v = d.data();
     return {
@@ -314,6 +321,11 @@ export async function fetchMembers(
       styleToken: String(v.styleToken ?? "midnight"),
       symbolToken: String(v.symbolToken ?? "phoenix"),
       resolve: String(v.resolve ?? ""),
+      boatSail: str(v.boatSail),
+      boatJib: str(v.boatJib),
+      boatHull: str(v.boatHull),
+      boatStripe: str(v.boatStripe),
+      boatFlag: str(v.boatFlag),
     };
   });
 }

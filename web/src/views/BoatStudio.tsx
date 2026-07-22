@@ -13,6 +13,7 @@ import {
   totalMinutes,
   type BoatPart,
 } from "../boat";
+import { pushProfileEverywhere } from "../harbor";
 import { lang, t, unlockAtLabel, type I18nKey } from "../i18n";
 
 // 船スタジオ。夜の海に浮かぶ自分の船を、three.jsで360度眺めながら着せ替える。
@@ -69,6 +70,14 @@ export default function BoatStudio({ data }: { data: UserData }) {
     lang === "ja" ? `${Math.floor(total / 60)}時間` : `${Math.floor(total / 60)}h`;
   const parts = boatProps();
 
+  // 部位を選んだら、参加中の港の「みんなの海」へも即反映する
+  // (fire-and-forget。オフラインや未サインインの失敗は握りつぶす)。
+  const choose = (part: BoatPart, id: string) => {
+    setBoatPart(part, id);
+    setTick((n) => n + 1);
+    void pushProfileEverywhere().catch(() => {});
+  };
+
   return (
     <div>
       <h1 className="page-title">{t("boatStudioTitle")}</h1>
@@ -110,10 +119,7 @@ export default function BoatStudio({ data }: { data: UserData }) {
                     style={{ background: o.color, opacity: locked ? 0.3 : 1 }}
                     disabled={locked}
                     title={locked ? unlockAtLabel(o.unlockMinutes / 60) : o.id}
-                    onClick={() => {
-                      setBoatPart(part, o.id);
-                      setTick((n) => n + 1);
-                    }}
+                    onClick={() => choose(part, o.id)}
                     aria-label={o.id}
                   />
                 );
@@ -131,10 +137,7 @@ export default function BoatStudio({ data }: { data: UserData }) {
                   className={`chip${selected ? " selected" : ""}`}
                   disabled={locked}
                   style={locked ? { opacity: 0.4 } : undefined}
-                  onClick={() => {
-                    setBoatPart(part, o.id);
-                    setTick((n) => n + 1);
-                  }}
+                  onClick={() => choose(part, o.id)}
                 >
                   {label}
                   {locked ? ` · ${unlockAtLabel(o.unlockMinutes / 60)}` : ""}
