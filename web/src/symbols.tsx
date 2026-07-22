@@ -130,16 +130,35 @@ export function TileSymbolSvg({
   }
 }
 
-/// アプリのブランドマーク(島+水面、harborTeal 地)。favicon と同じ図案。
+// iOS の既定アイコン「Harbor」= LandfallShape(帰る帆＋船体＋望む陸地の二つの丘)。
+// 1024 設計座標をそのまま移植。harborTeal 地に harborSand 塗り。角丸は iOS の
+// スーパー楕円マスクに寄せて 22.37%(≒229/1024)。favicon と同一図案。
+const LANDFALL_PATH =
+  // 陸地(大きな丸い丘＋小さな丘＋水平の底辺)
+  "M430 748 Q452 512 556 386 Q590 350 624 386 Q676 486 705 612 " +
+  "Q742 548 788 524 Q832 642 852 748 L430 748 Z " +
+  // 帆(細く高い山型)
+  "M318 386 Q376 524 404 668 L302 668 Q300 522 318 386 Z " +
+  // 船体(帆の下の三日月)
+  "M215 650 Q320 646 404 700 Q300 778 215 650 Z";
+
+export function LandfallMark() {
+  return (
+    <svg viewBox="0 0 1024 1024" aria-hidden="true">
+      <rect width="1024" height="1024" rx="229" fill="#184A40" />
+      <path d={LANDFALL_PATH} fill="#EADEBD" fillRule="evenodd" />
+    </svg>
+  );
+}
+
+/// アプリのブランドマーク。iOS の既定アイコンと同一図案。
 export function BrandMark({ size }: { size: number }) {
   return (
-    <svg viewBox="0 0 200 200" width={size} height={size} aria-hidden="true">
-      <rect width="200" height="200" rx="44" fill="#184A40" />
-      <path
-        d="M 24 150 Q 40 86 84 52 Q 112 66 120 110 Q 132 88 150 84 Q 168 120 176 150 L 24 150 Z"
-        fill="#EADEBD"
-      />
-      <rect x="40" y="165" width="120" height="10" rx="5" fill="#EADEBD" />
-    </svg>
+    <span
+      style={{ display: "inline-flex", width: size, height: size }}
+      aria-hidden="true"
+    >
+      <LandfallMark />
+    </span>
   );
 }

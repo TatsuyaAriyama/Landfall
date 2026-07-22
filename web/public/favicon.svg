@@ -1,5 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
-  <rect width="200" height="200" rx="44" fill="#184A40"/>
-  <path d="M 24 150 Q 40 86 84 52 Q 112 66 120 110 Q 132 88 150 84 Q 168 120 176 150 L 24 150 Z" fill="#EADEBD"/>
-  <rect x="40" y="165" width="120" height="10" rx="5" fill="#EADEBD"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" rx="229" fill="#184A40"/>
+  <path fill="#EADEBD" fill-rule="evenodd" d="M430 748 Q452 512 556 386 Q590 350 624 386 Q676 486 705 612 Q742 548 788 524 Q832 642 852 748 L430 748 Z M318 386 Q376 524 404 668 L302 668 Q300 522 318 386 Z M215 650 Q320 646 404 700 Q300 778 215 650 Z"/>
 </svg>
