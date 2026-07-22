@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { signInWithPopup } from "firebase/auth";
-import { auth, googleProvider } from "../firebase";
+import { signInWithGoogle } from "../auth";
 import { HarborScene } from "../symbols";
 import { t } from "../i18n";
 
@@ -15,7 +14,9 @@ export function SignInView() {
     setWorking(true);
     setError(null);
     try {
-      await signInWithPopup(auth, googleProvider);
+      // モバイル Safari はここでリダイレクトし、戻ってきたら自動でサインイン完了。
+      // PC はポップアップで完結する。
+      await signInWithGoogle();
     } catch (e) {
       const code = (e as { code?: string }).code ?? "";
       if (code !== "auth/popup-closed-by-user" && code !== "auth/cancelled-popup-request") {

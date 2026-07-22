@@ -9,6 +9,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
+import { completeRedirectSignIn } from "./auth";
 import {
   dayId,
   newUUID,
@@ -24,14 +25,15 @@ import {
 export function useAuthUser(): { user: User | null; loading: boolean } {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  useEffect(
-    () =>
-      onAuthStateChanged(auth, (u) => {
-        setUser(u);
-        setLoading(false);
-      }),
-    [],
-  );
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+    });
+    // リダイレクト方式(モバイル Safari)で戻ってきた場合の認証情報を取り込む。
+    void completeRedirectSignIn();
+    return unsub;
+  }, []);
   return { user, loading };
 }
 

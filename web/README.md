@@ -19,6 +19,7 @@ Firebase 設定は `web/.env.local`(gitignore 済み)。雛形は `.env.example`
    プロジェクトの設定 → アプリを追加 → ウェブ。表示された `appId` を `web/.env.local` の `VITE_FB_APP_ID` に貼る。
 2. **Auth の承認済みドメイン**
    Authentication → Settings → Authorized domains に公開ドメイン(例: `landfall---study-log.web.app`)があることを確認(`localhost` と `*.firebaseapp.com` は既定で入っている)。
+   iPad/iPhone の Safari はリダイレクト方式でサインインするため、**公開ドメインがここに無いとモバイルでログインできない**。必ず追加すること。
 3. **Firestore ルールのデプロイ**(未実施なら)
    `firebase deploy --only firestore:rules`
 4. **ビルドとデプロイ**
@@ -33,7 +34,9 @@ Firebase 設定は `web/.env.local`(gitignore 済み)。雛形は `.env.example`
 
 - 今日: 項目タイル(作成・編集・削除)+作業記録(分・ひとこと)
 - 軌跡: 月カレンダー(学んだ日=黄・休んだ日=緑を同格表示)+日別の記録
-- 認証: Google(Apple サインインは Services ID の設定後に追加予定)
+- 認証: Google(Apple サインインは Services ID の設定後に追加予定)。
+  PC はポップアップ、iPad/iPhone の Safari はリダイレクト方式に自動で切り替わる
+- 対応: PC・iPad・スマホの各ブラウザ(レスポンシブ)
 
 ### まだ無いもの(次フェーズ)
 
