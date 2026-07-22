@@ -156,36 +156,49 @@ service cloud.firestore {
       }
     }
 
-    // ---- パブリックの港(公式5港。参加と潮位だけ。個人は書かれない) ----
+    // ---- パブリックの港(公式5港) ----
+    // 参加すると、名前・アイコン・作業記録がその港に表示される。
+    // 不変条件: 書けるのも消せるのも「書いた本人だけ」。読みはサインイン済みなら誰でも。
     match /publicHarbors/{slug} {
       function validSlug() {
         return slug in ['language', 'certification', 'student', 'reading', 'making'];
       }
-      function isPublicMember() {
-        return request.auth != null
-          && exists(/databases/$(database)/documents/publicHarbors/$(slug)/members/$(request.auth.uid));
-      }
 
-      // 参加: 本人のみ。読みも本人のみ(名簿の列挙をさせない)。
-      match /members/{uid} {
-        allow read, delete: if request.auth != null && request.auth.uid == uid;
-        allow create: if request.auth != null && request.auth.uid == uid
-          && validSlug()
-          && request.resource.data.keys().hasOnly(['joinedAt']);
-        allow update: if false;
-      }
-
-      // 潮位: その日に海に出た人数の合算だけ。読みはサインイン済みなら誰でも。
-      // 書きは在港者が「ちょうど1増」だけ(作成は1から)。
-      match /pulse/{month}/days/{day} {
+      // メンバーのプレイヤーカード。
+      match /members/{memberId} {
         allow read: if request.auth != null;
-        allow create: if isPublicMember() && validSlug()
-          && request.resource.data.keys().hasOnly(['count'])
-          && request.resource.data.count == 1;
-        allow update: if isPublicMember() && validSlug()
-          && request.resource.data.keys().hasOnly(['count'])
-          && request.resource.data.count == resource.data.count + 1;
-        allow delete: if false;
+
+        allow create, update: if request.auth != null
+          && request.auth.uid == memberId
+          && validSlug()
+          && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'joinedAt'])
+          && request.resource.data.displayName is string
+          && request.resource.data.displayName.size() <= 60
+          && request.resource.data.styleToken is string
+          && request.resource.data.styleToken.size() <= 24
+          && request.resource.data.symbolToken is string
+          && request.resource.data.symbolToken.size() <= 24
+          && request.resource.data.resolve is string
+          && request.resource.data.resolve.size() <= 80;
+
+        // 退港・削除は本人のみ。
+        allow delete: if request.auth != null && request.auth.uid == memberId;
+
+        // 月ごとの共有記録。積み上がって残り、消せるのは本人だけ。
+        match /months/{monthId} {
+          allow read: if request.auth != null;
+
+          allow create, update: if request.auth != null
+            && request.auth.uid == memberId
+            && validSlug()
+            && request.resource.data.keys().hasOnly(['days', 'sessions', 'updatedAt'])
+            && request.resource.data.days is list
+            && request.resource.data.days.size() <= 31
+            && request.resource.data.sessions is list
+            && request.resource.data.sessions.size() <= 1000;
+
+          allow delete: if request.auth != null && request.auth.uid == memberId;
+        }
       }
     }
 

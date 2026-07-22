@@ -1,11 +1,14 @@
 import FirebaseAuth
 import FirebaseFirestore
 import Foundation
+import SwiftData
 
-/// パブリックの港。参加(members/{uid})と潮位(pulse)だけを Firestore に持つ。
-/// 潮位 = その日、港のメンバーのうち何人が海に出たか。個人は一切書かない。
-/// publicHarbors/{slug}/members/{uid}          … 参加(本人のみ読み書き)
-/// publicHarbors/{slug}/pulse/{yyyy-MM}/days/{dd} … {count} 匿名の合算のみ
+/// パブリックの港。参加すると、名前・アイコン・作業記録がその港に表示される。
+/// 記録は月ごとに積み上がって残り、**書いた本人だけ**が消せる(ルールで強制)。
+/// 退港すると自分の共有分(プロフィール+全記録)が消える。
+///
+/// publicHarbors/{slug}/members/{uid}                 … プロフィール(本人のみ書ける・読みは全員)
+/// publicHarbors/{slug}/members/{uid}/months/{yyyy-MM} … 共有記録(本人のみ書ける・読みは全員)
 @MainActor
 final class PublicHarborService: ObservableObject {
     static let shared = PublicHarborService()
@@ -15,12 +18,15 @@ final class PublicHarborService: ObservableObject {
 
     /// 参加中のスラッグ。即時表示のためローカルにも控える(真実はFirestore)。
     @Published private(set) var joined: Set<String> = []
-    /// 港ごとの「今日の出航」数。港タブを開いたときに読む。
-    @Published private(set) var todaySail: [String: Int] = [:]
 
     private static let joinedCacheKey = "publicHarbor.joined"
     private var db: Firestore { Firestore.firestore() }
     private var uid: String? { Auth.auth().currentUser?.uid }
+
+    private func memberRef(slug: String, uid: String) -> DocumentReference {
+        db.collection("publicHarbors").document(slug)
+            .collection("members").document(uid)
+    }
 
     // MARK: - 参加
 
@@ -29,95 +35,93 @@ final class PublicHarborService: ObservableObject {
         var found: Set<String> = []
         // 5港固定なので個別に引く(コレクショングループ不要・ルールも単純に保てる)。
         for harbor in PublicHarbor.all {
-            let doc = try? await db.collection("publicHarbors").document(harbor.slug)
-                .collection("members").document(uid).getDocument()
+            let doc = try? await memberRef(slug: harbor.slug, uid: uid).getDocument()
             if doc?.exists == true { found.insert(harbor.slug) }
         }
         joined = found
         cacheJoined()
-        await refreshTodaySail()
     }
 
-    func join(_ slug: String) async throws {
+    /// 参加: プレイヤーカードを置き、当月の記録をすぐ公開する。
+    func join(_ slug: String, context: ModelContext) async throws {
         guard let uid else { throw RoomError.notSignedIn }
-        try await db.collection("publicHarbors").document(slug)
-            .collection("members").document(uid)
-            .setData(["joinedAt": FieldValue.serverTimestamp()])
+        var data = PlayerProfile.harborProfileData()
+        data["joinedAt"] = FieldValue.serverTimestamp()
+        try await memberRef(slug: slug, uid: uid).setData(data)
         joined.insert(slug)
         cacheJoined()
+        publishCurrentMonth(context: context)
     }
 
+    /// 退港: 自分の共有分(全記録+プロフィール)を消してから抜ける。
+    /// 消せるのは本人だけ(ルールで強制)。
     func leave(_ slug: String) async {
         guard let uid else { return }
-        try? await db.collection("publicHarbors").document(slug)
-            .collection("members").document(uid).delete()
+        let ref = memberRef(slug: slug, uid: uid)
+        if let months = try? await ref.collection("months").getDocuments() {
+            for doc in months.documents { try? await doc.reference.delete() }
+        }
+        try? await ref.delete()
         joined.remove(slug)
         cacheJoined()
+    }
+
+    /// アカウント削除時: 全パブリック港から自分の痕跡を消す。
+    func leaveAll() async {
+        await refresh()
+        for slug in joined {
+            await leave(slug)
+        }
+    }
+
+    /// プレイヤーカードの変更を参加中の全パブリック港へも反映する。
+    func pushProfile() {
+        guard let uid else { return }
+        for slug in joined {
+            memberRef(slug: slug, uid: uid)
+                .setData(PlayerProfile.harborProfileData(), merge: true)
+        }
     }
 
     private func cacheJoined() {
         UserDefaults.standard.set(Array(joined).sorted(), forKey: Self.joinedCacheKey)
     }
 
-    // MARK: - 潮位(書く)
+    // MARK: - 記録の公開(自分の分だけ)
 
-    /// 今日はじめて記録したとき、参加中の各港の潮位を+1する(1日1回・港ごと)。
-    /// 個人を書かない=公開面に晒されるものが存在しない。
-    func bumpPulseIfNeeded() {
-        guard uid != nil, !joined.isEmpty else { return }
-        let calendar = Calendar.current
-        let now = Date()
-        let comps = calendar.dateComponents([.year, .month, .day], from: now)
-        guard let y = comps.year, let m = comps.month, let d = comps.day else { return }
-        let todayKey = String(format: "%04d-%02d-%02d", y, m, d)
-
+    /// 当月の記録を参加中の全パブリック港に書く。記録の保存・編集・削除のたびに呼ばれる。
+    /// 月のドキュメントは上書き型なので、ローカルでの削除もそのまま反映される
+    /// (=本人の操作だけがデータを変える)。
+    func publishCurrentMonth(context: ModelContext) {
+        guard let uid, !joined.isEmpty else { return }
+        guard let payload = RoomService.monthPayload(context: context) else { return }
         for slug in joined {
-            let dedupeKey = "publicHarbor.pulse.\(slug)"
-            guard UserDefaults.standard.string(forKey: dedupeKey) != todayKey else { continue }
-            // increment は未作成なら count=1 の create、既存なら +1 の update として評価され、
-            // どちらもルールの検証(=ちょうど1増)を満たす。
-            dayRef(slug: slug, year: y, month: m, day: d)
-                .setData(["count": FieldValue.increment(Int64(1))], merge: true)
-            UserDefaults.standard.set(todayKey, forKey: dedupeKey)
+            memberRef(slug: slug, uid: uid)
+                .collection("months").document(payload.docID)
+                .setData(payload.data)
         }
     }
 
-    // MARK: - 潮位(読む)
+    // MARK: - 港のメンバー
 
-    /// 今日の出航数をまとめて読む(港タブ用)。
-    func refreshTodaySail() async {
-        guard uid != nil else { return }
-        let comps = Calendar.current.dateComponents([.year, .month, .day], from: Date())
-        guard let y = comps.year, let m = comps.month, let d = comps.day else { return }
-        var result: [String: Int] = [:]
-        for harbor in PublicHarbor.all {
-            let snap = try? await dayRef(slug: harbor.slug, year: y, month: m, day: d).getDocument()
-            result[harbor.slug] = (snap?.data()?["count"] as? Int) ?? 0
-        }
-        todaySail = result
-    }
-
-    /// 当月の潮位(日→人数)。詳細画面の潮の描画に使う。
-    func monthTide(slug: String) async -> [Int: Int] {
-        guard uid != nil else { return [:] }
-        let comps = Calendar.current.dateComponents([.year, .month], from: Date())
-        guard let y = comps.year, let m = comps.month else { return [:] }
-        let monthID = String(format: "%04d-%02d", y, m)
+    /// 在港の船乗り(プロフィール一覧)。読みはサインイン済みなら誰でも。
+    func members(of slug: String) async -> [HarborMember] {
+        guard uid != nil else { return [] }
         guard let snap = try? await db.collection("publicHarbors").document(slug)
-            .collection("pulse").document(monthID)
-            .collection("days").getDocuments() else { return [:] }
-        var tide: [Int: Int] = [:]
-        for doc in snap.documents {
-            if let day = Int(doc.documentID), let count = doc.data()["count"] as? Int {
-                tide[day] = count
-            }
+            .collection("members")
+            .order(by: "joinedAt", descending: true)
+            .limit(to: 200)
+            .getDocuments() else { return [] }
+        return snap.documents.compactMap { doc in
+            let data = doc.data()
+            guard let name = data["displayName"] as? String else { return nil }
+            return HarborMember(
+                id: doc.documentID,
+                displayName: name,
+                styleToken: data["styleToken"] as? String ?? TileStyle.midnight.rawValue,
+                symbolToken: data["symbolToken"] as? String ?? TileSymbol.phoenix.rawValue,
+                resolve: data["resolve"] as? String ?? ""
+            )
         }
-        return tide
-    }
-
-    private func dayRef(slug: String, year: Int, month: Int, day: Int) -> DocumentReference {
-        db.collection("publicHarbors").document(slug)
-            .collection("pulse").document(String(format: "%04d-%02d", year, month))
-            .collection("days").document(String(format: "%02d", day))
     }
 }

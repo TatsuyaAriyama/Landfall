@@ -115,6 +115,9 @@ struct HarborView: View {
             .navigationDestination(for: PublicHarbor.self) { harbor in
                 PublicHarborView(harbor: harbor)
             }
+            .navigationDestination(for: PublicMemberKey.self) { key in
+                MemberTraceView(roomId: key.slug, member: key.member, root: "publicHarbors")
+            }
             .navigationDestination(for: HarborRoom.self) { room in
                 HarborChatView(room: room)
             }
@@ -219,11 +222,6 @@ struct HarborView: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if let n = publicService.todaySail[harbor.slug], n > 0 {
-                    Text("\(n)")
-                        .font(LFFont.number(15))
-                        .foregroundStyle(LFColor.ink.opacity(0.5))
-                }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(LFColor.ink.opacity(0.25))
@@ -401,6 +399,8 @@ struct MemberTraceKey: Hashable {
 struct MemberTraceView: View {
     let roomId: String
     let member: HarborMember
+    /// "rooms"(プライベート) / "publicHarbors"(パブリック)。読む場所だけが違う。
+    var root: String = "rooms"
 
     @Environment(\.dismiss) private var dismiss
     @State private var days: Set<Int>?
@@ -483,7 +483,7 @@ struct MemberTraceView: View {
         .task {
             let detail = await RoomService.shared.monthDetail(
                 roomId: roomId, memberId: member.id,
-                year: yearMonth.year, month: yearMonth.month
+                year: yearMonth.year, month: yearMonth.month, root: root
             )
             days = detail.days
             sessions = detail.sessions

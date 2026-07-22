@@ -1,19 +1,32 @@
 import SwiftUI
+import SwiftData
 
-/// パブリックの港の中。個人は並ばない。見えるのは港ぜんたいの潮だけ。
-/// 参加すると、自分の普段の記録が(名前を出さずに)潮位に自動で反映される。
+/// パブリックの港の中。参加している船乗りの名前・アイコン・作業記録が見える。
+/// 記録は月ごとに残り続け、消せるのは書いた本人だけ(退港=自分の共有分の削除)。
 struct PublicHarborView: View {
     let harbor: PublicHarbor
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var auth: AuthService
     @StateObject private var service = PublicHarborService.shared
-    @State private var tide: [Int: Int] = [:]
+    @StateObject private var chat = HarborChatService.shared
+    @State private var members: [HarborMember] = []
+    @State private var loaded = false
     @State private var working = false
     @State private var leaving = false
+    /// 通報の確認対象(メンバー)。
+    @State private var reporting: HarborMember?
+    /// ブロックの確認対象(メンバー)。
+    @State private var blocking: HarborMember?
 
     private var isJoined: Bool { service.joined.contains(harbor.slug) }
-    private var todayCount: Int { service.todaySail[harbor.slug] ?? 0 }
+    private var myUid: String? { auth.user?.uid }
+
+    /// ブロックした相手は一覧から外す。
+    private var visibleMembers: [HarborMember] {
+        members.filter { !chat.blocked.contains($0.id) }
+    }
 
     var body: some View {
         ZStack {
@@ -21,14 +34,10 @@ struct PublicHarborView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
-                    todayLine
-                        .padding(.top, 28)
-                    tideSection
-                        .padding(.top, 24)
                     joinButton
-                        .padding(.top, 32)
-                    footnotes
                         .padding(.top, 28)
+                    membersSection
+                        .padding(.top, 32)
                 }
                 .padding(LFMetrics.cardPadding)
             }
@@ -49,10 +58,8 @@ struct PublicHarborView: View {
             }
         }
         .toolbarBackground(LFColor.paper, for: .navigationBar)
-        .task {
-            tide = await service.monthTide(slug: harbor.slug)
-            await service.refreshTodaySail()
-        }
+        .task { await reload() }
+        .refreshable { await reload() }
         .confirmationDialog(
             "Leave this harbor?",
             isPresented: $leaving,
@@ -62,12 +69,49 @@ struct PublicHarborView: View {
                 Task {
                     await service.leave(harbor.slug)
                     Haptics.tap()
+                    await reload()
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Your days will stop counting into this tide. You can rejoin anytime.")
+            Text("Your name and shared records will be removed from this harbor. You can rejoin anytime.")
         }
+        .confirmationDialog(
+            "Report this sailor?",
+            isPresented: Binding(get: { reporting != nil }, set: { if !$0 { reporting = nil } }),
+            titleVisibility: .visible,
+            presenting: reporting
+        ) { member in
+            Button("Report", role: .destructive) {
+                chat.report(roomId: harbor.slug, message: nil, targetUid: member.id)
+                Haptics.tap()
+                reporting = nil
+            }
+            Button("Cancel", role: .cancel) { reporting = nil }
+        } message: { _ in
+            Text("This sends a report to the developer for review.")
+        }
+        .confirmationDialog(
+            "Block this sailor?",
+            isPresented: Binding(get: { blocking != nil }, set: { if !$0 { blocking = nil } }),
+            titleVisibility: .visible,
+            presenting: blocking
+        ) { member in
+            Button("Block", role: .destructive) {
+                chat.block(member.id)
+                Haptics.tap()
+                blocking = nil
+            }
+            Button("Cancel", role: .cancel) { blocking = nil }
+        } message: { _ in
+            Text("You won't see them anymore. They won't be told.")
+        }
+    }
+
+    private func reload() async {
+        await chat.loadBlocked()
+        members = await service.members(of: harbor.slug)
+        loaded = true
     }
 
     // MARK: - 見出し
@@ -94,50 +138,6 @@ struct PublicHarborView: View {
         }
     }
 
-    private var todayLine: some View {
-        Group {
-            if todayCount > 0 {
-                Text("Today, \(todayCount) set sail here.")
-            } else {
-                Text("The sea is calm today.")
-            }
-        }
-        .font(LFFont.copy(18))
-        .foregroundStyle(LFColor.ink)
-    }
-
-    // MARK: - 今月の潮
-
-    private var tideSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("This month's tide")
-                .font(LFFont.label(13))
-                .tracking(1)
-                .foregroundStyle(LFColor.ink.opacity(0.5))
-            TideShape(tide: tide, daysInMonth: daysInMonth)
-                .fill(harbor.style.background.opacity(0.55))
-                .frame(height: 96)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(LFColor.ink.opacity(0.15))
-                        .frame(height: 1)
-                }
-                .overlay {
-                    if tide.values.allSatisfy({ $0 == 0 }) {
-                        Text("The tide rises as sailors set out.")
-                            .font(LFFont.label(14))
-                            .foregroundStyle(LFColor.ink.opacity(0.4))
-                    }
-                }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("This month's tide"))
-    }
-
-    private var daysInMonth: Int {
-        Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30
-    }
-
     // MARK: - 参加
 
     @ViewBuilder
@@ -156,60 +156,123 @@ struct PublicHarborView: View {
             }
             .buttonStyle(.plain)
         } else {
-            Button {
-                guard !working else { return }
-                working = true
-                Task {
-                    defer { working = false }
-                    try? await service.join(harbor.slug)
-                    Haptics.success()
+            VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    guard !working else { return }
+                    working = true
+                    Task {
+                        defer { working = false }
+                        try? await service.join(harbor.slug, context: modelContext)
+                        Haptics.success()
+                        await reload()
+                    }
+                } label: {
+                    Text("Join this harbor")
+                        .font(LFFont.copy(17))
+                        .foregroundStyle(LFColor.paper)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(LFColor.ink)
+                        .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
                 }
-            } label: {
-                Text("Join this harbor")
-                    .font(LFFont.copy(17))
-                    .foregroundStyle(LFColor.paper)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(LFColor.ink)
-                    .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
+                .buttonStyle(.plain)
+                Text("Joining shares your name, icon, and study records here.")
+                    .font(LFFont.label(13))
+                    .foregroundStyle(LFColor.ink.opacity(0.5))
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .buttonStyle(.plain)
         }
     }
 
-    private var footnotes: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("No names appear here — only the harbor's tide.")
-            Text("On days you rest, the tide just ebbs. That's all.")
+    // MARK: - 在港の船乗り
+
+    @ViewBuilder
+    private var membersSection: some View {
+        Text("Sailors in harbor")
+            .font(LFFont.label(13))
+            .tracking(1)
+            .foregroundStyle(LFColor.ink.opacity(0.5))
+
+        if !loaded {
+            ProgressView()
+                .tint(LFColor.ink)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 40)
+        } else if visibleMembers.isEmpty {
+            Text("No one is in this harbor yet. Be the first to drop anchor.")
+                .font(LFFont.copy(15))
+                .foregroundStyle(LFColor.ink.opacity(0.5))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 16)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(visibleMembers) { member in
+                    if member.id != visibleMembers.first?.id {
+                        Rectangle()
+                            .fill(LFColor.ink.opacity(0.08))
+                            .frame(height: 1)
+                    }
+                    memberRow(member)
+                }
+            }
+            .padding(.top, 6)
         }
-        .font(LFFont.label(13))
-        .foregroundStyle(LFColor.ink.opacity(0.45))
-        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func memberRow(_ member: HarborMember) -> some View {
+        NavigationLink(value: PublicMemberKey(slug: harbor.slug, member: member)) {
+            HStack(spacing: 14) {
+                // 全員同じ大きさ。序列を作らない。
+                PlayerAvatarArt(styleToken: member.styleToken, symbolToken: member.symbolToken)
+                    .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(verbatim: member.displayName)
+                            .font(LFFont.copy(17))
+                            .foregroundStyle(LFColor.ink)
+                            .lineLimit(1)
+                        if member.id == myUid {
+                            Text("You")
+                                .font(LFFont.label(12))
+                                .foregroundStyle(LFColor.ink.opacity(0.4))
+                        }
+                    }
+                    if !member.resolve.isEmpty {
+                        Text(verbatim: member.resolve)
+                            .font(LFFont.label(12))
+                            .foregroundStyle(LFColor.ink.opacity(0.45))
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(LFColor.ink.opacity(0.25))
+            }
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            if member.id != myUid {
+                Button {
+                    reporting = member
+                } label: {
+                    Label("Report", systemImage: "flag")
+                }
+                Button(role: .destructive) {
+                    blocking = member
+                } label: {
+                    Label("Block this sailor", systemImage: "hand.raised")
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
-/// 当月の潮位を、日ごとのステップ状の面として描く(軌跡の波形と同じ語彙)。
-/// 高さはその日に海に出た人数を月内最大で正規化したもの。個人は描かない。
-struct TideShape: Shape {
-    let tide: [Int: Int]
-    let daysInMonth: Int
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let maxCount = max(tide.values.max() ?? 0, 1)
-        let dayWidth = rect.width / CGFloat(max(daysInMonth, 1))
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        for day in 1...max(daysInMonth, 1) {
-            let count = tide[day] ?? 0
-            let height = rect.height * 0.9 * CGFloat(count) / CGFloat(maxCount)
-            let y = rect.maxY - height
-            let x0 = rect.minX + CGFloat(day - 1) * dayWidth
-            let x1 = x0 + dayWidth
-            path.addLine(to: CGPoint(x: x0, y: y))
-            path.addLine(to: CGPoint(x: x1, y: y))
-        }
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.closeSubpath()
-        return path
-    }
+/// パブリックの港のメンバーページへの遷移キー。
+struct PublicMemberKey: Hashable {
+    let slug: String
+    let member: HarborMember
 }

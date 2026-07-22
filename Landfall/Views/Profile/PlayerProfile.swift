@@ -30,6 +30,17 @@ enum PlayerProfile {
     static var displayName: String {
         name.isEmpty ? String(localized: "Sailor") : name
     }
+
+    /// 港(プライベート/パブリック共通)のメンバードキュメントに書くプロフィール一式。
+    /// 長さはFirestoreルールの上限に合わせて切り詰める。
+    static func harborProfileData() -> [String: Any] {
+        [
+            "displayName": String(displayName.prefix(60)),
+            "styleToken": styleToken,
+            "symbolToken": symbolToken,
+            "resolve": String(resolve.prefix(80)),
+        ]
+    }
 }
 
 /// 丸いプレイヤーアイコン。項目タイル(角丸四角)と区別するため円にする。
@@ -216,8 +227,9 @@ struct ProfileEditorSheet: View {
                     .padding(.top, 12)
 
                 Button {
-                    // ローカルは@AppStorageで保存済み。港にも反映して閉じる。
+                    // ローカルは@AppStorageで保存済み。港(プライベート/パブリック)にも反映して閉じる。
                     RoomService.shared.pushProfileToAllRooms()
+                    PublicHarborService.shared.pushProfile()
                     Haptics.success()
                     onSaved()
                     dismiss()

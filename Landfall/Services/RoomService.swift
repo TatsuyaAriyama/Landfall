@@ -68,12 +68,10 @@ final class RoomService: ObservableObject {
 
     /// メンバードキュメントに書くプロフィール一式(長さを上限で切り詰めてから書く)。
     private var profileData: [String: Any] {
-        [
-            "displayName": displayName,
-            "styleToken": PlayerProfile.styleToken,
-            "symbolToken": PlayerProfile.symbolToken,
-            "resolve": String(PlayerProfile.resolve.prefix(Limit.resolve)),
-        ]
+        var data = PlayerProfile.harborProfileData()
+        // プレイヤー名が未設定のときは Auth の表示名で補う(パブリック側は「船乗り」のまま)。
+        data["displayName"] = displayName
+        return data
     }
 
     // MARK: - ルーム一覧
@@ -200,17 +198,13 @@ final class RoomService: ObservableObject {
 
     // MARK: - 記録の公開(自分の分だけ)
 
-    /// 当月の学んだ日 + 各セッション(項目名・ひとこと・時間)を、参加中の全港(または指定の港)に書き込む。
-    /// 記録の保存・削除のたびに呼ばれる。失敗してもローカルの動作には影響しない。
-    func publishCurrentMonth(context: ModelContext, roomIds: [String]? = nil) {
-        guard let uid else { return }
-        let targets = roomIds ?? rooms.map(\.id)
-        guard !targets.isEmpty else { return }
-
+    /// 当月の共有ペイロード(学んだ日 + セッション一覧)。
+    /// プライベートの港とパブリックの港で同じ形を書く(読む側の画面も共通化できる)。
+    static func monthPayload(context: ModelContext) -> (docID: String, data: [String: Any])? {
         let calendar = Calendar.current
         let now = Date()
         let comps = calendar.dateComponents([.year, .month], from: now)
-        guard let year = comps.year, let month = comps.month else { return }
+        guard let year = comps.year, let month = comps.month else { return nil }
         let docID = String(format: "%04d-%02d", year, month)
 
         let entries = (try? context.fetch(FetchDescriptor<StudyDay>())) ?? []
@@ -231,22 +225,37 @@ final class RoomService: ObservableObject {
             return dict
         }
 
+        return (docID, [
+            "days": days.sorted(),
+            "sessions": monthSessions,
+            "updatedAt": FieldValue.serverTimestamp(),
+        ])
+    }
+
+    /// 当月の学んだ日 + 各セッション(項目名・ひとこと・時間)を、参加中の全港(または指定の港)に書き込む。
+    /// 記録の保存・編集・削除のたびに呼ばれる。パブリックの港へも同時に反映する。
+    func publishCurrentMonth(context: ModelContext, roomIds: [String]? = nil) {
+        guard let uid else { return }
+        // パブリック(参加していれば)。プライベートに入っていなくても公開は成立する。
+        PublicHarborService.shared.publishCurrentMonth(context: context)
+
+        let targets = roomIds ?? rooms.map(\.id)
+        guard !targets.isEmpty else { return }
+        guard let payload = Self.monthPayload(context: context) else { return }
+
         for roomId in targets {
             db.collection("rooms").document(roomId)
                 .collection("members").document(uid)
-                .collection("months").document(docID).setData([
-                    "days": days.sorted(),
-                    "sessions": monthSessions,
-                    "updatedAt": FieldValue.serverTimestamp(),
-                ])
+                .collection("months").document(payload.docID)
+                .setData(payload.data)
         }
     }
 
     // MARK: - メンバーとその軌跡の取得
 
-    func members(of roomId: String) async -> [HarborMember] {
+    func members(of roomId: String, root: String = "rooms") async -> [HarborMember] {
         guard uid != nil else { return [] }
-        guard let snap = try? await db.collection("rooms").document(roomId)
+        guard let snap = try? await db.collection(root).document(roomId)
             .collection("members").getDocuments() else { return [] }
         return snap.documents.compactMap { doc in
             let data = doc.data()
@@ -263,9 +272,9 @@ final class RoomService: ObservableObject {
     }
 
     /// メンバーの当月の記録(学んだ日 + セッション一覧)。未公開なら空。
-    func monthDetail(roomId: String, memberId: String, year: Int, month: Int) async -> (days: Set<Int>, sessions: [SharedSession]) {
+    func monthDetail(roomId: String, memberId: String, year: Int, month: Int, root: String = "rooms") async -> (days: Set<Int>, sessions: [SharedSession]) {
         let docID = String(format: "%04d-%02d", year, month)
-        guard let snap = try? await db.collection("rooms").document(roomId)
+        guard let snap = try? await db.collection(root).document(roomId)
             .collection("members").document(memberId)
             .collection("months").document(docID).getDocument(),
             let data = snap.data() else { return ([], []) }

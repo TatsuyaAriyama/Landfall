@@ -254,14 +254,14 @@
 "The days your hands rested still count as making." = "手を止めた日も、つくる人のうち。";
 
 /* パブリックの港の中 */
-"Today, %lld set sail here." = "今日、%lld隻がこの港から海に出ています。";
-"The sea is calm today." = "今日は、凪いでいます。";
-"This month's tide" = "今月の潮";
-"The tide rises as sailors set out." = "誰かが海に出ると、潮が満ちていきます。";
 "Join this harbor" = "この港に入る";
-"Your days will stop counting into this tide. You can rejoin anytime." = "あなたの日々は、この潮に数えられなくなります。いつでも戻れます。";
-"No names appear here — only the harbor's tide." = "ここに個人の名前は出ません。港ぜんたいの潮だけが見えます。";
-"On days you rest, the tide just ebbs. That's all." = "休んだ日は、潮が引くだけ。それだけのことです。";
+"Joining shares your name, icon, and study records here." = "参加すると、名前・アイコン・作業記録がこの港に表示されます。";
+"Your name and shared records will be removed from this harbor. You can rejoin anytime." = "あなたの名前と共有した記録が、この港から消えます。いつでも戻れます。";
+"Sailors in harbor" = "在港の船乗り";
+"No one is in this harbor yet. Be the first to drop anchor." = "まだ誰もいません。最初の錨を下ろしませんか。";
+"Report this sailor?" = "この船乗りを通報しますか?";
+"This sends a report to the developer for review." = "開発者に送られ、確認されます。";
+"You won't see them anymore. They won't be told." = "この人が見えなくなります。相手に通知はされません。";
 
 /* プライベートのチャット */
 "The voyage together" = "みんなの航海";

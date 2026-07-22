@@ -202,6 +202,7 @@ struct SettingsView: View {
         defer { deletingAccount = false }
         do {
             await RoomService.shared.leaveAllRooms()
+            await PublicHarborService.shared.leaveAll()
             try await SyncService.shared.deleteAllRemoteData()
             try await auth.deleteAccount()
             dismiss()
