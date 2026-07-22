@@ -237,10 +237,6 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
           <div className="stat-number">{stats.rested}</div>
           <div className="stat-label">{t("restedDays")}</div>
         </div>
-        <div className="stat">
-          <div className="stat-number">0</div>
-          <div className="stat-label">{t("quitCount")}</div>
-        </div>
       </div>
 
       <p className="section-label">{selectedTitle}</p>

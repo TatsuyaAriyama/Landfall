@@ -42,8 +42,8 @@ const ja = {
   indexTab: "索引",
   searchNotes: "ひとことを検索",
   noNotes: "ひとことは、まだありません。記録に一言添えると、ここに集まります。",
-  dayNote: "この日のひとこと",
-  dayNotePlaceholder: "この日のひとこと(任意)",
+  dayNote: "この日の振り返り",
+  dayNotePlaceholder: "この日の振り返り",
   signInFailed: "サインインに失敗しました。もう一度お試しください。",
 
   // プレイヤーカード
@@ -255,8 +255,8 @@ const en: Record<I18nKey, string> = {
   indexTab: "Index",
   searchNotes: "Search notes",
   noNotes: "No notes yet. Add a word to a record and it gathers here.",
-  dayNote: "A word about this day",
-  dayNotePlaceholder: "A word about this day (optional)",
+  dayNote: "Reflections on this day",
+  dayNotePlaceholder: "Reflections on this day",
   signInFailed: "Sign-in failed. Please try again.",
 
   sailor: "Sailor",

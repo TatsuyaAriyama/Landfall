@@ -317,12 +317,25 @@ export function SessionRow({
   onDelete?: () => void;
 }) {
   const style = STYLE_COLORS[normalizeStyle(item?.styleToken ?? "midnight")];
+  const time = `${String(session.date.getHours()).padStart(2, "0")}:${String(
+    session.date.getMinutes(),
+  ).padStart(2, "0")}`;
   return (
     <div className="row">
-      <span className="row-dot" style={{ background: style.bg }} />
+      {/* 項目のタイルと同じ絵柄(配色×シンボル)を小さく。色の点だけでは項目が判別できない。 */}
+      <span className="row-tile" style={{ background: style.bg }}>
+        <TileSymbolSvg
+          symbol={normalizeSymbol(item?.symbolToken ?? "compass")}
+          fg={style.fg}
+          bg={style.bg}
+        />
+      </span>
       <div className="row-main">
         <div className="row-title">{item?.name ?? "—"}</div>
-        {session.note && <div className="row-sub">{session.note}</div>}
+        <div className="row-sub">
+          <span className="row-time">{time}</span>
+          {session.note ? ` · ${session.note}` : ""}
+        </div>
       </div>
       <span className="row-minutes">
         {session.minutes}

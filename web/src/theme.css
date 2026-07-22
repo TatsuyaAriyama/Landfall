@@ -247,6 +247,26 @@ textarea {
   flex: none;
 }
 
+/* 記録行の項目アイコン(タイルと同じ絵柄のミニ版) */
+.row-tile {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.row-tile svg {
+  width: 60%;
+  height: 60%;
+}
+
+.row-time {
+  font-variant-numeric: tabular-nums;
+}
+
 .row-main {
   flex: 1;
   min-width: 0;
