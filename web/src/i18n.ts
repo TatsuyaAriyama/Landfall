@@ -3,9 +3,10 @@
 
 const ja = {
   appName: "Landfall",
-  tagline: "休んでも戻れる学習記録。\nやめた回数はいつも0。",
+  wordmark: "Landfall-StudyLog",
+  signInEnter: "サインインして、入港しましょう。",
+  signInSync: "記録は、複数の端末で同期されます。",
   signInWithGoogle: "Googleで続ける",
-  signInNote: "iOSアプリと同じアカウントで、記録がそのままつながります。",
   today: "今日",
   trace: "軌跡",
   signOut: "サインアウト",
@@ -43,9 +44,10 @@ export type I18nKey = keyof typeof ja;
 
 const en: Record<I18nKey, string> = {
   appName: "Landfall",
-  tagline: "A study log you can always come back to.\nTimes quit: always zero.",
+  wordmark: "Landfall-StudyLog",
+  signInEnter: "Sign in to enter the harbor.",
+  signInSync: "Your record syncs across your devices.",
   signInWithGoogle: "Continue with Google",
-  signInNote: "Sign in with the same account as the iOS app and your record carries over.",
   today: "Today",
   trace: "Trace",
   signOut: "Sign out",
