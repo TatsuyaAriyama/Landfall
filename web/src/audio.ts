@@ -130,6 +130,23 @@ export function stopSound() {
   current = "off";
 }
 
+/// 船をつついた時などの、ごく短いやわらかな一音(チャイムより控えめ)。
+export function playPlink() {
+  const c = ensureCtx();
+  const now = c.currentTime;
+  const env = c.createGain();
+  env.gain.setValueAtTime(0, now);
+  env.gain.linearRampToValueAtTime(0.13, now + 0.015);
+  env.gain.exponentialRampToValueAtTime(0.0001, now + 0.65);
+  const osc = c.createOscillator();
+  osc.type = "sine";
+  osc.frequency.value = 783.99; // G5
+  osc.connect(env);
+  env.connect(c.destination);
+  osc.start(now);
+  osc.stop(now + 0.7);
+}
+
 /// ポモドーロの区切りの合図。短くやわらかい二音(強制的な警告音にしない)。
 export function playChime() {
   const c = ensureCtx();

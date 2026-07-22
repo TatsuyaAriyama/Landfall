@@ -28,10 +28,26 @@ import {
 
 // 目的地(島)。海図カードの上を、記録するたび船が島へ近づいていく。
 // 1件目は3Dの航海シーン(自分の船が夜の海を島へ走る)、2件目以降は2Dカード。
+// 3Dカードはタップするとその世界へズームインし、世界の中で編集できる
+// (VoyageWorld)。2Dカードと新規作成は従来のダイアログのまま。
 // 到達したら「着岸。」の一枚(夜の入港と同じ世界)で祝う。
 
 // three.js を含む航海シーンは重いので、表示するときだけ読み込む。
 const VoyageScene = lazy(() => import("../three/VoyageScene"));
+
+// 世界(VoyageWorld)のチャンクは、読み込み完了を覚えておく。
+// 読み込みが済むまでカードのタップは従来のダイアログへ流し、
+// 「編集中にチャンクが届いて世界へ差し替わり、入力が消える」事故を防ぐ。
+let voyageWorldReady = false;
+let voyageWorldPromise: Promise<typeof import("../three/VoyageWorld")> | null = null;
+function loadVoyageWorld() {
+  voyageWorldPromise ??= import("../three/VoyageWorld").then((m) => {
+    voyageWorldReady = true;
+    return m;
+  });
+  return voyageWorldPromise;
+}
+const VoyageWorld = lazy(loadVoyageWorld);
 
 /// WebGLが使えるか(一度だけ判定)。使えない環境では2Dカードのまま。
 let webglCache: boolean | null = null;
@@ -73,6 +89,7 @@ function remainingLabel(progress: DestinationProgress): string {
 
 export function DestinationsSection({ uid, data }: { uid: string; data: UserData }) {
   const [editing, setEditing] = useState<Destination | null>(null);
+  const [world, setWorld] = useState<Destination | null>(null);
   const [creating, setCreating] = useState(false);
   const [celebrating, setCelebrating] = useState<Destination | null>(null);
   const celebratedRef = useRef<Set<string>>(new Set());
@@ -104,7 +121,12 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
               key={dest.id}
               dest={dest}
               data={data}
-              onClick={() => setEditing(dest)}
+              onClick={() => {
+                // 世界のチャンクが未着ならこの回は従来のダイアログで開く
+                // (Suspenseフォールバックからの差し替えで入力が消えるのを防ぐ)。
+                if (voyageWorldReady) setWorld(dest);
+                else setEditing(dest);
+              }}
             />
           ) : (
             <DestinationCard
@@ -133,6 +155,32 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
           }}
         />
       )}
+      {/* 3Dカードから入る没入エディタ。読込中と描画失敗時は従来のダイアログ。 */}
+      {world && (
+        <VoyageErrorBoundary
+          fallback={
+            <DestinationDialog
+              uid={uid}
+              dest={world}
+              data={data}
+              onClose={() => setWorld(null)}
+            />
+          }
+        >
+          <Suspense
+            fallback={
+              <DestinationDialog
+                uid={uid}
+                dest={world}
+                data={data}
+                onClose={() => setWorld(null)}
+              />
+            }
+          >
+            <VoyageWorld dest={world} data={data} uid={uid} onClose={() => setWorld(null)} />
+          </Suspense>
+        </VoyageErrorBoundary>
+      )}
       {celebrating && (
         <LandfallCelebration
           dest={celebrating}
@@ -156,6 +204,10 @@ function VoyageCard({
   const progress = destinationProgress(dest, data.sessions);
   const item = dest.itemUUID ? data.items.find((i) => i.id === dest.itemUUID) : undefined;
   const fallback = <DestinationCard dest={dest} data={data} onClick={onClick} />;
+  // カードが見えている=世界に入る可能性があるので、チャンクを先読みしておく。
+  useEffect(() => {
+    void loadVoyageWorld();
+  }, []);
   return (
     <VoyageErrorBoundary fallback={fallback}>
       <Suspense fallback={fallback}>

@@ -21,10 +21,11 @@ const SAND = "#EADEBD";
 const BEACH = "#DCCFA9";
 
 // カメラは固定の斜め視点。航路は左(X_START)から島の手前(X_END)まで。
+// (VoyageWorld=没入エディタが同じ構図から入場するため、位置関係を共有する)
 const CAM_POS: [number, number, number] = [0.4, 2.5, 8.2];
 const CAM_TARGET = new THREE.Vector3(0, 0.35, 0);
-const X_START = -3.6;
-const X_END = 1.8;
+export const X_START = -3.6;
+export const X_END = 1.8;
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
 const HILL_GEO = new THREE.ConeGeometry(1.25, 1.05, 7);
@@ -35,7 +36,7 @@ const WAKE_GEO = new THREE.PlaneGeometry(2.3, 0.4);
 const HORIZON_GEO = new THREE.PlaneGeometry(60, 0.08);
 
 /// 低ポリの島。半球と円錐を組んだ丘+水面の際のわずかな浜。
-function Island() {
+export function Island() {
   return (
     <group position={[3.5, 0, -0.9]}>
       <mesh geometry={BEACH_GEO} position={[0, 0.03, 0.1]}>
@@ -55,7 +56,7 @@ function Island() {
 }
 
 /// 水平線。霧に沈む海の縁に、sandの淡い一線(2Dカードの.dest-horizon風)。
-function Horizon() {
+export function Horizon() {
   return (
     <mesh geometry={HORIZON_GEO} position={[0, 0.04, -20]}>
       <meshBasicMaterial
@@ -70,7 +71,7 @@ function Horizon() {
 }
 
 /// 航跡。船尾から後ろへ、白い帯が尾に向かってフェードする。
-function Wake({ animate }: { animate: boolean }) {
+export function Wake({ animate }: { animate: boolean }) {
   const mat = useRef<THREE.MeshBasicMaterial>(null);
   const texture = useMemo(() => {
     const c = document.createElement("canvas");
