@@ -92,7 +92,7 @@ function Main({ uid }: { uid: string }) {
         <HarborView uid={uid} data={data} />
       )}
 
-      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsDialog data={data} onClose={() => setSettingsOpen(false)} />}
       <OfflineWatcher />
       <OverlayHost />
     </div>

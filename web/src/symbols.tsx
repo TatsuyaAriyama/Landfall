@@ -154,17 +154,27 @@ export function LandfallMark() {
 // サインイン画面「夜の入港」の部品。帆船と海岸はアイコン(LandfallShape)の
 // 1024座標から切り出したシェイプ。harborTeal 地に harborSand 塗り、フラットのみ。
 
-const SAIL = "M318 386 Q376 524 404 668 L302 668 Q300 522 318 386 Z";
-const HULL = "M215 650 Q320 646 404 700 Q300 778 215 650 Z";
-const COAST =
+export const SAIL = "M318 386 Q376 524 404 668 L302 668 Q300 522 318 386 Z";
+export const HULL = "M215 650 Q320 646 404 700 Q300 778 215 650 Z";
+export const COAST =
   "M430 748 Q452 512 556 386 Q590 350 624 386 Q676 486 705 612 " +
   "Q742 548 788 524 Q832 642 852 748 L430 748 Z";
 
-/// 入港する帆船(帆+船体)。
-export function BoatSvg() {
+/// 入港する帆船(帆+船体)。帆の色と旗は船のカスタマイズ(累計時間で解放)に対応。
+export function BoatSvg({
+  sail = "#EADEBD",
+  flag = "none",
+}: {
+  sail?: string;
+  flag?: string;
+} = {}) {
   return (
-    <svg viewBox="215 386 190 351" aria-hidden="true">
-      <path d={SAIL} fill="#EADEBD" />
+    <svg viewBox="215 335 190 402" aria-hidden="true">
+      {flag === "pennant" && <polygon points="318,344 366,357 318,370" fill="#F5822A" />}
+      {flag === "swallow" && (
+        <polygon points="318,344 370,344 352,357 370,370 318,370" fill="#F0997B" />
+      )}
+      <path d={SAIL} fill={sail} />
       <path d={HULL} fill="#EADEBD" />
     </svg>
   );
@@ -181,21 +191,22 @@ export function CoastSvg() {
 
 // タイプ診断のシンボル(iOS ArchetypeSymbols の移植)。フラット塗りのみ。
 
-const PHOENIX_PATH =
+export const PHOENIX_PATH =
   "M 100 12 Q 112 28 124 54 Q 172 58 193 98 Q 150 100 127 116 " +
   "Q 135 150 143 192 Q 112 162 100 148 Q 88 162 57 192 Q 65 150 73 116 " +
   "Q 50 100 7 98 Q 28 58 76 54 Q 88 28 100 12 Z";
 
-const STONE_BRIDGE_PATH =
+export const STONE_BRIDGE_PATH =
   "M 6 72 Q 100 44 194 72 Q 192 116 198 160 L 160 160 L 160 114 " +
   "Q 158 94 136 92 Q 114 94 112 114 L 112 160 L 88 160 L 88 114 " +
   "Q 86 94 64 92 Q 42 94 40 114 L 40 160 L 2 160 Q 8 116 6 72 Z";
 
-const WAVE_RIDER_PATH =
+export const WAVE_RIDER_PATH =
   "M 12 172 Q 46 150 70 44 Q 120 18 150 60 Q 164 94 132 118 " +
   "Q 132 80 92 72 Q 104 162 190 172 Z";
 
-const COMET_TAIL_PATH = "M 40 112 Q 92 34 186 16 Q 142 92 88 160 Z";
+export const COMET_TAIL_PATH = "M 40 112 Q 92 34 186 16 Q 142 92 88 160 Z";
+export const MORNING_SUN_PATH = "M 48 114 A 52 52 0 0 1 152 114 Z";
 
 export function ArchetypeSymbolSvg({ archetype }: { archetype: string }) {
   switch (archetype) {

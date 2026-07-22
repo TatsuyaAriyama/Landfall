@@ -142,8 +142,33 @@ const ja = {
 
   // タイマー
   startTimer: "計測をはじめる",
+  startPomodoro: "ポモドーロ(25分+5分)",
+  focusLabel: "集中",
+  breakLabel: "休憩",
+  soundOff: "音: オフ",
+  soundWaves: "音: 波",
+  soundPiano: "音: ピアノ",
   timerFinish: "終了",
   timerDiscardConfirm: "計測をやめますか。記録は残りません。",
+
+  // 航海誌の追加
+  monthCards: "月のカード",
+  yearChart: "年間海図",
+  saveImage: "画像で保存",
+
+  // 船
+  boatSection: "船",
+  sailColor: "帆の色",
+  flagLabel: "旗",
+  flagNone: "なし",
+  flagPennant: "三角の旗",
+  flagSwallow: "二又の旗",
+  totalVoyage: "これまでの航海",
+
+  // エクスポート
+  dataSection: "データ",
+  exportJSON: "JSONで書き出す",
+  exportCSV: "CSVで書き出す",
 
   // 航海誌
   logbook: "航海誌",
@@ -320,8 +345,30 @@ const en: Record<I18nKey, string> = {
   close: "Close",
 
   startTimer: "Start the clock",
+  startPomodoro: "Pomodoro (25 + 5 min)",
+  focusLabel: "Focus",
+  breakLabel: "Break",
+  soundOff: "Sound: off",
+  soundWaves: "Sound: waves",
+  soundPiano: "Sound: piano",
   timerFinish: "Finish",
   timerDiscardConfirm: "Stop timing? Nothing will be recorded.",
+
+  monthCards: "Monthly cards",
+  yearChart: "Year chart",
+  saveImage: "Save as image",
+
+  boatSection: "Boat",
+  sailColor: "Sail color",
+  flagLabel: "Flag",
+  flagNone: "None",
+  flagPennant: "Pennant",
+  flagSwallow: "Swallowtail",
+  totalVoyage: "Voyage so far",
+
+  dataSection: "Data",
+  exportJSON: "Export as JSON",
+  exportCSV: "Export as CSV",
 
   logbook: "Logbook",
   firstLogbook: "Your first Logbook arrives at month's end.",
@@ -380,6 +427,15 @@ export function t(key: I18nKey): string {
 /// 書式付き文字列({name} 形式の穴埋め)。チャットの自動行などに使う。
 export function tf(template: string, vars: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
+}
+
+/// 年間海図のタイトルと、解放条件の表示。
+export function yearChartTitle(year: number): string {
+  return lang === "ja" ? `${year}年の海図` : `Chart of ${year}`;
+}
+
+export function unlockAtLabel(hours: number): string {
+  return lang === "ja" ? `${hours}時間で解放` : `Unlocks at ${hours}h`;
 }
 
 /// 目的地の残り表示。「あと3時間20分」「あと12日」。

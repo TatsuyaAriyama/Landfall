@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  playChime,
+  setSoundPref,
+  soundPref,
+  startSound,
+  stopSound,
+  type SoundMode,
+} from "../audio";
 import {
   STYLE_COLORS,
   dayId,
@@ -20,16 +28,31 @@ const MINUTE_PRESETS = [15, 30, 45, 60, 90];
 // タイマー(iOS の FloatingTimerChip 相当)。再読込しても続くよう localStorage に控える。
 const TIMER_ITEM_KEY = "timer.itemId";
 const TIMER_START_KEY = "timer.startedAt";
+const TIMER_MODE_KEY = "timer.mode";
+
+type TimerMode = "free" | "pomo";
+
+// ポモドーロ: 25分の集中+5分の休憩を繰り返す。数えるのは集中の分だけ。
+const POMO_WORK = 25 * 60;
+const POMO_CYCLE = 30 * 60;
 
 interface RunningTimer {
   itemId: string;
   startedAt: number; // epoch ms
+  mode: TimerMode;
 }
 
 function readTimer(): RunningTimer | null {
   const itemId = localStorage.getItem(TIMER_ITEM_KEY);
   const startedAt = Number(localStorage.getItem(TIMER_START_KEY) ?? 0);
-  return itemId && startedAt > 0 ? { itemId, startedAt } : null;
+  const mode: TimerMode = localStorage.getItem(TIMER_MODE_KEY) === "pomo" ? "pomo" : "free";
+  return itemId && startedAt > 0 ? { itemId, startedAt, mode } : null;
+}
+
+/// ポモドーロで実際に集中していた秒数。
+function pomoWorkedSec(elapsedSec: number): number {
+  const cycles = Math.floor(elapsedSec / POMO_CYCLE);
+  return cycles * POMO_WORK + Math.min(elapsedSec % POMO_CYCLE, POMO_WORK);
 }
 
 export function TodayView({ uid, data }: { uid: string; data: UserData }) {
@@ -68,10 +91,11 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     return () => clearInterval(id);
   }, [timer]);
 
-  const startTimer = (item: StudyItem) => {
-    const t: RunningTimer = { itemId: item.id, startedAt: Date.now() };
+  const startTimer = (item: StudyItem, mode: TimerMode) => {
+    const t: RunningTimer = { itemId: item.id, startedAt: Date.now(), mode };
     localStorage.setItem(TIMER_ITEM_KEY, t.itemId);
     localStorage.setItem(TIMER_START_KEY, String(t.startedAt));
+    localStorage.setItem(TIMER_MODE_KEY, mode);
     setTimer(t);
     setRecording(null);
   };
@@ -79,13 +103,16 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const clearTimer = () => {
     localStorage.removeItem(TIMER_ITEM_KEY);
     localStorage.removeItem(TIMER_START_KEY);
+    localStorage.removeItem(TIMER_MODE_KEY);
     setTimer(null);
   };
 
   const finishTimer = () => {
     if (!timer) return;
     const item = data.items.find((i) => i.id === timer.itemId);
-    const minutes = Math.max(1, Math.round((Date.now() - timer.startedAt) / 60000));
+    const elapsedSec = Math.floor((Date.now() - timer.startedAt) / 1000);
+    const workedSec = timer.mode === "pomo" ? pomoWorkedSec(elapsedSec) : elapsedSec;
+    const minutes = Math.max(1, Math.round(workedSec / 60));
     clearTimer();
     if (item) {
       setPrefillMinutes(Math.min(minutes, 6000));
@@ -232,6 +259,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         <TimerChip
           item={data.items.find((i) => i.id === timer.itemId)}
           startedAt={timer.startedAt}
+          mode={timer.mode}
           now={now}
           onFinish={finishTimer}
           onDiscard={async () => {
@@ -250,7 +278,9 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           item={recording}
           data={data}
           initialMinutes={prefillMinutes}
-          onStartTimer={prefillMinutes === null ? () => startTimer(recording) : undefined}
+          onStartTimer={
+            prefillMinutes === null ? (mode) => startTimer(recording, mode) : undefined
+          }
           onClose={() => {
             setRecording(null);
             setPrefillMinutes(null);
@@ -307,29 +337,74 @@ export function SessionRow({
   );
 }
 
-/// 計測中の浮きチップ。項目名と経過時間、終了(記録へ)と取りやめ。
+/// 計測中の浮きチップ。項目名と時間、BGM切替、終了(記録へ)と取りやめ。
+/// ポモドーロは「集中 24:59」のように残り時間を出し、区切りでやわらかい合図が鳴る。
 function TimerChip({
   item,
   startedAt,
+  mode,
   now,
   onFinish,
   onDiscard,
 }: {
   item?: StudyItem;
   startedAt: number;
+  mode: TimerMode;
   now: number;
   onFinish: () => void;
   onDiscard: () => void;
 }) {
+  const [sound, setSound] = useState<SoundMode>(() => soundPref());
   const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
-  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
-  const ss = String(elapsed % 60).padStart(2, "0");
+
+  let display: string;
+  let phaseLabel = "";
+  let phaseKey = "";
+  if (mode === "pomo") {
+    const rem = elapsed % POMO_CYCLE;
+    const inFocus = rem < POMO_WORK;
+    const left = inFocus ? POMO_WORK - rem : POMO_CYCLE - rem;
+    phaseLabel = inFocus ? t("focusLabel") : t("breakLabel");
+    phaseKey = `${Math.floor(elapsed / POMO_CYCLE)}-${inFocus ? "f" : "b"}`;
+    display = `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`;
+  } else {
+    display = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
+  }
+
+  // 区切り(集中⇄休憩)の合図。開始直後には鳴らさない。
+  const prevPhase = useRef(phaseKey);
+  useEffect(() => {
+    if (mode === "pomo" && prevPhase.current !== phaseKey) {
+      prevPhase.current = phaseKey;
+      playChime();
+    }
+  }, [mode, phaseKey]);
+
+  // BGM。チップが出ている間だけ流れる。
+  useEffect(() => {
+    startSound(sound);
+    return () => stopSound();
+  }, [sound]);
+
+  const cycleSound = () => {
+    const next: SoundMode = sound === "off" ? "waves" : sound === "waves" ? "piano" : "off";
+    setSoundPref(next);
+    setSound(next);
+  };
+
+  const soundLabel =
+    sound === "off" ? t("soundOff") : sound === "waves" ? t("soundWaves") : t("soundPiano");
+
   return (
     <div className="timer-chip">
-      <span className="timer-name">{item?.name ?? "—"}</span>
-      <span className="timer-elapsed">
-        {mm}:{ss}
+      <span className="timer-name">
+        {phaseLabel && <span className="timer-phase">{phaseLabel} </span>}
+        {item?.name ?? "—"}
       </span>
+      <span className="timer-elapsed">{display}</span>
+      <button className="timer-sound" onClick={cycleSound}>
+        {soundLabel}
+      </button>
       <button className="timer-finish" onClick={onFinish}>
         {t("timerFinish")}
       </button>
@@ -352,7 +427,7 @@ function RecordDialog({
   item: StudyItem;
   data: UserData;
   initialMinutes?: number | null;
-  onStartTimer?: () => void;
+  onStartTimer?: (mode: TimerMode) => void;
   onClose: () => void;
 }) {
   const [minutes, setMinutes] = useState(initialMinutes ?? 30);
@@ -453,9 +528,14 @@ function RecordDialog({
           {t("record")}
         </button>
         {onStartTimer && (
-          <button className="timer-start-outline" onClick={onStartTimer}>
-            {t("startTimer")}
-          </button>
+          <>
+            <button className="timer-start-outline" onClick={() => onStartTimer("free")}>
+              {t("startTimer")}
+            </button>
+            <button className="timer-start-outline" onClick={() => onStartTimer("pomo")}>
+              {t("startPomodoro")}
+            </button>
+          </>
         )}
       </>
     </Modal>
