@@ -7,7 +7,7 @@ import { HarborView } from "./views/HarborView";
 import { LogbookView } from "./views/LogbookView";
 import { SettingsDialog } from "./views/SettingsDialog";
 import { BrandMark } from "./symbols";
-import { OverlayHost } from "./overlays";
+import { OfflineWatcher, OverlayHost } from "./overlays";
 import { t } from "./i18n";
 import { demoData, isDemo } from "./demo";
 
@@ -93,6 +93,7 @@ function Main({ uid }: { uid: string }) {
       )}
 
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      <OfflineWatcher />
       <OverlayHost />
     </div>
   );

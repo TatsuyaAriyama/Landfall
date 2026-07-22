@@ -5,6 +5,7 @@ import {
   TILE_SYMBOLS,
   normalizeStyle,
   normalizeSymbol,
+  trimAll,
   type StudyItem,
 } from "../types";
 import { deleteItemDeep, saveItem, type UserData } from "../data";
@@ -30,14 +31,14 @@ export function ItemEditor({
   const [symbolToken, setSymbolToken] = useState(normalizeSymbol(item?.symbolToken ?? "compass"));
   const [working, setWorking] = useState(false);
 
-  const trimmedName = name.trim();
-  // 他の項目(自分自身は除く)と大小文字・前後空白を無視して同名かどうか(iOSと同じ判定)。
+  const trimmedName = trimAll(name);
+  // 他の項目(自分自身は除く)と大小文字・前後空白(全角含む)を無視して同名かどうか。
   const isDuplicateName =
     trimmedName.length > 0 &&
     data.items.some(
       (other) =>
         other.id !== item?.id &&
-        other.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+        trimAll(other.name).toLowerCase() === trimmedName.toLowerCase(),
     );
   const saveDisabled = !trimmedName || isDuplicateName || working;
 

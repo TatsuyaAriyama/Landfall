@@ -1,4 +1,5 @@
 import { t } from "./i18n";
+import { trimAll } from "./types";
 
 // プレイヤープロフィール。iOS と同じくローカル先行(localStorage)。
 // 港に入っているときだけメンバー情報として共有される。
@@ -10,7 +11,7 @@ const RESOLVE_KEY = "player.resolve";
 
 export const PlayerProfile = {
   get name(): string {
-    return (localStorage.getItem(NAME_KEY) ?? "").trim();
+    return trimAll(localStorage.getItem(NAME_KEY) ?? "");
   },
   get styleToken(): string {
     return localStorage.getItem(STYLE_KEY) ?? "midnight";
@@ -19,7 +20,7 @@ export const PlayerProfile = {
     return localStorage.getItem(SYMBOL_KEY) ?? "phoenix";
   },
   get resolve(): string {
-    return (localStorage.getItem(RESOLVE_KEY) ?? "").trim();
+    return trimAll(localStorage.getItem(RESOLVE_KEY) ?? "");
   },
 
   /// 表示名。未設定なら「船乗り」。
@@ -28,10 +29,10 @@ export const PlayerProfile = {
   },
 
   save(data: { name: string; styleToken: string; symbolToken: string; resolve: string }) {
-    localStorage.setItem(NAME_KEY, data.name.trim());
+    localStorage.setItem(NAME_KEY, trimAll(data.name));
     localStorage.setItem(STYLE_KEY, data.styleToken);
     localStorage.setItem(SYMBOL_KEY, data.symbolToken);
-    localStorage.setItem(RESOLVE_KEY, data.resolve.trim());
+    localStorage.setItem(RESOLVE_KEY, trimAll(data.resolve));
   },
 
   /// 港(プライベート/パブリック共通)のメンバードキュメントに書くプロフィール一式。

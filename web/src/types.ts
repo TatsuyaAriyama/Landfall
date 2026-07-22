@@ -97,3 +97,9 @@ export function startOfDay(date: Date): Date {
 export function newUUID(): string {
   return crypto.randomUUID().toUpperCase();
 }
+
+/// 前後の空白を除く。JS の String.trim は全角スペース(U+3000)を残すため、
+/// あらゆる空白文字(全角スペース・タブ・改行含む)を対象にする。
+export function trimAll(value: string): string {
+  return value.replace(/^[\s　]+|[\s　]+$/g, "");
+}

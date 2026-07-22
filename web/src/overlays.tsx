@@ -57,6 +57,34 @@ export function showToast(message: string) {
   pushToast?.(message);
 }
 
+// ---- オフライン監視(バナー+復帰トースト) ----
+
+export function OfflineWatcher() {
+  const [offline, setOffline] = useState(
+    typeof navigator !== "undefined" && !navigator.onLine,
+  );
+
+  useEffect(() => {
+    const goOffline = () => {
+      setOffline(true);
+      showToast(t("offlineToast"));
+    };
+    const goOnline = () => {
+      setOffline(false);
+      showToast(t("onlineToast"));
+    };
+    window.addEventListener("offline", goOffline);
+    window.addEventListener("online", goOnline);
+    return () => {
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener("online", goOnline);
+    };
+  }, []);
+
+  if (!offline) return null;
+  return <div className="offline-banner">{t("offlineToast")}</div>;
+}
+
 // ---- ホスト(App 直下に1つ置く) ----
 
 export function OverlayHost() {

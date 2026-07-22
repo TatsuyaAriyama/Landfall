@@ -26,7 +26,7 @@ import {
 } from "../harbor";
 import type { UserData } from "../data";
 import { PlayerProfile } from "../profile";
-import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
+import { STYLE_COLORS, normalizeStyle, normalizeSymbol, trimAll } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { ProfileEditor } from "./ProfileEditor";
 import { MemberTrace } from "./MemberTrace";
@@ -301,11 +301,12 @@ function CreateRoomDialog({
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
+  const trimmed = trimAll(name);
   const create = async () => {
-    if (!name.trim() || working) return;
+    if (!trimmed || working) return;
     setWorking(true);
     try {
-      await createRoom(name.trim(), data);
+      await createRoom(trimmed, data);
       onClose(true);
     } catch (e) {
       setError(errText(e));
@@ -324,10 +325,13 @@ function CreateRoomDialog({
           onChange={(e) => setName(e.target.value)}
           maxLength={80}
           autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && trimmed) void create();
+          }}
         />
         {error && <p className="harbor-error">{error}</p>}
         <div style={{ height: 24 }} />
-        <button className="primary-button" onClick={create} disabled={!name.trim() || working}>
+        <button className="primary-button" onClick={create} disabled={!trimmed || working}>
           {t("create")}
         </button>
       </>

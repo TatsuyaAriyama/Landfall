@@ -29,25 +29,35 @@ export async function completeRedirectSignIn(): Promise<void> {
   }
 }
 
+// サインイン処理が同時に走らないようにするモジュール内ガード。連打やボタンの
+// disabled をすり抜けたイベントでポップアップ/リダイレクトが二重に起きるのを防ぐ。
+let signInInFlight = false;
+
 /// Google サインイン。モバイル Safari はリダイレクト、それ以外はポップアップ。
 /// ポップアップが塞がれた場合もリダイレクトに切り替えて確実にログインさせる。
 export async function signInWithGoogle(): Promise<void> {
-  if (prefersRedirect()) {
-    await signInWithRedirect(auth, googleProvider);
-    return; // ここでページが遷移するため戻らない
-  }
+  if (signInInFlight) return;
+  signInInFlight = true;
   try {
-    await signInWithPopup(auth, googleProvider);
-  } catch (e) {
-    const code = (e as { code?: string }).code ?? "";
-    if (
-      code === "auth/popup-blocked" ||
-      code === "auth/operation-not-supported-in-this-environment" ||
-      code === "auth/cancelled-popup-request"
-    ) {
+    if (prefersRedirect()) {
       await signInWithRedirect(auth, googleProvider);
-      return;
+      return; // ここでページが遷移するため戻らない
     }
-    throw e;
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (e) {
+      const code = (e as { code?: string }).code ?? "";
+      if (
+        code === "auth/popup-blocked" ||
+        code === "auth/operation-not-supported-in-this-environment" ||
+        code === "auth/cancelled-popup-request"
+      ) {
+        await signInWithRedirect(auth, googleProvider);
+        return;
+      }
+      throw e;
+    }
+  } finally {
+    signInInFlight = false;
   }
 }

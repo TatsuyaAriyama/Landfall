@@ -20,6 +20,7 @@ import {
   dayId,
   newUUID,
   startOfDay,
+  trimAll,
   type StudyDay,
   type StudyItem,
   type StudySession,
@@ -149,7 +150,7 @@ export async function saveItem(
 ): Promise<void> {
   const id = data.id ?? newUUID();
   await setDoc(doc(db, "users", uid, "items", id), {
-    name: data.name,
+    name: trimAll(data.name).slice(0, 60),
     styleToken: data.styleToken,
     symbolToken: data.symbolToken,
     sortOrder: data.sortOrder,
