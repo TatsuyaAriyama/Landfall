@@ -21,7 +21,7 @@ struct PublicHarbor: Identifiable, Hashable {
         PublicHarbor(
             slug: "language",
             title: "Languages",
-            tagline: "Miss a day, and the words still wait for you.",
+            tagline: "Take these words, and step out into the world.",
             style: .seaGreen, symbol: .compass
         ),
         PublicHarbor(
@@ -33,19 +33,19 @@ struct PublicHarbor: Identifiable, Hashable {
         PublicHarbor(
             slug: "student",
             title: "Students",
-            tagline: "A harbor you can always come back to, all through school.",
+            tagline: "Learning keeps going, even outside the classroom.",
             style: .coral, symbol: .phoenix
         ),
         PublicHarbor(
             slug: "reading",
             title: "Reading",
-            tagline: "Books you read and books you piled — both belong here.",
+            tagline: "One book can carry you somewhere new.",
             style: .violet, symbol: .book
         ),
         PublicHarbor(
             slug: "making",
             title: "Making",
-            tagline: "The days your hands rested still count as making.",
+            tagline: "Everything you make widens your world.",
             style: .sunYellow, symbol: .pen
         ),
     ]

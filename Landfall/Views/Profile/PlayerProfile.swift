@@ -210,14 +210,13 @@ struct ProfileEditorSheet: View {
 
                 sectionLabel("Resolve")
                     .padding(.top, 28)
+                // 打鍵ごとにresolveを書き戻すと、日本語入力の変換中文字(未確定文字列)が
+                // 毎回リセットされ、日本語が一切打てなくなる。上限は保存時にのみ適用する。
                 TextField("One line you sail by (optional)", text: $resolve, axis: .vertical)
                     .font(LFFont.label(16))
                     .foregroundStyle(LFColor.ink)
                     .tint(LFColor.ink)
                     .lineLimit(2)
-                    .onChange(of: resolve) { _, value in
-                        if value.count > 60 { resolve = String(value.prefix(60)) }
-                    }
                     .padding(.horizontal, 18)
                     .padding(.vertical, 14)
                     .background(
@@ -227,6 +226,8 @@ struct ProfileEditorSheet: View {
                     .padding(.top, 12)
 
                 Button {
+                    // 上限はここでのみ適用(打鍵中に書き戻すとIME変換が壊れるため)。
+                    if resolve.count > 60 { resolve = String(resolve.prefix(60)) }
                     // ローカルは@AppStorageで保存済み。港(プライベート/パブリック)にも反映して閉じる。
                     RoomService.shared.pushProfileToAllRooms()
                     PublicHarborService.shared.pushProfile()
