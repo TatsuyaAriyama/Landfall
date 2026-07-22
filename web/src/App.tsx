@@ -4,12 +4,13 @@ import { SignInView } from "./views/SignInView";
 import { TodayView } from "./views/TodayView";
 import { TraceView } from "./views/TraceView";
 import { HarborView } from "./views/HarborView";
+import { LogbookView } from "./views/LogbookView";
 import { SettingsDialog } from "./views/SettingsDialog";
 import { BrandMark } from "./symbols";
 import { t } from "./i18n";
 import { demoData, isDemo } from "./demo";
 
-type Tab = "today" | "trace" | "harbor";
+type Tab = "today" | "trace" | "logbook" | "harbor";
 
 export default function App() {
   const { user, loading } = useAuthUser();
@@ -52,6 +53,12 @@ function Main({ uid }: { uid: string }) {
           {t("trace")}
         </button>
         <button
+          className={`tab${tab === "logbook" ? " selected" : ""}`}
+          onClick={() => setTab("logbook")}
+        >
+          {t("logbook")}
+        </button>
+        <button
           className={`tab${tab === "harbor" ? " selected" : ""}`}
           onClick={() => setTab("harbor")}
         >
@@ -65,6 +72,8 @@ function Main({ uid }: { uid: string }) {
         <TodayView uid={uid} data={data} />
       ) : tab === "trace" ? (
         <TraceView uid={uid} data={data} />
+      ) : tab === "logbook" ? (
+        <LogbookView data={data} />
       ) : (
         <HarborView uid={uid} data={data} />
       )}

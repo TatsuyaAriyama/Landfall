@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   STYLE_COLORS,
   dayId,
@@ -14,10 +14,59 @@ import { lang, t } from "../i18n";
 
 const MINUTE_PRESETS = [15, 30, 45, 60, 90];
 
+// タイマー(iOS の FloatingTimerChip 相当)。再読込しても続くよう localStorage に控える。
+const TIMER_ITEM_KEY = "timer.itemId";
+const TIMER_START_KEY = "timer.startedAt";
+
+interface RunningTimer {
+  itemId: string;
+  startedAt: number; // epoch ms
+}
+
+function readTimer(): RunningTimer | null {
+  const itemId = localStorage.getItem(TIMER_ITEM_KEY);
+  const startedAt = Number(localStorage.getItem(TIMER_START_KEY) ?? 0);
+  return itemId && startedAt > 0 ? { itemId, startedAt } : null;
+}
+
 export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const [recording, setRecording] = useState<StudyItem | null>(null);
+  const [prefillMinutes, setPrefillMinutes] = useState<number | null>(null);
   const [editing, setEditing] = useState<StudyItem | null>(null);
   const [creating, setCreating] = useState(false);
+  const [timer, setTimer] = useState<RunningTimer | null>(() => readTimer());
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (!timer) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [timer]);
+
+  const startTimer = (item: StudyItem) => {
+    const t: RunningTimer = { itemId: item.id, startedAt: Date.now() };
+    localStorage.setItem(TIMER_ITEM_KEY, t.itemId);
+    localStorage.setItem(TIMER_START_KEY, String(t.startedAt));
+    setTimer(t);
+    setRecording(null);
+  };
+
+  const clearTimer = () => {
+    localStorage.removeItem(TIMER_ITEM_KEY);
+    localStorage.removeItem(TIMER_START_KEY);
+    setTimer(null);
+  };
+
+  const finishTimer = () => {
+    if (!timer) return;
+    const item = data.items.find((i) => i.id === timer.itemId);
+    const minutes = Math.max(1, Math.round((Date.now() - timer.startedAt) / 60000));
+    clearTimer();
+    if (item) {
+      setPrefillMinutes(Math.min(minutes, 6000));
+      setRecording(item);
+    }
+  };
 
   const todayId = dayId(new Date());
   const todaySessions = useMemo(
@@ -98,12 +147,30 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         </>
       )}
 
+      {/* 計測中のフローティングチップ */}
+      {timer && (
+        <TimerChip
+          item={data.items.find((i) => i.id === timer.itemId)}
+          startedAt={timer.startedAt}
+          now={now}
+          onFinish={finishTimer}
+          onDiscard={() => {
+            if (confirm(t("timerDiscardConfirm"))) clearTimer();
+          }}
+        />
+      )}
+
       {recording && (
         <RecordDialog
           uid={uid}
           item={recording}
           data={data}
-          onClose={() => setRecording(null)}
+          initialMinutes={prefillMinutes}
+          onStartTimer={prefillMinutes === null ? () => startTimer(recording) : undefined}
+          onClose={() => {
+            setRecording(null);
+            setPrefillMinutes(null);
+          }}
         />
       )}
       {(creating || editing) && (
@@ -156,18 +223,55 @@ export function SessionRow({
   );
 }
 
+/// 計測中の浮きチップ。項目名と経過時間、終了(記録へ)と取りやめ。
+function TimerChip({
+  item,
+  startedAt,
+  now,
+  onFinish,
+  onDiscard,
+}: {
+  item?: StudyItem;
+  startedAt: number;
+  now: number;
+  onFinish: () => void;
+  onDiscard: () => void;
+}) {
+  const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, "0");
+  const ss = String(elapsed % 60).padStart(2, "0");
+  return (
+    <div className="timer-chip">
+      <span className="timer-name">{item?.name ?? "—"}</span>
+      <span className="timer-elapsed">
+        {mm}:{ss}
+      </span>
+      <button className="timer-finish" onClick={onFinish}>
+        {t("timerFinish")}
+      </button>
+      <button className="timer-discard" onClick={onDiscard} aria-label="discard">
+        ✕
+      </button>
+    </div>
+  );
+}
+
 function RecordDialog({
   uid,
   item,
   data,
+  initialMinutes,
+  onStartTimer,
   onClose,
 }: {
   uid: string;
   item: StudyItem;
   data: UserData;
+  initialMinutes?: number | null;
+  onStartTimer?: () => void;
   onClose: () => void;
 }) {
-  const [minutes, setMinutes] = useState(30);
+  const [minutes, setMinutes] = useState(initialMinutes ?? 30);
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
   const style = STYLE_COLORS[normalizeStyle(item.styleToken)];
@@ -235,6 +339,11 @@ function RecordDialog({
         <button className="primary-button" onClick={save} disabled={working || minutes <= 0}>
           {t("record")}
         </button>
+        {onStartTimer && (
+          <button className="quiet-button timer-start" onClick={onStartTimer}>
+            {t("startTimer")}
+          </button>
+        )}
       </div>
     </div>
   );

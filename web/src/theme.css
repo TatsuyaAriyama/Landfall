@@ -677,6 +677,122 @@ textarea {
   margin-bottom: 14px;
 }
 
+/* ---- 航海誌(絵はがきカード。固定デザインのため常にライトの配色で描く) ---- */
+
+.wrapped-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  align-items: center;
+}
+
+.wrapped-card {
+  width: min(390px, 100%);
+  aspect-ratio: 390 / 560;
+  border-radius: var(--radius);
+  padding: 36px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.wrapped-kicker {
+  font-size: 15px;
+  letter-spacing: 2px;
+}
+
+.wrapped-stats {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 26px;
+}
+
+.wrapped-stat,
+.wrapped-fact {
+  display: flex;
+  flex-direction: column;
+}
+
+.wrapped-number {
+  font-size: 56px;
+  font-weight: 500;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.wrapped-label {
+  font-size: 15px;
+  margin-top: 2px;
+}
+
+.wrapped-unit {
+  font-size: 22px;
+  font-weight: 500;
+  margin-left: 2px;
+}
+
+.wrapped-total {
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.wrapped-days-strip {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 8px;
+  margin: 32px 0 8px;
+}
+
+.wrapped-day {
+  height: 22px;
+  border-radius: 6px;
+}
+
+.wrapped-facts {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 24px;
+}
+
+.wrapped-card-center {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.wrapped-symbol {
+  width: 150px;
+  height: 150px;
+}
+
+.wrapped-type-name {
+  font-size: 26px;
+  font-weight: 500;
+  margin-top: 24px;
+}
+
+.wrapped-type-tag {
+  font-size: 16px;
+  margin-top: 14px;
+}
+
+.wrapped-type-sub {
+  font-size: 13px;
+  opacity: 0.7;
+  margin-top: 6px;
+}
+
+.wrapped-brand {
+  position: absolute;
+  left: 36px;
+  bottom: 28px;
+  font-size: 13px;
+}
+
 /* ---- チャット ---- */
 
 .chat-box {
@@ -783,6 +899,63 @@ textarea {
 
 .chat-input .field {
   flex: 1;
+}
+
+/* ---- タイマー(計測中の浮きチップ) ---- */
+
+.timer-chip {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 999px;
+  padding: 10px 12px 10px 20px;
+  z-index: 5;
+  max-width: min(92vw, 420px);
+}
+
+.timer-name {
+  font-size: 15px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timer-elapsed {
+  font-size: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.timer-finish {
+  background: var(--return-orange);
+  color: #141414;
+  border-radius: 999px;
+  padding: 0 16px;
+  min-height: 36px;
+  font-size: 14px;
+  font-weight: 500;
+  flex: none;
+}
+
+.timer-discard {
+  color: color-mix(in srgb, var(--paper) 55%, transparent);
+  min-width: 36px;
+  min-height: 36px;
+  flex: none;
+}
+
+.timer-start {
+  width: 100%;
+  margin-top: 10px;
+  text-align: center;
 }
 
 /* ---- サインイン(夜の入港) ----

@@ -51,6 +51,13 @@ export function demoData(): UserData {
     { id: "S-5", date: at(7), minutes: 90, note: "戻ってきた。", itemUUID: "DEMO-2", updatedAt: at(7) },
     { id: "S-6", date: at(8), minutes: 40, itemUUID: "DEMO-1", updatedAt: at(8) },
     { id: "S-7", date: at(12), minutes: 20, itemUUID: "DEMO-3", updatedAt: at(12) },
+    // 先月の記録(航海誌のデモ用: 帰還のある月)。
+    { id: "S-8", date: at(30), minutes: 45, itemUUID: "DEMO-1", updatedAt: at(30) },
+    { id: "S-9", date: at(33), minutes: 30, itemUUID: "DEMO-2", updatedAt: at(33) },
+    { id: "S-10", date: at(34), minutes: 60, itemUUID: "DEMO-1", updatedAt: at(34) },
+    { id: "S-11", date: at(41), minutes: 25, itemUUID: "DEMO-3", updatedAt: at(41) },
+    { id: "S-12", date: at(42), minutes: 50, itemUUID: "DEMO-1", updatedAt: at(42) },
+    { id: "S-13", date: at(45), minutes: 40, itemUUID: "DEMO-2", updatedAt: at(45) },
   ];
   const dayIds = [...new Set(sessions.map((s) => dayId(s.date)))];
   const days = dayIds.map((id) => ({
