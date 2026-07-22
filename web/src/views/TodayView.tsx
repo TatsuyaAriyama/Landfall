@@ -10,6 +10,7 @@ import {
 import { deleteSession, recordSession, type UserData } from "../data";
 import { TileSymbolSvg } from "../symbols";
 import { ItemEditor } from "./ItemEditor";
+import { Modal, askConfirm, showToast } from "../overlays";
 import { lang, t } from "../i18n";
 
 const MINUTE_PRESETS = [15, 30, 45, 60, 90];
@@ -137,7 +138,13 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
                 session={s}
                 item={s.itemUUID ? itemById.get(s.itemUUID) : undefined}
                 onDelete={async () => {
-                  if (confirm(t("deleteSessionConfirm"))) {
+                  if (
+                    await askConfirm({
+                      title: t("deleteSessionConfirm"),
+                      confirmLabel: t("delete"),
+                      danger: true,
+                    })
+                  ) {
                     await deleteSession(uid, s, data);
                   }
                 }}
@@ -154,8 +161,12 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           startedAt={timer.startedAt}
           now={now}
           onFinish={finishTimer}
-          onDiscard={() => {
-            if (confirm(t("timerDiscardConfirm"))) clearTimer();
+          onDiscard={async () => {
+            if (
+              await askConfirm({ title: t("timerDiscardConfirm"), danger: true })
+            ) {
+              clearTimer();
+            }
           }}
         />
       )}
@@ -284,12 +295,13 @@ function RecordDialog({
       { item, minutes: Math.min(minutes, 6000), note },
       data,
     );
+    showToast(t("recordedToast"));
     onClose();
   };
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose}>
+      <>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <div
             className="tile-art"
@@ -319,10 +331,14 @@ function RecordDialog({
             className="field"
             style={{ width: 100, padding: "8px 14px", minHeight: 40 }}
             type="number"
+            inputMode="numeric"
             min={1}
             max={6000}
             value={minutes}
             onChange={(e) => setMinutes(Number(e.target.value))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) void save();
+            }}
           />
         </div>
 
@@ -333,6 +349,9 @@ function RecordDialog({
           onChange={(e) => setNote(e.target.value)}
           maxLength={120}
           placeholder={t("noteOptional")}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) void save();
+          }}
         />
 
         <div style={{ height: 28 }} />
@@ -344,7 +363,7 @@ function RecordDialog({
             {t("startTimer")}
           </button>
         )}
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

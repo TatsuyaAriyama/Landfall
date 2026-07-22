@@ -9,6 +9,7 @@ import {
 } from "../types";
 import { deleteItemDeep, saveItem, type UserData } from "../data";
 import { TileSymbolSvg } from "../symbols";
+import { Modal, askConfirm, showToast } from "../overlays";
 import { t } from "../i18n";
 
 export function ItemEditor({
@@ -41,20 +42,41 @@ export function ItemEditor({
       sortOrder: item?.sortOrder ?? nextSortOrder,
       createdAt: item?.createdAt,
     });
+    showToast(t("savedToast"));
     onClose();
   };
 
   const remove = async () => {
     if (!item || working) return;
-    if (!confirm(t("deleteItemConfirm"))) return;
+    if (
+      !(await askConfirm({
+        title: t("deleteItemConfirm"),
+        confirmLabel: t("delete"),
+        danger: true,
+      }))
+    ) {
+      return;
+    }
     setWorking(true);
     await deleteItemDeep(uid, item.id, data);
     onClose();
   };
 
+  /// グリッドの並び替え。隣の項目と sortOrder を入れ替える。
+  const move = async (dir: -1 | 1) => {
+    if (!item || working) return;
+    const idx = data.items.findIndex((i) => i.id === item.id);
+    const target = data.items[idx + dir];
+    if (!target) return;
+    setWorking(true);
+    await saveItem(uid, { ...item, id: item.id, sortOrder: target.sortOrder });
+    await saveItem(uid, { ...target, id: target.id, sortOrder: item.sortOrder });
+    onClose();
+  };
+
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose}>
+      <>
         <h2 className="dialog-title">{item ? t("editItem") : t("newItem")}</h2>
 
         <p className="section-label">{t("name")}</p>
@@ -94,6 +116,17 @@ export function ItemEditor({
           ))}
         </div>
 
+        {item && (
+          <div className="chip-row" style={{ marginTop: 24 }}>
+            <button className="chip" onClick={() => move(-1)} disabled={working}>
+              ← {t("moveEarlier")}
+            </button>
+            <button className="chip" onClick={() => move(1)} disabled={working}>
+              {t("moveLater")} →
+            </button>
+          </div>
+        )}
+
         <div style={{ height: 28 }} />
         <button className="primary-button" onClick={save} disabled={!name.trim() || working}>
           {t("save")}
@@ -103,7 +136,7 @@ export function ItemEditor({
             {t("deleteItem")}
           </button>
         )}
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

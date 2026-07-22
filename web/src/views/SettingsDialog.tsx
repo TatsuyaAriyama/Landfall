@@ -2,6 +2,7 @@ import { useState } from "react";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 import { deleteEverything } from "../harbor";
+import { Modal, askConfirm } from "../overlays";
 import { LANGUAGE_KEY, t } from "../i18n";
 
 export const THEME_KEY = "appTheme";
@@ -39,7 +40,14 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   };
 
   const deleteAccount = async () => {
-    if (deleting || !confirm(t("deleteAccountConfirm"))) return;
+    if (deleting) return;
+    const ok = await askConfirm({
+      title: t("deleteAccount"),
+      message: t("deleteAccountConfirm"),
+      confirmLabel: t("deleteAccount"),
+      danger: true,
+    });
+    if (!ok) return;
     setDeleting(true);
     setError(null);
     try {
@@ -59,8 +67,8 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
   );
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose}>
+      <>
         <h2 className="dialog-title">{t("settings")}</h2>
 
         <p className="section-label">{t("language")}</p>
@@ -97,7 +105,7 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         {error && <p className="harbor-error">{error}</p>}
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

@@ -30,6 +30,7 @@ import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { ProfileEditor } from "./ProfileEditor";
 import { MemberTrace } from "./MemberTrace";
+import { Modal, askConfirm, showToast } from "../overlays";
 import { chatLandfallLine, chatReturnLine, t } from "../i18n";
 
 type HarborNav =
@@ -313,8 +314,8 @@ function CreateRoomDialog({
   };
 
   return (
-    <div className="overlay" onClick={() => onClose(false)}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={() => onClose(false)}>
+      <>
         <h2 className="dialog-title">{t("openHarbor")}</h2>
         <p className="section-label">{t("harborName")}</p>
         <input
@@ -329,8 +330,8 @@ function CreateRoomDialog({
         <button className="primary-button" onClick={create} disabled={!name.trim() || working}>
           {t("create")}
         </button>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 
@@ -358,8 +359,8 @@ function JoinRoomDialog({
   };
 
   return (
-    <div className="overlay" onClick={() => onClose(false)}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={() => onClose(false)}>
+      <>
         <h2 className="dialog-title">{t("joinByCode")}</h2>
         <p className="section-label">{t("inviteCode")}</p>
         <input
@@ -381,8 +382,8 @@ function JoinRoomDialog({
         >
           {t("join")}
         </button>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 
@@ -411,6 +412,7 @@ function PublicDetail({
   const [loaded, setLoaded] = useState(false);
   const [isJoined, setIsJoined] = useState(joined);
   const [working, setWorking] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
   const style = STYLE_COLORS[normalizeStyle(harbor.styleToken)];
 
   const reload = useCallback(async () => {
@@ -424,22 +426,39 @@ function PublicDetail({
 
   const join = async () => {
     if (working) return;
+    // 名前が未設定のまま公開の場に「船乗り」で並ばないよう、先にカードを整えてもらう。
+    if (!PlayerProfile.name) {
+      showToast(t("setNameFirst"));
+      setEditingProfile(true);
+      return;
+    }
     setWorking(true);
     try {
       await joinPublic(harbor.slug, data);
       setIsJoined(true);
+      showToast(t("joinedToast"));
       await reload();
+    } catch {
+      showToast(t("errGeneric"));
     } finally {
       setWorking(false);
     }
   };
 
   const leave = async () => {
-    if (working || !confirm(t("leavePublicConfirm"))) return;
+    if (working) return;
+    const ok = await askConfirm({
+      title: t("leaveHarbor"),
+      message: t("leavePublicConfirm"),
+      confirmLabel: t("leaveHarbor"),
+      danger: true,
+    });
+    if (!ok) return;
     setWorking(true);
     try {
       await leavePublic(harbor.slug);
       setIsJoined(false);
+      showToast(t("leftToast"));
       await reload();
     } finally {
       setWorking(false);
@@ -447,16 +466,30 @@ function PublicDetail({
   };
 
   const report = async (member: HarborMember) => {
-    if (!confirm(`${t("reportSailorTitle")}\n${t("reportNote")}`)) return;
+    const ok = await askConfirm({
+      title: t("reportSailorTitle"),
+      message: t("reportNote"),
+      confirmLabel: t("report"),
+      danger: true,
+    });
+    if (!ok) return;
     await reportUser(harbor.slug, member.id).catch(() => {});
+    showToast(t("sentReport"));
   };
 
   const block = async (member: HarborMember) => {
-    if (!confirm(`${t("blockTitle")}\n${t("blockNote")}`)) return;
+    const ok = await askConfirm({
+      title: t("blockTitle"),
+      message: t("blockNote"),
+      confirmLabel: t("block"),
+      danger: true,
+    });
+    if (!ok) return;
     await blockUser(member.id).catch(() => {});
     const next = new Set(blocked);
     next.add(member.id);
     onBlockedChanged(next);
+    showToast(t("blockedToast"));
   };
 
   const visible = members.filter((m) => !blocked.has(m.id));
@@ -523,6 +556,8 @@ function PublicDetail({
           ))}
         </div>
       )}
+
+      {editingProfile && <ProfileEditor onClose={() => setEditingProfile(false)} />}
     </div>
   );
 }
@@ -582,6 +617,7 @@ function RoomDetail({
   const [draft, setDraft] = useState("");
   const [copied, setCopied] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void fetchMembers("rooms", room.id).then(setMembers);
@@ -600,32 +636,56 @@ function RoomDetail({
     const text = draft.trim();
     if (!text) return;
     setDraft("");
-    await sendChat(room.id, text).catch(() => {});
+    // 送信後もフォーカスを保ち、続けて書けるようにする。
+    inputRef.current?.focus();
+    await sendChat(room.id, text).catch(() => showToast(t("errGeneric")));
   };
 
   const copyCode = async () => {
     await navigator.clipboard.writeText(room.id).catch(() => {});
     setCopied(true);
+    showToast(t("copied"));
     setTimeout(() => setCopied(false), 1600);
   };
 
   const leave = async () => {
-    if (!confirm(t("leaveRoomConfirm"))) return;
+    const ok = await askConfirm({
+      title: t("leaveHarbor"),
+      message: t("leaveRoomConfirm"),
+      confirmLabel: t("leaveHarbor"),
+      danger: true,
+    });
+    if (!ok) return;
     await leaveRoom(room.id);
+    showToast(t("leftToast"));
     onBack();
   };
 
   const reportMsg = async (m: ChatMessage) => {
-    if (!confirm(`${t("reportMessageTitle")}\n${t("reportNote")}`)) return;
+    const ok = await askConfirm({
+      title: t("reportMessageTitle"),
+      message: t("reportNote"),
+      confirmLabel: t("report"),
+      danger: true,
+    });
+    if (!ok) return;
     await reportUser(room.id, m.uid, m.id).catch(() => {});
+    showToast(t("sentReport"));
   };
 
   const blockMsgAuthor = async (m: ChatMessage) => {
-    if (!confirm(`${t("blockTitle")}\n${t("blockNote")}`)) return;
+    const ok = await askConfirm({
+      title: t("blockTitle"),
+      message: t("blockNote"),
+      confirmLabel: t("block"),
+      danger: true,
+    });
+    if (!ok) return;
     await blockUser(m.uid).catch(() => {});
     const next = new Set(blocked);
     next.add(m.uid);
     onBlockedChanged(next);
+    showToast(t("blockedToast"));
   };
 
   return (
@@ -671,8 +731,16 @@ function RoomDetail({
             onReact={(token) => void reactChat(room.id, m, token)}
             onDelete={
               m.uid === uid
-                ? () => {
-                    if (confirm(t("deleteSessionConfirm"))) void deleteChat(room.id, m.id);
+                ? async () => {
+                    if (
+                      await askConfirm({
+                        title: t("deleteSessionConfirm"),
+                        confirmLabel: t("delete"),
+                        danger: true,
+                      })
+                    ) {
+                      void deleteChat(room.id, m.id);
+                    }
                   }
                 : undefined
             }
@@ -684,6 +752,7 @@ function RoomDetail({
       </div>
       <div className="chat-input">
         <input
+          ref={inputRef}
           className="field"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

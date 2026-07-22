@@ -3,6 +3,7 @@ import { PlayerProfile } from "../profile";
 import { pushProfileEverywhere } from "../harbor";
 import { STYLE_COLORS, TILE_STYLES, TILE_SYMBOLS, normalizeStyle, normalizeSymbol } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
+import { Modal, showToast } from "../overlays";
 import { t } from "../i18n";
 
 /// プレイヤーカードの編集。保存でローカルに書き、参加中の全ての港へも反映する。
@@ -18,14 +19,15 @@ export function ProfileEditor({ onClose }: { onClose: () => void }) {
     setWorking(true);
     PlayerProfile.save({ name, styleToken, symbolToken, resolve });
     await pushProfileEverywhere().catch(() => {});
+    showToast(t("savedToast"));
     onClose();
   };
 
   const style = STYLE_COLORS[styleToken];
 
   return (
-    <div className="overlay" onClick={onClose}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+    <Modal onClose={onClose}>
+      <>
         <h2 className="dialog-title">{t("playerCard")}</h2>
 
         {/* プレビュー: 入力がそのままカードになる。 */}
@@ -89,7 +91,7 @@ export function ProfileEditor({ onClose }: { onClose: () => void }) {
         <button className="primary-button" onClick={save} disabled={working}>
           {t("saveCard")}
         </button>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }

@@ -102,6 +102,17 @@ const ja = {
   errGeneric: "うまくいきませんでした。もう一度お試しください。",
   back: "戻る",
 
+  // フィードバック
+  recordedToast: "記録しました。",
+  joinedToast: "入港しました。",
+  leftToast: "退港しました。",
+  sentReport: "通報しました。",
+  blockedToast: "ブロックしました。",
+  savedToast: "保存しました。",
+  setNameFirst: "先にプレイヤーカードを整えましょう。",
+  moveEarlier: "前へ",
+  moveLater: "後ろへ",
+
   // タイマー
   startTimer: "計測をはじめる",
   timerFinish: "終了",
@@ -244,6 +255,16 @@ const en: Record<I18nKey, string> = {
   errRoomNotFound: "That harbor could not be found. Check the code.",
   errGeneric: "Something went wrong. Please try again.",
   back: "Back",
+
+  recordedToast: "Recorded.",
+  joinedToast: "You're in the harbor.",
+  leftToast: "You left the harbor.",
+  sentReport: "Report sent.",
+  blockedToast: "Blocked.",
+  savedToast: "Saved.",
+  setNameFirst: "Set up your player card first.",
+  moveEarlier: "Move up",
+  moveLater: "Move down",
 
   startTimer: "Start the clock",
   timerFinish: "Finish",

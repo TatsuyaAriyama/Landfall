@@ -901,6 +901,109 @@ textarea {
   flex: 1;
 }
 
+/* ---- 確認ダイアログ・トースト ---- */
+
+.confirm-message {
+  font-size: 15px;
+  line-height: 1.7;
+  color: color-mix(in srgb, var(--ink) 70%, transparent);
+  margin: 10px 0 0;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.confirm-primary {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: transparent;
+}
+
+.confirm-primary.danger {
+  background: var(--deep-rust);
+  color: #f4f1ec;
+}
+
+.toast-stack {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 14px;
+  padding: 10px 20px;
+  border-radius: 999px;
+  animation: toast-in 0.18s ease-out;
+  max-width: min(92vw, 420px);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- キーボード操作の可視化 ---- */
+
+:focus-visible {
+  outline: 2px solid var(--return-orange);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ---- モバイル: タブバーを画面下に固定(親指圏) ---- */
+
+@media (max-width: 600px) {
+  .tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    background: var(--paper);
+    border-top: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+    justify-content: space-around;
+    z-index: 4;
+  }
+
+  .tab {
+    flex: 1;
+    text-align: center;
+  }
+
+  .shell {
+    padding-bottom: 140px;
+  }
+
+  .timer-chip {
+    bottom: 84px;
+  }
+
+  .toast-stack {
+    bottom: 84px;
+  }
+}
+
 /* ---- タイマー(計測中の浮きチップ) ---- */
 
 .timer-chip {

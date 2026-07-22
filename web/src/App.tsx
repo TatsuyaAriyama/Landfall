@@ -7,10 +7,19 @@ import { HarborView } from "./views/HarborView";
 import { LogbookView } from "./views/LogbookView";
 import { SettingsDialog } from "./views/SettingsDialog";
 import { BrandMark } from "./symbols";
+import { OverlayHost } from "./overlays";
 import { t } from "./i18n";
 import { demoData, isDemo } from "./demo";
 
 type Tab = "today" | "trace" | "logbook" | "harbor";
+
+const TABS: Tab[] = ["today", "trace", "logbook", "harbor"];
+
+/// 再読込しても開いていたタブに戻れるよう、タブを URL ハッシュに控える。
+function initialTab(): Tab {
+  const hash = window.location.hash.replace("#", "");
+  return (TABS as string[]).includes(hash) ? (hash as Tab) : "today";
+}
 
 export default function App() {
   const { user, loading } = useAuthUser();
@@ -22,10 +31,15 @@ export default function App() {
 }
 
 function Main({ uid }: { uid: string }) {
-  const [tab, setTab] = useState<Tab>("today");
+  const [tab, setTabState] = useState<Tab>(() => initialTab());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const live = useUserData(uid, !isDemo);
   const data = isDemo ? demoData() : live;
+
+  const setTab = (next: Tab) => {
+    setTabState(next);
+    if (!isDemo) history.replaceState(null, "", `#${next}`);
+  };
 
   return (
     <div className="shell">
@@ -79,6 +93,7 @@ function Main({ uid }: { uid: string }) {
       )}
 
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      <OverlayHost />
     </div>
   );
 }

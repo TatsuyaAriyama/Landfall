@@ -3,6 +3,7 @@ import { dayId, startOfDay, type StudyDay } from "../types";
 import type { UserData } from "../data";
 import { deleteSession, setDayNote } from "../data";
 import { SessionRow } from "./TodayView";
+import { askConfirm } from "../overlays";
 import { lang, t } from "../i18n";
 
 // 軌跡: 月カレンダー。学んだ日(sunYellow)と休んだ日(seaGreen)を同格に描く。
@@ -143,7 +144,13 @@ export function TraceView({ uid, data }: { uid: string; data: UserData }) {
                 session={s}
                 item={data.items.find((i) => i.id === s.itemUUID)}
                 onDelete={async () => {
-                  if (confirm(t("deleteSessionConfirm"))) {
+                  if (
+                    await askConfirm({
+                      title: t("deleteSessionConfirm"),
+                      confirmLabel: t("delete"),
+                      danger: true,
+                    })
+                  ) {
                     await deleteSession(uid, s, data);
                   }
                 }}
