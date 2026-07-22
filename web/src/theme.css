@@ -573,6 +573,29 @@ textarea {
   color: var(--deep-rust);
 }
 
+/* 完了ゴールの達成ボタン。唯一の手動ゴールなので、保存とは違う強調色にする。 */
+.complete-button {
+  width: 100%;
+  min-height: 56px;
+  border-radius: var(--radius);
+  background: var(--return-orange);
+  color: #123830;
+  font-size: 17px;
+  font-weight: 500;
+  margin-bottom: 10px;
+  transition: transform 0.12s ease-out, opacity 0.12s ease-out;
+}
+
+.complete-button:active {
+  transform: scale(0.98);
+  opacity: 0.85;
+}
+
+.complete-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 @media (prefers-color-scheme: dark) {
   .danger-button {
     color: var(--coral);

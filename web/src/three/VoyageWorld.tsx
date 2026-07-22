@@ -386,8 +386,15 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   // ---- 編集状態(DestinationDialogと同等) ----
   const [name, setName] = useState(dest?.name ?? "");
   const [itemUUID, setItemUUID] = useState<string | undefined>(dest?.itemUUID);
-  const [kind, setKind] = useState<"hours" | "date">(
-    dest?.targetDate && !dest?.targetMinutes ? "date" : "hours",
+  // 新規の目的地は期日が既定(一番使われる目標のため)。編集時は保存済みの種類に従う。
+  const [kind, setKind] = useState<"hours" | "date" | "done">(
+    dest
+      ? dest.manual
+        ? "done"
+        : dest.targetDate && !dest.targetMinutes
+          ? "date"
+          : "hours"
+      : "date",
   );
   const [hours, setHours] = useState(
     dest?.targetMinutes ? String(Math.round(dest.targetMinutes / 60)) : "20",
@@ -402,7 +409,11 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   const hoursNum = Number(hours);
   const valid =
     trimmed.length > 0 &&
-    (kind === "hours" ? hoursNum > 0 && hoursNum <= 10000 : dateStr.length === 10);
+    (kind === "hours"
+      ? hoursNum > 0 && hoursNum <= 10000
+      : kind === "date"
+        ? dateStr.length === 10
+        : dateStr.length === 0 || dateStr.length === 10); // 完了: 締切は任意
 
   // ---- 世界の配置(カードと同じ航路・島) ----
   const ratio = dest ? destinationProgress(dest, data.sessions).ratio : 0;
@@ -451,10 +462,29 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
       name: trimmed,
       itemUUID,
       targetMinutes: kind === "hours" ? Math.round(hoursNum * 60) : undefined,
-      targetDate: kind === "date" ? new Date(`${dateStr}T00:00:00`) : undefined,
+      targetDate: kind !== "hours" && dateStr ? new Date(`${dateStr}T00:00:00`) : undefined,
+      manual: kind === "done" ? true : undefined,
+      manualDone: kind === "done" ? dest?.manualDone : undefined,
       createdAt: dest?.createdAt,
     });
     showToast(t("savedToast"));
+    requestClose();
+  };
+
+  // 完了ゴールの達成。ここだけは記録からではなく本人の申告で刻む
+  // (achievedAtはDestinationsSectionのreached監視が書く。ここではmanualDoneだけ立てる)。
+  const markDone = async () => {
+    if (!dest || working) return;
+    setWorking(true);
+    await saveDestination(uid, {
+      id: dest.id,
+      name: trimmed || dest.name,
+      itemUUID,
+      targetDate: dateStr ? new Date(`${dateStr}T00:00:00`) : undefined,
+      manual: true,
+      manualDone: true,
+      createdAt: dest.createdAt,
+    });
     requestClose();
   };
 
@@ -554,16 +584,22 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
           <p className="section-label">{t("goalKind")}</p>
           <div className="chip-row">
             <button
+              className={`chip${kind === "date" ? " selected" : ""}`}
+              onClick={() => setKind("date")}
+            >
+              {t("goalDate")}
+            </button>
+            <button
               className={`chip${kind === "hours" ? " selected" : ""}`}
               onClick={() => setKind("hours")}
             >
               {t("goalHours")}
             </button>
             <button
-              className={`chip${kind === "date" ? " selected" : ""}`}
-              onClick={() => setKind("date")}
+              className={`chip${kind === "done" ? " selected" : ""}`}
+              onClick={() => setKind("done")}
             >
-              {t("goalDate")}
+              {t("goalDone")}
             </button>
           </div>
 
@@ -582,7 +618,7 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                   <span className="stepper-unit">{t("hoursUnit")}</span>
                 </span>
               </div>
-            ) : (
+            ) : kind === "date" ? (
               <input
                 className="field"
                 type="date"
@@ -590,10 +626,30 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                 min={new Date().toISOString().slice(0, 10)}
                 onChange={(e) => setDateStr(e.target.value)}
               />
+            ) : (
+              <>
+                <p className="quest-intro">{t("goalDoneDesc")}</p>
+                <input
+                  className="field"
+                  type="date"
+                  value={dateStr}
+                  min={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setDateStr(e.target.value)}
+                  aria-label={t("optionalDateLabel")}
+                />
+                <p className="row-sub" style={{ marginTop: 4 }}>
+                  {t("optionalDateLabel")}
+                </p>
+              </>
             )}
           </div>
 
           <div style={{ height: 18 }} />
+          {dest && kind === "done" && !dest.manualDone && (
+            <button className="complete-button" onClick={markDone} disabled={working}>
+              {t("markDone")}
+            </button>
+          )}
           <button
             className="primary-button"
             onClick={save}

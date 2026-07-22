@@ -18,7 +18,11 @@ export interface Destination {
   name: string;
   itemUUID?: string; // 紐づく項目。省略時はすべての記録が進捗に数えられる
   targetMinutes?: number; // 累計時間の目標(分)
-  targetDate?: Date; // 期日の目標
+  targetDate?: Date; // 期日の目標。manual=trueのときは任意の締切メモとして使う
+  // 完了ゴール(課題など、時間や日数では測れないもの向け)。記録からの自動導出ではなく、
+  // 本人が「完了にする」を押した時だけ達成になる — このアプリで唯一の手動ゴール。
+  manual?: boolean;
+  manualDone?: boolean;
   createdAt: Date;
   achievedAt?: Date;
   updatedAt: Date;
@@ -47,6 +51,8 @@ export function listenDestinations(
               itemUUID: typeof v.itemUUID === "string" ? v.itemUUID : undefined,
               targetMinutes: typeof v.targetMinutes === "number" ? v.targetMinutes : undefined,
               targetDate: date("targetDate"),
+              manual: v.manual === true,
+              manualDone: v.manualDone === true,
               createdAt: date("createdAt") ?? new Date(0),
               achievedAt: date("achievedAt"),
               updatedAt: date("updatedAt") ?? new Date(0),
@@ -67,6 +73,8 @@ export async function saveDestination(
     itemUUID?: string;
     targetMinutes?: number;
     targetDate?: Date;
+    manual?: boolean;
+    manualDone?: boolean;
     createdAt?: Date;
     achievedAt?: Date;
   },
@@ -77,6 +85,8 @@ export async function saveDestination(
     ...(input.itemUUID ? { itemUUID: input.itemUUID } : {}),
     ...(input.targetMinutes ? { targetMinutes: Math.min(input.targetMinutes, 600000) } : {}),
     ...(input.targetDate ? { targetDate: input.targetDate } : {}),
+    ...(input.manual ? { manual: true } : {}),
+    ...(input.manualDone ? { manualDone: true } : {}),
     ...(input.achievedAt ? { achievedAt: input.achievedAt } : {}),
     createdAt: input.createdAt ?? new Date(),
     updatedAt: new Date(),
@@ -98,6 +108,7 @@ export interface DestinationProgress {
 }
 
 /// 島までの進捗。時間目標は「目的地を決めてからの累計」、期日目標は経過時間で近づく。
+/// 完了目標(manual)は記録から自動導出せず、本人が刻んだ manualDone だけで進む。
 export function destinationProgress(
   dest: Destination,
   sessions: StudySession[],
@@ -109,6 +120,19 @@ export function destinationProgress(
     if (dest.itemUUID && s.itemUUID !== dest.itemUUID) return sum;
     return sum + s.minutes;
   }, 0);
+
+  if (dest.manual) {
+    // targetDate はここでは締切のメモ表示のみに使い、進捗や達成の判定には使わない。
+    const remainingDays = dest.targetDate
+      ? Math.max(
+          0,
+          Math.round(
+            (startOfDay(dest.targetDate).getTime() - startOfDay(now).getTime()) / 86400000,
+          ),
+        )
+      : undefined;
+    return { ratio: dest.manualDone ? 1 : 0, minutes, remainingDays, reached: Boolean(dest.manualDone) };
+  }
 
   if (dest.targetMinutes && dest.targetMinutes > 0) {
     const ratio = Math.min(1, minutes / dest.targetMinutes);
