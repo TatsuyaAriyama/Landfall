@@ -1878,3 +1878,32 @@ textarea {
   font-size: 13px;
   color: var(--coral);
 }
+
+/* ---- 船スタジオ(3Dの夜の海) ---- */
+
+.boat-studio-stage {
+  height: min(52vh, 480px);
+  margin-top: 18px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #123830;
+}
+
+.boat-studio-stage canvas {
+  display: block;
+  /* 縦スワイプはページスクロールに通す(横ドラッグで回転) */
+  touch-action: pan-y;
+}
+
+.boat-studio-hint {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--ink) 45%, transparent);
+  margin: 8px 0 0;
+}
+
+.boat-studio-total {
+  font-size: 14px;
+  color: color-mix(in srgb, var(--ink) 70%, transparent);
+  margin: 16px 0 0;
+  font-variant-numeric: tabular-nums;
+}

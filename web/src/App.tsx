@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useAuthUser, useUserData } from "./data";
 import { SignInView } from "./views/SignInView";
 import { TodayView } from "./views/TodayView";
@@ -11,9 +11,12 @@ import { OfflineWatcher, OverlayHost } from "./overlays";
 import { t } from "./i18n";
 import { demoData, isDemo } from "./demo";
 
-type Tab = "today" | "trace" | "logbook" | "harbor";
+type Tab = "today" | "trace" | "logbook" | "boat" | "harbor";
 
-const TABS: Tab[] = ["today", "trace", "logbook", "harbor"];
+const TABS: Tab[] = ["today", "trace", "logbook", "boat", "harbor"];
+
+// three.js を含む船スタジオは重いので、タブを開いたときだけ読み込む。
+const BoatStudio = lazy(() => import("./views/BoatStudio"));
 
 /// 再読込しても開いていたタブに戻れるよう、タブを URL ハッシュに控える。
 function initialTab(): Tab {
@@ -73,6 +76,12 @@ function Main({ uid }: { uid: string }) {
           {t("logbook")}
         </button>
         <button
+          className={`tab${tab === "boat" ? " selected" : ""}`}
+          onClick={() => setTab("boat")}
+        >
+          {t("boatTab")}
+        </button>
+        <button
           className={`tab${tab === "harbor" ? " selected" : ""}`}
           onClick={() => setTab("harbor")}
         >
@@ -88,6 +97,10 @@ function Main({ uid }: { uid: string }) {
         <TraceView uid={uid} data={data} />
       ) : tab === "logbook" ? (
         <LogbookView data={data} />
+      ) : tab === "boat" ? (
+        <Suspense fallback={<p className="empty-note">{t("loading")}</p>}>
+          <BoatStudio data={data} />
+        </Suspense>
       ) : (
         <HarborView uid={uid} data={data} />
       )}

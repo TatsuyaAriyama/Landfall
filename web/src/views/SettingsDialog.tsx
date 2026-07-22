@@ -3,17 +3,8 @@ import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 import { deleteEverything } from "../harbor";
 import type { UserData } from "../data";
-import {
-  BOAT_OPTIONS,
-  boatPartId,
-  boatProps,
-  setBoatPart,
-  totalMinutes,
-  type BoatPart,
-} from "../boat";
-import { BoatSvg } from "../symbols";
 import { Modal, askConfirm } from "../overlays";
-import { LANGUAGE_KEY, lang, t, unlockAtLabel, type I18nKey } from "../i18n";
+import { LANGUAGE_KEY, t } from "../i18n";
 
 export const THEME_KEY = "appTheme";
 
@@ -37,13 +28,8 @@ export function SettingsDialog({
 }) {
   const [language, setLanguage] = useState(localStorage.getItem(LANGUAGE_KEY) ?? "system");
   const [theme, setTheme] = useState(localStorage.getItem(THEME_KEY) ?? "system");
-  const [boatTick, setBoatTick] = useState(0);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const total = totalMinutes(data.sessions);
-  const totalLabel =
-    lang === "ja" ? `${Math.floor(total / 60)}時間` : `${Math.floor(total / 60)}h`;
 
   const download = (content: string, filename: string, type: string) => {
     const url = URL.createObjectURL(new Blob([content], { type }));
@@ -151,79 +137,6 @@ export function SettingsDialog({
           {pill(theme === "light", t("light"), () => pickTheme("light"))}
           {pill(theme === "dark", t("dark"), () => pickTheme("dark"))}
         </div>
-
-        <p className="section-label">{t("boatSection")}</p>
-        {/* 生きたプレビュー: 夜の海で静かに揺れる、いまの自分の船。 */}
-        <div className="boat-stage" key={boatTick}>
-          <span className="boat-stage-star" style={{ top: "22%", left: "14%" }} />
-          <span className="boat-stage-star" style={{ top: "14%", left: "72%" }} />
-          <div className="boat-stage-horizon" />
-          <div className="boat-stage-boat boat-anim">
-            <BoatSvg {...boatProps()} />
-          </div>
-        </div>
-        <p className="row-sub" style={{ marginTop: 8 }}>
-          {t("totalVoyage")}: {totalLabel}
-        </p>
-        {(
-          [
-            ["sail", "sailColor"],
-            ["jib", "jibLabel"],
-            ["hull", "hullLabel"],
-            ["stripe", "stripeLabel"],
-            ["flag", "flagLabel"],
-          ] as [BoatPart, I18nKey][]
-        ).map(([part, labelKey]) => (
-          <div key={part}>
-            <p className="row-sub" style={{ margin: "14px 0 6px" }}>
-              {t(labelKey)}
-            </p>
-            <div className="chip-row">
-              {BOAT_OPTIONS[part].map((o) => {
-                const locked = total < o.unlockMinutes;
-                const selected = boatPartId(part) === o.id;
-                if (o.color) {
-                  return (
-                    <button
-                      key={o.id}
-                      className={`swatch${selected ? " selected" : ""}`}
-                      style={{ background: o.color, opacity: locked ? 0.3 : 1 }}
-                      disabled={locked}
-                      title={locked ? unlockAtLabel(o.unlockMinutes / 60) : o.id}
-                      onClick={() => {
-                        setBoatPart(part, o.id);
-                        setBoatTick((n) => n + 1);
-                      }}
-                      aria-label={o.id}
-                    />
-                  );
-                }
-                const label = t(
-                  (o.id === "none"
-                    ? "flagNone"
-                    : o.id === "pennant"
-                      ? "flagPennant"
-                      : "flagSwallow") as I18nKey,
-                );
-                return (
-                  <button
-                    key={o.id}
-                    className={`chip${selected ? " selected" : ""}`}
-                    disabled={locked}
-                    style={locked ? { opacity: 0.4 } : undefined}
-                    onClick={() => {
-                      setBoatPart(part, o.id);
-                      setBoatTick((n) => n + 1);
-                    }}
-                  >
-                    {label}
-                    {locked ? ` · ${unlockAtLabel(o.unlockMinutes / 60)}` : ""}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
 
         <p className="section-label">{t("dataSection")}</p>
         <div className="chip-row">

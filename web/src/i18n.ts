@@ -158,6 +158,9 @@ const ja = {
 
   // 船
   boatSection: "船",
+  boatTab: "船",
+  boatStudioTitle: "あなたの船",
+  boatHint: "ドラッグで一周できます。",
   sailColor: "帆の色",
   jibLabel: "前帆",
   hullLabel: "船体",
@@ -362,6 +365,9 @@ const en: Record<I18nKey, string> = {
   saveImage: "Save as image",
 
   boatSection: "Boat",
+  boatTab: "Boat",
+  boatStudioTitle: "Your boat",
+  boatHint: "Drag to look around.",
   sailColor: "Sail color",
   jibLabel: "Jib",
   hullLabel: "Hull",
