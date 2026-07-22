@@ -52,7 +52,7 @@ import { ProfileEditor } from "./ProfileEditor";
 import { MemberTrace } from "./MemberTrace";
 import { VoyageChartPanel } from "./VoyageChart";
 import { Modal, askConfirm, showToast } from "../overlays";
-import { chatLandfallLine, chatReturnLine, chatTimeLabel, t } from "../i18n";
+import { chatLandfallLine, chatReturnLine, chatTimeLabel, t, type I18nKey } from "../i18n";
 
 // three.js を含む「みんなの海」は重いので、プライベートの港を開いたときだけ読み込む。
 const HarborWorld = lazy(() => import("../three/HarborWorld"));
@@ -939,6 +939,7 @@ function RoomDetail({
             uid={uid}
             message={m}
             name={nameOf(m.uid)}
+            sender={memberById.get(m.uid)}
             onReact={(token) => void reactChat(room.id, m, token)}
             onDelete={
               m.uid === uid && nowTick - m.createdAt.getTime() < CHAT_DELETE_WINDOW_MS
@@ -987,10 +988,34 @@ function RoomDetail({
   );
 }
 
+const REACTION_LABEL_KEY: Record<(typeof CHAT_REACTIONS)[number], I18nKey> = {
+  heart: "reactionHeart",
+  lighthouse: "reactionLighthouse",
+};
+
+/// リアクションの印。共有アイテムアイコン(TileSymbolSvg/TILE_SYMBOLS)とは
+/// 別枠 — チャットの反応だけの語彙にして、項目アイコン一覧やiOS側の
+/// シンボル集合に影響させない。
+function ReactionSymbolSvg({ token }: { token: (typeof CHAT_REACTIONS)[number] }) {
+  if (token === "heart") {
+    return (
+      <svg viewBox="0 0 200 200" aria-hidden="true">
+        <path
+          d="M100 172 C42 130 12 92 12 56 C12 27 35 6 62 6 C82 6 96 17 100 36
+             C104 17 118 6 138 6 C165 6 188 27 188 56 C188 92 158 130 100 172 Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  return <TileSymbolSvg symbol="lighthouse" fg="currentColor" bg="transparent" />;
+}
+
 function ChatRow({
   uid,
   message,
   name,
+  sender,
   onReact,
   onDelete,
   onReport,
@@ -999,6 +1024,7 @@ function ChatRow({
   uid: string;
   message: ChatMessage;
   name: string;
+  sender?: HarborMember;
   onReact: (token: string) => void;
   onDelete?: () => void;
   onReport?: () => void;
@@ -1016,21 +1042,18 @@ function ChatRow({
   const reactions = (
     <div className="chat-reactions">
       {CHAT_REACTIONS.map((token) => {
-        const style = STYLE_COLORS[normalizeStyle("midnight")];
         const count = counts.get(token) ?? 0;
+        const selected = myReaction === token;
         return (
           <button
             key={token}
-            className={`reaction${myReaction === token ? " selected" : ""}`}
+            className={`reaction${selected ? " selected" : ""}${!selected && count === 0 ? " quiet" : ""}`}
             onClick={() => onReact(token)}
-            aria-label={token}
+            aria-label={t(REACTION_LABEL_KEY[token])}
+            title={t(REACTION_LABEL_KEY[token])}
           >
             <span className="reaction-symbol">
-              <TileSymbolSvg
-                symbol={normalizeSymbol(token)}
-                fg="currentColor"
-                bg={style.bg}
-              />
+              <ReactionSymbolSvg token={token} />
             </span>
             {count > 0 && <span>{count}</span>}
           </button>
@@ -1054,7 +1077,18 @@ function ChatRow({
 
   return (
     <div className={`chat-msg${mine ? " mine" : ""}`}>
-      {!mine && <div className="chat-name">{name}</div>}
+      {!mine && (
+        <div className="chat-name">
+          {sender && (
+            <PlayerAvatar
+              styleToken={sender.styleToken}
+              symbolToken={sender.symbolToken}
+              size={18}
+            />
+          )}
+          <span>{name}</span>
+        </div>
+      )}
       <div
         className="chat-bubble"
         onClick={() => setActionsOpen((v) => !v)}

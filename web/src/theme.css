@@ -945,6 +945,9 @@ textarea {
 }
 
 .chat-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: color-mix(in srgb, var(--ink) 45%, transparent);
   margin-bottom: 4px;
@@ -1010,6 +1013,12 @@ textarea {
 .reaction.selected {
   border-color: var(--return-orange);
   color: var(--return-orange);
+}
+
+/* 未反応(0件・未選択)は控えめに。反応が増えるほど自然と主張が強くなる。 */
+.reaction.quiet {
+  opacity: 0.5;
+  border-color: color-mix(in srgb, var(--ink) 10%, transparent);
 }
 
 .reaction-symbol {

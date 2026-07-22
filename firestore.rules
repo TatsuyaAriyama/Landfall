@@ -220,7 +220,7 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
           && request.resource.data.reactions.diff(resource.data.reactions).affectedKeys().hasOnly([request.auth.uid])
           && ( !(request.auth.uid in request.resource.data.reactions)
-            || request.resource.data.reactions[request.auth.uid] in ['lighthouse', 'anchor', 'phoenix'] );
+            || request.resource.data.reactions[request.auth.uid] in ['heart', 'lighthouse'] );
 
         // 自分の発言だけ、書いてから1時間以内に限り取り下げられる。
         allow delete: if request.auth != null

@@ -100,10 +100,12 @@ export interface ChatMessage {
   minutes?: number;
   gapDays?: number;
   createdAt: Date;
-  reactions: Record<string, string>; // uid → lighthouse | anchor | phoenix
+  reactions: Record<string, string>; // uid → heart | lighthouse
 }
 
-export const CHAT_REACTIONS = ["lighthouse", "anchor", "phoenix"] as const;
+// チャットの反応だけの語彙(共有アイテムアイコンとは別枠。views/HarborView.tsxのReactionSymbolSvg参照)。
+// heart=いいね(汎用)、lighthouse=見てるよ(汎用の見守り)。
+export const CHAT_REACTIONS = ["heart", "lighthouse"] as const;
 
 export type HarborErrorCode =
   | "notSignedIn"
