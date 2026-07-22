@@ -30,9 +30,20 @@ export function ItemEditor({
   const [symbolToken, setSymbolToken] = useState(normalizeSymbol(item?.symbolToken ?? "compass"));
   const [working, setWorking] = useState(false);
 
+  const trimmedName = name.trim();
+  // 他の項目(自分自身は除く)と大小文字・前後空白を無視して同名かどうか(iOSと同じ判定)。
+  const isDuplicateName =
+    trimmedName.length > 0 &&
+    data.items.some(
+      (other) =>
+        other.id !== item?.id &&
+        other.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+    );
+  const saveDisabled = !trimmedName || isDuplicateName || working;
+
   const save = async () => {
-    const trimmed = name.trim().slice(0, 60);
-    if (!trimmed || working) return;
+    const trimmed = trimmedName.slice(0, 60);
+    if (!trimmed || isDuplicateName || working) return;
     setWorking(true);
     await saveItem(uid, {
       id: item?.id,
@@ -81,13 +92,17 @@ export function ItemEditor({
 
         <p className="section-label">{t("name")}</p>
         <input
-          className="field"
+          className={`field${isDuplicateName ? " field-error" : ""}`}
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t("namePlaceholder")}
           maxLength={60}
           autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && !saveDisabled) void save();
+          }}
         />
+        {isDuplicateName && <p className="field-error-text">{t("duplicateItemName")}</p>}
 
         <p className="section-label">{t("color")}</p>
         <div className="chip-row">
@@ -128,7 +143,7 @@ export function ItemEditor({
         )}
 
         <div style={{ height: 28 }} />
-        <button className="primary-button" onClick={save} disabled={!name.trim() || working}>
+        <button className="primary-button" onClick={save} disabled={saveDisabled}>
           {t("save")}
         </button>
         {item && (

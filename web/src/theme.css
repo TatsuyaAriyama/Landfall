@@ -417,6 +417,31 @@ textarea {
   border-color: color-mix(in srgb, var(--ink) 45%, transparent);
 }
 
+.field-error {
+  border-color: color-mix(in srgb, var(--deep-rust) 60%, transparent);
+}
+
+.field-error-text {
+  font-size: 13px;
+  color: var(--deep-rust);
+  margin: 8px 0 0;
+}
+
+:root[data-theme="dark"] .field-error {
+  border-color: color-mix(in srgb, var(--coral) 60%, transparent);
+}
+:root[data-theme="dark"] .field-error-text {
+  color: var(--coral);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .field-error {
+    border-color: color-mix(in srgb, var(--coral) 60%, transparent);
+  }
+  :root:not([data-theme="light"]) .field-error-text {
+    color: var(--coral);
+  }
+}
+
 .chip-row {
   display: flex;
   flex-wrap: wrap;
