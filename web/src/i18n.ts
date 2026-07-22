@@ -127,6 +127,7 @@ const ja = {
 
   // 目的地(島)
   destinations: "目的地",
+  setDestinationPrompt: "目的地を設定しよう。",
   addDestination: "目的地を追加",
   destinationTitle: "目的地",
   islandName: "島の名前",
@@ -341,6 +342,7 @@ const en: Record<I18nKey, string> = {
   moveLater: "Move down",
 
   destinations: "Destinations",
+  setDestinationPrompt: "Set a destination.",
   addDestination: "Add a destination",
   destinationTitle: "Destination",
   islandName: "Island name",

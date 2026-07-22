@@ -8,7 +8,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  MAX_ACTIVE_DESTINATIONS,
   deleteDestination,
   destinationProgress,
   saveDestination,
@@ -109,38 +108,37 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
     }
   }, [active, data.sessions, uid]);
 
-  if (active.length === 0 && data.items.length === 0) return null;
-
   return (
     <>
       <p className="section-label">{t("destinations")}</p>
       <div className="dest-stack">
-        {active.map((dest, index) =>
-          index === 0 && canUseWebGL() ? (
-            <VoyageCard
-              key={dest.id}
-              dest={dest}
-              data={data}
-              onClick={() => {
-                // 世界のチャンクが未着ならこの回は従来のダイアログで開く
-                // (Suspenseフォールバックからの差し替えで入力が消えるのを防ぐ)。
-                if (voyageWorldReady) setWorld(dest);
-                else setEditing(dest);
-              }}
-            />
-          ) : (
-            <DestinationCard
-              key={dest.id}
-              dest={dest}
-              data={data}
-              onClick={() => setEditing(dest)}
-            />
-          ),
-        )}
-        {active.length < MAX_ACTIVE_DESTINATIONS && (
-          <button className="dest-add" onClick={() => setCreating(true)}>
-            + {t("addDestination")}
-          </button>
+        {active.length === 0 ? (
+          // 初めての人・未設定の人にも、まず同じ夜の海が見えている。
+          // 押すと目的地の設定へ(「追加」ボタンは置かない)。
+          <EmptySeaCard onClick={() => setCreating(true)} />
+        ) : (
+          active.map((dest, index) =>
+            index === 0 && canUseWebGL() ? (
+              <VoyageCard
+                key={dest.id}
+                dest={dest}
+                data={data}
+                onClick={() => {
+                  // 世界のチャンクが未着ならこの回は従来のダイアログで開く
+                  // (Suspenseフォールバックからの差し替えで入力が消えるのを防ぐ)。
+                  if (voyageWorldReady) setWorld(dest);
+                  else setEditing(dest);
+                }}
+              />
+            ) : (
+              <DestinationCard
+                key={dest.id}
+                dest={dest}
+                data={data}
+                onClick={() => setEditing(dest)}
+              />
+            ),
+          )
         )}
       </div>
 
@@ -181,6 +179,30 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
         />
       )}
     </>
+  );
+}
+
+/// 目的地が未設定でも、同じ夜の海が見えている。小さな一文でそっと促す。
+function EmptySeaCard({ onClick }: { onClick: () => void }) {
+  const fallback = (
+    <button className="voyage-scene" onClick={onClick}>
+      <div className="voyage-head">
+        <span className="voyage-name">{t("setDestinationPrompt")}</span>
+      </div>
+    </button>
+  );
+  if (!canUseWebGL()) return fallback;
+  return (
+    <VoyageErrorBoundary fallback={fallback}>
+      <Suspense fallback={fallback}>
+        <VoyageScene
+          name={t("setDestinationPrompt")}
+          ratio={0.32}
+          label=""
+          onClick={onClick}
+        />
+      </Suspense>
+    </VoyageErrorBoundary>
   );
 }
 

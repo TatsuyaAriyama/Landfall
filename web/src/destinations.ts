@@ -24,8 +24,9 @@ export interface Destination {
   updatedAt: Date;
 }
 
-/// アクティブな目的地の上限。散らばらず、いま向かう島に集中する。
-export const MAX_ACTIVE_DESTINATIONS = 3;
+/// 個人の目的地はひとつだけ。いま向かう島に集中する
+/// (港などでの共同の目的地は、これとは別の仕組み)。
+export const MAX_ACTIVE_DESTINATIONS = 1;
 
 export function listenDestinations(
   uid: string,
