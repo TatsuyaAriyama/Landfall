@@ -5,10 +5,17 @@ import SwiftData
 
 /// 港(ルーム)。当月の学習記録を、同じ港のメンバーと共有する。
 /// 共有されるのは「学んだ日」に加えて、各セッションの項目名・ひとこと・時間。
-struct HarborRoom: Identifiable, Equatable {
+struct HarborRoom: Identifiable, Equatable, Hashable {
     let id: String          // 6文字の招待コードがそのままID
     let name: String
     let memberIds: [String]
+    /// 港をひらいた人。ひとり1港の判定に使う(権限は与えない: 追い出し・改名は誰にも不可)。
+    var ownerUid: String? = nil
+
+    /// プライベートの港の定員。少人数=並走感の設計。
+    static let maxMembers = 4
+    /// ひとりが同時に入れる港の数。
+    static let maxJoined = 3
 }
 
 /// 港で共有される1セッション(相手の記録を読むための非正規化データ)。
@@ -81,7 +88,10 @@ final class RoomService: ObservableObject {
                 let data = doc.data()
                 guard let name = data["name"] as? String,
                       let members = data["memberIds"] as? [String] else { return nil }
-                return HarborRoom(id: doc.documentID, name: name, memberIds: members)
+                return HarborRoom(
+                    id: doc.documentID, name: name, memberIds: members,
+                    ownerUid: data["ownerUid"] as? String
+                )
             }
             .sorted { $0.name < $1.name }
         } catch {
@@ -91,14 +101,22 @@ final class RoomService: ObservableObject {
 
     // MARK: - 作成・参加・退出
 
-    /// 港を作る。招待コード(=ルームID)を返す。
+    /// 港を作る。招待コード(=ルームID)を返す。ひらけるのは ひとり1港・参加は3港まで。
     func createRoom(named name: String, context: ModelContext) async throws -> String {
         guard let uid else { throw RoomError.notSignedIn }
+        await refreshRooms()
+        guard rooms.count < HarborRoom.maxJoined else { throw RoomError.tooManyRooms }
+        // 自分がひらいた港が(退港済みでも)既にないか。
+        let mine = try await db.collection("rooms")
+            .whereField("ownerUid", isEqualTo: uid).limit(to: 1).getDocuments()
+        guard mine.documents.isEmpty else { throw RoomError.alreadyOwnsRoom }
+
         let cappedName = String(name.prefix(Limit.roomName))
         let code = try await reserveUnusedCode()
         try await db.collection("rooms").document(code).setData([
             "name": cappedName,
             "memberIds": [uid],
+            "ownerUid": uid,
             "createdAt": FieldValue.serverTimestamp(),
         ])
         try await joinedRoomSetup(roomId: code, uid: uid, context: context)
@@ -122,12 +140,15 @@ final class RoomService: ObservableObject {
         guard let uid else { throw RoomError.notSignedIn }
         let code = rawCode.trimmingCharacters(in: .whitespaces).uppercased()
         guard !code.isEmpty else { throw RoomError.roomNotFound }
+        await refreshRooms()
         let ref = db.collection("rooms").document(code)
         guard let snap = try? await ref.getDocument(), snap.exists else {
             throw RoomError.roomNotFound
         }
         let members = snap.data()?["memberIds"] as? [String] ?? []
         if !members.contains(uid) {
+            guard rooms.count < HarborRoom.maxJoined else { throw RoomError.tooManyRooms }
+            guard members.count < HarborRoom.maxMembers else { throw RoomError.roomFull }
             try await ref.updateData(["memberIds": FieldValue.arrayUnion([uid])])
         }
         try await joinedRoomSetup(roomId: code, uid: uid, context: context)
@@ -276,12 +297,18 @@ enum RoomError: LocalizedError {
     case notSignedIn
     case roomNotFound
     case codeUnavailable
+    case roomFull
+    case tooManyRooms
+    case alreadyOwnsRoom
 
     var errorDescription: String? {
         switch self {
         case .notSignedIn: String(localized: "Sign in to enter a harbor.")
         case .roomNotFound: String(localized: "No harbor found for this code.")
         case .codeUnavailable: String(localized: "Couldn't open a harbor just now. Please try again.")
+        case .roomFull: String(localized: "This harbor is full (up to 4 sailors).")
+        case .tooManyRooms: String(localized: "You can be in up to 3 harbors.")
+        case .alreadyOwnsRoom: String(localized: "You can open one harbor. Yours is already out there.")
         }
     }
 }

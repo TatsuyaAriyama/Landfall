@@ -298,6 +298,10 @@ struct RecordSessionSheet: View {
         try? modelContext.save()
         SyncService.shared.push(session)
         RoomService.shared.publishCurrentMonth(context: modelContext)
+        // プライベートの港のチャットに「着岸/帰還」を流し、パブリックの港の潮位を上げる。
+        // どちらも今日の記録だけ(過去日の後追いは静かに保存する)。
+        HarborChatService.shared.publishLog(item: item, minutes: minutes, gapDays: blanks, isToday: isToday)
+        if isToday { PublicHarborService.shared.bumpPulseIfNeeded() }
         WidgetBridge.refresh(context: modelContext)
         // 今日つけたなら、今日のそっと通知は取り下げる(来た人はつつかない)。
         let recorded = StudyDayStore.recordedToday(context: modelContext)
