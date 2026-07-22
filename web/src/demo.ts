@@ -1,6 +1,6 @@
 import { dayId, startOfDay } from "./types";
 import type { UserData } from "./data";
-import type { HarborMember, HarborRoom } from "./harbor";
+import type { HarborMember, HarborQuest, HarborRoom } from "./harbor";
 
 // URLに #demo を付けたときだけ使う見本データ(デザイン確認用。Firestoreには触れない)。
 
@@ -73,6 +73,20 @@ export function demoHarborMembers(): HarborMember[] {
 
 /// 「今日走った」ことにするデモメンバー(みんなの海のランタン見本)。
 export const demoLitMemberIds: ReadonlySet<string> = new Set(["demo", "D-3"]);
+
+/// 港の試練の見本(海獣・進捗は2段階目の潮目)。
+export function demoQuest(): HarborQuest {
+  const created = new Date();
+  created.setDate(created.getDate() - 6);
+  return {
+    kind: "kraken",
+    targetMinutes: 50 * 60,
+    createdAt: created,
+    createdBy: "demo",
+  };
+}
+
+export const demoQuestProgressMinutes = 22 * 60;
 
 export function demoData(): UserData {
   const now = new Date();

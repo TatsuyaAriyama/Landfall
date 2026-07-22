@@ -147,6 +147,48 @@ export function playPlink() {
   osc.stop(now + 0.7);
 }
 
+/// 港の試練への一撃。playPlinkより少し重い短い音 — 低めの二声+短いノイズの
+/// 立ち上がりで「当たった」感を出す(生成音のみ。警告音にはしない)。
+export function playStrike() {
+  const c = ensureCtx();
+  const now = c.currentTime;
+  // 芯: 低めの正弦2声(基音+5度)。すばやく減衰する。
+  for (const [freq, gain] of [
+    [196.0, 0.16], // G3
+    [293.66, 0.09], // D4
+  ] as const) {
+    const env = c.createGain();
+    env.gain.setValueAtTime(0, now);
+    env.gain.linearRampToValueAtTime(gain, now + 0.012);
+    env.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
+    const osc = c.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(freq * 1.12, now);
+    osc.frequency.exponentialRampToValueAtTime(freq, now + 0.09);
+    osc.connect(env);
+    env.connect(c.destination);
+    osc.start(now);
+    osc.stop(now + 0.6);
+  }
+  // 立ち上がりの飛沫: ごく短いローパスノイズ。
+  const len = Math.floor(c.sampleRate * 0.12);
+  const buffer = c.createBuffer(1, len, c.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = c.createBufferSource();
+  src.buffer = buffer;
+  const filter = c.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.value = 900;
+  const env = c.createGain();
+  env.gain.setValueAtTime(0.1, now);
+  env.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+  src.connect(filter);
+  filter.connect(env);
+  env.connect(c.destination);
+  src.start(now);
+}
+
 /// ポモドーロの区切りの合図。短くやわらかい二音(強制的な警告音にしない)。
 export function playChime() {
   const c = ensureCtx();

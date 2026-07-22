@@ -9,6 +9,7 @@ import {
   BOAT_OPTIONS,
   boatPartId,
   boatProps,
+  isBoatOptionUnlocked,
   setBoatPart,
   totalMinutes,
   type BoatPart,
@@ -109,7 +110,11 @@ export default function BoatStudio({ data }: { data: UserData }) {
           </p>
           <div className="chip-row">
             {BOAT_OPTIONS[part].map((o) => {
-              const locked = total < o.unlockMinutes;
+              // 試練の戦利品は累計時間ではなく「港の試練の討伐」で解放される。
+              const locked = !isBoatOptionUnlocked(o, total);
+              const lockLabel = o.questLoot
+                ? t("questLootLock")
+                : unlockAtLabel(o.unlockMinutes / 60);
               const selected = boatPartId(part) === o.id;
               if (o.color) {
                 return (
@@ -118,9 +123,9 @@ export default function BoatStudio({ data }: { data: UserData }) {
                     className={`swatch${selected ? " selected" : ""}`}
                     style={{ background: o.color, opacity: locked ? 0.3 : 1 }}
                     disabled={locked}
-                    title={locked ? unlockAtLabel(o.unlockMinutes / 60) : o.id}
+                    title={locked ? lockLabel : o.id}
                     onClick={() => choose(part, o.id)}
-                    aria-label={o.id}
+                    aria-label={locked ? `${o.id} · ${lockLabel}` : o.id}
                   />
                 );
               }
@@ -129,7 +134,9 @@ export default function BoatStudio({ data }: { data: UserData }) {
                   ? "flagNone"
                   : o.id === "pennant"
                     ? "flagPennant"
-                    : "flagSwallow") as I18nKey,
+                    : o.id === "swallow"
+                      ? "flagSwallow"
+                      : "flagKraken") as I18nKey,
               );
               return (
                 <button
@@ -140,7 +147,7 @@ export default function BoatStudio({ data }: { data: UserData }) {
                   onClick={() => choose(part, o.id)}
                 >
                   {label}
-                  {locked ? ` · ${unlockAtLabel(o.unlockMinutes / 60)}` : ""}
+                  {locked ? ` · ${lockLabel}` : ""}
                 </button>
               );
             })}

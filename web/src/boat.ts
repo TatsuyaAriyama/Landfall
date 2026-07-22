@@ -10,6 +10,9 @@ export interface BoatOption {
   id: string;
   color?: string; // 色を持つ部位のみ("none"系は持たない)
   unlockMinutes: number;
+  // 港の試練(quest)の戦利品。累計時間ではなく「参加中の港の試練に
+  // defeatedAt がある」ことで解放される(ローカルフラグに永続化)。
+  questLoot?: boolean;
 }
 
 export const BOAT_OPTIONS: Record<BoatPart, BoatOption[]> = {
@@ -19,6 +22,7 @@ export const BOAT_OPTIONS: Record<BoatPart, BoatOption[]> = {
     { id: "sunYellow", color: "#FFD84D", unlockMinutes: 25 * 60 },
     { id: "seaGreen", color: "#5DCAA5", unlockMinutes: 50 * 60 },
     { id: "lavender", color: "#CECBF6", unlockMinutes: 100 * 60 },
+    { id: "moonlight", color: "#F4F1EC", unlockMinutes: 0, questLoot: true },
   ],
   jib: [
     { id: "sand", color: "#EADEBD", unlockMinutes: 0 },
@@ -41,10 +45,32 @@ export const BOAT_OPTIONS: Record<BoatPart, BoatOption[]> = {
     { id: "none", unlockMinutes: 0 },
     { id: "pennant", unlockMinutes: 15 * 60 },
     { id: "swallow", unlockMinutes: 40 * 60 },
+    { id: "kraken", unlockMinutes: 0, questLoot: true },
   ],
 };
 
 const KEY = (part: BoatPart) => `boat.${part}`;
+
+// ---- 港の試練の戦利品(ローカルフラグ) ----
+// 討伐を検知した時点(購読/起動時チェック)で立てる。港を出ても失われない。
+
+const LOOT_KEY = "loot.harborTrial";
+
+export function hasHarborLoot(): boolean {
+  return localStorage.getItem(LOOT_KEY) === "1";
+}
+
+/// 戦利品を解放する。新規に解放されたときだけ true(トースト表示の判定に使う)。
+export function grantHarborLoot(): boolean {
+  if (hasHarborLoot()) return false;
+  localStorage.setItem(LOOT_KEY, "1");
+  return true;
+}
+
+/// この部位オプションはいま選べるか(累計時間 or 試練の戦利品)。
+export function isBoatOptionUnlocked(option: BoatOption, total: number): boolean {
+  return option.questLoot ? hasHarborLoot() : total >= option.unlockMinutes;
+}
 
 export function totalMinutes(sessions: StudySession[]): number {
   return sessions.reduce((sum, s) => sum + s.minutes, 0);

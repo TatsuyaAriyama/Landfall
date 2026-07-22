@@ -112,6 +112,30 @@ const ja = {
   takePhoto: "写真を撮る",
   lanternHint: "今日走った船には、灯がともる。",
 
+  // 港の試練
+  questTitle: "港の試練",
+  questIntro: "島の手前に、試練を呼べる。全員の学習時間を合わせて退けよう。",
+  questKindKraken: "海獣",
+  questKindStorm: "嵐",
+  summonKraken: "海獣を呼ぶ",
+  summonStorm: "嵐を呼ぶ",
+  questTargetLabel: "目標時間",
+  questCustomHours: "自由入力",
+  questStart: "試練をはじめる",
+  questStartConfirmKraken:
+    "海獣を呼びますか。ここからの全員の記録が、討伐の力になります。",
+  questStartConfirmStorm:
+    "嵐を呼びますか。ここからの全員の記録が、晴らす力になります。",
+  questDefeatedBadge: "討伐済",
+  questNew: "新たな試練",
+  questNewConfirm: "済んだ試練を流して、新たな試練を呼びますか。",
+  questDefeatKraken: "海獣は深みへ帰った。",
+  questDefeatStorm: "嵐は晴れた。",
+  questLootNotice: "戦利品 — 月光の帆と海獣の旗が解放された。",
+  questLootToast: "港の試練の戦利品が解放された。船スタジオへ。",
+  questLootLock: "港の試練で解放",
+  flagKraken: "海獣の旗",
+
   // フィードバック
   recordedToast: "記録しました。",
   joinedToast: "入港しました。",
@@ -329,6 +353,29 @@ const en: Record<I18nKey, string> = {
   takePhoto: "Take a photo",
   lanternHint: "Boats that sailed today carry a light.",
 
+  questTitle: "Harbor trial",
+  questIntro: "Summon a trial before the island. Push it back with everyone's study time.",
+  questKindKraken: "Kraken",
+  questKindStorm: "Storm",
+  summonKraken: "Summon the kraken",
+  summonStorm: "Call the storm",
+  questTargetLabel: "Target hours",
+  questCustomHours: "Custom",
+  questStart: "Begin the trial",
+  questStartConfirmKraken:
+    "Summon the kraken? Everyone's records from here on become the strength to drive it off.",
+  questStartConfirmStorm:
+    "Call the storm? Everyone's records from here on become the strength to clear it.",
+  questDefeatedBadge: "Trial complete",
+  questNew: "A new trial",
+  questNewConfirm: "Let the finished trial drift away and summon a new one?",
+  questDefeatKraken: "The kraken returned to the deep.",
+  questDefeatStorm: "The storm has cleared.",
+  questLootNotice: "Spoils — the Moonlight sail and Kraken flag are unlocked.",
+  questLootToast: "Harbor trial spoils unlocked. Visit your boat.",
+  questLootLock: "Unlocks in a harbor trial",
+  flagKraken: "Kraken flag",
+
   recordedToast: "Recorded.",
   joinedToast: "You're in the harbor.",
   leftToast: "You left the harbor.",
@@ -471,6 +518,19 @@ export function remainingHoursLabel(remainingMinutes: number): string {
 
 export function remainingDaysLabel(days: number): string {
   return lang === "ja" ? `あと${days}日` : `${days} days to go`;
+}
+
+/// 港の試練の残り表示。「あと◯時間」(1時間未満は分)。
+export function questRemainingLabel(remainingMinutes: number): string {
+  const m = Math.max(remainingMinutes, 0);
+  if (m < 60) return lang === "ja" ? `あと${m}分` : `${m}m to go`;
+  const h = Math.ceil(m / 60);
+  return lang === "ja" ? `あと${h}時間` : `${h}h to go`;
+}
+
+/// 時間数の短い表示(試練のプリセットなど)。「20時間」/「20h」。
+export function questHoursLabel(hours: number): string {
+  return lang === "ja" ? `${hours}時間` : `${hours}h`;
 }
 
 /// 復習の提案。意味が一読で分かる、責めない文にする。

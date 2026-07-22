@@ -79,18 +79,26 @@ function makeSailGeometry(
   return geo;
 }
 
-function makeFlagGeometry(kind: "pennant" | "swallow"): THREE.BufferGeometry {
+function makeFlagGeometry(kind: "pennant" | "swallow" | "kraken"): THREE.BufferGeometry {
   const s = new THREE.Shape();
   if (kind === "pennant") {
     s.moveTo(0, 0);
     s.lineTo(0, 0.22);
     s.lineTo(-0.5, 0.11);
-  } else {
+  } else if (kind === "swallow") {
     s.moveTo(0, 0);
     s.lineTo(0, 0.22);
     s.lineTo(-0.52, 0.22);
     s.lineTo(-0.33, 0.11);
     s.lineTo(-0.52, 0);
+  } else {
+    // 港の試練の戦利品。触腕を思わせる、曲線の二叉。
+    s.moveTo(0, 0);
+    s.lineTo(0, 0.22);
+    s.quadraticCurveTo(-0.36, 0.28, -0.56, 0.21);
+    s.quadraticCurveTo(-0.36, 0.16, -0.27, 0.11);
+    s.quadraticCurveTo(-0.36, 0.06, -0.56, 0.01);
+    s.quadraticCurveTo(-0.36, -0.06, 0, 0);
   }
   s.closePath();
   return new THREE.ShapeGeometry(s);
@@ -106,6 +114,19 @@ const BOOM_GEO = new THREE.CylinderGeometry(0.024, 0.024, 1.15, 8);
 const STRIPE_GEO = new THREE.TorusGeometry(1, 0.05, 8, 40);
 const PENNANT_GEO = makeFlagGeometry("pennant");
 const SWALLOW_GEO = makeFlagGeometry("swallow");
+const KRAKEN_FLAG_GEO = makeFlagGeometry("kraken");
+const KRAKEN_FLAG_EYE_GEO = new THREE.CircleGeometry(0.028, 8);
+
+const FLAG_GEOS: Record<string, THREE.BufferGeometry> = {
+  pennant: PENNANT_GEO,
+  swallow: SWALLOW_GEO,
+  kraken: KRAKEN_FLAG_GEO,
+};
+const FLAG_COLORS: Record<string, string> = {
+  pennant: "#F5822A",
+  swallow: "#F0997B",
+  kraken: "#1A1130",
+};
 
 /// 船本体。ゆっくり上下+ロール+微ピッチで、錨泊中の揺れを再現する。
 export default function BoatModel({ parts, animate }: { parts: BoatParts; animate: boolean }) {
@@ -174,16 +195,22 @@ export default function BoatModel({ parts, animate }: { parts: BoatParts; animat
         </mesh>
       )}
       {/* 旗(マスト頂ではためく) */}
-      {(flag === "pennant" || flag === "swallow") && (
+      {flag in FLAG_GEOS && (
         <group ref={flagGroup} position={[0.1, 2.34, 0]}>
-          <mesh geometry={flag === "pennant" ? PENNANT_GEO : SWALLOW_GEO}>
+          <mesh geometry={FLAG_GEOS[flag]}>
             <meshStandardMaterial
-              color={flag === "pennant" ? "#F5822A" : "#F0997B"}
+              color={FLAG_COLORS[flag]}
               flatShading
               roughness={0.9}
               side={THREE.DoubleSide}
             />
           </mesh>
+          {/* 海獣の旗には returnOrange の小さな目を添える(2Dの図案と同じ) */}
+          {flag === "kraken" && (
+            <mesh geometry={KRAKEN_FLAG_EYE_GEO} position={[-0.12, 0.11, 0.002]}>
+              <meshBasicMaterial color="#F5822A" side={THREE.DoubleSide} />
+            </mesh>
+          )}
         </group>
       )}
     </group>

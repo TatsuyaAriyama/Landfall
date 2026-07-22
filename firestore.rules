@@ -131,6 +131,33 @@ service cloud.firestore {
         }
       }
 
+      // ---- 港の試練(単一ドキュメント quest/current) ----
+      // 島の手前の海獣/嵐。進捗はカウンタを持たず、各メンバーの months から
+      // 閲覧者が導出する。討伐(defeatedAt)は在港者の誰かが1回だけ書ける。
+      // 4人の友人港なので、作成・削除は在港者なら誰でも(簡素に)。
+      match /quest/{questId} {
+        allow read: if isMember();
+
+        // 作成: 在港者が、最小のキー集合で。kind と目標時間(分)を検証する。
+        allow create: if isMember()
+          && request.resource.data.keys().hasOnly(['kind', 'targetMinutes', 'createdAt', 'createdBy'])
+          && request.resource.data.kind in ['kraken', 'storm']
+          && request.resource.data.targetMinutes is int
+          && request.resource.data.targetMinutes >= 60
+          && request.resource.data.targetMinutes <= 600000
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.createdBy == request.auth.uid;
+
+        // 更新: defeatedAt を一度だけ足せる(討伐の刻印)。他フィールドは不変。
+        allow update: if isMember()
+          && !('defeatedAt' in resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['defeatedAt'])
+          && request.resource.data.defeatedAt is timestamp;
+
+        // 削除: 在港者なら誰でも(討伐後に「新たな試練」で流すため)。
+        allow delete: if isMember();
+      }
+
       // ---- チャット(言葉 + 着岸/帰還の自動の行) ----
       match /chat/{messageId} {
         allow read: if isMember();

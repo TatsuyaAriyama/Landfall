@@ -165,7 +165,7 @@ export interface BoatParts {
   jib?: string; // 前帆
   hull?: string; // 船体
   stripe?: string; // 船体のライン("none"で無し)
-  flag?: string; // 旗("none" | "pennant" | "swallow")
+  flag?: string; // 旗("none" | "pennant" | "swallow" | "kraken")
 }
 
 /// 船の本体(SVGグループ、設計座標 0 0 260 320)。
@@ -192,6 +192,16 @@ export function BoatGroup({
           points="134,20 188,20 168,33 188,46 134,46"
           fill="#F0997B"
         />
+      )}
+      {/* 港の試練の戦利品。midnight色の、触腕を思わせる二叉+曲線の旗。 */}
+      {flag === "kraken" && (
+        <g className="boat-flag">
+          <path
+            d="M 134 20 Q 170 14 192 22 Q 172 27 162 33 Q 172 39 192 44 Q 170 52 134 46 Z"
+            fill="#1A1130"
+          />
+          <circle cx="146" cy="33" r="3.5" fill="#F5822A" />
+        </g>
       )}
       {/* メインセイル(マストの後ろへ膨らむ) */}
       <path d="M 140 42 Q 216 124 208 220 L 140 220 Q 149 132 140 42 Z" fill={sail} />

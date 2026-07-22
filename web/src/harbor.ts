@@ -530,6 +530,135 @@ export function gapDaysBeforeToday(days: StudyDay[]): number {
   return Math.round((today.getTime() - last.getTime()) / 86400000);
 }
 
+// ---- 港の試練(rooms/{code}/quest/current 単一ドキュメント) ----
+// 島の手前に海獣または嵐が立ちはだかり、メンバー全員の学習時間の合算で退ける。
+// 進捗カウンタは持たない — 各メンバーの共有月間記録(members/{uid}/months)の
+// sessions のうち date >= createdAt の minutes を全員分合算して導出する。
+
+export type QuestKind = "kraken" | "storm";
+
+export const QUEST_MIN_MINUTES = 60;
+export const QUEST_MAX_MINUTES = 600000;
+
+export interface HarborQuest {
+  kind: QuestKind;
+  targetMinutes: number;
+  createdAt: Date;
+  createdBy: string;
+  defeatedAt?: Date;
+}
+
+function questRef(roomId: string) {
+  return doc(db, "rooms", roomId, "quest", "current");
+}
+
+function questFromData(v: Record<string, unknown>): HarborQuest {
+  return {
+    kind: v.kind === "storm" ? "storm" : "kraken",
+    targetMinutes: Number(v.targetMinutes ?? 0),
+    createdAt: v.createdAt instanceof Timestamp ? v.createdAt.toDate() : new Date(),
+    createdBy: String(v.createdBy ?? ""),
+    defeatedAt: v.defeatedAt instanceof Timestamp ? v.defeatedAt.toDate() : undefined,
+  };
+}
+
+export function listenQuest(
+  roomId: string,
+  cb: (quest: HarborQuest | null) => void,
+): () => void {
+  return onSnapshot(
+    questRef(roomId),
+    (snap) => cb(snap.exists() ? questFromData(snap.data()) : null),
+    () => cb(null),
+  );
+}
+
+/// 一回きりの読み(起動時の戦利品チェックなどに使う)。
+export async function fetchQuest(roomId: string): Promise<HarborQuest | null> {
+  const snap = await getDoc(questRef(roomId)).catch(() => null);
+  if (!snap || !snap.exists()) return null;
+  return questFromData(snap.data());
+}
+
+export async function createQuest(
+  roomId: string,
+  kind: QuestKind,
+  targetMinutes: number,
+): Promise<void> {
+  const u = uid();
+  const target = Math.min(
+    Math.max(Math.round(targetMinutes), QUEST_MIN_MINUTES),
+    QUEST_MAX_MINUTES,
+  );
+  await setDoc(questRef(roomId), {
+    kind,
+    targetMinutes: target,
+    createdAt: serverTimestamp(),
+    createdBy: u,
+  });
+}
+
+export async function deleteQuest(roomId: string): Promise<void> {
+  await deleteDoc(questRef(roomId));
+}
+
+/// 討伐の刻印。合算 >= 目標 を見た閲覧者が1回だけ書く。すでに defeatedAt が
+/// ある場合はルールで拒否される(並走した閲覧者の2回目は静かに失敗させる)。
+export async function markQuestDefeated(roomId: string): Promise<void> {
+  await updateDoc(questRef(roomId), { defeatedAt: serverTimestamp() });
+}
+
+/// 試練の進捗(分)。創設月〜当月の months ドキュメントだけを全メンバー分読み、
+/// date >= createdAt のセッションを合算する(メンバー≤4なので読みは少ない)。
+/// date が無い旧クライアントのセッションは day フィールドから日単位で概算する
+/// (その日の始まりが createdAt の日の始まり以降なら含める。同日の作成前の
+///  記録も拾い得るが、友人港の遊びなので寛容側に倒す)。
+export async function questProgressMinutes(
+  roomId: string,
+  memberIds: string[],
+  quest: HarborQuest,
+): Promise<number> {
+  const created = quest.createdAt;
+  const createdDayStart = new Date(
+    created.getFullYear(),
+    created.getMonth(),
+    created.getDate(),
+  );
+  // 創設月〜当月の yyyy-MM 一覧(読みすぎ防止で直近24ヶ月に丸める。
+  // 切るなら古い月 — 当月側を落とすと新規セッションが進捗に入らなくなる)。
+  const months: string[] = [];
+  const cursor = new Date(created.getFullYear(), created.getMonth(), 1);
+  const now = new Date();
+  const last = new Date(now.getFullYear(), now.getMonth(), 1);
+  const floor = new Date(last.getFullYear(), last.getMonth() - 23, 1);
+  if (cursor < floor) cursor.setTime(floor.getTime());
+  while (cursor <= last) {
+    months.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  let total = 0;
+  await Promise.all(
+    memberIds.slice(0, ROOM_MAX_MEMBERS).map(async (memberId) => {
+      for (const ym of months) {
+        const month = await fetchMonth("rooms", roomId, memberId, ym);
+        if (!month) continue;
+        const [y, m] = ym.split("-").map(Number);
+        for (const s of month.sessions) {
+          if (s.minutes <= 0) continue;
+          if (s.date) {
+            if (s.date >= created) total += s.minutes;
+          } else {
+            // 旧セッション(dateなし): dayから日単位で概算。
+            const dayDate = new Date(y, m - 1, s.day);
+            if (dayDate >= createdDayStart) total += s.minutes;
+          }
+        }
+      }
+    }),
+  );
+  return total;
+}
+
 // ---- 通報・ブロック ----
 
 export async function reportUser(

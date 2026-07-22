@@ -14,34 +14,44 @@ import {
   PUBLIC_HARBORS,
   blockUser,
   cachedPublicJoined,
+  createQuest,
   createRoom,
   deleteChat,
+  deleteQuest,
   fetchMembers,
   fetchPublicJoined,
+  fetchQuest,
   fetchRooms,
   joinPublic,
   joinRoom,
   leavePublic,
   leaveRoom,
   listenChat,
+  listenQuest,
   loadBlocked,
+  markQuestDefeated,
+  questProgressMinutes,
   reactChat,
   reportUser,
   sendChat,
   type ChatMessage,
   type HarborMember,
+  type HarborQuest,
   type HarborRoom,
   type PublicHarborInfo,
+  type QuestKind,
 } from "../harbor";
 import type { UserData } from "../data";
-import { demoHarborMembers, demoRoom, isDemo } from "../demo";
+import type { QuestStrikeEvent } from "../three/HarborWorld";
+import { demoHarborMembers, demoQuest, demoQuestProgressMinutes, demoRoom, isDemo } from "../demo";
 import { PlayerProfile } from "../profile";
+import { grantHarborLoot, hasHarborLoot } from "../boat";
 import { STYLE_COLORS, normalizeStyle, normalizeSymbol, trimAll } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { ProfileEditor } from "./ProfileEditor";
 import { MemberTrace } from "./MemberTrace";
 import { Modal, askConfirm, showToast } from "../overlays";
-import { chatLandfallLine, chatReturnLine, t } from "../i18n";
+import { chatLandfallLine, chatReturnLine, questHoursLabel, t } from "../i18n";
 
 // three.js を含む「みんなの海」は重いので、プライベートの港を開いたときだけ読み込む。
 const HarborWorld = lazy(() => import("../three/HarborWorld"));
@@ -102,6 +112,21 @@ function errText(e: unknown): string {
   return t("errGeneric");
 }
 
+// 起動後に一度だけ、参加中の全roomsのquestを軽く読んで戦利品の解放を反映する
+// (討伐の瞬間に港を開いていなかったメンバーの救済)。
+let lootCheckDone = false;
+async function checkQuestLootOnce(rooms: HarborRoom[]): Promise<void> {
+  if (lootCheckDone || isDemo || hasHarborLoot() || rooms.length === 0) return;
+  lootCheckDone = true;
+  for (const room of rooms) {
+    const quest = await fetchQuest(room.id);
+    if (quest?.defeatedAt) {
+      if (grantHarborLoot()) showToast(t("questLootToast"));
+      return;
+    }
+  }
+}
+
 export function HarborView({ uid, data }: { uid: string; data: UserData }) {
   const [nav, setNav] = useState<HarborNav>({ type: "root" });
   const [rooms, setRooms] = useState<HarborRoom[]>([]);
@@ -124,6 +149,7 @@ export function HarborView({ uid, data }: { uid: string; data: UserData }) {
     setRooms(r);
     setPublicJoined(p);
     setBlocked(b);
+    void checkQuestLootOnce(r);
   }, []);
 
   useEffect(() => {
@@ -667,15 +693,86 @@ function RoomDetail({
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // ---- 港の試練 ----
+  // quest/current を購読し、進捗は全メンバーの months から導出する。
+  // undefined=読込中、null=試練なし。
+  const [quest, setQuest] = useState<HarborQuest | null | undefined>(undefined);
+  const [questProgress, setQuestProgress] = useState(0);
+  const [strike, setStrike] = useState<QuestStrikeEvent | null>(null);
+  const questRef = useRef<HarborQuest | null>(null);
+  const seenChatIds = useRef<Set<string> | null>(null);
+  const strikeSeq = useRef(0);
+  const defeatWritten = useRef(false);
+  const questIdentity = useRef<number | null>(null);
+
+  const refreshQuestProgress = useCallback(async () => {
+    const q = questRef.current;
+    if (!q) return;
+    const minutes = await questProgressMinutes(room.id, room.memberIds, q).catch(
+      () => null,
+    );
+    if (minutes !== null && questRef.current === q) setQuestProgress(minutes);
+  }, [room.id, room.memberIds]);
+
   useEffect(() => {
-    // デモ(#demo)は見本のメンバーだけ(チャットは購読しない)。
+    // デモ(#demo)は見本のメンバーと試練だけ(Firestoreは購読しない)。
     if (isDemo) {
       setMembers(demoHarborMembers());
+      setQuest(demoQuest());
+      setQuestProgress(demoQuestProgressMinutes);
       return;
     }
     void fetchMembers("rooms", room.id).then(setMembers);
-    return listenChat(room.id, setMessages);
-  }, [room.id]);
+    const stopChat = listenChat(room.id, (msgs) => {
+      setMessages(msgs);
+      // マウント後に新しく届いた着岸/帰還を「一撃」として世界へ流し、
+      // 記録が増えた合図として試練の進捗も引き直す。
+      if (seenChatIds.current === null) {
+        seenChatIds.current = new Set(msgs.map((m) => m.id));
+        return;
+      }
+      const seen = seenChatIds.current;
+      const fresh = msgs.filter((m) => !seen.has(m.id));
+      if (fresh.length === 0) return;
+      for (const m of fresh) seen.add(m.id);
+      const hits = fresh.filter((m) => m.kind !== "text");
+      if (hits.length === 0) return;
+      setStrike({ uid: hits[hits.length - 1].uid, seq: ++strikeSeq.current });
+      void refreshQuestProgress();
+    });
+    const stopQuest = listenQuest(room.id, (q) => {
+      questRef.current = q;
+      // questが入れ替わったら(削除→再作成を含む)旧questの進捗と討伐フラグを
+      // 持ち越さない — 旧進捗のまま新questを即討伐してしまうのを防ぐ。
+      const identity = q ? q.createdAt.getTime() : null;
+      if (identity !== questIdentity.current) {
+        questIdentity.current = identity;
+        setQuestProgress(0);
+        defeatWritten.current = false;
+      }
+      setQuest(q);
+      if (q && !q.defeatedAt) void refreshQuestProgress();
+    });
+    return () => {
+      stopChat();
+      stopQuest();
+    };
+  }, [room.id, refreshQuestProgress]);
+
+  // 合算が目標に達したのを見た閲覧者が、討伐を一度だけ刻む。
+  // (並走した他の閲覧者の2回目はルールで拒否される — 握りつぶす。)
+  useEffect(() => {
+    if (isDemo || !quest || quest.defeatedAt) return;
+    if (questProgress < quest.targetMinutes || defeatWritten.current) return;
+    defeatWritten.current = true;
+    void markQuestDefeated(room.id).catch(() => {});
+  }, [quest, questProgress, room.id]);
+
+  // 討伐を検知したら戦利品を解放(ローカルフラグ)して知らせる。
+  useEffect(() => {
+    if (!quest?.defeatedAt) return;
+    if (grantHarborLoot()) showToast(t("questLootToast"));
+  }, [quest]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -764,9 +861,39 @@ function RoomDetail({
       {canUseWebGL() && (
         <HarborWorldBoundary>
           <Suspense fallback={<div className="harbor-world-fallback" />}>
-            <HarborWorld room={room} members={members} onSelectMember={onOpenMember} />
+            <HarborWorld
+              room={room}
+              members={members}
+              onSelectMember={onOpenMember}
+              quest={quest}
+              progressMinutes={questProgress}
+              strike={strike}
+            />
           </Suspense>
         </HarborWorldBoundary>
+      )}
+
+      {/* 港の試練: 無ければ開始パネル、討伐済みなら「新たな試練」。 */}
+      {!isDemo && quest === null && <QuestStartPanel roomId={room.id} />}
+      {!isDemo && quest?.defeatedAt && (
+        <div className="quest-done-row">
+          <span className="badge">{t("questDefeatedBadge")}</span>
+          <button
+            className="chip"
+            onClick={async () => {
+              const ok = await askConfirm({
+                title: t("questNew"),
+                message: t("questNewConfirm"),
+                confirmLabel: t("questNew"),
+              });
+              if (!ok) return;
+              // 旧questを流す。開始パネルが現れて、新たな試練を呼べる。
+              await deleteQuest(room.id).catch(() => showToast(t("errGeneric")));
+            }}
+          >
+            {t("questNew")}
+          </button>
+        </div>
       )}
 
       {/* メンバー(タップで軌跡へ) */}
@@ -833,6 +960,85 @@ function RoomDetail({
       <div style={{ marginTop: 28 }}>
         <button className="quiet-button danger-text" onClick={leave}>
           {t("leaveHarbor")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/// 試練の開始パネル。kind(海獣/嵐)+目標時間(20/50/100hプリセット+自由入力)。
+function QuestStartPanel({ roomId }: { roomId: string }) {
+  const [kind, setKind] = useState<QuestKind>("kraken");
+  const [presetHours, setPresetHours] = useState(20);
+  const [customHours, setCustomHours] = useState("");
+  const [working, setWorking] = useState(false);
+
+  const hours = customHours.trim() ? Number(customHours) : presetHours;
+  const valid = Number.isFinite(hours) && hours >= 1 && hours <= 10000;
+  const summonLabel = t(kind === "kraken" ? "summonKraken" : "summonStorm");
+
+  const start = async () => {
+    if (!valid || working) return;
+    const ok = await askConfirm({
+      title: summonLabel,
+      message: t(kind === "kraken" ? "questStartConfirmKraken" : "questStartConfirmStorm"),
+      confirmLabel: t("questStart"),
+    });
+    if (!ok) return;
+    setWorking(true);
+    try {
+      await createQuest(roomId, kind, Math.round(hours * 60));
+    } catch {
+      showToast(t("errGeneric"));
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <div className="quest-panel">
+      <p className="section-label">{t("questTitle")}</p>
+      <p className="quest-intro">{t("questIntro")}</p>
+      <div className="chip-row">
+        {(["kraken", "storm"] as QuestKind[]).map((k) => (
+          <button
+            key={k}
+            className={`chip${kind === k ? " selected" : ""}`}
+            onClick={() => setKind(k)}
+          >
+            {t(k === "kraken" ? "questKindKraken" : "questKindStorm")}
+          </button>
+        ))}
+      </div>
+      <p className="row-sub" style={{ margin: "12px 0 6px" }}>
+        {t("questTargetLabel")}
+      </p>
+      <div className="chip-row">
+        {[20, 50, 100].map((h) => (
+          <button
+            key={h}
+            className={`chip${!customHours.trim() && presetHours === h ? " selected" : ""}`}
+            onClick={() => {
+              setPresetHours(h);
+              setCustomHours("");
+            }}
+          >
+            {questHoursLabel(h)}
+          </button>
+        ))}
+        <input
+          className="field quest-hours-field"
+          inputMode="numeric"
+          value={customHours}
+          onChange={(e) => setCustomHours(e.target.value.replace(/[^0-9]/g, "").slice(0, 5))}
+          placeholder={t("questCustomHours")}
+          aria-label={t("questTargetLabel")}
+        />
+        <span className="row-sub">{t("hoursUnit")}</span>
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <button className="primary-button" onClick={start} disabled={!valid || working}>
+          {summonLabel}
         </button>
       </div>
     </div>

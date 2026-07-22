@@ -16,11 +16,13 @@ import {
   ROOM_MAX_MEMBERS,
   fetchMonth,
   type HarborMember,
+  type HarborQuest,
   type HarborRoom,
 } from "../harbor";
 import { saveCanvas } from "../share";
 import { demoLitMemberIds, isDemo } from "../demo";
-import { lang, t } from "../i18n";
+import { playStrike } from "../audio";
+import { lang, questRemainingLabel, t } from "../i18n";
 
 // 港の「みんなの海」。参加メンバー全員の船が同じ夜の海に浮かび、
 // 同じ島(港の名前を持つ島)へ向かって並走している世界。
@@ -29,10 +31,21 @@ import { lang, t } from "../i18n";
 // 反ストリークの約束: 船の位置は進捗・量・順位では決めない。
 // uidのハッシュだけで決まる固定レーン+有機的な前後オフセット。誰も先頭ではない。
 
+/// マウント後に届いた着岸/帰還を、船からの一撃として世界に流すイベント。
+export interface QuestStrikeEvent {
+  uid: string;
+  seq: number;
+}
+
 export interface HarborWorldProps {
   room: HarborRoom;
   members: HarborMember[];
   onSelectMember?: (member: HarborMember) => void;
+  /// 港の試練。undefined=読込中(何も出さない)、null=試練なし。
+  quest?: HarborQuest | null;
+  /// 試練の進捗(全員の合算・分)。導出は呼び出し側(RoomDetail)。
+  progressMinutes?: number;
+  strike?: QuestStrikeEvent | null;
 }
 
 const CAM_POS: [number, number, number] = [0.2, 2.6, 8.4];
@@ -86,6 +99,374 @@ function makeBerths(members: HarborMember[]): Berth[] {
       phase: ((hash >> 5) % 628) / 100,
     };
   });
+}
+
+// ---- 港の試練(島の手前の海獣/嵐) ----
+// 船団と島の間に立ちはだかる。進捗1/3ごとの「潮目」で縮み・薄れ、
+// 討伐で海へ帰る/晴れる。品質言語は世界と同じ(低ポリ+flatShading・フラット)。
+
+const QUEST_POS: [number, number, number] = [2.45, 0, -1.35];
+const BEAST_BODY_COLOR = "#342A5C"; // midnight系(夜の海に沈まない程度に持ち上げ)
+const BEAST_DARK_COLOR = "#241A44"; // midnight寄りの陰
+const EYE_ORANGE = "#F5822A"; // returnOrange
+
+// 潮目3段階の見た目(0=満力、2=あと少し)。しきい値通過はdampで滑らかに。
+const BEAST_PHASE_SCALE = [1.15, 0.92, 0.7];
+const BEAST_PHASE_Y = [0, -0.26, -0.55];
+const STORM_PHASE_SCALE = [1.1, 0.9, 0.7];
+const STORM_PHASE_OPACITY = [1, 0.75, 0.5];
+
+const BEAST_BODY_GEO = new THREE.SphereGeometry(0.6, 9, 7);
+const BEAST_HEAD_GEO = new THREE.ConeGeometry(0.3, 0.5, 7);
+const BEAST_EYE_GEO = new THREE.SphereGeometry(0.06, 8, 6);
+const TENT_SEG1_GEO = new THREE.CylinderGeometry(0.08, 0.14, 0.75, 6);
+const TENT_SEG2_GEO = new THREE.CylinderGeometry(0.035, 0.08, 0.6, 6);
+const TENT_TIP_GEO = new THREE.ConeGeometry(0.035, 0.3, 6);
+const CLOUD_GEO = new THREE.SphereGeometry(0.5, 8, 6);
+const STORM_VEIL_GEO = new THREE.SphereGeometry(1.7, 12, 10);
+const BOLT_GEO = new THREE.PlaneGeometry(1.0, 0.045);
+
+// 材質は色に依存しないので、ジオメトリと同じくモジュールで一度だけ作る
+// (試練は同時に1体なので、目や雲のアニメも共有インスタンスで問題ない)。
+const KRAKEN_BODY_MAT = new THREE.MeshStandardMaterial({
+  color: BEAST_BODY_COLOR,
+  flatShading: true,
+  roughness: 0.85,
+});
+const KRAKEN_DARK_MAT = new THREE.MeshStandardMaterial({
+  color: BEAST_DARK_COLOR,
+  flatShading: true,
+  roughness: 0.85,
+});
+const KRAKEN_EYE_MAT = new THREE.MeshStandardMaterial({
+  color: EYE_ORANGE,
+  emissive: new THREE.Color(EYE_ORANGE),
+  emissiveIntensity: 1.5,
+  fog: false,
+});
+const STORM_CLOUD_MAT = new THREE.MeshStandardMaterial({
+  color: "#232D42",
+  flatShading: true,
+  roughness: 0.95,
+  transparent: true,
+  emissive: new THREE.Color("#CECBF6"),
+  emissiveIntensity: 0,
+});
+const STORM_VEIL_MAT = new THREE.MeshBasicMaterial({
+  color: "#0B2028",
+  transparent: true,
+  opacity: 0.26,
+  depthWrite: false,
+});
+const STORM_RAIN_MAT = new THREE.LineBasicMaterial({
+  color: "#7FA8B8",
+  transparent: true,
+  opacity: 0.4,
+});
+
+/// 細い雨のライン(疑似ランダムだが決定的な散らし)。
+function makeRainGeometry(): THREE.BufferGeometry {
+  const pts: number[] = [];
+  for (let i = 0; i < 30; i++) {
+    const a = (i / 30) * Math.PI * 2 + (i % 5) * 0.7;
+    const r = 0.25 + (((i * 37) % 100) / 100) * 0.85;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r * 0.8;
+    const y = 0.3 + (((i * 53) % 100) / 100) * 0.75;
+    pts.push(x, y, z, x, y - 0.24, z);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+  return geo;
+}
+const RAIN_GEO = makeRainGeometry();
+
+// 触腕4本の配置角(XZ平面)。yawグループで局所+Xを放射方向へ向ける。
+const TENTACLES = [0, 1, 2, 3].map((i) => (i / 4) * Math.PI * 2 + 0.6);
+
+type DefeatStage = "none" | "running" | "done" | "quiet";
+
+/// 海獣。海面から出る胴体+頭+触腕4本。ゆっくり上下に蠢き、
+/// 潮目で縮んで沈み、討伐で深みへ帰る。命中でscaleパルスの身じろぎ。
+function Kraken({
+  phase,
+  defeating,
+  animate,
+  hitClock,
+}: {
+  phase: number;
+  defeating: boolean;
+  animate: boolean;
+  hitClock: { current: number };
+}) {
+  const root = useRef<THREE.Group>(null);
+  const tents = useRef<(THREE.Group | null)[]>([]);
+  const baseY = useRef(BEAST_PHASE_Y[phase]);
+  const baseScale = useRef(BEAST_PHASE_SCALE[phase]);
+  const invalidate = useThree((s) => s.invalidate);
+
+  // reduced-motion(demandフレーム)時: 潮目の段階へ直接置いて一度だけ描く。
+  useLayoutEffect(() => {
+    if (animate) return;
+    baseY.current = BEAST_PHASE_Y[phase];
+    baseScale.current = BEAST_PHASE_SCALE[phase];
+    const g = root.current;
+    if (g) {
+      g.position.y = baseY.current;
+      g.scale.setScalar(baseScale.current);
+    }
+    invalidate();
+  }, [phase, animate, invalidate]);
+
+  useFrame(({ clock }, delta) => {
+    if (!animate) return;
+    const time = clock.elapsedTime;
+    const g = root.current;
+    if (!g) return;
+    const lambda = defeating ? 2.0 : 1.3;
+    baseY.current = THREE.MathUtils.damp(
+      baseY.current,
+      defeating ? -2.6 : BEAST_PHASE_Y[phase],
+      lambda,
+      delta,
+    );
+    baseScale.current = THREE.MathUtils.damp(
+      baseScale.current,
+      defeating ? 0.5 : BEAST_PHASE_SCALE[phase],
+      lambda,
+      delta,
+    );
+    // 一撃の命中で身じろぎ(scaleパルス)。
+    const since = time - hitClock.current;
+    const pulse = since >= 0 && since < 0.5 ? Math.sin((since / 0.5) * Math.PI) * 0.09 : 0;
+    g.position.y = baseY.current + (defeating ? 0 : Math.sin(time * 0.5) * 0.06);
+    g.scale.setScalar(baseScale.current * (1 + pulse));
+    KRAKEN_EYE_MAT.emissiveIntensity = 1.5 + Math.sin(time * 2.4) * 0.3;
+    for (let i = 0; i < tents.current.length; i++) {
+      const tg = tents.current[i];
+      if (tg) tg.rotation.z = -0.45 + Math.sin(time * 0.55 + i * 1.7) * 0.1;
+    }
+  });
+
+  return (
+    <group position={QUEST_POS}>
+      <group ref={root}>
+        {/* 胴体(押し潰した球)+頭(円錐) */}
+        <mesh
+          geometry={BEAST_BODY_GEO}
+          material={KRAKEN_BODY_MAT}
+          position={[0, 0.28, 0]}
+          scale={[1, 0.92, 0.86]}
+        />
+        <mesh
+          geometry={BEAST_HEAD_GEO}
+          material={KRAKEN_DARK_MAT}
+          position={[0, 0.95, 0]}
+          rotation={[0.1, 0, -0.08]}
+        />
+        {/* 目: returnOrangeの小球(カメラ側) */}
+        {[-0.2, 0.2].map((x) => (
+          <mesh
+            key={x}
+            geometry={BEAST_EYE_GEO}
+            material={KRAKEN_EYE_MAT}
+            position={[x, 0.42, 0.48]}
+          />
+        ))}
+        {/* 触腕: 曲げたコーンの3節。外へ倒し、節ごとに曲げて反りを作る */}
+        {TENTACLES.map((a, i) => (
+          <group key={a} rotation={[0, -a, 0]}>
+            <group
+              ref={(g) => {
+                tents.current[i] = g;
+              }}
+              position={[0.58, -0.05, 0]}
+              rotation={[0, 0, -0.45]}
+            >
+              <mesh geometry={TENT_SEG1_GEO} material={KRAKEN_BODY_MAT} position={[0, 0.34, 0]} />
+              <group position={[0, 0.66, 0]} rotation={[0, 0, -0.5]}>
+                <mesh
+                  geometry={TENT_SEG2_GEO}
+                  material={KRAKEN_DARK_MAT}
+                  position={[0, 0.26, 0]}
+                />
+                <group position={[0, 0.52, 0]} rotation={[0, 0, -0.55]}>
+                  <mesh
+                    geometry={TENT_TIP_GEO}
+                    material={KRAKEN_DARK_MAT}
+                    position={[0, 0.12, 0]}
+                  />
+                </group>
+              </group>
+            </group>
+          </group>
+        ))}
+      </group>
+    </group>
+  );
+}
+
+/// 嵐。暗い雲の群れ+細い雨のライン+周囲の濃い膜。ゆっくり渦を巻き、
+/// 潮目で薄く小さくなり、討伐で晴れる。命中で雲が明滅する。
+const STORM_PUFFS: { p: [number, number, number]; s: [number, number, number] }[] = [
+  { p: [0, 0.08, 0], s: [1.65, 0.6, 1.15] },
+  { p: [0.62, -0.05, 0.28], s: [1.0, 0.45, 0.75] },
+  { p: [-0.6, -0.02, 0.3], s: [0.9, 0.42, 0.7] },
+  { p: [0.45, 0.02, -0.42], s: [0.95, 0.44, 0.7] },
+  { p: [-0.5, -0.06, -0.4], s: [1.05, 0.4, 0.8] },
+  { p: [0.02, -0.1, 0.55], s: [0.8, 0.36, 0.6] },
+];
+
+function StormCloud({
+  phase,
+  defeating,
+  animate,
+  hitClock,
+}: {
+  phase: number;
+  defeating: boolean;
+  animate: boolean;
+  hitClock: { current: number };
+}) {
+  const root = useRef<THREE.Group>(null);
+  const swirl = useRef<THREE.Group>(null);
+  const rain = useRef<THREE.Group>(null);
+  const baseScale = useRef(STORM_PHASE_SCALE[phase]);
+  const opacity = useRef(STORM_PHASE_OPACITY[phase]);
+  const invalidate = useThree((s) => s.invalidate);
+
+  const applyOpacity = (value: number) => {
+    STORM_CLOUD_MAT.opacity = value;
+    STORM_VEIL_MAT.opacity = 0.26 * value;
+    STORM_RAIN_MAT.opacity = 0.4 * value;
+  };
+
+  useLayoutEffect(() => {
+    if (animate) return;
+    baseScale.current = STORM_PHASE_SCALE[phase];
+    opacity.current = STORM_PHASE_OPACITY[phase];
+    root.current?.scale.setScalar(baseScale.current);
+    applyOpacity(opacity.current);
+    STORM_CLOUD_MAT.emissiveIntensity = 0;
+    invalidate();
+  }, [phase, animate, invalidate]);
+
+  useFrame(({ clock }, delta) => {
+    if (!animate) return;
+    const time = clock.elapsedTime;
+    const lambda = defeating ? 2.0 : 1.3;
+    baseScale.current = THREE.MathUtils.damp(
+      baseScale.current,
+      defeating ? 0.3 : STORM_PHASE_SCALE[phase],
+      lambda,
+      delta,
+    );
+    opacity.current = THREE.MathUtils.damp(
+      opacity.current,
+      defeating ? 0 : STORM_PHASE_OPACITY[phase],
+      lambda,
+      delta,
+    );
+    root.current?.scale.setScalar(baseScale.current);
+    if (swirl.current) swirl.current.rotation.y = time * 0.16; // ゆっくり渦を巻く
+    if (rain.current) rain.current.position.y = -1.05 - ((time * 0.5) % 0.25);
+    // 命中の明滅(emissiveの短いスパイク)。
+    const since = time - hitClock.current;
+    const flash = since >= 0 && since < 0.4 ? 1 - since / 0.4 : 0;
+    STORM_CLOUD_MAT.emissiveIntensity = flash * 0.85;
+    applyOpacity(opacity.current);
+  });
+
+  return (
+    <group ref={root} position={[QUEST_POS[0], 1.05, QUEST_POS[2]]}>
+      <group ref={swirl}>
+        {STORM_PUFFS.map((puff, i) => (
+          <mesh
+            key={i}
+            geometry={CLOUD_GEO}
+            material={STORM_CLOUD_MAT}
+            position={puff.p}
+            scale={puff.s}
+          />
+        ))}
+      </group>
+      {/* 細い雨のライン。ゆっくり落ちてループする */}
+      <group ref={rain} position={[0, -1.05, 0]}>
+        <lineSegments geometry={RAIN_GEO} material={STORM_RAIN_MAT} />
+      </group>
+      {/* 周囲だけ濃いfog感(色を落とした半透明の膜) */}
+      <mesh
+        geometry={STORM_VEIL_GEO}
+        material={STORM_VEIL_MAT}
+        position={[0, -0.35, 0]}
+        scale={[1.2, 0.7, 1]}
+      />
+    </group>
+  );
+}
+
+interface Bolt {
+  id: number;
+  from: [number, number, number];
+}
+
+/// 一撃の光。船から海獣/嵐へ、emissiveな薄いプレーンが一閃して飛ぶ。
+/// 到達時に hitClock を更新し(身じろぎ/明滅の起点)、自身を消す。
+function StrikeBolt({
+  from,
+  hitClock,
+  onDone,
+}: {
+  from: [number, number, number];
+  hitClock: { current: number };
+  onDone: () => void;
+}) {
+  const mesh = useRef<THREE.Mesh>(null);
+  const mat = useRef<THREE.MeshBasicMaterial>(null);
+  const start = useRef<number | null>(null);
+  const finished = useRef(false);
+  const path = useMemo(() => {
+    const origin = new THREE.Vector3(from[0], 0.55, from[2]);
+    const target = new THREE.Vector3(QUEST_POS[0], 0.75, QUEST_POS[2]);
+    const dir = target.clone().sub(origin).normalize();
+    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
+    return { origin, target, quat };
+  }, [from]);
+
+  useFrame(({ clock }) => {
+    if (finished.current) return;
+    const time = clock.elapsedTime;
+    if (start.current === null) start.current = time;
+    const s = (time - start.current) / 0.4;
+    if (s >= 1) {
+      finished.current = true;
+      hitClock.current = time; // 命中 → 海獣の身じろぎ/嵐の明滅
+      onDone();
+      return;
+    }
+    const m = mesh.current;
+    if (m) {
+      m.position.lerpVectors(path.origin, path.target, s);
+      m.position.y += Math.sin(Math.PI * s) * 0.35;
+      m.quaternion.copy(path.quat);
+    }
+    if (mat.current) mat.current.opacity = Math.sin(Math.PI * Math.min(s * 1.25, 1)) * 0.95;
+  });
+
+  return (
+    <mesh ref={mesh} geometry={BOLT_GEO} position={[from[0], 0.55, from[2]]}>
+      <meshBasicMaterial
+        ref={mat}
+        color="#F3C065"
+        transparent
+        opacity={0}
+        blending={THREE.AdditiveBlending}
+        depthWrite={false}
+        side={THREE.DoubleSide}
+        fog={false}
+      />
+    </mesh>
+  );
 }
 
 /// 一隻の船。位相の違う揺れ+名前ラベル+今日の灯+タップで軌跡へ。
@@ -177,22 +558,55 @@ function MemberBoat({
   );
 }
 
-/// シーン本体。夜の海+右奥の島(港名)+並走する船団。
+/// シーン本体。夜の海+右奥の島(港名)+並走する船団+試練(海獣/嵐)。
 function HarborSea({
   roomName,
   berths,
   litIds,
   animate,
   onSelect,
+  quest,
+  phase,
+  defeatStage,
+  hitClock,
+  bolts,
+  onBoltDone,
 }: {
   roomName: string;
   berths: Berth[];
   litIds: ReadonlySet<string>;
   animate: boolean;
   onSelect?: (member: HarborMember) => void;
+  quest: HarborQuest | null;
+  phase: number;
+  defeatStage: DefeatStage;
+  hitClock: { current: number };
+  bolts: Bolt[];
+  onBoltDone: (id: number) => void;
 }) {
   const camera = useThree((s) => s.camera);
   const invalidate = useThree((s) => s.invalidate);
+  const fleet = useRef<THREE.Group>(null);
+  const keyLight = useRef<THREE.DirectionalLight>(null);
+  const fillLight = useRef<THREE.DirectionalLight>(null);
+  const ambient = useRef<THREE.AmbientLight>(null);
+  // 討伐済みの港を開いたときは、最初から島に寄せた位置で描く。
+  const advance = useRef(quest?.defeatedAt ? 1 : 0);
+  const dim = useRef(1);
+  const defeatClock = useRef<number | null>(null);
+
+  const questActive = Boolean(quest) && !quest?.defeatedAt;
+  // 試練の間は海がわずかに暗く、潮目が進むごとに明るさが戻る。
+  const dimTarget = questActive ? 0.62 + phase * 0.13 : 1;
+  const advanceTarget = defeatStage === "done" || defeatStage === "quiet" ? 1 : 0;
+
+  const applyQuestLook = () => {
+    if (keyLight.current) keyLight.current.intensity = 1.15 * dim.current;
+    if (fillLight.current) fillLight.current.intensity = 0.2 * dim.current;
+    if (ambient.current) ambient.current.intensity = 0.45 * (0.6 + 0.4 * dim.current);
+    // 討伐後、船団は島へ向けて滑走する(島の方向へ平行移動)。
+    fleet.current?.position.set(advance.current * 1.5, 0, advance.current * -0.7);
+  };
 
   // 固定の斜め視点(VoyageSceneと同じ作法)。スクロール中の帯なので
   // OrbitControlsは使わない — タッチ回転が縦スクロールを塞ぐため。
@@ -201,14 +615,39 @@ function HarborSea({
     invalidate();
   }, [camera, invalidate]);
 
+  // reduced-motion時はジャンプカット: 目標値へ直接置いて一度だけ描く。
+  useLayoutEffect(() => {
+    if (animate) return;
+    dim.current = dimTarget;
+    advance.current = advanceTarget;
+    applyQuestLook();
+    invalidate();
+  });
+
+  useFrame(({ clock }, delta) => {
+    if (!animate) return;
+    const time = clock.elapsedTime;
+    // 討伐の瞬間を覚えて、光をふわっと明るくする(沈み切った後に軽く上振れ)。
+    if (defeatStage === "running" && defeatClock.current === null) defeatClock.current = time;
+    if (defeatStage === "none") defeatClock.current = null;
+    let target = dimTarget;
+    if (defeatClock.current !== null) {
+      const dt = time - defeatClock.current;
+      if (dt > 1.8 && dt < 3.6) target = 1.22;
+    }
+    dim.current = THREE.MathUtils.damp(dim.current, target, 1.6, delta);
+    advance.current = THREE.MathUtils.damp(advance.current, advanceTarget, 0.9, delta);
+    applyQuestLook();
+  });
+
   return (
     <>
       <color attach="background" args={[NIGHT_BG]} />
       <fog attach="fog" args={[NIGHT_BG, 12, 30]} />
       {/* 月光: VoyageSceneと同じトーン。影は使わない。 */}
-      <ambientLight color="#ffe9c8" intensity={0.45} />
-      <directionalLight color="#EADEBD" intensity={1.15} position={[-6, 8, -5]} />
-      <directionalLight color="#5DCAA5" intensity={0.2} position={[5, 3, 6]} />
+      <ambientLight ref={ambient} color="#ffe9c8" intensity={0.45} />
+      <directionalLight ref={keyLight} color="#EADEBD" intensity={1.15} position={[-6, 8, -5]} />
+      <directionalLight ref={fillLight} color="#5DCAA5" intensity={0.2} position={[5, 3, 6]} />
       <Stars
         radius={42}
         depth={18}
@@ -234,21 +673,57 @@ function HarborSea({
       >
         <div className="harbor-world-island">{roomName}</div>
       </Html>
-      {berths.map((berth) => (
-        <MemberBoat
-          key={berth.member.id}
-          berth={berth}
-          lit={litIds.has(berth.member.id)}
-          animate={animate}
-          onSelect={onSelect}
+      {/* 試練: 船団と島の間の海獣/嵐。討伐アニメの間は残して沈める/晴らす。 */}
+      {quest &&
+        (!quest.defeatedAt || defeatStage === "running") &&
+        (quest.kind === "storm" ? (
+          <StormCloud
+            phase={phase}
+            defeating={defeatStage === "running"}
+            animate={animate}
+            hitClock={hitClock}
+          />
+        ) : (
+          <Kraken
+            phase={phase}
+            defeating={defeatStage === "running"}
+            animate={animate}
+            hitClock={hitClock}
+          />
+        ))}
+      {bolts.map((bolt) => (
+        <StrikeBolt
+          key={bolt.id}
+          from={bolt.from}
+          hitClock={hitClock}
+          onDone={() => onBoltDone(bolt.id)}
         />
       ))}
+      {/* 船団。討伐後はグループごと島へ滑走する。 */}
+      <group ref={fleet}>
+        {berths.map((berth) => (
+          <MemberBoat
+            key={berth.member.id}
+            berth={berth}
+            lit={litIds.has(berth.member.id)}
+            animate={animate}
+            onSelect={onSelect}
+          />
+        ))}
+      </group>
     </>
   );
 }
 
-/// みんなの海。260pxの横長Canvas+写真ボタン+灯の一行。
-export default function HarborWorld({ room, members, onSelectMember }: HarborWorldProps) {
+/// みんなの海。260pxの横長Canvas+写真ボタン+灯の一行+港の試練。
+export default function HarborWorld({
+  room,
+  members,
+  onSelectMember,
+  quest,
+  progressMinutes = 0,
+  strike,
+}: HarborWorldProps) {
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
@@ -256,6 +731,57 @@ export default function HarborWorld({ room, members, onSelectMember }: HarborWor
   const glRef = useRef<RootState | null>(null);
   const [flash, setFlash] = useState(false);
   const flashTimer = useRef<number | undefined>(undefined);
+
+  // ---- 港の試練: 潮目・討伐の段階・一撃 ----
+  const target = quest?.targetMinutes ?? 0;
+  const ratio = quest && target > 0 ? Math.min(progressMinutes / target, 1) : 0;
+  const phase = ratio >= 2 / 3 ? 2 : ratio >= 1 / 3 ? 1 : 0;
+  const questActive = Boolean(quest) && !quest?.defeatedAt;
+
+  // 討伐の段階。マウント中に defeatedAt が付いた瞬間だけ演出を流す
+  // (最初から討伐済みの港では静かに"quiet")。
+  const [defeatStage, setDefeatStage] = useState<DefeatStage>("none");
+  const prevDefeated = useRef<boolean | null>(null);
+  const defeatTimers = useRef<number[]>([]);
+  useEffect(() => {
+    if (quest === undefined) return; // 読込中は判定しない
+    const defeated = Boolean(quest?.defeatedAt);
+    if (prevDefeated.current === null) {
+      prevDefeated.current = defeated;
+      if (defeated) setDefeatStage("quiet");
+      return;
+    }
+    if (defeated === prevDefeated.current) return;
+    prevDefeated.current = defeated;
+    if (!defeated) {
+      // 新たな試練(旧questの削除→作成)で演出をリセット。旧questの
+      // 討伐タイマーが残っていると後から stage を上書きするので取り消す。
+      defeatTimers.current.forEach((id) => window.clearTimeout(id));
+      defeatTimers.current.length = 0;
+      setDefeatStage("none");
+      return;
+    }
+    if (!animate) {
+      // reduced-motion: 沈む/晴れるはジャンプカットし、帯だけ見せる。
+      setDefeatStage("done");
+      defeatTimers.current.push(window.setTimeout(() => setDefeatStage("quiet"), 7000));
+      return;
+    }
+    setDefeatStage("running"); // 海獣が沈む/嵐が晴れる(約2.2秒)
+    defeatTimers.current.push(
+      window.setTimeout(() => setDefeatStage("done"), 2200),
+      window.setTimeout(() => setDefeatStage("quiet"), 9500),
+    );
+  }, [quest, animate]);
+  useEffect(() => {
+    const timers = defeatTimers.current;
+    return () => timers.forEach((id) => window.clearTimeout(id));
+  }, []);
+
+  // 一撃: 新しい着岸/帰還(strike)ごとに、その船から一閃を飛ばす。
+  const [bolts, setBolts] = useState<Bolt[]>([]);
+  const hitClock = useRef(-10);
+  const lastStrikeSeq = useRef(0);
 
   // スクロールで画面外に出たらrAFループを止める(VoyageSceneと同じ作法)。
   const [visible, setVisible] = useState(true);
@@ -271,6 +797,18 @@ export default function HarborWorld({ room, members, onSelectMember }: HarborWor
   useEffect(() => () => window.clearTimeout(flashTimer.current), []);
 
   const berths = useMemo(() => makeBerths(members), [members]);
+
+  // 一撃の発火。試練が有効な間だけ。専用の短い生成音を添える。
+  useEffect(() => {
+    if (!strike || strike.seq === lastStrikeSeq.current) return;
+    lastStrikeSeq.current = strike.seq;
+    if (!quest || quest.defeatedAt) return;
+    playStrike();
+    if (!animate) return; // reduced-motion: 一閃は省略(ジャンプカット)
+    const berth = berths.find((b) => b.member.id === strike.uid);
+    if (!berth) return;
+    setBolts((list) => [...list.slice(-3), { id: strike.seq, from: [berth.x, 0, berth.z] }]);
+  }, [strike, quest, animate, berths]);
 
   // 今日の灯: 各メンバーの当月ペイロードを読み、今日が含まれる船に灯をともす。
   const [litIds, setLitIds] = useState<ReadonlySet<string>>(new Set());
@@ -360,8 +898,49 @@ export default function HarborWorld({ room, members, onSelectMember }: HarborWor
             litIds={litIds}
             animate={animate}
             onSelect={onSelectMember}
+            quest={quest ?? null}
+            phase={phase}
+            defeatStage={defeatStage}
+            hitClock={hitClock}
+            bolts={bolts}
+            onBoltDone={(id) => setBolts((list) => list.filter((b) => b.id !== id))}
           />
         </Canvas>
+        {/* 試練の進捗(潮目3分割のバー+残り)。個人の内訳や順位は出さない。 */}
+        {questActive && quest && (
+          <div className="trial-bar">
+            <div
+              className="trial-segs"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={quest.targetMinutes}
+              aria-valuenow={Math.min(progressMinutes, quest.targetMinutes)}
+            >
+              {[0, 1, 2].map((i) => (
+                <span key={i} className="trial-seg">
+                  <span
+                    className="trial-seg-fill"
+                    style={{
+                      width: `${Math.round(Math.min(Math.max(ratio * 3 - i, 0), 1) * 100)}%`,
+                    }}
+                  />
+                </span>
+              ))}
+            </div>
+            <span className="trial-remaining">
+              {questRemainingLabel(quest.targetMinutes - progressMinutes)}
+            </span>
+          </div>
+        )}
+        {/* 討伐の帯。世界の上にふわっと現れる一枚+戦利品の告知。 */}
+        {defeatStage === "done" && quest && (
+          <div className="trial-defeat" role="status">
+            <div className="trial-defeat-title">
+              {t(quest.kind === "storm" ? "questDefeatStorm" : "questDefeatKraken")}
+            </div>
+            <div className="trial-defeat-sub">{t("questLootNotice")}</div>
+          </div>
+        )}
         <button
           className="harbor-world-camera"
           onClick={takePhoto}

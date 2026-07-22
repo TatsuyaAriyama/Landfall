@@ -2267,6 +2267,127 @@ textarea {
   }
 }
 
+/* ---- 港の試練(みんなの海の上のUI) ---- */
+
+/* 進捗バー(潮目3分割)。世界の下辺に細く。写真ボタンは避ける。 */
+.trial-bar {
+  position: absolute;
+  left: 12px;
+  right: 54px;
+  bottom: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.trial-segs {
+  flex: 1;
+  display: flex;
+  gap: 5px;
+}
+
+.trial-seg {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #eadebd 18%, transparent);
+  overflow: hidden;
+}
+
+.trial-seg-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--harbor-sand);
+  transition: width 0.6s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trial-seg-fill {
+    transition: none;
+  }
+}
+
+.trial-remaining {
+  flex: none;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--harbor-sand) 85%, transparent);
+  background: color-mix(in srgb, #123830 55%, transparent);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 討伐の帯。世界の中央にふわっと現れる一枚。 */
+.trial-defeat {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  padding: 14px 18px;
+  text-align: center;
+  background: color-mix(in srgb, #0d2a24 74%, transparent);
+  pointer-events: none;
+  animation: trial-defeat-in 0.9s ease-out both;
+}
+
+@keyframes trial-defeat-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trial-defeat {
+    animation: none;
+  }
+}
+
+.trial-defeat-title {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  color: var(--harbor-sand);
+}
+
+.trial-defeat-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--harbor-sand) 75%, transparent);
+}
+
+/* 試練の開始パネル/討伐済の行(世界の下) */
+.quest-panel {
+  margin-top: 14px;
+}
+
+.quest-intro {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: color-mix(in srgb, var(--ink) 60%, transparent);
+}
+
+.quest-hours-field {
+  width: 92px;
+  min-height: 36px;
+  padding: 4px 12px;
+  font-size: 14px;
+}
+
+.quest-done-row {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 /* 灯の説明の一行 */
 .harbor-world-hint {
   margin: 8px 2px 0;
