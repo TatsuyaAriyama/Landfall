@@ -697,6 +697,18 @@ textarea {
 .dot-day.studied {
   background: var(--sea-green);
   color: var(--ink-fixed);
+  cursor: pointer;
+  transition: transform 0.12s ease-out;
+}
+
+/* カーソルを当てるとサークルが浮かび上がる。押すとその日の詳細が開く。 */
+.dot-day.studied:hover {
+  transform: scale(1.16);
+}
+
+.dot-day.selected {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
 /* 記録行の削除。文字ではなく「−」の丸(フラット・角丸の世界観に合わせる)。 */

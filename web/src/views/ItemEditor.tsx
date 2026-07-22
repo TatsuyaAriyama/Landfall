@@ -9,6 +9,7 @@ import {
   type StudyItem,
 } from "../types";
 import { deleteItemDeep, saveItem, type UserData } from "../data";
+import { publishCurrentMonth } from "../harbor";
 import { TileSymbolSvg } from "../symbols";
 import { Modal, askConfirm, showToast } from "../overlays";
 import { t } from "../i18n";
@@ -54,6 +55,17 @@ export function ItemEditor({
       sortOrder: item?.sortOrder ?? nextSortOrder,
       createdAt: item?.createdAt,
     });
+    // 既存項目の名前・見た目の変更は、港へ共有済みの月間記録(非正規化された
+    // itemName/styleToken/symbolToken)にも必ず反映する。
+    if (item) {
+      await publishCurrentMonth({
+        items: data.items.map((i) =>
+          i.id === item.id ? { ...i, name: trimmed, styleToken, symbolToken } : i,
+        ),
+        sessions: data.sessions,
+        days: data.days,
+      }).catch(() => {});
+    }
     showToast(t("savedToast"));
     onClose();
   };

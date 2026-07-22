@@ -69,6 +69,7 @@ export interface HarborMember {
 export interface SharedSession {
   day: number;
   minutes: number;
+  date?: Date; // 記録時刻(ペイロードに含まれる場合のみ)
   note?: string;
   itemName?: string;
   styleToken: string;
@@ -334,6 +335,7 @@ export async function fetchMonth(
       day: Number(s.day ?? 0),
       minutes: Number(s.minutes ?? 0),
       note: typeof s.note === "string" ? s.note : undefined,
+      date: s.date instanceof Timestamp ? s.date.toDate() : undefined,
       itemName: typeof s.itemName === "string" ? s.itemName : undefined,
       styleToken: typeof s.styleToken === "string" ? s.styleToken : "midnight",
       symbolToken: typeof s.symbolToken === "string" ? s.symbolToken : "compass",

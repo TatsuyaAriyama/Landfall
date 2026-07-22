@@ -4,8 +4,8 @@ import {
   type HarborMember,
   type SharedMonth,
 } from "../harbor";
-import { STYLE_COLORS, normalizeStyle } from "../types";
-import { PlayerAvatar } from "../symbols";
+import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
+import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { lang, t } from "../i18n";
 
 /// 港のメンバーの月間の軌跡。学んだ日と、日ごとの記録(項目・分・ひとこと)。
@@ -26,12 +26,15 @@ export function MemberTrace({
   const [month, setMonth] = useState(now.getMonth()); // 0-based
   const [data, setData] = useState<SharedMonth | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // 全日展開はしない。選んだ日だけ詳細を見せる(プライバシーと見やすさの両立)。
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
   const ym = `${year}-${String(month + 1).padStart(2, "0")}`;
 
   useEffect(() => {
     let alive = true;
     setLoaded(false);
+    setSelectedDay(null);
     fetchMonth(root, containerId, member.id, ym).then((m) => {
       if (alive) {
         setData(m);
@@ -52,15 +55,10 @@ export function MemberTrace({
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const studied = useMemo(() => new Set(data?.days ?? []), [data]);
 
-  const sessionsByDay = useMemo(() => {
-    const map = new Map<number, NonNullable<SharedMonth["sessions"]>>();
-    for (const s of data?.sessions ?? []) {
-      const list = map.get(s.day) ?? [];
-      list.push(s);
-      map.set(s.day, list);
-    }
-    return [...map.entries()].sort((a, b) => b[0] - a[0]);
-  }, [data]);
+  const daySessions = useMemo(
+    () => (selectedDay ? (data?.sessions ?? []).filter((s) => s.day === selectedDay) : []),
+    [data, selectedDay],
+  );
 
   const shift = (delta: number) => {
     const d = new Date(year, month + delta, 1);
@@ -101,49 +99,77 @@ export function MemberTrace({
         <p className="empty-note">{t("loading")}</p>
       ) : (
         <>
+          {/* 学んだ日はホバーで浮かび、押すとその日だけ詳細が開く(全展開しない)。 */}
           <div className="dot-grid">
-            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => (
-              <span
-                key={day}
-                className={`dot-day${studied.has(day) ? " studied" : ""}`}
-              >
-                {day}
-              </span>
-            ))}
+            {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+              const has = studied.has(day);
+              return (
+                <button
+                  key={day}
+                  className={`dot-day${has ? " studied" : ""}${
+                    selectedDay === day ? " selected" : ""
+                  }`}
+                  disabled={!has}
+                  onClick={() => setSelectedDay(selectedDay === day ? null : day)}
+                >
+                  {day}
+                </button>
+              );
+            })}
           </div>
 
-          {sessionsByDay.length === 0 ? (
+          {studied.size === 0 ? (
             <p className="empty-note" style={{ marginTop: 20 }}>
               {t("noDayRecords")}
             </p>
+          ) : selectedDay === null ? (
+            <p className="empty-note" style={{ marginTop: 20 }}>
+              {t("tapDayHint")}
+            </p>
           ) : (
-            sessionsByDay.map(([day, sessions]) => (
-              <div key={day}>
-                <p className="section-label">
-                  {new Intl.DateTimeFormat(lang, { month: "long", day: "numeric" }).format(
-                    new Date(year, month, day),
-                  )}
-                </p>
-                <div className="rows">
-                  {sessions.map((s, i) => {
-                    const style = STYLE_COLORS[normalizeStyle(s.styleToken)];
-                    return (
-                      <div key={i} className="row">
-                        <span className="row-dot" style={{ background: style.bg }} />
-                        <div className="row-main">
-                          <div className="row-title">{s.itemName ?? "—"}</div>
-                          {s.note && <div className="row-sub">{s.note}</div>}
-                        </div>
-                        <span className="row-minutes">
-                          {s.minutes}
-                          {t("minutesUnit")}
-                        </span>
+            <div>
+              <p className="section-label">
+                {new Intl.DateTimeFormat(lang, { month: "long", day: "numeric" }).format(
+                  new Date(year, month, selectedDay),
+                )}
+              </p>
+              <div className="rows">
+                {daySessions.map((s, i) => {
+                  const style = STYLE_COLORS[normalizeStyle(s.styleToken)];
+                  const time = s.date
+                    ? `${String(s.date.getHours()).padStart(2, "0")}:${String(
+                        s.date.getMinutes(),
+                      ).padStart(2, "0")}`
+                    : "";
+                  return (
+                    <div key={i} className="row">
+                      {/* 項目タイルと同じ絵柄。色の点だけでは項目が判別できない。 */}
+                      <span className="row-tile" style={{ background: style.bg }}>
+                        <TileSymbolSvg
+                          symbol={normalizeSymbol(s.symbolToken)}
+                          fg={style.fg}
+                          bg={style.bg}
+                        />
+                      </span>
+                      <div className="row-main">
+                        <div className="row-title">{s.itemName ?? "—"}</div>
+                        {(time || s.note) && (
+                          <div className="row-sub">
+                            {time && <span className="row-time">{time}</span>}
+                            {time && s.note ? " · " : ""}
+                            {s.note ?? ""}
+                          </div>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
+                      <span className="row-minutes">
+                        {s.minutes}
+                        {t("minutesUnit")}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-            ))
+            </div>
           )}
         </>
       )}
