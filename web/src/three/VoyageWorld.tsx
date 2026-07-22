@@ -471,23 +471,6 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     requestClose();
   };
 
-  // 完了ゴールの達成。ここだけは記録からではなく本人の申告で刻む
-  // (achievedAtはDestinationsSectionのreached監視が書く。ここではmanualDoneだけ立てる)。
-  const markDone = async () => {
-    if (!dest || working) return;
-    setWorking(true);
-    await saveDestination(uid, {
-      id: dest.id,
-      name: trimmed || dest.name,
-      itemUUID,
-      targetDate: dateStr ? new Date(`${dateStr}T00:00:00`) : undefined,
-      manual: true,
-      manualDone: true,
-      createdAt: dest.createdAt,
-    });
-    requestClose();
-  };
-
   const remove = async () => {
     if (!dest || working) return;
     confirmingRef.current = true;
@@ -645,11 +628,6 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
           </div>
 
           <div style={{ height: 18 }} />
-          {dest && kind === "done" && !dest.manualDone && (
-            <button className="complete-button" onClick={markDone} disabled={working}>
-              {t("markDone")}
-            </button>
-          )}
           <button
             className="primary-button"
             onClick={save}

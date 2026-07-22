@@ -170,7 +170,7 @@ const ja = {
   goalHours: "累計時間",
   goalDate: "期日",
   goalDone: "完了",
-  goalDoneDesc: "時間や日数では測れないもの向け。終わったら「完了にする」を押そう。",
+  goalDoneDesc: "時間や日数では測れないもの向け。終わったら、一覧のカードにあるチェックで完了にしよう。",
   optionalDateLabel: "締切(任意)",
   markDone: "完了にする",
   markDoneConfirm: "この目的地を完了にしますか。",
@@ -423,7 +423,8 @@ const en: Record<I18nKey, string> = {
   goalHours: "Total hours",
   goalDate: "Target date",
   goalDone: "Done",
-  goalDoneDesc: "For things hours or days can't measure. Tap “Mark complete” when it's finished.",
+  goalDoneDesc:
+    "For things hours or days can't measure. When it's done, mark it complete with the check on the card in the list.",
   optionalDateLabel: "Deadline (optional)",
   markDone: "Mark complete",
   markDoneConfirm: "Mark this destination complete?",
