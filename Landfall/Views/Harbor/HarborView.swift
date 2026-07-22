@@ -21,6 +21,9 @@ struct HarborView: View {
     /// 招待リンクから受け取ったコード(参加シートに引き渡す)。
     @StateObject private var router = DeepLinkRouter.shared
     @State private var incomingCode: String?
+    /// パブリックの港(公式5港)。
+    @StateObject private var publicService = PublicHarborService.shared
+    @State private var navPath = NavigationPath()
 
     // 自分のプレイヤーカード(ローカル先行)。編集の保存で更新される。
     @AppStorage(PlayerProfile.nameKey) private var playerName = ""
@@ -29,7 +32,7 @@ struct HarborView: View {
     @AppStorage(PlayerProfile.resolveKey) private var playerResolve = ""
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     CardKicker(text: "Harbor", color: LFColor.ink.opacity(0.55))
@@ -55,6 +58,32 @@ struct HarborView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.top, 20)
+
+                    // ---- パブリック(公式の5港。個人は並ばず、潮だけが見える) ----
+                    Text("Public")
+                        .font(LFFont.label(13))
+                        .tracking(1)
+                        .foregroundStyle(LFColor.ink.opacity(0.5))
+                        .padding(.top, 32)
+
+                    VStack(spacing: 0) {
+                        ForEach(PublicHarbor.all) { harbor in
+                            if harbor.slug != PublicHarbor.all.first?.slug {
+                                Rectangle()
+                                    .fill(LFColor.ink.opacity(0.08))
+                                    .frame(height: 1)
+                            }
+                            publicRow(harbor)
+                        }
+                    }
+                    .padding(.top, 6)
+
+                    // ---- プライベート(招待コードの小さな港・最大4人) ----
+                    Text("Private")
+                        .font(LFFont.label(13))
+                        .tracking(1)
+                        .foregroundStyle(LFColor.ink.opacity(0.5))
+                        .padding(.top, 36)
 
                     if !auth.isSignedIn {
                         Text("Sign in to enter a harbor.")
@@ -82,6 +111,12 @@ struct HarborView: View {
             .background(LFColor.paper)
             .navigationDestination(for: MemberTraceKey.self) { key in
                 MemberTraceView(roomId: key.roomId, member: key.member)
+            }
+            .navigationDestination(for: PublicHarbor.self) { harbor in
+                PublicHarborView(harbor: harbor)
+            }
+            .navigationDestination(for: HarborRoom.self) { room in
+                HarborChatView(room: room)
             }
         }
         .task { await reload() }
@@ -134,6 +169,11 @@ struct HarborView: View {
             if ProcessInfo.processInfo.environment["LANDFALL_PROFILE"] == "1" {
                 editingProfile = true
             }
+            // 動作確認用: LANDFALL_PUBLIC=<slug> でパブリックの港の中を直接開く。
+            if let slug = ProcessInfo.processInfo.environment["LANDFALL_PUBLIC"],
+               let harbor = PublicHarbor.by(slug: slug) {
+                navPath.append(harbor)
+            }
             #endif
         }
     }
@@ -145,7 +185,52 @@ struct HarborView: View {
         }
         // 港に入っている間は、開くたびに自分の当月を公開し直す(取りこぼし防止)。
         service.publishCurrentMonth(context: modelContext)
+        await publicService.refresh()
         hasLoaded = true
+    }
+
+    // MARK: - パブリックの港ひとつぶん
+
+    private func publicRow(_ harbor: PublicHarbor) -> some View {
+        NavigationLink(value: harbor) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(harbor.style.background)
+                    TileSymbolView(symbol: harbor.symbol, fg: harbor.style.foreground, bg: harbor.style.background)
+                        .frame(width: 22, height: 22)
+                }
+                .frame(width: 38, height: 38)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(harbor.title)
+                            .font(LFFont.copy(17))
+                            .foregroundStyle(LFColor.ink)
+                        if publicService.joined.contains(harbor.slug) {
+                            Text("In harbor")
+                                .font(LFFont.label(11))
+                                .foregroundStyle(LFColor.returnOrange)
+                        }
+                    }
+                    Text(harbor.tagline)
+                        .font(LFFont.label(12))
+                        .foregroundStyle(LFColor.ink.opacity(0.45))
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if let n = publicService.todaySail[harbor.slug], n > 0 {
+                    Text("\(n)")
+                        .font(LFFont.number(15))
+                        .foregroundStyle(LFColor.ink.opacity(0.5))
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(LFColor.ink.opacity(0.25))
+            }
+            .padding(.vertical, 12)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - 空の状態
@@ -224,6 +309,25 @@ struct HarborView: View {
                 .accessibilityLabel(Text("Invite code \(room.id)"))
                 .accessibilityHint(Text("Share"))
             }
+
+            // みんなの航海(チャット)。言葉と、着岸/帰還の自動の行がひとつの流れになる。
+            NavigationLink(value: room) {
+                HStack(spacing: 10) {
+                    Image(systemName: "bubble.left")
+                        .font(.system(size: 15, weight: .regular))
+                        .foregroundStyle(LFColor.ink.opacity(0.6))
+                    Text("The voyage together")
+                        .font(LFFont.copy(16))
+                        .foregroundStyle(LFColor.ink)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(LFColor.ink.opacity(0.25))
+                }
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
             VStack(spacing: 0) {
                 let members = membersByRoom[room.id] ?? []

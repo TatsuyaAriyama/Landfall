@@ -235,3 +235,54 @@
 
 /* おかえりの瞬間の共有(帰還時のみ) */
 "Keep this return." = "この帰りを、一枚に。";
+
+/* 港: パブリック/プライベート */
+"Public" = "パブリック";
+"Private" = "プライベート";
+"In harbor" = "入港中";
+
+/* パブリックの5港 */
+"Languages" = "語学";
+"Certifications" = "資格";
+"Students" = "学生";
+"Reading" = "読書";
+"Making" = "制作";
+"Miss a day, and the words still wait for you." = "毎日じゃなくていい。また戻れば、言葉は続く。";
+"A long voyage to the pass line, never alone." = "合格までの長い航海を、ひとりにしない。";
+"A harbor you can always come back to, all through school." = "学生でいるあいだ、ずっと帰れる港。";
+"Books you read and books you piled — both belong here." = "積んだ本も、読んだ本も、どちらもここに。";
+"The days your hands rested still count as making." = "手を止めた日も、つくる人のうち。";
+
+/* パブリックの港の中 */
+"Today, %lld set sail here." = "今日、%lld隻がこの港から海に出ています。";
+"The sea is calm today." = "今日は、凪いでいます。";
+"This month's tide" = "今月の潮";
+"The tide rises as sailors set out." = "誰かが海に出ると、潮が満ちていきます。";
+"Join this harbor" = "この港に入る";
+"Your days will stop counting into this tide. You can rejoin anytime." = "あなたの日々は、この潮に数えられなくなります。いつでも戻れます。";
+"No names appear here — only the harbor's tide." = "ここに個人の名前は出ません。港ぜんたいの潮だけが見えます。";
+"On days you rest, the tide just ebbs. That's all." = "休んだ日は、潮が引くだけ。それだけのことです。";
+
+/* プライベートのチャット */
+"The voyage together" = "みんなの航海";
+"Records land here on their own. Words are optional." = "記録はひとりでに流れ着きます。言葉は、添えたいときだけ。";
+"A word to the harbor (optional)" = "港にひとこと(任意)";
+"Send" = "送る";
+"%@ made landfall — %@, %@" = "%1$@が着岸 — %2$@、%3$@";
+"%@ returned — first sail in %lld days." = "%1$@が帰還 — %2$lld日ぶりの航海。";
+"I see you." = "見てるよ。";
+"Rest easy." = "ゆっくり休んで。";
+
+/* 通報・ブロック */
+"Report this message?" = "この発言を通報しますか?";
+"Report" = "通報する";
+"This sends the message to the developer for review." = "この発言が開発者に送られ、確認されます。";
+"Block this sailor?" = "この船乗りをブロックしますか?";
+"Block" = "ブロックする";
+"Block this sailor" = "この船乗りをブロック";
+"You won't see their messages anymore. They won't be told." = "この人の発言が見えなくなります。相手に通知はされません。";
+
+/* 港の上限 */
+"This harbor is full (up to 4 sailors)." = "この港は満員です(4人まで)。";
+"You can be in up to 3 harbors." = "入れる港は、3つまでです。";
+"You can open one harbor. Yours is already out there." = "ひらける港は、ひとつまで。あなたの港が、もう海のどこかにあります。";
