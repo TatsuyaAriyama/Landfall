@@ -6,7 +6,8 @@ import { TraceView } from "./views/TraceView";
 import { HarborView } from "./views/HarborView";
 import { LogbookView } from "./views/LogbookView";
 import { SettingsDialog } from "./views/SettingsDialog";
-import { BrandMark } from "./symbols";
+import { BoatSvg, BrandMark, TileSymbolSvg } from "./symbols";
+import type { ReactNode } from "react";
 import { OfflineWatcher, OverlayHost } from "./overlays";
 import { t } from "./i18n";
 import { demoData, isDemo } from "./demo";
@@ -56,37 +57,30 @@ function Main({ uid }: { uid: string }) {
         </button>
       </header>
 
+      {/* タブ。航海の語彙のアイコン+水平線のような選択インジケータ。
+          モバイルでは画面下のタブバー(アイコン+小ラベルの縦積み)になる。 */}
       <nav className="tabs">
-        <button
-          className={`tab${tab === "today" ? " selected" : ""}`}
-          onClick={() => setTab("today")}
-        >
-          {t("today")}
-        </button>
-        <button
-          className={`tab${tab === "trace" ? " selected" : ""}`}
-          onClick={() => setTab("trace")}
-        >
-          {t("trace")}
-        </button>
-        <button
-          className={`tab${tab === "logbook" ? " selected" : ""}`}
-          onClick={() => setTab("logbook")}
-        >
-          {t("logbook")}
-        </button>
-        <button
-          className={`tab${tab === "boat" ? " selected" : ""}`}
-          onClick={() => setTab("boat")}
-        >
-          {t("boatTab")}
-        </button>
-        <button
-          className={`tab${tab === "harbor" ? " selected" : ""}`}
-          onClick={() => setTab("harbor")}
-        >
-          {t("harbor")}
-        </button>
+        {(
+          [
+            ["today", t("today"), <TileSymbolSvg symbol="wheel" fg="currentColor" bg="var(--paper)" />],
+            ["trace", t("trace"), <TileSymbolSvg symbol="compass" fg="currentColor" bg="var(--paper)" />],
+            ["logbook", t("logbook"), <TileSymbolSvg symbol="book" fg="currentColor" bg="var(--paper)" />],
+            ["boat", t("boatTab"), <BoatSvg sail="currentColor" hull="currentColor" />],
+            ["harbor", t("harbor"), <TileSymbolSvg symbol="lighthouse" fg="currentColor" bg="var(--paper)" />],
+          ] as [Tab, string, ReactNode][]
+        ).map(([key, label, icon]) => (
+          <button
+            key={key}
+            className={`tab${tab === key ? " selected" : ""}`}
+            onClick={() => setTab(key)}
+            aria-current={tab === key ? "page" : undefined}
+          >
+            <span className="tab-icon" aria-hidden="true">
+              {icon}
+            </span>
+            <span className="tab-label">{label}</span>
+          </button>
+        ))}
       </nav>
 
       {!data.ready ? (

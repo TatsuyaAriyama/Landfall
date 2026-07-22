@@ -98,25 +98,56 @@ textarea {
   display: block;
 }
 
+/* タブ。枠のあるピルをやめ、航海のアイコン+水平線のインジケータで静かに示す。 */
 .tabs {
   display: flex;
-  gap: 8px;
-  padding: 12px 0 28px;
+  gap: 28px;
+  padding: 6px 0 24px;
 }
 
 .tab {
-  font-size: 15px;
-  padding: 0 16px;
-  min-height: 40px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
-  color: var(--ink);
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 2px;
+  font-size: 14px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--ink) 45%, transparent);
+  transition: color 0.15s ease-out;
+}
+
+.tab:hover {
+  color: color-mix(in srgb, var(--ink) 75%, transparent);
 }
 
 .tab.selected {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: transparent;
+  color: var(--ink);
+}
+
+/* 選択中の印: 帰還オレンジの小さな水平線。 */
+.tab.selected::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  bottom: 3px;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--return-orange);
+}
+
+.tab-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  flex: none;
+}
+
+.tab-icon svg {
+  width: 100%;
+  height: 100%;
 }
 
 .quiet-button {
@@ -1088,16 +1119,36 @@ textarea {
     right: 0;
     bottom: 0;
     margin: 0;
-    padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+    gap: 0;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
     background: var(--paper);
     border-top: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
     justify-content: space-around;
     z-index: 4;
   }
 
+  /* 親指圏のタブバー: アイコンの上下積み+小ラベル。 */
   .tab {
     flex: 1;
-    text-align: center;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    min-height: 52px;
+    padding: 2px 0;
+    font-size: 10.5px;
+    font-weight: 400;
+  }
+
+  .tab-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .tab.selected::after {
+    left: 50%;
+    transform: translateX(-50%);
+    width: 18px;
+    bottom: 0;
   }
 
   .shell {
