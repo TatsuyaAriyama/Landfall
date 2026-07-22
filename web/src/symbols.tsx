@@ -151,9 +151,8 @@ export function LandfallMark() {
   );
 }
 
-// iOS の SignInView「港の情景」を移植。凪の水面・迎える海岸・入港する帆船。
-// 帆船と海岸はアイコン(LandfallShape)の1024座標から切り出したシェイプ。
-// harborTeal 地に harborSand 塗り、フラットのみ。
+// サインイン画面「夜の入港」の部品。帆船と海岸はアイコン(LandfallShape)の
+// 1024座標から切り出したシェイプ。harborTeal 地に harborSand 塗り、フラットのみ。
 
 const SAIL = "M318 386 Q376 524 404 668 L302 668 Q300 522 318 386 Z";
 const HULL = "M215 650 Q320 646 404 700 Q300 778 215 650 Z";
@@ -161,33 +160,21 @@ const COAST =
   "M430 748 Q452 512 556 386 Q590 350 624 386 Q676 486 705 612 " +
   "Q742 548 788 524 Q832 642 852 748 L430 748 Z";
 
-export function HarborScene() {
-  const sand = "#EADEBD";
-  // 座標系は iOS の harborScene(w=360, h=300, seaLineY=h*0.72=216)に合わせる。
+/// 入港する帆船(帆+船体)。
+export function BoatSvg() {
   return (
-    <svg
-      viewBox="0 0 360 300"
-      className="harbor-scene"
-      preserveAspectRatio="xMidYMid meet"
-      aria-hidden="true"
-    >
-      {/* 凪の水面 */}
-      <rect x="21.6" y="212" width="259.2" height="8" rx="4" fill={sand} fillOpacity="0.3" />
-      <rect x="57.6" y="242.5" width="144" height="7" rx="3.5" fill={sand} fillOpacity="0.2" />
-      <rect x="118.4" y="270" width="79.2" height="6" rx="3" fill={sand} fillOpacity="0.13" />
+    <svg viewBox="215 386 190 351" aria-hidden="true">
+      <path d={SAIL} fill="#EADEBD" />
+      <path d={HULL} fill="#EADEBD" />
+    </svg>
+  );
+}
 
-      {/* 迎える海岸(右手) */}
-      <svg x="219.5" y="114" width="187.2" height="102" viewBox="430 340 422 408" preserveAspectRatio="none">
-        <path d={COAST} fill={sand} />
-      </svg>
-
-      {/* 入港する帆船。静かに揺れる。 */}
-      <g className="harbor-boat" style={{ transformOrigin: "144px 155px" }}>
-        <svg x="105" y="83" width="78" height="144" viewBox="215 386 190 351" preserveAspectRatio="none">
-          <path d={SAIL} fill={sand} />
-          <path d={HULL} fill={sand} />
-        </svg>
-      </g>
+/// 迎える海岸(二つの丘)。iOS と同じく横に引き伸ばして低い稜線にする。
+export function CoastSvg() {
+  return (
+    <svg viewBox="430 340 422 408" preserveAspectRatio="none" aria-hidden="true">
+      <path d={COAST} fill="#EADEBD" />
     </svg>
   );
 }

@@ -1,10 +1,22 @@
 import { useState } from "react";
 import { signInWithGoogle } from "../auth";
-import { HarborScene } from "../symbols";
+import { BoatSvg, CoastSvg } from "../symbols";
 import { t } from "../i18n";
 
-// iOS の SignInView と同じ構図。harborTeal 地に港の情景を描き、
-// 「サインイン=入港」を表す。左寄せ・ボタンは下寄せ。
+// 「夜の入港」。星と月の空、全幅の水平線、静かに揺れる帆船、迎える海岸。
+// harborTeal 一色の地に harborSand のフラット塗りのみ(グラデーション・影なし)。
+// サインイン=入港、という iOS と同じ物語を、Web ではポスターの構図で描く。
+
+const STARS: Array<{ top: string; left: string; size: number }> = [
+  { top: "16%", left: "10%", size: 4 },
+  { top: "8%", left: "24%", size: 3 },
+  { top: "20%", left: "36%", size: 3 },
+  { top: "6%", left: "52%", size: 4 },
+  { top: "14%", left: "68%", size: 3 },
+  { top: "9%", left: "83%", size: 4 },
+  { top: "24%", left: "91%", size: 3 },
+];
+
 export function SignInView() {
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
@@ -29,27 +41,41 @@ export function SignInView() {
 
   return (
     <div className="harbor-signin">
-      <div className="harbor-signin-inner">
-        <div className="harbor-scene-wrap">
-          <HarborScene />
-        </div>
+      <p className="harbor-topbar">{t("wordmark")}</p>
 
-        <p className="harbor-wordmark">{t("wordmark")}</p>
-        <p className="harbor-enter">{t("signInEnter")}</p>
+      {STARS.map((s, i) => (
+        <span
+          key={i}
+          className="harbor-star"
+          style={{ top: s.top, left: s.left, width: s.size, height: s.size }}
+        />
+      ))}
+      <span className="harbor-moon" />
+
+      <div className="harbor-content">
+        <h1 className="harbor-enter">{t("signInEnter")}</h1>
         <p className="harbor-sync">{t("signInSync")}</p>
-
         <div className="harbor-actions">
-          <button
-            className="harbor-google"
-            onClick={signIn}
-            disabled={working}
-          >
-            <span className="harbor-google-g">G</span>
+          <button className="harbor-google" onClick={signIn} disabled={working}>
             {t("signInWithGoogle")}
           </button>
+          {error && <p className="harbor-error">{error}</p>}
         </div>
+      </div>
 
-        {error && <p className="harbor-error">{error}</p>}
+      <div className="harbor-sea">
+        <div className="harbor-horizon" />
+        <span className="harbor-glint harbor-glint-1" />
+        <span className="harbor-glint harbor-glint-2" />
+        <span className="harbor-glint harbor-glint-3" />
+        <div className="harbor-boat-wrap">
+          <div className="harbor-boat">
+            <BoatSvg />
+          </div>
+        </div>
+        <div className="harbor-coast">
+          <CoastSvg />
+        </div>
       </div>
     </div>
   );

@@ -495,101 +495,114 @@ textarea {
   }
 }
 
-/* ---- サインイン(iOS と同じ港の情景) ---- */
+/* ---- サインイン(夜の入港) ----
+   harborTeal 一色の地に harborSand のフラット塗りのみ。
+   空(星・月)/ 中央の言葉とボタン / 海(全幅の水平線・帆船・海岸)の三層。 */
 
 .harbor-signin {
+  position: relative;
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--harbor-teal);
   display: flex;
-  justify-content: center;
-}
-
-.harbor-signin-inner {
-  width: 100%;
-  max-width: 440px;
-  min-height: 100vh;
-  min-height: 100dvh;
-  display: flex;
   flex-direction: column;
-  padding: 36px;
+  overflow: hidden;
 }
 
-.harbor-scene-wrap {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  min-height: 240px;
+.harbor-topbar {
+  position: absolute;
+  top: 28px;
+  left: 32px;
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: color-mix(in srgb, var(--harbor-sand) 60%, transparent);
+  z-index: 2;
 }
 
-.harbor-scene {
-  width: 100%;
-  height: 300px;
-  max-height: 40vh;
-  display: block;
+/* 空 */
+
+.harbor-star {
+  position: absolute;
+  border-radius: 999px;
+  background: var(--harbor-sand);
+  opacity: 0.3;
+  animation: harbor-twinkle 3.6s ease-in-out infinite alternate;
 }
 
-.harbor-boat {
-  animation: harbor-bob 2.4s ease-in-out infinite alternate;
+.harbor-star:nth-child(odd) {
+  animation-delay: -1.2s;
 }
 
-@keyframes harbor-bob {
+.harbor-star:nth-child(3n) {
+  animation-delay: -2.4s;
+}
+
+@keyframes harbor-twinkle {
   from {
-    transform: translateY(-2.5px) rotate(-1.2deg);
+    opacity: 0.14;
   }
   to {
-    transform: translateY(2.5px) rotate(1.2deg);
+    opacity: 0.42;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .harbor-boat {
-    animation: none;
-  }
+.harbor-moon {
+  position: absolute;
+  top: 10%;
+  right: 12%;
+  width: clamp(40px, 5vw, 56px);
+  height: clamp(40px, 5vw, 56px);
+  border-radius: 50%;
+  background: var(--harbor-sand);
+  opacity: 0.85;
 }
 
-.harbor-wordmark {
-  font-size: 30px;
-  font-weight: 500;
-  color: var(--harbor-sand);
-  margin: 36px 0 0;
+/* 中央の言葉とボタン */
+
+.harbor-content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 96px 24px 24px;
+  z-index: 1;
 }
 
 .harbor-enter {
-  font-size: 17px;
+  font-size: clamp(25px, 4.5vw, 34px);
   font-weight: 500;
-  color: color-mix(in srgb, var(--harbor-sand) 90%, transparent);
-  margin: 12px 0 0;
+  line-height: 1.5;
+  color: var(--harbor-sand);
+  margin: 0;
 }
 
 .harbor-sync {
-  font-size: 14px;
-  color: color-mix(in srgb, var(--harbor-sand) 55%, transparent);
-  margin: 6px 0 0;
+  font-size: 15px;
+  color: color-mix(in srgb, var(--harbor-sand) 58%, transparent);
+  margin: 14px 0 0;
 }
 
 .harbor-actions {
-  margin-top: 32px;
+  width: min(340px, 100%);
+  margin-top: 40px;
 }
 
 .harbor-google {
   width: 100%;
-  height: 52px;
+  height: 56px;
   border-radius: var(--radius);
   background: var(--harbor-sand);
   color: var(--harbor-teal);
   font-size: 16px;
   font-weight: 500;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+  transition: background 0.15s ease-out, transform 0.12s ease-out, opacity 0.12s ease-out;
 }
 
-.harbor-google-g {
-  font-size: 18px;
-  font-weight: 500;
+.harbor-google:hover {
+  background: #f5ecd2;
 }
 
 .harbor-google:active {
@@ -604,7 +617,101 @@ textarea {
 .harbor-error {
   font-size: 14px;
   color: var(--coral);
-  margin-top: 16px;
+  margin: 16px 0 0;
+}
+
+/* 海 */
+
+.harbor-sea {
+  position: relative;
+  flex: none;
+  height: clamp(220px, 38vh, 380px);
+}
+
+.harbor-horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 40%;
+  height: 2px;
+  background: color-mix(in srgb, var(--harbor-sand) 25%, transparent);
+}
+
+.harbor-glint {
+  position: absolute;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--harbor-sand);
+}
+
+.harbor-glint-1 {
+  left: 12%;
+  width: 22%;
+  top: calc(40% + 34px);
+  opacity: 0.16;
+}
+
+.harbor-glint-2 {
+  left: 32%;
+  width: 10%;
+  top: calc(40% + 70px);
+  opacity: 0.1;
+}
+
+.harbor-glint-3 {
+  right: 18%;
+  width: 15%;
+  top: calc(40% + 52px);
+  opacity: 0.12;
+}
+
+.harbor-boat-wrap {
+  position: absolute;
+  left: 24%;
+  bottom: calc(60% - 2px);
+  width: clamp(60px, 8vw, 88px);
+  transform: translateX(-50%);
+}
+
+.harbor-boat {
+  animation: harbor-bob 2.4s ease-in-out infinite alternate;
+}
+
+.harbor-boat svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@keyframes harbor-bob {
+  from {
+    transform: translateY(-2.5px) rotate(-1.2deg);
+  }
+  to {
+    transform: translateY(2.5px) rotate(1.2deg);
+  }
+}
+
+/* 海岸は iOS と同じく「低く横に長い稜線」。高さを抑えて帆船と主役を分ける。 */
+.harbor-coast {
+  position: absolute;
+  right: 0;
+  bottom: calc(60% - 2px);
+  width: clamp(180px, 34vw, 420px);
+  height: 34%;
+}
+
+.harbor-coast svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harbor-boat,
+  .harbor-star {
+    animation: none;
+  }
 }
 
 .error-text {
