@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
@@ -15,6 +15,8 @@ export interface VoyageSceneProps {
   ratio: number; // 0..1(島までの近さ)
   label: string; // 残り表示(「あと3時間」など)
   onClick?: () => void;
+  /// 見出しに重ねる追加UI(完了ゴールのチェックボタンなど)。
+  children?: ReactNode;
 }
 
 const SAND = "#EADEBD";
@@ -177,7 +179,7 @@ function VoyageSea({ ratio, animate }: { ratio: number; animate: boolean }) {
 }
 
 /// 目的地カードの3D版。島名と残りはCanvas外のHTMLオーバーレイで重ねる。
-export default function VoyageScene({ name, ratio, label, onClick }: VoyageSceneProps) {
+export default function VoyageScene({ name, ratio, label, onClick, children }: VoyageSceneProps) {
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
@@ -213,6 +215,7 @@ export default function VoyageScene({ name, ratio, label, onClick }: VoyageScene
       <div className="voyage-head">
         <span className="voyage-name">{name}</span>
         <span className="voyage-remaining">{label}</span>
+        {children}
       </div>
       <Canvas
         dpr={[1, 2]}

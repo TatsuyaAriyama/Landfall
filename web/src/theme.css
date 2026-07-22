@@ -1416,6 +1416,29 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* 完了ゴールのその場チェック。カード見出しに重ねる丸ボタン。
+   世界を開かず、記録と同じくらい軽い操作で完了にできる。 */
+.dest-complete {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--harbor-sand) 45%, transparent);
+  color: color-mix(in srgb, var(--harbor-sand) 85%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  transition: transform 0.12s ease-out, background 0.12s ease-out, color 0.12s ease-out;
+}
+
+.dest-complete:active {
+  transform: scale(0.88);
+  background: var(--return-orange);
+  border-color: var(--return-orange);
+  color: #123830;
+}
+
 .dest-horizon {
   position: absolute;
   left: 0;

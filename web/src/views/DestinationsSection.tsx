@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   destinationProgress,
+  markDestinationDone,
   saveDestination,
   type Destination,
   type DestinationProgress,
@@ -16,6 +17,7 @@ import {
 import type { UserData } from "../data";
 import { boatProps } from "../boat";
 import { BoatSvg, CoastSvg } from "../symbols";
+import { askConfirm } from "../overlays";
 import {
   remainingDaysLabel,
   remainingHoursLabel,
@@ -97,6 +99,18 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
     }
   }, [active, data.sessions, uid]);
 
+  // 完了ゴールのその場チェック。世界を開かず、カード上で直接完了にする
+  // (記録と同じくらい軽い操作にするため — 到達の検知は上のeffectがそのまま拾う)。
+  const markDone = async (dest: Destination) => {
+    const ok = await askConfirm({
+      title: t("markDone"),
+      message: t("markDoneConfirm"),
+      confirmLabel: t("markDone"),
+    });
+    if (!ok) return;
+    await markDestinationDone(uid, dest);
+  };
+
   return (
     <>
       <p className="section-label">{t("destinations")}</p>
@@ -113,6 +127,7 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
                 dest={dest}
                 data={data}
                 onClick={() => setWorld({ dest })}
+                onMarkDone={dest.manual ? () => void markDone(dest) : undefined}
               />
             ) : (
               <DestinationCard
@@ -120,6 +135,7 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
                 dest={dest}
                 data={data}
                 onClick={() => setWorld({ dest })}
+                onMarkDone={dest.manual ? () => void markDone(dest) : undefined}
               />
             ),
           )
@@ -182,15 +198,42 @@ function EmptySeaCard({ onClick }: { onClick: () => void }) {
   );
 }
 
+/// 完了ゴールのその場チェック。カードの見出しに重ねる、丸い小さなボタン。
+function CompleteCheckButton({ onMarkDone }: { onMarkDone: () => void }) {
+  return (
+    <button
+      className="dest-complete"
+      onClick={(e) => {
+        e.stopPropagation();
+        onMarkDone();
+      }}
+      aria-label={t("markDone")}
+      title={t("markDone")}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M5 13l4 4L19 7"
+          stroke="currentColor"
+          strokeWidth="2.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
 /// 1件目の目的地の3D航海シーン。読込中と描画失敗時は2Dカードのまま。
 function VoyageCard({
   dest,
   data,
   onClick,
+  onMarkDone,
 }: {
   dest: Destination;
   data: UserData;
   onClick: () => void;
+  onMarkDone?: () => void;
 }) {
   const progress = destinationProgress(dest, data.sessions);
   const item = dest.itemUUID ? data.items.find((i) => i.id === dest.itemUUID) : undefined;
@@ -204,7 +247,9 @@ function VoyageCard({
     // 描画失敗時のみ2Dカードへ。読込中は3Dシーンと同じ器(夜の海色+見出し)を
     // 出しておき、2Dカードが一瞬挟まるチラつきをなくす。
     <VoyageErrorBoundary
-      fallback={<DestinationCard dest={dest} data={data} onClick={onClick} />}
+      fallback={
+        <DestinationCard dest={dest} data={data} onClick={onClick} onMarkDone={onMarkDone} />
+      }
     >
       <Suspense
         fallback={
@@ -216,7 +261,9 @@ function VoyageCard({
           </button>
         }
       >
-        <VoyageScene name={name} ratio={progress.ratio} label={label} onClick={onClick} />
+        <VoyageScene name={name} ratio={progress.ratio} label={label} onClick={onClick}>
+          {onMarkDone && <CompleteCheckButton onMarkDone={onMarkDone} />}
+        </VoyageScene>
       </Suspense>
     </VoyageErrorBoundary>
   );
@@ -227,17 +274,32 @@ function DestinationCard({
   dest,
   data,
   onClick,
+  onMarkDone,
 }: {
   dest: Destination;
   data: UserData;
   onClick: () => void;
+  onMarkDone?: () => void;
 }) {
   const progress = destinationProgress(dest, data.sessions);
   const label = remainingLabel(progress);
   const item = dest.itemUUID ? data.items.find((i) => i.id === dest.itemUUID) : undefined;
 
   return (
-    <button className="dest-card" onClick={onClick}>
+    // 完了チェックの実ボタンをネストするため、カード自体はdiv+role="button"にする
+    // (<button>の中に<button>は置けない)。キーボード操作は変わらず効く。
+    <div
+      className="dest-card"
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+    >
       <span className="dest-star" style={{ top: "18%", left: "12%" }} />
       <span className="dest-star" style={{ top: "30%", left: "38%" }} />
       <span className="dest-star" style={{ top: "14%", left: "60%" }} />
@@ -247,6 +309,7 @@ function DestinationCard({
           {item && <span className="dest-item"> · {item.name}</span>}
         </span>
         <span className="dest-remaining">{label}</span>
+        {onMarkDone && <CompleteCheckButton onMarkDone={onMarkDone} />}
       </div>
       <div className="dest-horizon" />
       <div className="dest-coast">
@@ -260,7 +323,7 @@ function DestinationCard({
           <BoatSvg {...boatProps()} />
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 

@@ -97,6 +97,20 @@ export async function deleteDestination(uid: string, id: string): Promise<void> 
   await deleteDoc(doc(db, "users", uid, "destinations", id));
 }
 
+/// 完了ゴールの達成をその場で刻む(カード上のチェックから)。名前・項目・締切メモは
+/// 保ったまま manualDone だけ立てる。achievedAt自体はDestinationsSectionのreached監視が書く。
+export async function markDestinationDone(uid: string, dest: Destination): Promise<void> {
+  await saveDestination(uid, {
+    id: dest.id,
+    name: dest.name,
+    itemUUID: dest.itemUUID,
+    targetDate: dest.targetDate,
+    manual: true,
+    manualDone: true,
+    createdAt: dest.createdAt,
+  });
+}
+
 // ---- 進捗 ----
 
 export interface DestinationProgress {
