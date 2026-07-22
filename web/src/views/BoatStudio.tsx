@@ -110,10 +110,10 @@ export default function BoatStudio({ data }: { data: UserData }) {
           </p>
           <div className="chip-row">
             {BOAT_OPTIONS[part].map((o) => {
-              // 試練の戦利品は累計時間ではなく「港の試練の討伐」で解放される。
+              // 戦利品は累計時間ではなく「共同航海の到着」で解放される。
               const locked = !isBoatOptionUnlocked(o, total);
-              const lockLabel = o.questLoot
-                ? t("questLootLock")
+              const lockLabel = o.lootKey
+                ? t("lootLock")
                 : unlockAtLabel(o.unlockMinutes / 60);
               const selected = boatPartId(part) === o.id;
               if (o.color) {

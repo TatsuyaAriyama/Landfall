@@ -2267,9 +2267,9 @@ textarea {
   }
 }
 
-/* ---- 港の試練(みんなの海の上のUI) ---- */
+/* ---- 共同航海(みんなの海の上のUI) ---- */
 
-/* 進捗バー(潮目3分割)。世界の下辺に細く。写真ボタンは避ける。 */
+/* 進捗バーの行。世界の下辺に細く。写真ボタンは避ける。 */
 .trial-bar {
   position: absolute;
   left: 12px;
@@ -2282,30 +2282,44 @@ textarea {
   pointer-events: none;
 }
 
-.trial-segs {
-  flex: 1;
-  display: flex;
-  gap: 5px;
-}
-
-.trial-seg {
+/* 航海の連続バー。海域の位置に印(嵐=雨の青、海獣=薄紫)が浮かぶ。 */
+.voyage-track {
+  position: relative;
   flex: 1;
   height: 4px;
   border-radius: 999px;
   background: color-mix(in srgb, #eadebd 18%, transparent);
-  overflow: hidden;
 }
 
-.trial-seg-fill {
-  display: block;
-  height: 100%;
+.voyage-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
   border-radius: 999px;
   background: var(--harbor-sand);
   transition: width 0.6s ease;
 }
 
+.voyage-mark {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: #7fa8b8;
+  box-shadow: 0 0 0 2px color-mix(in srgb, #123830 70%, transparent);
+}
+
+.voyage-mark.kraken {
+  background: #cecbf6;
+}
+
+.voyage-mark.passed {
+  opacity: 0.35;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .trial-seg-fill {
+  .voyage-fill {
     transition: none;
   }
 }
@@ -2363,7 +2377,7 @@ textarea {
   color: color-mix(in srgb, var(--harbor-sand) 75%, transparent);
 }
 
-/* 試練の開始パネル/討伐済の行(世界の下) */
+/* 海図パネル/到着済の行(世界の下) */
 .quest-panel {
   margin-top: 14px;
 }
@@ -2386,6 +2400,78 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+/* 海図(SVG)。夜の海と同じ深い青緑の一枚。 */
+.sea-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 14px;
+  border-radius: var(--radius);
+  background: #10312b;
+}
+
+/* 航路カード(海図の下)。色の点で海図の線と対応づける。 */
+.route-cards {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.route-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  border-radius: 14px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.route-card.selected {
+  border-color: var(--return-orange, #f5822a);
+}
+
+.route-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.route-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.route-card-name {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.route-card-desc {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--ink) 60%, transparent);
+}
+
+.route-loot {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--return-orange, #f5822a);
+}
+
+.route-loot.none {
+  color: color-mix(in srgb, var(--ink) 45%, transparent);
 }
 
 /* 灯の説明の一行 */

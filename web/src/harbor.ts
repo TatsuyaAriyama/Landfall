@@ -530,95 +530,99 @@ export function gapDaysBeforeToday(days: StudyDay[]): number {
   return Math.round((today.getTime() - last.getTime()) / 86400000);
 }
 
-// ---- 港の試練(rooms/{code}/quest/current 単一ドキュメント) ----
-// 島の手前に海獣または嵐が立ちはだかり、メンバー全員の学習時間の合算で退ける。
+// ---- 共同航海(rooms/{code}/voyage/current 単一ドキュメント) ----
+// 目的地を決めると seed から海図(3航路)がひらき、選んだ航路を全員で進む。
+// 航路の途中に嵐/海獣の海域があり(生成は voyageMap.ts、seed から決定的)、
+// 全員の学習時間の合算=船団の位置。到着(arrivedAt)は一度きりの刻印。
 // 進捗カウンタは持たない — 各メンバーの共有月間記録(members/{uid}/months)の
 // sessions のうち date >= createdAt の minutes を全員分合算して導出する。
 
-export type QuestKind = "kraken" | "storm";
+export const VOYAGE_MIN_MINUTES = 60;
+export const VOYAGE_MAX_MINUTES = 600000;
 
-export const QUEST_MIN_MINUTES = 60;
-export const QUEST_MAX_MINUTES = 600000;
-
-export interface HarborQuest {
-  kind: QuestKind;
+export interface HarborVoyage {
+  seed: number;
   targetMinutes: number;
+  routeIndex: number; // 0..2(generateRoutes(seed) の添字)
   createdAt: Date;
   createdBy: string;
-  defeatedAt?: Date;
+  arrivedAt?: Date;
 }
 
-function questRef(roomId: string) {
-  return doc(db, "rooms", roomId, "quest", "current");
+function voyageRef(roomId: string) {
+  return doc(db, "rooms", roomId, "voyage", "current");
 }
 
-function questFromData(v: Record<string, unknown>): HarborQuest {
+function voyageFromData(v: Record<string, unknown>): HarborVoyage {
   return {
-    kind: v.kind === "storm" ? "storm" : "kraken",
+    seed: Number(v.seed ?? 0) >>> 0,
     targetMinutes: Number(v.targetMinutes ?? 0),
+    routeIndex: Math.min(Math.max(Number(v.routeIndex ?? 0), 0), 2),
     createdAt: v.createdAt instanceof Timestamp ? v.createdAt.toDate() : new Date(),
     createdBy: String(v.createdBy ?? ""),
-    defeatedAt: v.defeatedAt instanceof Timestamp ? v.defeatedAt.toDate() : undefined,
+    arrivedAt: v.arrivedAt instanceof Timestamp ? v.arrivedAt.toDate() : undefined,
   };
 }
 
-export function listenQuest(
+export function listenVoyage(
   roomId: string,
-  cb: (quest: HarborQuest | null) => void,
+  cb: (voyage: HarborVoyage | null) => void,
 ): () => void {
   return onSnapshot(
-    questRef(roomId),
-    (snap) => cb(snap.exists() ? questFromData(snap.data()) : null),
+    voyageRef(roomId),
+    (snap) => cb(snap.exists() ? voyageFromData(snap.data()) : null),
     () => cb(null),
   );
 }
 
 /// 一回きりの読み(起動時の戦利品チェックなどに使う)。
-export async function fetchQuest(roomId: string): Promise<HarborQuest | null> {
-  const snap = await getDoc(questRef(roomId)).catch(() => null);
+export async function fetchVoyage(roomId: string): Promise<HarborVoyage | null> {
+  const snap = await getDoc(voyageRef(roomId)).catch(() => null);
   if (!snap || !snap.exists()) return null;
-  return questFromData(snap.data());
+  return voyageFromData(snap.data());
 }
 
-export async function createQuest(
+export async function createVoyage(
   roomId: string,
-  kind: QuestKind,
+  seed: number,
+  routeIndex: number,
   targetMinutes: number,
 ): Promise<void> {
   const u = uid();
   const target = Math.min(
-    Math.max(Math.round(targetMinutes), QUEST_MIN_MINUTES),
-    QUEST_MAX_MINUTES,
+    Math.max(Math.round(targetMinutes), VOYAGE_MIN_MINUTES),
+    VOYAGE_MAX_MINUTES,
   );
-  await setDoc(questRef(roomId), {
-    kind,
+  await setDoc(voyageRef(roomId), {
+    seed: seed >>> 0,
     targetMinutes: target,
+    routeIndex: Math.min(Math.max(Math.round(routeIndex), 0), 2),
     createdAt: serverTimestamp(),
     createdBy: u,
   });
 }
 
-export async function deleteQuest(roomId: string): Promise<void> {
-  await deleteDoc(questRef(roomId));
+export async function deleteVoyage(roomId: string): Promise<void> {
+  await deleteDoc(voyageRef(roomId));
 }
 
-/// 討伐の刻印。合算 >= 目標 を見た閲覧者が1回だけ書く。すでに defeatedAt が
+/// 到着の刻印。合算 >= 目標 を見た閲覧者が1回だけ書く。すでに arrivedAt が
 /// ある場合はルールで拒否される(並走した閲覧者の2回目は静かに失敗させる)。
-export async function markQuestDefeated(roomId: string): Promise<void> {
-  await updateDoc(questRef(roomId), { defeatedAt: serverTimestamp() });
+export async function markVoyageArrived(roomId: string): Promise<void> {
+  await updateDoc(voyageRef(roomId), { arrivedAt: serverTimestamp() });
 }
 
-/// 試練の進捗(分)。創設月〜当月の months ドキュメントだけを全メンバー分読み、
+/// 航海の進捗(分)。出航月〜当月の months ドキュメントだけを全メンバー分読み、
 /// date >= createdAt のセッションを合算する(メンバー≤4なので読みは少ない)。
 /// date が無い旧クライアントのセッションは day フィールドから日単位で概算する
-/// (その日の始まりが createdAt の日の始まり以降なら含める。同日の作成前の
+/// (その日の始まりが createdAt の日の始まり以降なら含める。同日の出航前の
 ///  記録も拾い得るが、友人港の遊びなので寛容側に倒す)。
-export async function questProgressMinutes(
+export async function voyageProgressMinutes(
   roomId: string,
   memberIds: string[],
-  quest: HarborQuest,
+  voyage: HarborVoyage,
 ): Promise<number> {
-  const created = quest.createdAt;
+  const created = voyage.createdAt;
   const createdDayStart = new Date(
     created.getFullYear(),
     created.getMonth(),

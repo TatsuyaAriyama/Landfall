@@ -112,28 +112,38 @@ const ja = {
   takePhoto: "写真を撮る",
   lanternHint: "今日走った船には、灯がともる。",
 
-  // 港の試練
-  questTitle: "港の試練",
-  questIntro: "島の手前に、試練を呼べる。全員の学習時間を合わせて退けよう。",
-  questKindKraken: "海獣",
-  questKindStorm: "嵐",
-  summonKraken: "海獣を呼ぶ",
-  summonStorm: "嵐を呼ぶ",
-  questTargetLabel: "目標時間",
-  questCustomHours: "自由入力",
-  questStart: "試練をはじめる",
-  questStartConfirmKraken:
-    "海獣を呼びますか。ここからの全員の記録が、討伐の力になります。",
-  questStartConfirmStorm:
-    "嵐を呼びますか。ここからの全員の記録が、晴らす力になります。",
-  questDefeatedBadge: "討伐済",
-  questNew: "新たな試練",
-  questNewConfirm: "済んだ試練を流して、新たな試練を呼びますか。",
-  questDefeatKraken: "海獣は深みへ帰った。",
-  questDefeatStorm: "嵐は晴れた。",
-  questLootNotice: "戦利品 — 月光の帆と海獣の旗が解放された。",
-  questLootToast: "港の試練の戦利品が解放された。船スタジオへ。",
-  questLootLock: "港の試練で解放",
+  // 共同航海(海図と航路)
+  voyageTitle: "共同航海",
+  voyageIntro:
+    "目的地までの時間を決めると、海図がひらく。航路によって、待ち受けるものが変わる。",
+  voyageTargetLabel: "目的地までの時間",
+  voyageCustomHours: "自由入力",
+  openChart: "海図をひらく",
+  redrawChart: "海図を引き直す",
+  routeCalm: "凪の航路",
+  routeSquall: "嵐の航路",
+  routeDeep: "深みの航路",
+  routeCalmDesc: "静かな海が続く。波乱は少ない。",
+  routeSquallDesc: "嵐の海域を抜けていく。",
+  routeDeepDesc: "海獣の棲む深みの上を渡る。",
+  routeLootMoonlight: "到着で「月光の帆」",
+  routeLootKraken: "到着で「海獣の旗」",
+  routeLootNone: "戦利品なし",
+  encounterStorm: "嵐",
+  encounterKraken: "海獣",
+  setSail: "この航路で出航",
+  setSailConfirm:
+    "この航路で出航しますか。ここからの全員の記録が、船団を進めます。",
+  stormCleared: "嵐は晴れた。",
+  krakenCleared: "海獣は深みへ帰った。",
+  voyageArrivedTitle: "島へ着いた。",
+  voyageArrivedBadge: "到着",
+  voyageNew: "次の航海",
+  voyageNewConfirm: "済んだ航海を仕舞って、新しい海図をひらきますか。",
+  lootMoonlightNotice: "戦利品 — 月光の帆が解放された。",
+  lootKrakenNotice: "戦利品 — 海獣の旗が解放された。",
+  lootToast: "航海の戦利品が解放された。船スタジオへ。",
+  lootLock: "共同航海で解放",
   flagKraken: "海獣の旗",
 
   // フィードバック
@@ -353,27 +363,37 @@ const en: Record<I18nKey, string> = {
   takePhoto: "Take a photo",
   lanternHint: "Boats that sailed today carry a light.",
 
-  questTitle: "Harbor trial",
-  questIntro: "Summon a trial before the island. Push it back with everyone's study time.",
-  questKindKraken: "Kraken",
-  questKindStorm: "Storm",
-  summonKraken: "Summon the kraken",
-  summonStorm: "Call the storm",
-  questTargetLabel: "Target hours",
-  questCustomHours: "Custom",
-  questStart: "Begin the trial",
-  questStartConfirmKraken:
-    "Summon the kraken? Everyone's records from here on become the strength to drive it off.",
-  questStartConfirmStorm:
-    "Call the storm? Everyone's records from here on become the strength to clear it.",
-  questDefeatedBadge: "Trial complete",
-  questNew: "A new trial",
-  questNewConfirm: "Let the finished trial drift away and summon a new one?",
-  questDefeatKraken: "The kraken returned to the deep.",
-  questDefeatStorm: "The storm has cleared.",
-  questLootNotice: "Spoils — the Moonlight sail and Kraken flag are unlocked.",
-  questLootToast: "Harbor trial spoils unlocked. Visit your boat.",
-  questLootLock: "Unlocks in a harbor trial",
+  voyageTitle: "Voyage together",
+  voyageIntro:
+    "Set the hours to your destination and a sea chart opens. What awaits depends on the route.",
+  voyageTargetLabel: "Hours to destination",
+  voyageCustomHours: "Custom",
+  openChart: "Open the chart",
+  redrawChart: "Redraw the chart",
+  routeCalm: "Calm route",
+  routeSquall: "Storm route",
+  routeDeep: "Deep route",
+  routeCalmDesc: "Quiet waters, few surprises.",
+  routeSquallDesc: "Cuts through storm waters.",
+  routeDeepDesc: "Crosses the deep where the kraken dwells.",
+  routeLootMoonlight: "Arrival unlocks the Moonlight sail",
+  routeLootKraken: "Arrival unlocks the Kraken flag",
+  routeLootNone: "No spoils",
+  encounterStorm: "Storm",
+  encounterKraken: "Kraken",
+  setSail: "Set sail on this route",
+  setSailConfirm:
+    "Set sail on this route? Everyone's records from here on carry the fleet forward.",
+  stormCleared: "The storm has cleared.",
+  krakenCleared: "The kraken returned to the deep.",
+  voyageArrivedTitle: "You reached the island.",
+  voyageArrivedBadge: "Arrived",
+  voyageNew: "Next voyage",
+  voyageNewConfirm: "Stow the finished voyage and open a new chart?",
+  lootMoonlightNotice: "Spoils — the Moonlight sail is unlocked.",
+  lootKrakenNotice: "Spoils — the Kraken flag is unlocked.",
+  lootToast: "Voyage spoils unlocked. Visit your boat.",
+  lootLock: "Unlocks on a voyage together",
   flagKraken: "Kraken flag",
 
   recordedToast: "Recorded.",
@@ -520,16 +540,16 @@ export function remainingDaysLabel(days: number): string {
   return lang === "ja" ? `あと${days}日` : `${days} days to go`;
 }
 
-/// 港の試練の残り表示。「あと◯時間」(1時間未満は分)。
-export function questRemainingLabel(remainingMinutes: number): string {
+/// 共同航海の残り表示。「あと◯時間」(1時間未満は分)。
+export function voyageRemainingLabel(remainingMinutes: number): string {
   const m = Math.max(remainingMinutes, 0);
   if (m < 60) return lang === "ja" ? `あと${m}分` : `${m}m to go`;
   const h = Math.ceil(m / 60);
   return lang === "ja" ? `あと${h}時間` : `${h}h to go`;
 }
 
-/// 時間数の短い表示(試練のプリセットなど)。「20時間」/「20h」。
-export function questHoursLabel(hours: number): string {
+/// 時間数の短い表示(海図のプリセットなど)。「20時間」/「20h」。
+export function hoursShortLabel(hours: number): string {
   return lang === "ja" ? `${hours}時間` : `${hours}h`;
 }
 

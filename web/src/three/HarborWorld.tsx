@@ -16,13 +16,19 @@ import {
   ROOM_MAX_MEMBERS,
   fetchMonth,
   type HarborMember,
-  type HarborQuest,
   type HarborRoom,
+  type HarborVoyage,
 } from "../harbor";
+import {
+  activeEncounter,
+  encounterPhase,
+  type EncounterKind,
+  type SeaRoute,
+} from "../voyageMap";
 import { saveCanvas } from "../share";
 import { demoLitMemberIds, isDemo } from "../demo";
 import { playStrike } from "../audio";
-import { lang, questRemainingLabel, t } from "../i18n";
+import { lang, t, voyageRemainingLabel } from "../i18n";
 
 // 港の「みんなの海」。参加メンバー全員の船が同じ夜の海に浮かび、
 // 同じ島(港の名前を持つ島)へ向かって並走している世界。
@@ -32,7 +38,7 @@ import { lang, questRemainingLabel, t } from "../i18n";
 // uidのハッシュだけで決まる固定レーン+有機的な前後オフセット。誰も先頭ではない。
 
 /// マウント後に届いた着岸/帰還を、船からの一撃として世界に流すイベント。
-export interface QuestStrikeEvent {
+export interface StrikeEvent {
   uid: string;
   seq: number;
 }
@@ -41,11 +47,13 @@ export interface HarborWorldProps {
   room: HarborRoom;
   members: HarborMember[];
   onSelectMember?: (member: HarborMember) => void;
-  /// 港の試練。undefined=読込中(何も出さない)、null=試練なし。
-  quest?: HarborQuest | null;
-  /// 試練の進捗(全員の合算・分)。導出は呼び出し側(RoomDetail)。
+  /// 共同航海。undefined=読込中(何も出さない)、null=航海なし。
+  voyage?: HarborVoyage | null;
+  /// 選択中の航路(generateRoutes(voyage.seed)[voyage.routeIndex])。導出は呼び出し側。
+  route?: SeaRoute | null;
+  /// 航海の進捗(全員の合算・分)。導出は呼び出し側(RoomDetail)。
   progressMinutes?: number;
-  strike?: QuestStrikeEvent | null;
+  strike?: StrikeEvent | null;
 }
 
 const CAM_POS: [number, number, number] = [0.2, 2.6, 8.4];
@@ -101,11 +109,11 @@ function makeBerths(members: HarborMember[]): Berth[] {
   });
 }
 
-// ---- 港の試練(島の手前の海獣/嵐) ----
-// 船団と島の間に立ちはだかる。進捗1/3ごとの「潮目」で縮み・薄れ、
-// 討伐で海へ帰る/晴れる。品質言語は世界と同じ(低ポリ+flatShading・フラット)。
+// ---- 航路の海域(嵐/海獣) ----
+// 進捗が海域の区間に入ると船団と島の間に現れる。海域内の潮目3段階で縮み・薄れ、
+// 抜けると海へ帰る/晴れる。品質言語は世界と同じ(低ポリ+flatShading・フラット)。
 
-const QUEST_POS: [number, number, number] = [2.45, 0, -1.35];
+const ENCOUNTER_POS: [number, number, number] = [2.45, 0, -1.35];
 const BEAST_BODY_COLOR = "#342A5C"; // midnight系(夜の海に沈まない程度に持ち上げ)
 const BEAST_DARK_COLOR = "#241A44"; // midnight寄りの陰
 const EYE_ORANGE = "#F5822A"; // returnOrange
@@ -184,7 +192,13 @@ const RAIN_GEO = makeRainGeometry();
 // 触腕4本の配置角(XZ平面)。yawグループで局所+Xを放射方向へ向ける。
 const TENTACLES = [0, 1, 2, 3].map((i) => (i / 4) * Math.PI * 2 + 0.6);
 
-type DefeatStage = "none" | "running" | "done" | "quiet";
+/// いま海に描くべき海域(嵐/海獣)。phase は潮目(0=満力→2=あと少し)、
+/// defeating は「抜けた瞬間の沈む/晴れる」演出中。
+interface EncounterView {
+  kind: EncounterKind;
+  phase: number;
+  defeating: boolean;
+}
 
 /// 海獣。海面から出る胴体+頭+触腕4本。ゆっくり上下に蠢き、
 /// 潮目で縮んで沈み、討伐で深みへ帰る。命中でscaleパルスの身じろぎ。
@@ -249,7 +263,7 @@ function Kraken({
   });
 
   return (
-    <group position={QUEST_POS}>
+    <group position={ENCOUNTER_POS}>
       <group ref={root}>
         {/* 胴体(押し潰した球)+頭(円錐) */}
         <mesh
@@ -378,7 +392,7 @@ function StormCloud({
   });
 
   return (
-    <group ref={root} position={[QUEST_POS[0], 1.05, QUEST_POS[2]]}>
+    <group ref={root} position={[ENCOUNTER_POS[0], 1.05, ENCOUNTER_POS[2]]}>
       <group ref={swirl}>
         {STORM_PUFFS.map((puff, i) => (
           <mesh
@@ -427,7 +441,7 @@ function StrikeBolt({
   const finished = useRef(false);
   const path = useMemo(() => {
     const origin = new THREE.Vector3(from[0], 0.55, from[2]);
-    const target = new THREE.Vector3(QUEST_POS[0], 0.75, QUEST_POS[2]);
+    const target = new THREE.Vector3(ENCOUNTER_POS[0], 0.75, ENCOUNTER_POS[2]);
     const dir = target.clone().sub(origin).normalize();
     const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
     return { origin, target, quat };
@@ -558,16 +572,16 @@ function MemberBoat({
   );
 }
 
-/// シーン本体。夜の海+右奥の島(港名)+並走する船団+試練(海獣/嵐)。
+/// シーン本体。夜の海+右奥の島(港名)+並走する船団+航路の海域(海獣/嵐)。
 function HarborSea({
   roomName,
   berths,
   litIds,
   animate,
   onSelect,
-  quest,
-  phase,
-  defeatStage,
+  encounter,
+  advanceOn,
+  arriveFx,
   hitClock,
   bolts,
   onBoltDone,
@@ -577,9 +591,11 @@ function HarborSea({
   litIds: ReadonlySet<string>;
   animate: boolean;
   onSelect?: (member: HarborMember) => void;
-  quest: HarborQuest | null;
-  phase: number;
-  defeatStage: DefeatStage;
+  encounter: EncounterView | null;
+  /// 到着済み(船団を島へ寄せる)。マウント時に真なら最初から寄せた位置で描く。
+  advanceOn: boolean;
+  /// 到着の演出中(光がふわっと明るくなる)。
+  arriveFx: boolean;
   hitClock: { current: number };
   bolts: Bolt[];
   onBoltDone: (id: number) => void;
@@ -590,21 +606,20 @@ function HarborSea({
   const keyLight = useRef<THREE.DirectionalLight>(null);
   const fillLight = useRef<THREE.DirectionalLight>(null);
   const ambient = useRef<THREE.AmbientLight>(null);
-  // 討伐済みの港を開いたときは、最初から島に寄せた位置で描く。
-  const advance = useRef(quest?.defeatedAt ? 1 : 0);
+  const advance = useRef(advanceOn ? 1 : 0);
   const dim = useRef(1);
-  const defeatClock = useRef<number | null>(null);
+  const arriveClock = useRef<number | null>(null);
 
-  const questActive = Boolean(quest) && !quest?.defeatedAt;
-  // 試練の間は海がわずかに暗く、潮目が進むごとに明るさが戻る。
-  const dimTarget = questActive ? 0.62 + phase * 0.13 : 1;
-  const advanceTarget = defeatStage === "done" || defeatStage === "quiet" ? 1 : 0;
+  // 海域の中では海がわずかに暗く、潮目が進むごとに明るさが戻る。
+  const dimTarget =
+    encounter && !encounter.defeating ? 0.62 + encounter.phase * 0.13 : 1;
+  const advanceTarget = advanceOn ? 1 : 0;
 
-  const applyQuestLook = () => {
+  const applyVoyageLook = () => {
     if (keyLight.current) keyLight.current.intensity = 1.15 * dim.current;
     if (fillLight.current) fillLight.current.intensity = 0.2 * dim.current;
     if (ambient.current) ambient.current.intensity = 0.45 * (0.6 + 0.4 * dim.current);
-    // 討伐後、船団は島へ向けて滑走する(島の方向へ平行移動)。
+    // 到着後、船団は島へ向けて滑走する(島の方向へ平行移動)。
     fleet.current?.position.set(advance.current * 1.5, 0, advance.current * -0.7);
   };
 
@@ -620,24 +635,24 @@ function HarborSea({
     if (animate) return;
     dim.current = dimTarget;
     advance.current = advanceTarget;
-    applyQuestLook();
+    applyVoyageLook();
     invalidate();
   });
 
   useFrame(({ clock }, delta) => {
     if (!animate) return;
     const time = clock.elapsedTime;
-    // 討伐の瞬間を覚えて、光をふわっと明るくする(沈み切った後に軽く上振れ)。
-    if (defeatStage === "running" && defeatClock.current === null) defeatClock.current = time;
-    if (defeatStage === "none") defeatClock.current = null;
+    // 到着の瞬間を覚えて、光をふわっと明るくする。
+    if (arriveFx && arriveClock.current === null) arriveClock.current = time;
+    if (!arriveFx) arriveClock.current = null;
     let target = dimTarget;
-    if (defeatClock.current !== null) {
-      const dt = time - defeatClock.current;
-      if (dt > 1.8 && dt < 3.6) target = 1.22;
+    if (arriveClock.current !== null) {
+      const dt = time - arriveClock.current;
+      if (dt > 1.2 && dt < 3.4) target = 1.22;
     }
     dim.current = THREE.MathUtils.damp(dim.current, target, 1.6, delta);
     advance.current = THREE.MathUtils.damp(advance.current, advanceTarget, 0.9, delta);
-    applyQuestLook();
+    applyVoyageLook();
   });
 
   return (
@@ -673,20 +688,19 @@ function HarborSea({
       >
         <div className="harbor-world-island">{roomName}</div>
       </Html>
-      {/* 試練: 船団と島の間の海獣/嵐。討伐アニメの間は残して沈める/晴らす。 */}
-      {quest &&
-        (!quest.defeatedAt || defeatStage === "running") &&
-        (quest.kind === "storm" ? (
+      {/* 海域: 船団と島の間の海獣/嵐。抜けるアニメの間は残して沈める/晴らす。 */}
+      {encounter &&
+        (encounter.kind === "storm" ? (
           <StormCloud
-            phase={phase}
-            defeating={defeatStage === "running"}
+            phase={encounter.phase}
+            defeating={encounter.defeating}
             animate={animate}
             hitClock={hitClock}
           />
         ) : (
           <Kraken
-            phase={phase}
-            defeating={defeatStage === "running"}
+            phase={encounter.phase}
+            defeating={encounter.defeating}
             animate={animate}
             hitClock={hitClock}
           />
@@ -699,7 +713,7 @@ function HarborSea({
           onDone={() => onBoltDone(bolt.id)}
         />
       ))}
-      {/* 船団。討伐後はグループごと島へ滑走する。 */}
+      {/* 船団。到着後はグループごと島へ滑走する。 */}
       <group ref={fleet}>
         {berths.map((berth) => (
           <MemberBoat
@@ -715,12 +729,13 @@ function HarborSea({
   );
 }
 
-/// みんなの海。260pxの横長Canvas+写真ボタン+灯の一行+港の試練。
+/// みんなの海。260pxの横長Canvas+写真ボタン+灯の一行+共同航海の海域。
 export default function HarborWorld({
   room,
   members,
   onSelectMember,
-  quest,
+  voyage,
+  route,
   progressMinutes = 0,
   strike,
 }: HarborWorldProps) {
@@ -732,51 +747,126 @@ export default function HarborWorld({
   const [flash, setFlash] = useState(false);
   const flashTimer = useRef<number | undefined>(undefined);
 
-  // ---- 港の試練: 潮目・討伐の段階・一撃 ----
-  const target = quest?.targetMinutes ?? 0;
-  const ratio = quest && target > 0 ? Math.min(progressMinutes / target, 1) : 0;
-  const phase = ratio >= 2 / 3 ? 2 : ratio >= 1 / 3 ? 1 : 0;
-  const questActive = Boolean(quest) && !quest?.defeatedAt;
+  // ---- 共同航海: 進捗・海域・到着・一撃 ----
+  const target = voyage?.targetMinutes ?? 0;
+  const frac = voyage && target > 0 ? Math.min(progressMinutes / target, 1) : 0;
+  const arrived = Boolean(voyage?.arrivedAt);
+  const voyageActive = Boolean(voyage) && !arrived;
+  const identity = voyage ? voyage.createdAt.getTime() : null;
+  const activeRoute = voyage && route ? route : null;
+  const passedCount = activeRoute
+    ? activeRoute.encounters.filter((e) => frac >= e.end).length
+    : 0;
 
-  // 討伐の段階。マウント中に defeatedAt が付いた瞬間だけ演出を流す
-  // (最初から討伐済みの港では静かに"quiet")。
-  const [defeatStage, setDefeatStage] = useState<DefeatStage>("none");
-  const prevDefeated = useRef<boolean | null>(null);
-  const defeatTimers = useRef<number[]>([]);
+  // 海域を抜けた瞬間の演出(沈む/晴れる→帯)と、到着の演出。
+  const [clearFx, setClearFx] = useState<{
+    kind: EncounterKind;
+    stage: "running" | "banner";
+  } | null>(null);
+  const [arriveStage, setArriveStage] = useState<"none" | "fx" | "quiet">("none");
+  const identityRef = useRef<number | null | undefined>(undefined);
+  const prevPassed = useRef<number | null>(null);
+  const prevArrived = useRef<boolean | null>(null);
+  const clearFxTimers = useRef<number[]>([]);
+  const arriveTimers = useRef<number[]>([]);
+
+  // 航海が入れ替わったら(次の航海など)演出を全部リセットする。
+  // 旧航海のタイマーが残ると、新しい航海の最中に帯や滑走が誤発火する。
+  // ※ このeffectは他の演出effectより先に宣言する(実行順が宣言順のため)。
   useEffect(() => {
-    if (quest === undefined) return; // 読込中は判定しない
-    const defeated = Boolean(quest?.defeatedAt);
-    if (prevDefeated.current === null) {
-      prevDefeated.current = defeated;
-      if (defeated) setDefeatStage("quiet");
+    if (identityRef.current === identity) return;
+    identityRef.current = identity;
+    clearFxTimers.current.forEach((id) => window.clearTimeout(id));
+    clearFxTimers.current.length = 0;
+    arriveTimers.current.forEach((id) => window.clearTimeout(id));
+    arriveTimers.current.length = 0;
+    setClearFx(null);
+    setArriveStage("none");
+    prevPassed.current = null;
+    prevArrived.current = null;
+  }, [identity]);
+
+  // 海域の通過。マウント中に区間の終端を越えた瞬間だけ流す
+  // (開いた時に既に過ぎていた海域は静かに素通り)。
+  useEffect(() => {
+    if (!activeRoute) return;
+    if (prevPassed.current === null) {
+      prevPassed.current = passedCount;
       return;
     }
-    if (defeated === prevDefeated.current) return;
-    prevDefeated.current = defeated;
-    if (!defeated) {
-      // 新たな試練(旧questの削除→作成)で演出をリセット。旧questの
-      // 討伐タイマーが残っていると後から stage を上書きするので取り消す。
-      defeatTimers.current.forEach((id) => window.clearTimeout(id));
-      defeatTimers.current.length = 0;
-      setDefeatStage("none");
+    if (passedCount <= prevPassed.current) {
+      prevPassed.current = passedCount;
       return;
     }
+    const cleared = activeRoute.encounters[passedCount - 1];
+    prevPassed.current = passedCount;
+    clearFxTimers.current.forEach((id) => window.clearTimeout(id));
+    clearFxTimers.current.length = 0;
+    if (arrived) return; // 到着と同時なら到着の演出に譲る
     if (!animate) {
       // reduced-motion: 沈む/晴れるはジャンプカットし、帯だけ見せる。
-      setDefeatStage("done");
-      defeatTimers.current.push(window.setTimeout(() => setDefeatStage("quiet"), 7000));
+      setClearFx({ kind: cleared.kind, stage: "banner" });
+      clearFxTimers.current.push(window.setTimeout(() => setClearFx(null), 4200));
       return;
     }
-    setDefeatStage("running"); // 海獣が沈む/嵐が晴れる(約2.2秒)
-    defeatTimers.current.push(
-      window.setTimeout(() => setDefeatStage("done"), 2200),
-      window.setTimeout(() => setDefeatStage("quiet"), 9500),
+    setClearFx({ kind: cleared.kind, stage: "running" }); // 沈む/晴れる(約2.2秒)
+    clearFxTimers.current.push(
+      window.setTimeout(() => setClearFx({ kind: cleared.kind, stage: "banner" }), 2200),
+      window.setTimeout(() => setClearFx(null), 6600),
     );
-  }, [quest, animate]);
+  }, [passedCount, activeRoute, arrived, animate]);
+
+  // 到着。マウント中に arrivedAt が付いた瞬間だけ演出を流す
+  // (最初から到着済みの港では静かに"quiet")。
   useEffect(() => {
-    const timers = defeatTimers.current;
-    return () => timers.forEach((id) => window.clearTimeout(id));
+    if (voyage === undefined || voyage === null) return;
+    if (prevArrived.current === null) {
+      prevArrived.current = arrived;
+      if (arrived) setArriveStage("quiet");
+      return;
+    }
+    if (arrived === prevArrived.current) return;
+    prevArrived.current = arrived;
+    if (!arrived) {
+      setArriveStage("none");
+      return;
+    }
+    // 海域の帯は打ち切り、到着を優先する。
+    clearFxTimers.current.forEach((id) => window.clearTimeout(id));
+    clearFxTimers.current.length = 0;
+    setClearFx(null);
+    setArriveStage("fx");
+    arriveTimers.current.push(window.setTimeout(() => setArriveStage("quiet"), 8000));
+  }, [voyage, arrived]);
+
+  useEffect(() => {
+    const a = clearFxTimers.current;
+    const b = arriveTimers.current;
+    return () => {
+      a.forEach((id) => window.clearTimeout(id));
+      b.forEach((id) => window.clearTimeout(id));
+    };
   }, []);
+
+  // いま描く海域。進捗が区間を越えた直後は、state(clearFx)が立つ前の
+  // 1フレームでも海域を消さない(消えて→また現れるちらつきを防ぐ)。
+  const enc = activeRoute && voyageActive ? activeEncounter(activeRoute, frac) : null;
+  const pendingClear =
+    identityRef.current === identity &&
+    prevPassed.current !== null &&
+    passedCount > prevPassed.current &&
+    !arrived;
+  const clearingKind: EncounterKind | null =
+    clearFx?.stage === "running"
+      ? clearFx.kind
+      : pendingClear && activeRoute
+        ? activeRoute.encounters[passedCount - 1].kind
+        : null;
+  const encounterView: EncounterView | null = enc
+    ? { kind: enc.kind, phase: encounterPhase(enc, frac), defeating: false }
+    : clearingKind
+      ? { kind: clearingKind, phase: 2, defeating: true }
+      : null;
 
   // 一撃: 新しい着岸/帰還(strike)ごとに、その船から一閃を飛ばす。
   const [bolts, setBolts] = useState<Bolt[]>([]);
@@ -798,17 +888,19 @@ export default function HarborWorld({
 
   const berths = useMemo(() => makeBerths(members), [members]);
 
-  // 一撃の発火。試練が有効な間だけ。専用の短い生成音を添える。
+  // 一撃の発火。航海中だけ音を添え、海域が出ている間だけ一閃を飛ばす
+  // (何もない海に光が飛ぶと行き先が謎になる)。
   useEffect(() => {
     if (!strike || strike.seq === lastStrikeSeq.current) return;
     lastStrikeSeq.current = strike.seq;
-    if (!quest || quest.defeatedAt) return;
+    if (!voyageActive) return;
     playStrike();
     if (!animate) return; // reduced-motion: 一閃は省略(ジャンプカット)
+    if (!encounterView || encounterView.defeating) return;
     const berth = berths.find((b) => b.member.id === strike.uid);
     if (!berth) return;
     setBolts((list) => [...list.slice(-3), { id: strike.seq, from: [berth.x, 0, berth.z] }]);
-  }, [strike, quest, animate, berths]);
+  }, [strike, voyageActive, animate, berths, encounterView]);
 
   // 今日の灯: 各メンバーの当月ペイロードを読み、今日が含まれる船に灯をともす。
   const [litIds, setLitIds] = useState<ReadonlySet<string>>(new Set());
@@ -898,47 +990,63 @@ export default function HarborWorld({
             litIds={litIds}
             animate={animate}
             onSelect={onSelectMember}
-            quest={quest ?? null}
-            phase={phase}
-            defeatStage={defeatStage}
+            encounter={encounterView}
+            advanceOn={arrived}
+            arriveFx={arriveStage === "fx"}
             hitClock={hitClock}
             bolts={bolts}
             onBoltDone={(id) => setBolts((list) => list.filter((b) => b.id !== id))}
           />
         </Canvas>
-        {/* 試練の進捗(潮目3分割のバー+残り)。個人の内訳や順位は出さない。 */}
-        {questActive && quest && (
+        {/* 航海の進捗(連続バー+海域の印+残り)。個人の内訳や順位は出さない。 */}
+        {voyageActive && voyage && activeRoute && (
           <div className="trial-bar">
             <div
-              className="trial-segs"
+              className="voyage-track"
               role="progressbar"
               aria-valuemin={0}
-              aria-valuemax={quest.targetMinutes}
-              aria-valuenow={Math.min(progressMinutes, quest.targetMinutes)}
+              aria-valuemax={voyage.targetMinutes}
+              aria-valuenow={Math.min(progressMinutes, voyage.targetMinutes)}
             >
-              {[0, 1, 2].map((i) => (
-                <span key={i} className="trial-seg">
-                  <span
-                    className="trial-seg-fill"
-                    style={{
-                      width: `${Math.round(Math.min(Math.max(ratio * 3 - i, 0), 1) * 100)}%`,
-                    }}
-                  />
-                </span>
+              <span
+                className="voyage-fill"
+                style={{ width: `${Math.round(frac * 100)}%` }}
+              />
+              {activeRoute.encounters.map((e, i) => (
+                <span
+                  key={i}
+                  className={`voyage-mark ${e.kind}${frac >= e.end ? " passed" : ""}`}
+                  style={{ left: `${Math.round(((e.start + e.end) / 2) * 100)}%` }}
+                  title={t(e.kind === "storm" ? "encounterStorm" : "encounterKraken")}
+                />
               ))}
             </div>
             <span className="trial-remaining">
-              {questRemainingLabel(quest.targetMinutes - progressMinutes)}
+              {voyageRemainingLabel(voyage.targetMinutes - progressMinutes)}
             </span>
           </div>
         )}
-        {/* 討伐の帯。世界の上にふわっと現れる一枚+戦利品の告知。 */}
-        {defeatStage === "done" && quest && (
+        {/* 海域を抜けた帯。世界の上にふわっと現れる一枚。 */}
+        {clearFx?.stage === "banner" && (
           <div className="trial-defeat" role="status">
             <div className="trial-defeat-title">
-              {t(quest.kind === "storm" ? "questDefeatStorm" : "questDefeatKraken")}
+              {t(clearFx.kind === "storm" ? "stormCleared" : "krakenCleared")}
             </div>
-            <div className="trial-defeat-sub">{t("questLootNotice")}</div>
+          </div>
+        )}
+        {/* 到着の帯+戦利品の告知(その航路に戦利品があるときだけ)。 */}
+        {arriveStage === "fx" && (
+          <div className="trial-defeat" role="status">
+            <div className="trial-defeat-title">{t("voyageArrivedTitle")}</div>
+            {activeRoute?.lootKey && (
+              <div className="trial-defeat-sub">
+                {t(
+                  activeRoute.lootKey === "loot.moonlightSail"
+                    ? "lootMoonlightNotice"
+                    : "lootKrakenNotice",
+                )}
+              </div>
+            )}
           </div>
         )}
         <button

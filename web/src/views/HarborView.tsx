@@ -4,6 +4,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -14,44 +15,44 @@ import {
   PUBLIC_HARBORS,
   blockUser,
   cachedPublicJoined,
-  createQuest,
   createRoom,
   deleteChat,
-  deleteQuest,
+  deleteVoyage,
   fetchMembers,
   fetchPublicJoined,
-  fetchQuest,
   fetchRooms,
+  fetchVoyage,
   joinPublic,
   joinRoom,
   leavePublic,
   leaveRoom,
   listenChat,
-  listenQuest,
+  listenVoyage,
   loadBlocked,
-  markQuestDefeated,
-  questProgressMinutes,
+  markVoyageArrived,
   reactChat,
   reportUser,
   sendChat,
+  voyageProgressMinutes,
   type ChatMessage,
   type HarborMember,
-  type HarborQuest,
   type HarborRoom,
+  type HarborVoyage,
   type PublicHarborInfo,
-  type QuestKind,
 } from "../harbor";
 import type { UserData } from "../data";
-import type { QuestStrikeEvent } from "../three/HarborWorld";
-import { demoHarborMembers, demoQuest, demoQuestProgressMinutes, demoRoom, isDemo } from "../demo";
+import type { StrikeEvent } from "../three/HarborWorld";
+import { generateRoutes } from "../voyageMap";
+import { demoHarborMembers, demoRoom, demoVoyage, demoVoyageProgressMinutes, isDemo } from "../demo";
 import { PlayerProfile } from "../profile";
-import { grantHarborLoot, hasHarborLoot } from "../boat";
+import { grantLoot, hasLoot } from "../boat";
 import { STYLE_COLORS, normalizeStyle, normalizeSymbol, trimAll } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { ProfileEditor } from "./ProfileEditor";
 import { MemberTrace } from "./MemberTrace";
+import { VoyageChartPanel } from "./VoyageChart";
 import { Modal, askConfirm, showToast } from "../overlays";
-import { chatLandfallLine, chatReturnLine, questHoursLabel, t } from "../i18n";
+import { chatLandfallLine, chatReturnLine, t } from "../i18n";
 
 // three.js を含む「みんなの海」は重いので、プライベートの港を開いたときだけ読み込む。
 const HarborWorld = lazy(() => import("../three/HarborWorld"));
@@ -112,19 +113,21 @@ function errText(e: unknown): string {
   return t("errGeneric");
 }
 
-// 起動後に一度だけ、参加中の全roomsのquestを軽く読んで戦利品の解放を反映する
-// (討伐の瞬間に港を開いていなかったメンバーの救済)。
+// 起動後に一度だけ、参加中の全roomsのvoyageを軽く読んで戦利品の解放を反映する
+// (到着の瞬間に港を開いていなかったメンバーの救済)。
 let lootCheckDone = false;
-async function checkQuestLootOnce(rooms: HarborRoom[]): Promise<void> {
-  if (lootCheckDone || isDemo || hasHarborLoot() || rooms.length === 0) return;
+async function checkVoyageLootOnce(rooms: HarborRoom[]): Promise<void> {
+  if (lootCheckDone || isDemo || rooms.length === 0) return;
+  if (hasLoot("loot.moonlightSail") && hasLoot("loot.krakenFlag")) return;
   lootCheckDone = true;
+  let granted = false;
   for (const room of rooms) {
-    const quest = await fetchQuest(room.id);
-    if (quest?.defeatedAt) {
-      if (grantHarborLoot()) showToast(t("questLootToast"));
-      return;
-    }
+    const voyage = await fetchVoyage(room.id);
+    if (!voyage?.arrivedAt) continue;
+    const key = generateRoutes(voyage.seed)[voyage.routeIndex]?.lootKey;
+    if (key && grantLoot(key)) granted = true;
   }
+  if (granted) showToast(t("lootToast"));
 }
 
 export function HarborView({ uid, data }: { uid: string; data: UserData }) {
@@ -149,7 +152,7 @@ export function HarborView({ uid, data }: { uid: string; data: UserData }) {
     setRooms(r);
     setPublicJoined(p);
     setBlocked(b);
-    void checkQuestLootOnce(r);
+    void checkVoyageLootOnce(r);
   }, []);
 
   useEffect(() => {
@@ -693,40 +696,46 @@ function RoomDetail({
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // ---- 港の試練 ----
-  // quest/current を購読し、進捗は全メンバーの months から導出する。
-  // undefined=読込中、null=試練なし。
-  const [quest, setQuest] = useState<HarborQuest | null | undefined>(undefined);
-  const [questProgress, setQuestProgress] = useState(0);
-  const [strike, setStrike] = useState<QuestStrikeEvent | null>(null);
-  const questRef = useRef<HarborQuest | null>(null);
+  // ---- 共同航海 ----
+  // voyage/current を購読し、進捗は全メンバーの months から導出する。
+  // undefined=読込中、null=航海なし。
+  const [voyage, setVoyage] = useState<HarborVoyage | null | undefined>(undefined);
+  const [voyageProgress, setVoyageProgress] = useState(0);
+  const [strike, setStrike] = useState<StrikeEvent | null>(null);
+  const voyageRef = useRef<HarborVoyage | null>(null);
   const seenChatIds = useRef<Set<string> | null>(null);
   const strikeSeq = useRef(0);
-  const defeatWritten = useRef(false);
-  const questIdentity = useRef<number | null>(null);
+  const arrivalWritten = useRef(false);
+  const voyageIdentity = useRef<number | null>(null);
 
-  const refreshQuestProgress = useCallback(async () => {
-    const q = questRef.current;
-    if (!q) return;
-    const minutes = await questProgressMinutes(room.id, room.memberIds, q).catch(
+  // 選択中の航路。seed から決定的に引き直せるので、全員で同じものが出る。
+  const route = useMemo(
+    () => (voyage ? generateRoutes(voyage.seed)[voyage.routeIndex] ?? null : null),
+    [voyage],
+  );
+
+  const refreshVoyageProgress = useCallback(async () => {
+    const v = voyageRef.current;
+    if (!v) return;
+    const minutes = await voyageProgressMinutes(room.id, room.memberIds, v).catch(
       () => null,
     );
-    if (minutes !== null && questRef.current === q) setQuestProgress(minutes);
+    if (minutes !== null && voyageRef.current === v) setVoyageProgress(minutes);
   }, [room.id, room.memberIds]);
 
   useEffect(() => {
-    // デモ(#demo)は見本のメンバーと試練だけ(Firestoreは購読しない)。
+    // デモ(#demo)は見本のメンバーと航海だけ(Firestoreは購読しない)。
     if (isDemo) {
       setMembers(demoHarborMembers());
-      setQuest(demoQuest());
-      setQuestProgress(demoQuestProgressMinutes);
+      setVoyage(demoVoyage());
+      setVoyageProgress(demoVoyageProgressMinutes());
       return;
     }
     void fetchMembers("rooms", room.id).then(setMembers);
     const stopChat = listenChat(room.id, (msgs) => {
       setMessages(msgs);
       // マウント後に新しく届いた着岸/帰還を「一撃」として世界へ流し、
-      // 記録が増えた合図として試練の進捗も引き直す。
+      // 記録が増えた合図として航海の進捗も引き直す。
       if (seenChatIds.current === null) {
         seenChatIds.current = new Set(msgs.map((m) => m.id));
         return;
@@ -738,41 +747,41 @@ function RoomDetail({
       const hits = fresh.filter((m) => m.kind !== "text");
       if (hits.length === 0) return;
       setStrike({ uid: hits[hits.length - 1].uid, seq: ++strikeSeq.current });
-      void refreshQuestProgress();
+      void refreshVoyageProgress();
     });
-    const stopQuest = listenQuest(room.id, (q) => {
-      questRef.current = q;
-      // questが入れ替わったら(削除→再作成を含む)旧questの進捗と討伐フラグを
-      // 持ち越さない — 旧進捗のまま新questを即討伐してしまうのを防ぐ。
-      const identity = q ? q.createdAt.getTime() : null;
-      if (identity !== questIdentity.current) {
-        questIdentity.current = identity;
-        setQuestProgress(0);
-        defeatWritten.current = false;
+    const stopVoyage = listenVoyage(room.id, (v) => {
+      voyageRef.current = v;
+      // voyageが入れ替わったら(削除→再作成を含む)旧voyageの進捗と到着フラグを
+      // 持ち越さない — 旧進捗のまま新voyageを即到着させてしまうのを防ぐ。
+      const identity = v ? v.createdAt.getTime() : null;
+      if (identity !== voyageIdentity.current) {
+        voyageIdentity.current = identity;
+        setVoyageProgress(0);
+        arrivalWritten.current = false;
       }
-      setQuest(q);
-      if (q && !q.defeatedAt) void refreshQuestProgress();
+      setVoyage(v);
+      if (v && !v.arrivedAt) void refreshVoyageProgress();
     });
     return () => {
       stopChat();
-      stopQuest();
+      stopVoyage();
     };
-  }, [room.id, refreshQuestProgress]);
+  }, [room.id, refreshVoyageProgress]);
 
-  // 合算が目標に達したのを見た閲覧者が、討伐を一度だけ刻む。
+  // 合算が目標に達したのを見た閲覧者が、到着を一度だけ刻む。
   // (並走した他の閲覧者の2回目はルールで拒否される — 握りつぶす。)
   useEffect(() => {
-    if (isDemo || !quest || quest.defeatedAt) return;
-    if (questProgress < quest.targetMinutes || defeatWritten.current) return;
-    defeatWritten.current = true;
-    void markQuestDefeated(room.id).catch(() => {});
-  }, [quest, questProgress, room.id]);
+    if (isDemo || !voyage || voyage.arrivedAt) return;
+    if (voyageProgress < voyage.targetMinutes || arrivalWritten.current) return;
+    arrivalWritten.current = true;
+    void markVoyageArrived(room.id).catch(() => {});
+  }, [voyage, voyageProgress, room.id]);
 
-  // 討伐を検知したら戦利品を解放(ローカルフラグ)して知らせる。
+  // 到着を検知したら、その航路の戦利品を解放(ローカルフラグ)して知らせる。
   useEffect(() => {
-    if (!quest?.defeatedAt) return;
-    if (grantHarborLoot()) showToast(t("questLootToast"));
-  }, [quest]);
+    if (isDemo || !voyage?.arrivedAt || !route?.lootKey) return;
+    if (grantLoot(route.lootKey)) showToast(t("lootToast"));
+  }, [voyage, route]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -865,33 +874,34 @@ function RoomDetail({
               room={room}
               members={members}
               onSelectMember={onOpenMember}
-              quest={quest}
-              progressMinutes={questProgress}
+              voyage={voyage}
+              route={route}
+              progressMinutes={voyageProgress}
               strike={strike}
             />
           </Suspense>
         </HarborWorldBoundary>
       )}
 
-      {/* 港の試練: 無ければ開始パネル、討伐済みなら「新たな試練」。 */}
-      {!isDemo && quest === null && <QuestStartPanel roomId={room.id} />}
-      {!isDemo && quest?.defeatedAt && (
+      {/* 共同航海: 無ければ海図パネル、到着済みなら「次の航海」。 */}
+      {!isDemo && voyage === null && <VoyageChartPanel roomId={room.id} />}
+      {!isDemo && voyage?.arrivedAt && (
         <div className="quest-done-row">
-          <span className="badge">{t("questDefeatedBadge")}</span>
+          <span className="badge">{t("voyageArrivedBadge")}</span>
           <button
             className="chip"
             onClick={async () => {
               const ok = await askConfirm({
-                title: t("questNew"),
-                message: t("questNewConfirm"),
-                confirmLabel: t("questNew"),
+                title: t("voyageNew"),
+                message: t("voyageNewConfirm"),
+                confirmLabel: t("voyageNew"),
               });
               if (!ok) return;
-              // 旧questを流す。開始パネルが現れて、新たな試練を呼べる。
-              await deleteQuest(room.id).catch(() => showToast(t("errGeneric")));
+              // 旧voyageを仕舞う。海図パネルが現れて、次の航海へ出られる。
+              await deleteVoyage(room.id).catch(() => showToast(t("errGeneric")));
             }}
           >
-            {t("questNew")}
+            {t("voyageNew")}
           </button>
         </div>
       )}
@@ -960,85 +970,6 @@ function RoomDetail({
       <div style={{ marginTop: 28 }}>
         <button className="quiet-button danger-text" onClick={leave}>
           {t("leaveHarbor")}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/// 試練の開始パネル。kind(海獣/嵐)+目標時間(20/50/100hプリセット+自由入力)。
-function QuestStartPanel({ roomId }: { roomId: string }) {
-  const [kind, setKind] = useState<QuestKind>("kraken");
-  const [presetHours, setPresetHours] = useState(20);
-  const [customHours, setCustomHours] = useState("");
-  const [working, setWorking] = useState(false);
-
-  const hours = customHours.trim() ? Number(customHours) : presetHours;
-  const valid = Number.isFinite(hours) && hours >= 1 && hours <= 10000;
-  const summonLabel = t(kind === "kraken" ? "summonKraken" : "summonStorm");
-
-  const start = async () => {
-    if (!valid || working) return;
-    const ok = await askConfirm({
-      title: summonLabel,
-      message: t(kind === "kraken" ? "questStartConfirmKraken" : "questStartConfirmStorm"),
-      confirmLabel: t("questStart"),
-    });
-    if (!ok) return;
-    setWorking(true);
-    try {
-      await createQuest(roomId, kind, Math.round(hours * 60));
-    } catch {
-      showToast(t("errGeneric"));
-    } finally {
-      setWorking(false);
-    }
-  };
-
-  return (
-    <div className="quest-panel">
-      <p className="section-label">{t("questTitle")}</p>
-      <p className="quest-intro">{t("questIntro")}</p>
-      <div className="chip-row">
-        {(["kraken", "storm"] as QuestKind[]).map((k) => (
-          <button
-            key={k}
-            className={`chip${kind === k ? " selected" : ""}`}
-            onClick={() => setKind(k)}
-          >
-            {t(k === "kraken" ? "questKindKraken" : "questKindStorm")}
-          </button>
-        ))}
-      </div>
-      <p className="row-sub" style={{ margin: "12px 0 6px" }}>
-        {t("questTargetLabel")}
-      </p>
-      <div className="chip-row">
-        {[20, 50, 100].map((h) => (
-          <button
-            key={h}
-            className={`chip${!customHours.trim() && presetHours === h ? " selected" : ""}`}
-            onClick={() => {
-              setPresetHours(h);
-              setCustomHours("");
-            }}
-          >
-            {questHoursLabel(h)}
-          </button>
-        ))}
-        <input
-          className="field quest-hours-field"
-          inputMode="numeric"
-          value={customHours}
-          onChange={(e) => setCustomHours(e.target.value.replace(/[^0-9]/g, "").slice(0, 5))}
-          placeholder={t("questCustomHours")}
-          aria-label={t("questTargetLabel")}
-        />
-        <span className="row-sub">{t("hoursUnit")}</span>
-      </div>
-      <div style={{ marginTop: 14 }}>
-        <button className="primary-button" onClick={start} disabled={!valid || working}>
-          {summonLabel}
         </button>
       </div>
     </div>

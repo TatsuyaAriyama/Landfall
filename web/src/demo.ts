@@ -1,6 +1,7 @@
 import { dayId, startOfDay } from "./types";
 import type { UserData } from "./data";
-import type { HarborMember, HarborQuest, HarborRoom } from "./harbor";
+import type { HarborMember, HarborRoom, HarborVoyage } from "./harbor";
+import { generateRoutes } from "./voyageMap";
 
 // URLに #demo を付けたときだけ使う見本データ(デザイン確認用。Firestoreには触れない)。
 
@@ -74,19 +75,36 @@ export function demoHarborMembers(): HarborMember[] {
 /// 「今日走った」ことにするデモメンバー(みんなの海のランタン見本)。
 export const demoLitMemberIds: ReadonlySet<string> = new Set(["demo", "D-3"]);
 
-/// 港の試練の見本(海獣・進捗は2段階目の潮目)。
-export function demoQuest(): HarborQuest {
+/// 共同航海の見本。seed固定の海図で「深みの航路」を進んでいて、
+/// ちょうど海獣の海域の中(潮目2段階目あたり)にいる。
+const DEMO_VOYAGE_SEED = 20260722;
+const DEMO_VOYAGE_TARGET = 50 * 60;
+
+export function demoVoyage(): HarborVoyage {
   const created = new Date();
   created.setDate(created.getDate() - 6);
+  const routes = generateRoutes(DEMO_VOYAGE_SEED);
+  const deepIndex = Math.max(
+    routes.findIndex((r) => r.archetype === "deep"),
+    0,
+  );
   return {
-    kind: "kraken",
-    targetMinutes: 50 * 60,
+    seed: DEMO_VOYAGE_SEED,
+    targetMinutes: DEMO_VOYAGE_TARGET,
+    routeIndex: deepIndex,
     createdAt: created,
     createdBy: "demo",
   };
 }
 
-export const demoQuestProgressMinutes = 22 * 60;
+/// 見本の進捗(分)。海獣の区間の6割まで進んだ位置に置く。
+export function demoVoyageProgressMinutes(): number {
+  const voyage = demoVoyage();
+  const route = generateRoutes(voyage.seed)[voyage.routeIndex];
+  const kraken = route.encounters.find((e) => e.kind === "kraken");
+  const frac = kraken ? kraken.start + (kraken.end - kraken.start) * 0.6 : 0.5;
+  return Math.round(frac * voyage.targetMinutes);
+}
 
 export function demoData(): UserData {
   const now = new Date();
