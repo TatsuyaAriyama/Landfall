@@ -114,11 +114,11 @@ export function TraceView({ uid, data }: { uid: string; data: UserData }) {
       </div>
 
       <div className="stat-strip">
-        <div className="stat sun">
+        <div className="stat studied">
           <div className="stat-number">{stats.studied}</div>
           <div className="stat-label">{t("studiedDays")}</div>
         </div>
-        <div className="stat sea">
+        <div className="stat rested">
           <div className="stat-number">{stats.rested}</div>
           <div className="stat-label">{t("restedDays")}</div>
         </div>

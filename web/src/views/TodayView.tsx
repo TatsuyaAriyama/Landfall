@@ -226,8 +226,8 @@ export function SessionRow({
         {t("minutesUnit")}
       </span>
       {onDelete && (
-        <button className="quiet-button" onClick={onDelete}>
-          {t("delete")}
+        <button className="minus-button" onClick={onDelete} aria-label={t("delete")}>
+          −
         </button>
       )}
     </div>
