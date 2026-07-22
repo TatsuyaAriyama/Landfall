@@ -1907,3 +1907,54 @@ textarea {
   margin: 16px 0 0;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- 目的地の3D航海シーン(1件目のカード) ---- */
+
+.voyage-scene {
+  position: relative;
+  height: 200px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #123830;
+  cursor: pointer;
+  transition: transform 0.12s ease-out;
+}
+
+.voyage-scene:active {
+  transform: scale(0.99);
+}
+
+.voyage-scene canvas {
+  display: block;
+  /* クリックはカード全体で受け、スクロールもそのまま通す */
+  pointer-events: none;
+}
+
+.voyage-head {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  right: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.voyage-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--harbor-sand);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voyage-remaining {
+  font-size: 13px;
+  color: color-mix(in srgb, var(--harbor-sand) 65%, transparent);
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}

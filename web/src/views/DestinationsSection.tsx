@@ -1,10 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  Component,
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   MAX_ACTIVE_DESTINATIONS,
   deleteDestination,
   destinationProgress,
   saveDestination,
   type Destination,
+  type DestinationProgress,
 } from "../destinations";
 import type { UserData } from "../data";
 import { boatProps } from "../boat";
@@ -18,7 +27,49 @@ import {
 } from "../i18n";
 
 // 目的地(島)。海図カードの上を、記録するたび船が島へ近づいていく。
+// 1件目は3Dの航海シーン(自分の船が夜の海を島へ走る)、2件目以降は2Dカード。
 // 到達したら「着岸。」の一枚(夜の入港と同じ世界)で祝う。
+
+// three.js を含む航海シーンは重いので、表示するときだけ読み込む。
+const VoyageScene = lazy(() => import("../three/VoyageScene"));
+
+/// WebGLが使えるか(一度だけ判定)。使えない環境では2Dカードのまま。
+let webglCache: boolean | null = null;
+function canUseWebGL(): boolean {
+  if (webglCache !== null) return webglCache;
+  try {
+    const c = document.createElement("canvas");
+    webglCache = Boolean(
+      window.WebGLRenderingContext && (c.getContext("webgl2") || c.getContext("webgl")),
+    );
+  } catch {
+    webglCache = false;
+  }
+  return webglCache;
+}
+
+/// 3Dの描画に失敗したら、白画面にせず2Dカードへ静かに戻る。
+class VoyageErrorBoundary extends Component<
+  { fallback: ReactNode; children?: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+/// 残り表示(「あと3時間20分」「あと12日」)。2D/3Dカードで共通。
+function remainingLabel(progress: DestinationProgress): string {
+  return progress.remainingMinutes !== undefined
+    ? remainingHoursLabel(progress.remainingMinutes)
+    : progress.remainingDays !== undefined
+      ? remainingDaysLabel(progress.remainingDays)
+      : "";
+}
 
 export function DestinationsSection({ uid, data }: { uid: string; data: UserData }) {
   const [editing, setEditing] = useState<Destination | null>(null);
@@ -47,14 +98,23 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
     <>
       <p className="section-label">{t("destinations")}</p>
       <div className="dest-stack">
-        {active.map((dest) => (
-          <DestinationCard
-            key={dest.id}
-            dest={dest}
-            data={data}
-            onClick={() => setEditing(dest)}
-          />
-        ))}
+        {active.map((dest, index) =>
+          index === 0 && canUseWebGL() ? (
+            <VoyageCard
+              key={dest.id}
+              dest={dest}
+              data={data}
+              onClick={() => setEditing(dest)}
+            />
+          ) : (
+            <DestinationCard
+              key={dest.id}
+              dest={dest}
+              data={data}
+              onClick={() => setEditing(dest)}
+            />
+          ),
+        )}
         {active.length < MAX_ACTIVE_DESTINATIONS && (
           <button className="dest-add" onClick={() => setCreating(true)}>
             + {t("addDestination")}
@@ -83,6 +143,33 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
   );
 }
 
+/// 1件目の目的地の3D航海シーン。読込中と描画失敗時は2Dカードのまま。
+function VoyageCard({
+  dest,
+  data,
+  onClick,
+}: {
+  dest: Destination;
+  data: UserData;
+  onClick: () => void;
+}) {
+  const progress = destinationProgress(dest, data.sessions);
+  const item = dest.itemUUID ? data.items.find((i) => i.id === dest.itemUUID) : undefined;
+  const fallback = <DestinationCard dest={dest} data={data} onClick={onClick} />;
+  return (
+    <VoyageErrorBoundary fallback={fallback}>
+      <Suspense fallback={fallback}>
+        <VoyageScene
+          name={item ? `${dest.name} · ${item.name}` : dest.name}
+          ratio={progress.ratio}
+          label={remainingLabel(progress)}
+          onClick={onClick}
+        />
+      </Suspense>
+    </VoyageErrorBoundary>
+  );
+}
+
 /// 海図カード。夜の海に水平線、右端に島、進捗の位置に船。
 function DestinationCard({
   dest,
@@ -94,12 +181,7 @@ function DestinationCard({
   onClick: () => void;
 }) {
   const progress = destinationProgress(dest, data.sessions);
-  const label =
-    progress.remainingMinutes !== undefined
-      ? remainingHoursLabel(progress.remainingMinutes)
-      : progress.remainingDays !== undefined
-        ? remainingDaysLabel(progress.remainingDays)
-        : "";
+  const label = remainingLabel(progress);
   const item = dest.itemUUID ? data.items.find((i) => i.id === dest.itemUUID) : undefined;
 
   return (
