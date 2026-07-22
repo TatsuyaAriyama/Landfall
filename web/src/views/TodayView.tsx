@@ -7,7 +7,7 @@ import {
   type StudyItem,
   type StudySession,
 } from "../types";
-import { deleteSession, recordSession, type UserData } from "../data";
+import { deleteSession, recordSession, saveItem, type UserData } from "../data";
 import { TileSymbolSvg } from "../symbols";
 import { ItemEditor } from "./ItemEditor";
 import { Modal, askConfirm, showToast } from "../overlays";
@@ -37,6 +37,28 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const [creating, setCreating] = useState(false);
   const [timer, setTimer] = useState<RunningTimer | null>(() => readTimer());
   const [now, setNow] = useState(Date.now());
+  // タイルのドラッグ並び替え。ドロップした瞬間に sortOrder を書き直して反映する。
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+
+  const dropOn = async (targetId: string) => {
+    const from = dragId;
+    setDragId(null);
+    setOverId(null);
+    if (!from || from === targetId) return;
+    const ids = data.items.map((i) => i.id);
+    const fromIdx = ids.indexOf(from);
+    const toIdx = ids.indexOf(targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    ids.splice(toIdx, 0, ...ids.splice(fromIdx, 1));
+    await Promise.all(
+      ids.map((id, idx) => {
+        const item = data.items.find((i) => i.id === id);
+        if (!item || item.sortOrder === idx) return Promise.resolve();
+        return saveItem(uid, { ...item, id, sortOrder: idx });
+      }),
+    );
+  };
 
   useEffect(() => {
     if (!timer) return;
@@ -94,8 +116,31 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
       <div className="tile-grid">
         {data.items.map((item) => {
           const style = STYLE_COLORS[normalizeStyle(item.styleToken)];
+          const dragClass =
+            item.id === dragId ? " dragging" : item.id === overId ? " drag-over" : "";
           return (
-            <button key={item.id} className="tile" onClick={() => setRecording(item)}>
+            <button
+              key={item.id}
+              className={`tile${dragClass}`}
+              onClick={() => setRecording(item)}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = "move";
+                setDragId(item.id);
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (overId !== item.id) setOverId(item.id);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                void dropOn(item.id);
+              }}
+              onDragEnd={() => {
+                setDragId(null);
+                setOverId(null);
+              }}
+            >
               <div className="tile-art" style={{ background: style.bg }}>
                 <TileSymbolSvg
                   symbol={normalizeSymbol(item.symbolToken)}
@@ -317,7 +362,41 @@ function RecordDialog({
         </div>
 
         <p className="section-label">{t("minutesLabel")}</p>
-        <div className="chip-row">
+        {/* 大きな数字を − / + で刻む(5分刻み)。数字は直接入力もできる。 */}
+        <div className="stepper-row">
+          <button
+            className="minus-button stepper-button"
+            onClick={() => setMinutes((m) => Math.max(5, Math.floor((m - 1) / 5) * 5))}
+            aria-label="-5"
+          >
+            −
+          </button>
+          <span className="stepper-value">
+            <input
+              className="stepper-input"
+              type="text"
+              inputMode="numeric"
+              value={minutes}
+              onChange={(e) => {
+                const n = Number(e.target.value.replace(/[^0-9]/g, ""));
+                setMinutes(Number.isFinite(n) ? Math.min(n, 6000) : 0);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) void save();
+              }}
+              aria-label={t("minutesLabel")}
+            />
+            <span className="stepper-unit">{t("minutesUnit")}</span>
+          </span>
+          <button
+            className="minus-button stepper-button"
+            onClick={() => setMinutes((m) => Math.min(6000, Math.floor(m / 5) * 5 + 5))}
+            aria-label="+5"
+          >
+            +
+          </button>
+        </div>
+        <div className="chip-row" style={{ justifyContent: "center", marginTop: 14 }}>
           {MINUTE_PRESETS.map((m) => (
             <button
               key={m}
@@ -327,19 +406,6 @@ function RecordDialog({
               {m}
             </button>
           ))}
-          <input
-            className="field"
-            style={{ width: 100, padding: "8px 14px", minHeight: 40 }}
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={6000}
-            value={minutes}
-            onChange={(e) => setMinutes(Number(e.target.value))}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.nativeEvent.isComposing) void save();
-            }}
-          />
         </div>
 
         <p className="section-label">{t("noteOptional")}</p>
@@ -359,7 +425,7 @@ function RecordDialog({
           {t("record")}
         </button>
         {onStartTimer && (
-          <button className="quiet-button timer-start" onClick={onStartTimer}>
+          <button className="timer-start-outline" onClick={onStartTimer}>
             {t("startTimer")}
           </button>
         )}
