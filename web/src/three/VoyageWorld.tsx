@@ -404,6 +404,11 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   );
   const [working, setWorking] = useState(false);
   const confirmingRef = useRef(false);
+  // 期日/累計時間を「触った」印。既存の値がすでに有効でも、開いた直後には
+  // 自動保存しない(ただ見ただけで閉じてしまうのを防ぐ)ためのガード。
+  const dateTouched = useRef(false);
+  const hoursTouched = useRef(false);
+  const autoSavedRef = useRef(false);
 
   const trimmed = name.replace(/^[\s　]+|[\s　]+$/g, "");
   const hoursNum = Number(hours);
@@ -470,6 +475,23 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     showToast(t("savedToast"));
     requestClose();
   };
+
+  // 期日/累計時間を設定し終えたら、そのまま保存してズームアウト(ホームへ戻る)。
+  // 「保存する」を別途押す一手間をなくす — 名前・項目だけの変更は従来通り
+  // 保存ボタンで確定する(値を触っていなければここでは動かない)。
+  useEffect(() => {
+    // 目標の種類を切り替えたら、前の種類での「触った/自動保存済み」の印は捨てる。
+    dateTouched.current = false;
+    hoursTouched.current = false;
+    autoSavedRef.current = false;
+  }, [kind]);
+
+  useEffect(() => {
+    if (kind !== "date" || !dateTouched.current || autoSavedRef.current) return;
+    if (dateStr.length !== 10 || !trimmed || working) return;
+    autoSavedRef.current = true;
+    void save();
+  }, [dateStr, kind, trimmed, working]);
 
   const remove = async () => {
     if (!dest || working) return;
@@ -595,7 +617,18 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                     type="text"
                     inputMode="numeric"
                     value={hours}
-                    onChange={(e) => setHours(e.target.value.replace(/[^0-9]/g, ""))}
+                    onChange={(e) => {
+                      hoursTouched.current = true;
+                      setHours(e.target.value.replace(/[^0-9]/g, ""));
+                    }}
+                    onBlur={() => {
+                      if (kind === "hours" && hoursTouched.current && valid && !working) {
+                        void save();
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                    }}
                     aria-label={t("goalHours")}
                   />
                   <span className="stepper-unit">{t("hoursUnit")}</span>
@@ -607,7 +640,10 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                 type="date"
                 value={dateStr}
                 min={new Date().toISOString().slice(0, 10)}
-                onChange={(e) => setDateStr(e.target.value)}
+                onChange={(e) => {
+                  dateTouched.current = true;
+                  setDateStr(e.target.value);
+                }}
               />
             ) : (
               <>
