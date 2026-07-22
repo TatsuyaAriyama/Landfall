@@ -1930,6 +1930,22 @@ textarea {
 
 /* ---- 目的地の3D航海シーン(1件目のカード) ---- */
 
+/* 世界の読込中の幕。夜の海と同じ色で、素早く読めた場合は何も見えない(80ms遅延)。 */
+.voyage-world-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  background: #123830;
+  opacity: 0;
+  animation: voyage-loading-in 0.18s ease-out 0.08s forwards;
+}
+
+@keyframes voyage-loading-in {
+  to {
+    opacity: 1;
+  }
+}
+
 .voyage-scene {
   position: relative;
   height: 200px;

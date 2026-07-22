@@ -155,7 +155,9 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
           }}
         />
       )}
-      {/* 3Dカードから入る没入エディタ。読込中と描画失敗時は従来のダイアログ。 */}
+      {/* 3Dカードから入る没入エディタ。
+          読込中は夜の海色の静かな幕(旧ダイアログを一瞬でも見せない)。
+          描画失敗時のみ従来のダイアログへ(編集手段を失わない)。 */}
       {world && (
         <VoyageErrorBoundary
           fallback={
@@ -167,16 +169,7 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
             />
           }
         >
-          <Suspense
-            fallback={
-              <DestinationDialog
-                uid={uid}
-                dest={world}
-                data={data}
-                onClose={() => setWorld(null)}
-              />
-            }
-          >
+          <Suspense fallback={<div className="voyage-world-loading" />}>
             <VoyageWorld dest={world} data={data} uid={uid} onClose={() => setWorld(null)} />
           </Suspense>
         </VoyageErrorBoundary>
@@ -203,20 +196,29 @@ function VoyageCard({
 }) {
   const progress = destinationProgress(dest, data.sessions);
   const item = dest.itemUUID ? data.items.find((i) => i.id === dest.itemUUID) : undefined;
-  const fallback = <DestinationCard dest={dest} data={data} onClick={onClick} />;
+  const name = item ? `${dest.name} · ${item.name}` : dest.name;
+  const label = remainingLabel(progress);
   // カードが見えている=世界に入る可能性があるので、チャンクを先読みしておく。
   useEffect(() => {
     void loadVoyageWorld();
   }, []);
   return (
-    <VoyageErrorBoundary fallback={fallback}>
-      <Suspense fallback={fallback}>
-        <VoyageScene
-          name={item ? `${dest.name} · ${item.name}` : dest.name}
-          ratio={progress.ratio}
-          label={remainingLabel(progress)}
-          onClick={onClick}
-        />
+    // 描画失敗時のみ2Dカードへ。読込中は3Dシーンと同じ器(夜の海色+見出し)を
+    // 出しておき、2Dカードが一瞬挟まるチラつきをなくす。
+    <VoyageErrorBoundary
+      fallback={<DestinationCard dest={dest} data={data} onClick={onClick} />}
+    >
+      <Suspense
+        fallback={
+          <button className="voyage-scene" onClick={onClick}>
+            <div className="voyage-head">
+              <span className="voyage-name">{name}</span>
+              <span className="voyage-remaining">{label}</span>
+            </div>
+          </button>
+        }
+      >
+        <VoyageScene name={name} ratio={progress.ratio} label={label} onClick={onClick} />
       </Suspense>
     </VoyageErrorBoundary>
   );
