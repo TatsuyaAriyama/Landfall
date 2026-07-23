@@ -4,6 +4,7 @@ import { OrbitControls, Stars } from "@react-three/drei";
 import type { UserData } from "../data";
 import type { BoatParts } from "../symbols";
 import BoatModel from "../three/BoatModel";
+import PhoenixModel, { type PhoenixPose } from "../three/PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "../three/SeaParts";
 import {
   BOAT_OPTIONS,
@@ -60,9 +61,61 @@ function NightSea({ parts, animate }: { parts: BoatParts; animate: boolean }) {
   );
 }
 
-/// 船タブ。上が3Dステージ、下が部位ごとのカスタマイズ。
+/// 航海士ステージ。同じ夜の海に、プレイヤー(不死鳥の航海士)を大きく立たせて見せる。
+/// 船より一回り寄って、ポーズ切り替えで歩行や仕草を確認できる。
+function SailorStage({ pose, animate }: { pose: PhoenixPose; animate: boolean }) {
+  const [autoRotate, setAutoRotate] = useState(true);
+  return (
+    <>
+      <color attach="background" args={[NIGHT_BG]} />
+      <fog attach="fog" args={[NIGHT_BG, 11, 30]} />
+      <ambientLight color="#ffe9c8" intensity={0.6} />
+      <directionalLight color="#EADEBD" intensity={1.4} position={[-6, 8, -5]} />
+      <directionalLight color="#5DCAA5" intensity={0.28} position={[5, 3, 6]} />
+      <Stars
+        radius={42}
+        depth={18}
+        count={900}
+        factor={2.2}
+        saturation={0}
+        fade
+        speed={animate ? 0.6 : 0}
+      />
+      <Moon position={[-8.5, 5.6, -14]} />
+      <Sea />
+      <Ripples animate={animate} />
+      <group scale={0.95}>
+        <PhoenixModel animate={animate} pose={pose} />
+      </group>
+      <OrbitControls
+        target={[0, 0.62, 0]}
+        enablePan={false}
+        enableDamping
+        minDistance={1.8}
+        maxDistance={7}
+        minPolarAngle={Math.PI * 0.14}
+        maxPolarAngle={Math.PI * 0.56}
+        autoRotate={autoRotate && animate}
+        autoRotateSpeed={0.6}
+        onStart={() => setAutoRotate(false)}
+      />
+    </>
+  );
+}
+
+const POSES: [PhoenixPose, I18nKey][] = [
+  ["idle", "poseIdle"],
+  ["walk", "poseWalk"],
+  ["raise", "poseRaise"],
+  ["hail", "poseHail"],
+];
+
+/// 装いタブ。上が3Dステージ、下がカスタマイズ。
+/// 「船」と「航海士」を切り替えて、それぞれを360度眺められる。
 export default function BoatStudio({ data }: { data: UserData }) {
   const [, setTick] = useState(0);
+  const [mode, setMode] = useState<"boat" | "sailor">("boat");
+  const [pose, setPose] = useState<PhoenixPose>("idle");
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
@@ -81,21 +134,61 @@ export default function BoatStudio({ data }: { data: UserData }) {
 
   return (
     <div>
-      <h1 className="page-title">{t("boatStudioTitle")}</h1>
+      <h1 className="page-title">
+        {mode === "boat" ? t("boatStudioTitle") : t("sailorTitle")}
+      </h1>
+      {/* 「船」と「航海士」の切り替え。装いタブの入口。 */}
+      <div className="chip-row" style={{ marginBottom: 12 }}>
+        <button
+          className={`chip${mode === "boat" ? " selected" : ""}`}
+          onClick={() => setMode("boat")}
+        >
+          {t("dressBoat")}
+        </button>
+        <button
+          className={`chip${mode === "sailor" ? " selected" : ""}`}
+          onClick={() => setMode("sailor")}
+        >
+          {t("dressSailor")}
+        </button>
+      </div>
       <div className="boat-studio-stage">
         <Canvas
           dpr={[1, 2]}
           frameloop={animate ? "always" : "demand"}
-          camera={{ position: [3.1, 1.7, 4.3], fov: 40 }}
+          camera={
+            mode === "boat"
+              ? { position: [3.1, 1.7, 4.3], fov: 40 }
+              : { position: [1.7, 1.35, 3.4], fov: 40 }
+          }
         >
-          <NightSea parts={parts} animate={animate} />
+          {mode === "boat" ? (
+            <NightSea parts={parts} animate={animate} />
+          ) : (
+            <SailorStage pose={pose} animate={animate} />
+          )}
         </Canvas>
       </div>
       <p className="boat-studio-hint">{t("boatHint")}</p>
-      <p className="boat-studio-total">
-        {t("totalVoyage")}: {totalLabel}
-      </p>
-      {(
+      {mode === "sailor" ? (
+        <div className="chip-row" style={{ marginTop: 4 }}>
+          {POSES.map(([key, labelKey]) => (
+            <button
+              key={key}
+              className={`chip${pose === key ? " selected" : ""}`}
+              onClick={() => setPose(key)}
+            >
+              {t(labelKey)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {mode === "sailor" ? null : (
+        <>
+          <p className="boat-studio-total">
+            {t("totalVoyage")}: {totalLabel}
+          </p>
+          {(
         [
           ["sail", "sailColor"],
           ["jib", "jibLabel"],
@@ -153,7 +246,9 @@ export default function BoatStudio({ data }: { data: UserData }) {
             })}
           </div>
         </div>
-      ))}
+          ))}
+        </>
+      )}
     </div>
   );
 }
