@@ -3,14 +3,17 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stars } from "@react-three/drei";
 import { Moon, NIGHT_BG } from "./SeaParts";
 import PhoenixModel from "./PhoenixModel";
+import PhoenixBird from "./PhoenixBird";
 
 // 航海士フェニックスの360度ビューア。URLハッシュ #phoenix で開く。
 // 背景は最小限(夜色+星+月)にして、中央のキャラクターだけを見せる。
 // ドラッグで自由に回せるほか、向きのプリセットで正面・横・背面へ一発移動。
+// 「航海士」=人型の生きた紋章(本命)、「海鳥」=保存している鳥型の別案。
 
 const YAWS = [0, 90, 180, 270];
 
 export default function PhoenixViewer() {
+  const [form, setForm] = useState<"hero" | "bird">("hero");
   const [yaw, setYaw] = useState(0);
   const [autoRotate, setAutoRotate] = useState(true);
 
@@ -25,7 +28,7 @@ export default function PhoenixViewer() {
         <Stars radius={42} depth={18} count={320} factor={2.0} saturation={0} fade speed={0.4} />
         <Moon position={[-8, 4.2, -14]} />
         <group rotation={[0, (yaw * Math.PI) / 180, 0]}>
-          <PhoenixModel animate />
+          {form === "hero" ? <PhoenixModel animate /> : <PhoenixBird animate />}
         </group>
         <OrbitControls
           target={[0, 0.62, 0]}
@@ -42,6 +45,20 @@ export default function PhoenixViewer() {
       </Canvas>
 
       <div className="phoenix-viewer-ui">
+        <div className="chip-row">
+          <button
+            className={`chip${form === "hero" ? " selected" : ""}`}
+            onClick={() => setForm("hero")}
+          >
+            航海士
+          </button>
+          <button
+            className={`chip${form === "bird" ? " selected" : ""}`}
+            onClick={() => setForm("bird")}
+          >
+            海鳥
+          </button>
+        </div>
         <div className="chip-row">
           {YAWS.map((deg) => (
             <button
