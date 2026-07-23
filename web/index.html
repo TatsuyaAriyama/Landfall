@@ -6,14 +6,21 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icon-180.png" />
     <meta name="theme-color" content="#184A40" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="Landfall — 学習記録アプリ。iPhone・iPad・PCで、記録が同期します。" />
+    <!-- viewport-fit=cover で、Android/iOSの切り欠き・ジェスチャーバー分の
+         safe-area-inset を有効化する(下部タブが被らないように) -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <!-- Androidのホーム追加でスタンドアロン起動(display:standaloneと合わせて) -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="description" content="Landfall — 学習記録アプリ。スマートフォン・タブレット・PCで、記録が同期します。" />
     <meta name="color-scheme" content="light dark" />
     <link rel="canonical" href="https://landfall-studylog.com/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Landfall-StudyLog" />
     <meta property="og:title" content="Landfall — Study Log" />
-    <meta property="og:description" content="学習記録アプリ。iPhone・iPad・PCで、記録が同期します。" />
+    <meta property="og:description" content="学習記録アプリ。スマートフォン・タブレット・PCで、記録が同期します。" />
     <meta property="og:url" content="https://landfall-studylog.com/" />
     <meta property="og:image" content="https://landfall-studylog.com/favicon.svg" />
     <title>Landfall — Study Log</title>

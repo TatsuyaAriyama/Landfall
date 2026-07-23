@@ -52,6 +52,9 @@ body {
     "Noto Sans JP", sans-serif;
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
+  /* Android Chrome の灰色のタップ点滅を消して、アプリらしい手触りにする
+     (押下フィードバックは各要素の :active / 押せるボタンで別途出している)。 */
+  -webkit-tap-highlight-color: transparent;
 }
 
 button {
@@ -1275,6 +1278,9 @@ textarea {
   }
 
   .shell {
+    /* viewport-fit=cover で上端が切り欠き/ステータスバーに掛かる端末でも、
+       上部(ブランド行)が隠れないようにセーフエリア分だけ下げる。 */
+    padding-top: env(safe-area-inset-top);
     padding-bottom: 140px;
   }
 
