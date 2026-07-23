@@ -50,10 +50,11 @@ const SEA_FRAG = /* glsl */ `
   varying vec2 vPos;
   void main() {
     float r = length(vPos) / 30.0;
-    // 放射グラデーション: 中心は海色、縁は夜色へ(霧の代わりに背景へ溶かす)。
-    vec3 col = mix(uSea, uDeep, smoothstep(0.08, 0.62, r));
-    // 中心のほのかな月明かりの溜まり。
-    col += (uMoon - uSea) * 0.05 * (1.0 - smoothstep(0.0, 0.45, r));
+    // 縁だけ夜色へ溶かす(旧・霧と同じ範囲: 距離12〜30 ≒ r 0.4〜1.0)。
+    // 船の周りの見える水面は海色のまま明るく保つ。
+    vec3 col = mix(uSea, uDeep, smoothstep(0.42, 1.0, r));
+    // 中心のほのかな月明かりの溜まりで、むしろ少し持ち上げる。
+    col += (uMoon - uSea) * 0.06 * (1.0 - smoothstep(0.0, 0.5, r));
     // 月光の筋: 月の真下(uMoonX)に立ち、水平線側で強く手前で崩れる縦の光。
     float dx = vPos.x - uMoonX;
     float along = smoothstep(-5.0, 13.0, vPos.y);   // 月側(奥)ほど強い
