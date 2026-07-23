@@ -625,13 +625,107 @@ enum VoyageSceneKit {
         bob.name = "boatBob"
         bob.addChildNode(makeBoatModel(BoatCustomization.currentParts))
         travel.addChildNode(bob)
+        if immersive {
+            // 船タップの当たり判定(船体+帆を覆う。Web BOAT_HIT_GEO)+ タップ波紋リング。
+            travel.addChildNode(makeTapRing())
+            let hit = SCNNode(geometry: SCNBox(width: 3.0, height: 2.6, length: 1.6, chamferRadius: 0))
+            hit.name = "boatHit"
+            hit.position = SCNVector3(0.1, 1.0, 0)
+            hit.opacity = 0
+            travel.addChildNode(hit)
+        }
         scene.rootNode.addChildNode(travel)
+
+        if immersive {
+            scene.rootNode.addChildNode(makeShootingStar())
+            scene.rootNode.addChildNode(makeIslandLabel())
+        }
 
         makeLights().forEach { scene.rootNode.addChildNode($0) }
         scene.rootNode.addChildNode(
             makeCamera(position: SCNVector3(0.4, 2.5, 8.2), target: SCNVector3(0, 0.35, 0), fov: 36)
         )
         return scene
+    }
+
+    // MARK: - 没入エディタ専用の部品(Web VoyageWorld)
+
+    /// タップ波紋リング(船タップで一周広がる)。既定は非表示。
+    private static func makeTapRing() -> SCNNode {
+        let path = UIBezierPath(ovalIn: CGRect(x: -1, y: -1, width: 2, height: 2))
+        path.append(UIBezierPath(ovalIn: CGRect(x: -0.9, y: -0.9, width: 1.8, height: 1.8)).reversing())
+        path.usesEvenOddFillRule = true
+        path.flatness = 0.02
+        let shape = SCNShape(path: path, extrusionDepth: 0)
+        let m = SCNMaterial()
+        m.lightingModel = .constant
+        m.diffuse.contents = ripple
+        m.writesToDepthBuffer = false
+        m.isDoubleSided = true
+        shape.firstMaterial = m
+        let node = SCNNode(geometry: shape)
+        node.name = "tapRing"
+        node.eulerAngles.x = -.pi / 2
+        node.position = SCNVector3(0, 0.03, 0)
+        node.isHidden = true
+        return node
+    }
+
+    /// 流れ星。細長い淡いプレーン。既定は非表示。動きはコーディネータが与える。
+    private static func makeShootingStar() -> SCNNode {
+        let plane = SCNPlane(width: 1.8, height: 0.035)
+        let m = SCNMaterial()
+        m.lightingModel = .constant
+        m.diffuse.contents = sand
+        m.isDoubleSided = true
+        m.writesToDepthBuffer = false
+        plane.firstMaterial = m
+        let node = SCNNode(geometry: plane)
+        node.name = "shootingStar"
+        node.isHidden = true
+        node.opacity = 0
+        return node
+    }
+
+    /// 島の上に浮かぶ、入力中の島名ラベル(ビルボード)。テキストはコーディネータが更新する。
+    static func makeIslandLabel() -> SCNNode {
+        let plane = SCNPlane(width: 0.01, height: 0.01)
+        let m = SCNMaterial()
+        m.lightingModel = .constant
+        m.isDoubleSided = true
+        m.writesToDepthBuffer = false
+        plane.firstMaterial = m
+        let node = SCNNode(geometry: plane)
+        node.name = "islandLabel"
+        node.position = SCNVector3(3.5, 1.9, -0.9)
+        node.constraints = [SCNBillboardConstraint()]
+        node.isHidden = true
+        return node
+    }
+
+    /// 島名ラベルのテクスチャ(と縦横)を更新する。空なら隠す。
+    static func updateIslandLabel(_ node: SCNNode, text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { node.isHidden = true; return }
+        let font = UIFont.systemFont(ofSize: 48, weight: .regular)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: sand]
+        let textSize = (trimmed as NSString).size(withAttributes: attrs)
+        let pad: CGFloat = 28
+        let w = textSize.width + pad * 2
+        let h = textSize.height + pad
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: w, height: h))
+        let image = renderer.image { _ in
+            (trimmed as NSString).draw(
+                at: CGPoint(x: pad, y: pad / 2), withAttributes: attrs
+            )
+        }
+        node.geometry?.firstMaterial?.diffuse.contents = image
+        // 世界の高さ ~0.62 に合わせて横幅を決める。
+        let worldH: CGFloat = 0.62
+        let worldW = worldH * (w / h)
+        (node.geometry as? SCNPlane)?.width = worldW
+        (node.geometry as? SCNPlane)?.height = worldH
+        node.isHidden = false
     }
 
     // MARK: - シーン(装い: 船スタジオ)
@@ -917,4 +1011,362 @@ struct NavigatorSceneView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: SCNView, context: Context) {}
+}
+
+// MARK: - 没入エディタの世界(Web VoyageWorld 相当)
+
+enum VoyagePhase { case enter, idle, exit }
+
+/// 目的地の没入エディタの3D世界。押すとカードの遠景から近景へドリーインし、
+/// idle中は自前のオービット操作で一周でき、ブイ/船/月をタップできる。閉じるは逆再生。
+struct ImmersiveVoyageView: UIViewRepresentable {
+    var ratio: Double
+    var steps: [Bool]
+    var islandName: String
+    /// 閉じる要求(true にするとドリーアウト→onClosed)。
+    var closeRequested: Bool
+    var onToggleStep: (Int) -> Void
+    /// idle(操作可能)になったら true。遷移中は編集UIを隠すために使う。
+    var onIdleChange: (Bool) -> Void
+    var onClosed: () -> Void
+    var onTapBoat: () -> Void
+
+    func makeCoordinator() -> WorldCoordinator {
+        WorldCoordinator(onToggleStep: onToggleStep, onIdleChange: onIdleChange,
+                         onClosed: onClosed, onTapBoat: onTapBoat)
+    }
+
+    func makeUIView(context: Context) -> SCNView {
+        let view = SCNView()
+        view.scene = VoyageSceneKit.makeScene(ratio: ratio, steps: steps, immersive: true)
+        view.backgroundColor = VoyageSceneKit.nightBG
+        view.antialiasingMode = .multisampling4X
+        view.allowsCameraControl = false            // オービットは自前(Web OrbitControls と同じ制約)
+        view.autoenablesDefaultLighting = false
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        view.rendersContinuously = !reduceMotion
+
+        let coord = context.coordinator
+        coord.attach(view: view, reduceMotion: reduceMotion)
+        coord.targetX = VoyageSceneKit.boatX(ratio)
+        coord.stepsKey = steps.map { $0 ? "1" : "0" }.joined()
+        if let label = view.scene?.rootNode.childNode(withName: "islandLabel", recursively: false) {
+            VoyageSceneKit.updateIslandLabel(label, text: islandName)
+        }
+        view.delegate = coord
+
+        // タップ / パン(オービット) / ピンチ(距離)。
+        let tap = UITapGestureRecognizer(target: coord, action: #selector(WorldCoordinator.onTap(_:)))
+        view.addGestureRecognizer(tap)
+        let pan = UIPanGestureRecognizer(target: coord, action: #selector(WorldCoordinator.onPan(_:)))
+        view.addGestureRecognizer(pan)
+        let pinch = UIPinchGestureRecognizer(target: coord, action: #selector(WorldCoordinator.onPinch(_:)))
+        view.addGestureRecognizer(pinch)
+        return view
+    }
+
+    func updateUIView(_ view: SCNView, context: Context) {
+        let coord = context.coordinator
+        let key = steps.map { $0 ? "1" : "0" }.joined()
+        if key != coord.stepsKey {
+            coord.stepsKey = key
+            coord.rebuildBuoys(steps: steps)
+        }
+        coord.targetX = VoyageSceneKit.boatX(ratio)
+        if let label = view.scene?.rootNode.childNode(withName: "islandLabel", recursively: false) {
+            VoyageSceneKit.updateIslandLabel(label, text: islandName)
+        }
+        if closeRequested { coord.requestExit() }
+    }
+}
+
+/// 没入世界の駆動役。カメラ(ドリー/オービット)・タップ・毎フレームの演出。
+final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
+    private let onToggleStep: (Int) -> Void
+    private let onIdleChange: (Bool) -> Void
+    private let onClosed: () -> Void
+    private let onTapBoat: () -> Void
+
+    init(onToggleStep: @escaping (Int) -> Void, onIdleChange: @escaping (Bool) -> Void,
+         onClosed: @escaping () -> Void, onTapBoat: @escaping () -> Void) {
+        self.onToggleStep = onToggleStep
+        self.onIdleChange = onIdleChange
+        self.onClosed = onClosed
+        self.onTapBoat = onTapBoat
+    }
+
+    var targetX: Float = 0
+    var stepsKey = ""
+    private weak var view: SCNView?
+    private weak var scene: SCNScene?
+    private weak var camera: SCNNode?
+    private var reduceMotion = false
+
+    // 遠景(カードと同じ)/近景。
+    private let farPos = SCNVector3(0.4, 2.5, 8.2)
+    private let farTarget = SCNVector3(0, 0.35, 0)
+    private let dolly = 1.2
+
+    private var phase: VoyagePhase = .enter
+    private var phaseStart: TimeInterval?
+    private var fromPos = SCNVector3Zero
+
+    // 近景のオービット状態(target 周りの球面座標)。
+    private var target = SCNVector3(0, 0.5, -0.5)
+    private var distance: Float = 7.5
+    private var azimuth: Float = 0
+    private var polar: Float = .pi * 0.34
+    private var maxPolar: Float = .pi * 0.46
+    private let minPolar: Float = .pi * 0.16
+    private let minDist: Float = 3.2
+    private let maxDist: Float = 11
+
+    private var startTime: TimeInterval?
+    private var lastTime: TimeInterval = 0
+    private var exitRequested = false
+
+    // 演出タイマ
+    private var boatHopAt: TimeInterval = -.infinity
+    private var moonGlowAt: TimeInterval = -.infinity
+    private var shootNextAt: TimeInterval = 6
+    private var shootStartAt: TimeInterval?
+    private var shootFrom = SCNVector3Zero
+    private var shootVel = SCNVector3Zero
+
+    func attach(view: SCNView, reduceMotion: Bool) {
+        self.view = view
+        self.scene = view.scene
+        self.reduceMotion = reduceMotion
+        camera = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
+        computeNear()
+        if reduceMotion {
+            // ジャンプカット: 最初から近景で idle。
+            phase = .idle
+            applyOrbit()
+            onIdleChange(true)
+        } else {
+            phase = .enter
+            camera?.position = farPos
+            camera?.look(at: farTarget)
+            onIdleChange(false)
+        }
+    }
+
+    /// 近景の構図を、船の位置(targetX)と画面アスペクトから決める(Web WorldScene.near)。
+    private func computeNear() {
+        let aspect = Float((view?.bounds.width ?? 1) / max(view?.bounds.height ?? 1, 1))
+        let islandX: Float = 3.5
+        let wide = aspect >= 1.05
+        let boatX = targetX
+        let tx = boatX + (islandX - boatX) * (wide ? 0.5 : 0.08)
+        let pos: SCNVector3
+        if wide {
+            pos = SCNVector3(tx - 1.2, 1.9, 5.4)
+            target = SCNVector3(tx, 0.5, -0.5)
+            maxPolar = .pi * 0.52
+        } else {
+            pos = SCNVector3(tx - 1.0, 1.9, 7.2)
+            target = SCNVector3(tx, -0.25, -0.5)
+            maxPolar = .pi * 0.46
+        }
+        // pos から球面座標(distance/azimuth/polar)を得る。
+        let off = SCNVector3(pos.x - target.x, pos.y - target.y, pos.z - target.z)
+        distance = max(minDist, min(maxDist, off.length))
+        polar = max(minPolar, min(maxPolar, acos(off.y / max(distance, 0.0001))))
+        azimuth = atan2(off.x, off.z)
+    }
+
+    private func nearPos() -> SCNVector3 {
+        SCNVector3(
+            target.x + distance * sin(polar) * sin(azimuth),
+            target.y + distance * cos(polar),
+            target.z + distance * sin(polar) * cos(azimuth)
+        )
+    }
+
+    private func applyOrbit() {
+        camera?.position = nearPos()
+        camera?.look(at: target)
+    }
+
+    func requestExit() {
+        guard phase == .idle, !exitRequested else { return }
+        exitRequested = true
+        if reduceMotion { onClosed(); return }
+        onIdleChange(false)
+        phase = .exit
+        phaseStart = nil
+    }
+
+    // MARK: ジェスチャ
+
+    @objc func onPan(_ g: UIPanGestureRecognizer) {
+        guard phase == .idle, let v = view else { return }
+        let t = g.translation(in: v)
+        g.setTranslation(.zero, in: v)
+        azimuth -= Float(t.x) * 0.006
+        polar = max(minPolar, min(maxPolar, polar - Float(t.y) * 0.006))
+        applyOrbit()
+    }
+
+    @objc func onPinch(_ g: UIPinchGestureRecognizer) {
+        guard phase == .idle else { return }
+        distance = max(minDist, min(maxDist, distance / Float(g.scale)))
+        g.scale = 1
+        applyOrbit()
+    }
+
+    @objc func onTap(_ g: UITapGestureRecognizer) {
+        guard phase == .idle, let v = view else { return }
+        let p = g.location(in: v)
+        let hits = v.hitTest(p, options: [SCNHitTestOption.searchMode: SCNHitTestSearchMode.all.rawValue])
+        for hit in hits {
+            var node: SCNNode? = hit.node
+            while let n = node {
+                if let name = n.name {
+                    if name.hasPrefix("buoy_"), let idx = Int(name.dropFirst(5)) {
+                        onToggleStep(idx)   // 反転・plink・保存は SwiftUI 側
+                        return
+                    }
+                    if name == "boatHit" || name == "boatModel" {
+                        boatHopAt = lastTime
+                        onTapBoat()
+                        return
+                    }
+                    if name == "moon" { moonGlowAt = lastTime; return }
+                }
+                node = n.parent
+            }
+        }
+    }
+
+    // MARK: ブイの作り直し(数や達成が変わったとき。カメラは保つ)
+
+    func rebuildBuoys(steps: [Bool]) {
+        guard let root = scene?.rootNode else { return }
+        root.childNodes.filter { $0.name?.hasPrefix("buoy_") == true }.forEach { $0.removeFromParentNode() }
+        for (i, done) in steps.enumerated() {
+            root.addChildNode(VoyageSceneKit.makeBuoy(index: i, total: steps.count, done: done))
+        }
+    }
+
+    // MARK: 毎フレーム
+
+    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        guard let scene else { return }
+        if startTime == nil { startTime = time; lastTime = time }
+        let t = Float(time - (startTime ?? time))
+        let dt = Float(min(max(time - lastTime, 0), 0.1))
+        lastTime = time
+        let root = scene.rootNode
+
+        // カメラのドリー(enter/exit)。
+        if phase == .enter || phase == .exit, !reduceMotion {
+            if phaseStart == nil {
+                phaseStart = time
+                fromPos = phase == .enter ? farPos : (camera?.position ?? farPos)
+            }
+            let raw = Float(min((time - (phaseStart ?? time)) / dolly, 1))
+            let k = easeInOutCubic(raw)
+            let toPos = phase == .enter ? nearPos() : farPos
+            let fromT = phase == .enter ? farTarget : target
+            let toT = phase == .enter ? target : farTarget
+            camera?.position = fromPos.lerp(toPos, k)
+            camera?.look(at: fromT.lerp(toT, k))
+            if raw >= 1 {
+                // 完了通知は SwiftUI の状態を触るのでメインスレッドへ(ここは描画スレッド)。
+                if phase == .enter {
+                    phase = .idle; applyOrbit()
+                    DispatchQueue.main.async { self.onIdleChange(true) }
+                } else {
+                    DispatchQueue.main.async { self.onClosed() }
+                }
+            }
+        }
+
+        let travel = root.childNode(withName: "travel", recursively: false)
+        // 進行(ratio 変化へ滑らかに寄せる)。
+        if let travel {
+            travel.position.x += (targetX - travel.position.x) * min(1, 1.6 * dt)
+        }
+        // 船の揺れ / タップのホップ。
+        if let bob = travel?.childNode(withName: "boatBob", recursively: false) {
+            let hop = Float((time - boatHopAt) / 1.1)
+            if hop >= 0, hop < 1 {
+                let hp = min(hop / 0.32, 1)
+                bob.position.y = sin(.pi * hp) * 0.22
+            } else {
+                bob.position.y = sin(t * 0.8) * 0.06
+            }
+            bob.eulerAngles.z = sin(t * 0.6) * 0.03
+            bob.eulerAngles.x = sin(t * 0.5 + 1.2) * 0.015
+        }
+        // タップ波紋リング。
+        if let ring = travel?.childNode(withName: "tapRing", recursively: false) {
+            let rp = Float((time - boatHopAt) / 1.1)
+            if rp >= 0, rp < 1 {
+                ring.isHidden = false
+                let s = 1 + rp * 3.6
+                ring.scale = SCNVector3(s, s, 1)
+                ring.opacity = CGFloat((1 - rp) * 0.42)
+            } else {
+                ring.isHidden = true
+            }
+        }
+        // 波紋 3枚。
+        for i in 0..<3 {
+            if let node = travel?.childNode(withName: "ripple\(i)", recursively: true) {
+                let phase = (t / 7 + Float(i) / 3).truncatingRemainder(dividingBy: 1)
+                let s = 0.8 + phase * 5.5
+                node.scale = SCNVector3(s, s, 1)
+                node.opacity = CGFloat(sin(min(phase * 3, 1) * .pi / 2) * (1 - phase) * 0.2)
+            }
+        }
+        travel?.childNode(withName: "wake", recursively: true)?.opacity = CGFloat(0.34 + sin(t * 1.4) * 0.07)
+
+        // 月のタップ発光。
+        if let moon = root.childNode(withName: "moon", recursively: false) {
+            let p = Float((time - moonGlowAt) / 1.3)
+            moon.geometry?.firstMaterial?.emission.intensity = (p >= 0 && p < 1) ? CGFloat(0.95 + sin(.pi * p) * 0.8) : 0.95
+        }
+
+        // 流れ星。
+        updateShootingStar(root: root, time: time)
+    }
+
+    private func updateShootingStar(root: SCNNode, time: TimeInterval) {
+        guard !reduceMotion, let star = root.childNode(withName: "shootingStar", recursively: false) else { return }
+        if shootStartAt == nil {
+            if time < shootNextAt { return }
+            shootStartAt = time
+            let sign: Float = Bool.random() ? 1 : -1
+            shootFrom = SCNVector3(-sign * (3 + Float.random(in: 0...6)), 6 + Float.random(in: 0...3.5), -21 - Float.random(in: 0...4))
+            shootVel = SCNVector3(sign * (8 + Float.random(in: 0...4)), -(2 + Float.random(in: 0...2)), 0)
+            return
+        }
+        let p = Float((time - (shootStartAt ?? time)) / 1.5)
+        if p >= 1 {
+            shootStartAt = nil
+            shootNextAt = time + 8 + Double(Float.random(in: 0...12))
+            star.isHidden = true
+            return
+        }
+        star.isHidden = false
+        star.position = SCNVector3(shootFrom.x + shootVel.x * p, shootFrom.y + shootVel.y * p, shootFrom.z + shootVel.z * p)
+        star.eulerAngles.z = atan2(shootVel.y, shootVel.x)
+        star.opacity = CGFloat(sin(.pi * p) * 0.5)
+    }
+}
+
+private func easeInOutCubic(_ v: Float) -> Float {
+    let d = Double(v)
+    let r = d < 0.5 ? 4 * d * d * d : 1 - pow(-2 * d + 2, 3) / 2
+    return Float(r)
+}
+
+private extension SCNVector3 {
+    var length: Float { sqrt(x * x + y * y + z * z) }
+    func lerp(_ to: SCNVector3, _ k: Float) -> SCNVector3 {
+        SCNVector3(x + (to.x - x) * k, y + (to.y - y) * k, z + (to.z - z) * k)
+    }
 }

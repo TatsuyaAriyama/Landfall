@@ -17,6 +17,13 @@ struct VoyageWorldView: View {
     @State private var targetDate: Date
     @State private var steps: [DestinationStep]
     @State private var confirmingDelete = false
+    @State private var working = false
+    /// 期日を「触った」印。開いた直後の既定値では自動保存しない(ただ見て閉じるのを防ぐ)。
+    @State private var dateTouched = false
+    /// 入場ドリーが終わって操作可能になったか(遷移中は編集UIを隠す)。
+    @State private var isIdle = false
+    /// 退場ドリーを開始する要求(true でズームアウト→dismiss)。
+    @State private var closing = false
     @FocusState private var nameFocused: Bool
 
     init(existing: Destination?, sessions: [StudySession]) {
@@ -55,20 +62,37 @@ struct VoyageWorldView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            VoyageSceneView(
+            ImmersiveVoyageView(
                 ratio: liveRatio,
                 steps: kind == .steps ? steps.map { $0.doneAt != nil } : [],
-                allowsCameraControl: true,
-                immersive: true
+                islandName: trimmedName,
+                closeRequested: closing,
+                onToggleStep: { index in toggleStep(index: index) },
+                onIdleChange: { idle in
+                    withAnimation(.easeOut(duration: 0.25)) { isIdle = idle }
+                },
+                onClosed: { dismiss() },
+                onTapBoat: { SoundFX.plink(); Haptics.tap(.light) }
             )
             .ignoresSafeArea()
 
-            closeButton
-            panel
+            // 入場・退場の遷移中は編集UIを隠す(Web voyage-world-ui hidden)。
+            Group {
+                closeButton
+                panel
+            }
+            .opacity(isIdle ? 1 : 0)
+            .allowsHitTesting(isIdle)
         }
         .background(Color(VoyageSceneKit.seaDeep).ignoresSafeArea())
-        .confirmationDialog("Remove this destination?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Remove", role: .destructive) { remove() }
+        .onChange(of: kind) { _, _ in
+            // 目標の種類を切り替えたら、前の種類での「触った」印は捨てる。
+            dateTouched = false
+        }
+        .confirmationDialog("Delete this destination", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { remove() }
+        } message: {
+            Text("Delete this destination? Your records stay.")
         }
     }
 
@@ -76,7 +100,7 @@ struct VoyageWorldView: View {
         VStack {
             HStack {
                 Spacer()
-                Button { dismiss() } label: {
+                Button { requestClose() } label: {
                     Text("Close")
                         .font(LFFont.copy(15))
                         .foregroundStyle(LFColor.harborSand)
@@ -95,7 +119,7 @@ struct VoyageWorldView: View {
 
     private var panel: some View {
         VStack(alignment: .leading, spacing: 14) {
-            TextField("Island name", text: $name)
+            TextField("e.g. TOEIC, finish the book", text: $name)
                 .font(LFFont.copy(20))
                 .foregroundStyle(LFColor.harborSand)
                 .focused($nameFocused)
@@ -119,8 +143,13 @@ struct VoyageWorldView: View {
                     .datePickerStyle(.compact)
                     .tint(LFColor.returnOrange)
                     .environment(\.colorScheme, .dark)
+                    .onChange(of: targetDate) { _, _ in
+                        // 期日を選び終えたら、そのまま保存してホームへ戻る(保存ボタン不要)。
+                        dateTouched = true
+                        autoSaveDateIfReady()
+                    }
             } else {
-                Text("Break a big goal into small steps. Each one you finish moves the boat.")
+                Text("Break a big goal into small steps. Each one you finish moves the boat forward; finish them all to make landfall.")
                     .font(LFFont.copy(14))
                     .foregroundStyle(LFColor.harborSand.opacity(0.7))
                 stepsEditor
@@ -129,7 +158,7 @@ struct VoyageWorldView: View {
             saveButton
             if existing != nil {
                 Button { confirmingDelete = true } label: {
-                    Text("Remove destination")
+                    Text("Delete this destination")
                         .font(LFFont.copy(15))
                         .foregroundStyle(LFColor.coral)
                         .frame(maxWidth: .infinity)
@@ -168,7 +197,7 @@ struct VoyageWorldView: View {
             ForEach($steps) { $step in
                 HStack(spacing: 10) {
                     Button {
-                        step.doneAt = step.doneAt == nil ? Date() : nil
+                        toggleStep(id: step.id)
                     } label: {
                         ZStack {
                             Circle()
@@ -238,10 +267,46 @@ struct VoyageWorldView: View {
         .disabled(!isValid)
     }
 
+    // MARK: - ステップの反転(既存目的地はその場で確定=Web persistSteps)
+
+    private func toggleStep(id: DestinationStep.ID) {
+        guard let i = steps.firstIndex(where: { $0.id == id }) else { return }
+        toggleStep(index: i)
+    }
+
+    /// ブイのタップ(世界)/チェックのタップ(パネル)共通。
+    private func toggleStep(index i: Int) {
+        guard steps.indices.contains(i) else { return }
+        steps[i].doneAt = steps[i].doneAt == nil ? Date() : nil
+        SoundFX.plink()
+        Haptics.tap(.light)
+        persistSteps()
+    }
+
+    /// チェックの反転は、既存の目的地ならその場で確定する(fire-and-forget)。
+    /// 新規(未保存)は局所stateだけ動かし、確定は「保存」に委ねる。
+    private func persistSteps() {
+        guard let existing, !trimmedName.isEmpty, !namedSteps.isEmpty else { return }
+        existing.name = trimmedName
+        existing.steps = namedSteps
+        existing.targetDate = nil
+        existing.updatedAt = Date()
+        try? modelContext.save()
+        SyncService.shared.push(existing)
+    }
+
     // MARK: - 保存/削除
 
+    /// 期日を選び終えたら、そのまま保存してホームへ戻る(保存ボタン不要)。
+    /// 値を触っていなければ動かない(開いて眺めただけで閉じるのを防ぐ)。
+    private func autoSaveDateIfReady() {
+        guard kind == .date, dateTouched, isValid, !working else { return }
+        save()
+    }
+
     private func save() {
-        guard isValid else { return }
+        guard isValid, !working else { return }
+        working = true
         let dest: Destination
         if let existing {
             dest = existing
@@ -249,19 +314,27 @@ struct VoyageWorldView: View {
             dest = Destination(name: trimmedName)
             modelContext.insert(dest)
         }
-        dest.name = trimmedName
+        dest.name = String(trimmedName.prefix(60))
         if kind == .date {
             dest.targetDate = targetDate
             dest.steps = []
         } else {
-            dest.steps = namedSteps
+            // 名前を整えて上限で切る(Web saveDestination と同じ)。
+            dest.steps = namedSteps.map {
+                DestinationStep(id: $0.id, name: String($0.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60)), doneAt: $0.doneAt)
+            }
             dest.targetDate = nil
         }
         dest.updatedAt = Date()
         try? modelContext.save()
         SyncService.shared.push(dest)
         Haptics.success()
-        dismiss()
+        requestClose()
+    }
+
+    /// 退場のドリーアウトを開始する(演出後に dismiss)。
+    private func requestClose() {
+        closing = true
     }
 
     private func remove() {
@@ -270,6 +343,6 @@ struct VoyageWorldView: View {
         modelContext.delete(existing)
         try? modelContext.save()
         Haptics.success()
-        dismiss()
+        requestClose()
     }
 }
