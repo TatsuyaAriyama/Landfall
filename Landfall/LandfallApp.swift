@@ -158,9 +158,6 @@ struct ContentView: View {
             TraceView()
                 .tabItem { Label("Trace", systemImage: "waveform") }
                 .tag(1)
-            HarborView()
-                .tabItem { Label("Harbor", systemImage: "sailboat") }
-                .tag(2)
             WrappedView()
                 .tabItem {
                     Label {
@@ -170,6 +167,12 @@ struct ContentView: View {
                     }
                 }
                 .tag(3)
+            DressView()
+                .tabItem { Label("Style", systemImage: "paintpalette") }
+                .tag(4)
+            HarborView()
+                .tabItem { Label("Harbor", systemImage: "sailboat") }
+                .tag(2)
         }
         .tint(LFColor.returnOrange)
         // 出航中の小さなタイマーチップ。どのタブでも見え、自由に動かせる。

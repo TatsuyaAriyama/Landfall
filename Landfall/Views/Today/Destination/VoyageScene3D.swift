@@ -6,7 +6,7 @@ import UIKit
 // 低ポリ・フラット・グラデ無し・影無しの世界観に合わせる:
 //   夜の海(平面)/ 二つ丘の島 / 低ポリ帆船(進捗で前進)/ 月(発光)/ ステップのブイ(達成で点灯)。
 
-private extension UIColor {
+extension UIColor {
     /// 0xRRGGBB から UIColor(SceneKit用。トレイトに依存しない固定色)。
     convenience init(rgb: UInt) {
         self.init(
@@ -70,9 +70,37 @@ enum VoyageSceneKit {
         for (i, done) in steps.enumerated() {
             scene.rootNode.addChildNode(makeBuoy(index: i, total: steps.count, done: done))
         }
-        scene.rootNode.addChildNode(makeBoat(ratio: ratio))
+        // 目的地の船も、装いで選んだ色を反映する(Web と同じ)。
+        scene.rootNode.addChildNode(
+            makeBoat(ratio: ratio,
+                     sail: BoatCustomization.uiColor(.sail),
+                     hull: BoatCustomization.uiColor(.hull))
+        )
         makeLights().forEach { scene.rootNode.addChildNode($0) }
         scene.rootNode.addChildNode(makeCamera())
+        return scene
+    }
+
+    /// 装い(船スタジオ)のシーン。海に浮かぶ自分の船を大きく中央に見せる(島・ブイ無し)。
+    static func makeBoatStudioScene(parts: BoatParts) -> SCNScene {
+        let scene = SCNScene()
+        scene.background.contents = seaDeep
+        scene.rootNode.addChildNode(makeSea())
+        scene.rootNode.addChildNode(makeMoon())
+        let boat = makeBoat(ratio: 0, sail: parts.sail, hull: parts.hull)
+        boat.position = SCNVector3(0, 0, 0)
+        boat.scale = SCNVector3(1.35, 1.35, 1.35)
+        scene.rootNode.addChildNode(boat)
+        makeLights().forEach { scene.rootNode.addChildNode($0) }
+        let cam = SCNCamera()
+        cam.fieldOfView = 42
+        cam.zNear = 0.1
+        cam.zFar = 200
+        let camNode = SCNNode()
+        camNode.camera = cam
+        camNode.position = SCNVector3(0, 1.7, 5.4)
+        camNode.look(at: SCNVector3(0, 0.7, 0))
+        scene.rootNode.addChildNode(camNode)
         return scene
     }
 
@@ -86,7 +114,7 @@ enum VoyageSceneKit {
     }
 
     private static func makeMoon() -> SCNNode {
-        let sphere = SCNSphere(radius: 1.1)
+        let sphere = SCNSphere(radius: 0.85)
         sphere.segmentCount = 18
         let m = SCNMaterial()
         m.lightingModel = .constant
@@ -135,7 +163,8 @@ enum VoyageSceneKit {
     }
 
     /// 低ポリ帆船。船体・帆・前帆は Web BoatShape の 2D シルエットを SCNShape で押し出す。
-    private static func makeBoat(ratio: Double) -> SCNNode {
+    /// sail/hull で色を差し替えられる(装いのカスタム)。
+    static func makeBoat(ratio: Double, sail: UIColor = sand, hull hullColor: UIColor = sand) -> SCNNode {
         let group = SCNNode()
         group.name = "boat"
 
@@ -148,8 +177,9 @@ enum VoyageSceneKit {
         hull.close()
         let hullGeo = SCNShape(path: hull, extrusionDepth: 0.62)
         hullGeo.chamferRadius = 0.03
-        hullGeo.firstMaterial = flatMaterial(sand)
+        hullGeo.firstMaterial = flatMaterial(hullColor)
         let hullNode = SCNNode(geometry: hullGeo)
+        hullNode.name = "boatHull"
         hullNode.position = SCNVector3(0, 0.2, -0.31)  // 押し出し中心をz=0へ
         group.addChildNode(hullNode)
 
@@ -167,8 +197,9 @@ enum VoyageSceneKit {
         mainSail.addLine(to: CGPoint(x: -0.78, y: 0.05))
         mainSail.close()
         let mainGeo = SCNShape(path: mainSail, extrusionDepth: 0.02)
-        mainGeo.firstMaterial = unlitMaterial(sand)
+        mainGeo.firstMaterial = unlitMaterial(sail)
         let mainNode = SCNNode(geometry: mainGeo)
+        mainNode.name = "boatSail"
         mainNode.position = SCNVector3(0.04, 0.28, 0)
         group.addChildNode(mainNode)
 
@@ -179,8 +210,9 @@ enum VoyageSceneKit {
         jib.addLine(to: CGPoint(x: 0.62, y: 0.04))
         jib.close()
         let jibGeo = SCNShape(path: jib, extrusionDepth: 0.02)
-        jibGeo.firstMaterial = unlitMaterial(sand)
+        jibGeo.firstMaterial = unlitMaterial(sail)
         let jibNode = SCNNode(geometry: jibGeo)
+        jibNode.name = "boatSail"
         jibNode.position = SCNVector3(0.06, 0.28, 0)
         group.addChildNode(jibNode)
 
@@ -314,4 +346,53 @@ struct VoyageSceneView: UIViewRepresentable {
         var ratio: Double = -1
         var stepsKey: String = ""
     }
+}
+
+/// 装い: 海に浮かぶ自分の船(色をカスタム)。ドラッグで一周できる。
+struct BoatSceneView: UIViewRepresentable {
+    var parts: BoatParts
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> SCNView {
+        let view = SCNView()
+        view.scene = VoyageSceneKit.makeBoatStudioScene(parts: parts)
+        view.backgroundColor = VoyageSceneKit.seaDeep
+        view.antialiasingMode = .multisampling2X
+        view.allowsCameraControl = true
+        view.autoenablesDefaultLighting = false
+        view.rendersContinuously = !UIAccessibility.isReduceMotionEnabled
+        context.coordinator.key = key
+        applyBob(view)
+        return view
+    }
+
+    func updateUIView(_ view: SCNView, context: Context) {
+        // 色が変わったら、シーンを作り直さず船の素材だけ差し替える(手回しの視点を保つ)。
+        guard key != context.coordinator.key else { return }
+        context.coordinator.key = key
+        guard let boat = view.scene?.rootNode.childNode(withName: "boat", recursively: false) else { return }
+        boat.enumerateChildNodes { node, _ in
+            switch node.name {
+            case "boatHull": node.geometry?.firstMaterial?.diffuse.contents = parts.hull
+            case "boatSail": node.geometry?.firstMaterial?.diffuse.contents = parts.sail
+            default: break
+            }
+        }
+    }
+
+    private var key: String {
+        "\(parts.sail.hashValue)|\(parts.hull.hashValue)"
+    }
+
+    private func applyBob(_ view: SCNView) {
+        guard !UIAccessibility.isReduceMotionEnabled,
+              let boat = view.scene?.rootNode.childNode(withName: "boat", recursively: false)
+        else { return }
+        let up = SCNAction.moveBy(x: 0, y: 0.06, z: 0, duration: 2.0)
+        up.timingMode = .easeInEaseOut
+        boat.runAction(.repeatForever(.sequence([up, up.reversed()])), forKey: "bob")
+    }
+
+    final class Coordinator { var key: String = "" }
 }

@@ -307,3 +307,11 @@
 "You reached %@." = "%@に到達しました。";
 "Time at sea · %@" = "航海した時間 · %@";
 "This voyage stays in your Logbook." = "この航海は、航海誌に残ります。";
+
+/* 装い(船カスタム) */
+"Style" = "装い";
+"Your boat" = "あなたの船";
+"Drag to look around." = "ドラッグで一周できます。";
+"Voyage so far: %@" = "これまでの航海: %@";
+"Sail color" = "帆の色";
+"Hull" = "船体";
