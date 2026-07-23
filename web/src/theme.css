@@ -2292,6 +2292,98 @@ textarea {
   min-height: 50px;
 }
 
+/* ---- ステップ目標の編集(没入エディタのパネル内) ---- */
+.step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 達成チェック。丸いトグル。達成で灯色に満ちる。 */
+.step-check {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--ink) 32%, transparent);
+  background: transparent;
+  color: #123830;
+  cursor: pointer;
+}
+
+.step-check.done {
+  background: var(--harbor-sand, #eadebd);
+  border-color: var(--harbor-sand, #eadebd);
+}
+
+.step-row .step-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 達成済みのステップ名は、そっと沈めて取り消し線。 */
+.step-input.done {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.step-remove {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.step-add {
+  margin-top: 10px;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  color: var(--ink);
+  border: 1px dashed color-mix(in srgb, var(--ink) 34%, transparent);
+  background: transparent;
+  cursor: pointer;
+}
+
+/* 2Dフォールバックカードのステップ pips(●達成/○未達) */
+.dest-steps {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 1;
+}
+
+.dest-pip {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand, #eadebd) 55%, transparent);
+  background: transparent;
+}
+
+.dest-pip.done {
+  background: var(--harbor-sand, #eadebd);
+  border-color: var(--harbor-sand, #eadebd);
+}
+
 /* 島の上に浮かぶ名前ラベル(drei Htmlでアンカー) */
 .voyage-world-label {
   font-size: 14px;

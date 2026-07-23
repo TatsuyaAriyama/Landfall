@@ -13,6 +13,14 @@ import { newUUID, startOfDay, trimAll, type StudyItem, type StudySession } from 
 // 到達した日が Landfall(着岸)。users/{uid}/destinations/{uuid} に保存する
 // (docs/SCHEMA.md 参照。ルールは users/** の本人のみで既にカバー)。
 
+/// 大きな目標を分解した、航路上の小さな目印(ステップ)。順序付き。
+/// ひとつ達成するごとに船が一区画進み、全部達成で着岸。doneAtが立つ=達成。
+export interface DestinationStep {
+  id: string;
+  name: string;
+  doneAt?: Date;
+}
+
 export interface Destination {
   id: string;
   name: string;
@@ -23,6 +31,9 @@ export interface Destination {
   // 本人が「完了にする」を押した時だけ達成になる — このアプリで唯一の手動ゴール。
   manual?: boolean;
   manualDone?: boolean;
+  // ステップ目標(長期の大きな目標向け)。stepsが非空ならステップ目標として扱い、
+  // 進捗=完了数/全数、全部完了で着岸。時間/期日/完了とは排他。
+  steps?: DestinationStep[];
   createdAt: Date;
   achievedAt?: Date;
   updatedAt: Date;
@@ -31,6 +42,9 @@ export interface Destination {
 /// 個人の目的地はひとつだけ。いま向かう島に集中する
 /// (港などでの共同の目的地は、これとは別の仕組み)。
 export const MAX_ACTIVE_DESTINATIONS = 1;
+
+/// ステップの上限。分解しすぎて航路が埋まらない程度に抑える。
+export const MAX_STEPS = 20;
 
 export function listenDestinations(
   uid: string,
@@ -45,6 +59,16 @@ export function listenDestinations(
             const v = d.data();
             const date = (k: string) =>
               v[k] instanceof Timestamp ? (v[k] as Timestamp).toDate() : undefined;
+            const steps: DestinationStep[] | undefined = Array.isArray(v.steps)
+              ? (v.steps as unknown[]).flatMap((s) => {
+                  if (typeof s !== "object" || s === null) return [];
+                  const o = s as Record<string, unknown>;
+                  if (typeof o.id !== "string" || typeof o.name !== "string") return [];
+                  const step: DestinationStep = { id: o.id, name: o.name };
+                  if (o.doneAt instanceof Timestamp) step.doneAt = o.doneAt.toDate();
+                  return [step];
+                })
+              : undefined;
             return {
               id: d.id,
               name: String(v.name ?? ""),
@@ -53,6 +77,7 @@ export function listenDestinations(
               targetDate: date("targetDate"),
               manual: v.manual === true,
               manualDone: v.manualDone === true,
+              steps: steps && steps.length > 0 ? steps : undefined,
               createdAt: date("createdAt") ?? new Date(0),
               achievedAt: date("achievedAt"),
               updatedAt: date("updatedAt") ?? new Date(0),
@@ -75,11 +100,20 @@ export async function saveDestination(
     targetDate?: Date;
     manual?: boolean;
     manualDone?: boolean;
+    steps?: DestinationStep[];
     createdAt?: Date;
     achievedAt?: Date;
   },
 ): Promise<void> {
   const id = input.id ?? newUUID();
+  // ステップは名前を整えて上限で切り、doneAtは立っているものだけ持つ。
+  const steps = (input.steps ?? [])
+    .slice(0, MAX_STEPS)
+    .map((s) => ({
+      id: s.id,
+      name: trimAll(s.name).slice(0, 60),
+      ...(s.doneAt ? { doneAt: s.doneAt } : {}),
+    }));
   await setDoc(doc(db, "users", uid, "destinations", id), {
     name: trimAll(input.name).slice(0, 60),
     ...(input.itemUUID ? { itemUUID: input.itemUUID } : {}),
@@ -87,9 +121,30 @@ export async function saveDestination(
     ...(input.targetDate ? { targetDate: input.targetDate } : {}),
     ...(input.manual ? { manual: true } : {}),
     ...(input.manualDone ? { manualDone: true } : {}),
+    ...(steps.length > 0 ? { steps } : {}),
     ...(input.achievedAt ? { achievedAt: input.achievedAt } : {}),
     createdAt: input.createdAt ?? new Date(),
     updatedAt: new Date(),
+  });
+}
+
+/// ステップの達成をその場で反転する(パネルのチェック / 世界のブイタップ)。
+/// 名前・項目・並びは保ったまま、該当ステップの doneAt だけ立てる/消す。
+export async function toggleDestinationStep(
+  uid: string,
+  dest: Destination,
+  stepId: string,
+  now: Date = new Date(),
+): Promise<void> {
+  const steps = (dest.steps ?? []).map((s) =>
+    s.id === stepId ? { ...s, doneAt: s.doneAt ? undefined : now } : s,
+  );
+  await saveDestination(uid, {
+    id: dest.id,
+    name: dest.name,
+    itemUUID: dest.itemUUID,
+    steps,
+    createdAt: dest.createdAt,
   });
 }
 
@@ -118,6 +173,8 @@ export interface DestinationProgress {
   minutes: number; // 数えた累計(分)
   remainingMinutes?: number; // 時間目標の残り
   remainingDays?: number; // 期日目標の残り日数
+  stepsDone?: number; // ステップ目標の完了数
+  stepsTotal?: number; // ステップ目標の全数
   reached: boolean;
 }
 
@@ -134,6 +191,18 @@ export function destinationProgress(
     if (dest.itemUUID && s.itemUUID !== dest.itemUUID) return sum;
     return sum + s.minutes;
   }, 0);
+
+  if (dest.steps && dest.steps.length > 0) {
+    // ステップ目標: 進捗=完了数/全数。全部完了で着岸。時間は表示用にだけ数える。
+    const done = dest.steps.filter((s) => s.doneAt).length;
+    return {
+      ratio: done / dest.steps.length,
+      minutes,
+      stepsDone: done,
+      stepsTotal: dest.steps.length,
+      reached: done === dest.steps.length,
+    };
+  }
 
   if (dest.manual) {
     // targetDate はここでは締切のメモ表示のみに使い、進捗や達成の判定には使わない。

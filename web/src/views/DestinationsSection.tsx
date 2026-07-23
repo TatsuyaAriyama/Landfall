@@ -78,6 +78,18 @@ function remainingLabel(progress: DestinationProgress): string {
       : "";
 }
 
+/// カードの右上に出す一言。ステップ目標なら「次: 〈次のステップ〉」を、
+/// なければ従来の残り表示を返す(近い目標を提示して手を動かしやすくする)。
+function destSubLabel(dest: Destination, progress: DestinationProgress): string {
+  if (progress.stepsTotal !== undefined) {
+    const next = dest.steps?.find((s) => !s.doneAt);
+    return next
+      ? tf(t("nextStepLabel"), { name: next.name })
+      : tf(t("stepsCount"), { done: progress.stepsDone ?? 0, total: progress.stepsTotal });
+  }
+  return remainingLabel(progress);
+}
+
 export function DestinationsSection({ uid, data }: { uid: string; data: UserData }) {
   // world: 開いている世界。dest=null は「新規作成」を世界の中で行う。
   const [world, setWorld] = useState<{ dest: Destination | null } | null>(null);
@@ -238,7 +250,8 @@ function VoyageCard({
   const progress = destinationProgress(dest, data.sessions);
   const item = dest.itemUUID ? data.items.find((i) => i.id === dest.itemUUID) : undefined;
   const name = item ? `${dest.name} · ${item.name}` : dest.name;
-  const label = remainingLabel(progress);
+  const label = destSubLabel(dest, progress);
+  const stepFlags = dest.steps?.map((s) => Boolean(s.doneAt));
   // カードが見えている=世界に入る可能性があるので、チャンクを先読みしておく。
   useEffect(() => {
     void loadVoyageWorld();
@@ -261,7 +274,13 @@ function VoyageCard({
           </button>
         }
       >
-        <VoyageScene name={name} ratio={progress.ratio} label={label} onClick={onClick}>
+        <VoyageScene
+          name={name}
+          ratio={progress.ratio}
+          label={label}
+          steps={stepFlags}
+          onClick={onClick}
+        >
           {onMarkDone && <CompleteCheckButton onMarkDone={onMarkDone} />}
         </VoyageScene>
       </Suspense>
@@ -282,7 +301,7 @@ function DestinationCard({
   onMarkDone?: () => void;
 }) {
   const progress = destinationProgress(dest, data.sessions);
-  const label = remainingLabel(progress);
+  const label = destSubLabel(dest, progress);
   const item = dest.itemUUID ? data.items.find((i) => i.id === dest.itemUUID) : undefined;
 
   return (
@@ -312,6 +331,14 @@ function DestinationCard({
         {onMarkDone && <CompleteCheckButton onMarkDone={onMarkDone} />}
       </div>
       <div className="dest-horizon" />
+      {/* ステップ目標: 航路の目印を小さな pips(●達成/○未達)で示す。 */}
+      {dest.steps && dest.steps.length > 0 && (
+        <div className="dest-steps" aria-hidden="true">
+          {dest.steps.map((s) => (
+            <span key={s.id} className={`dest-pip${s.doneAt ? " done" : ""}`} />
+          ))}
+        </div>
+      )}
       <div className="dest-coast">
         <CoastSvg />
       </div>

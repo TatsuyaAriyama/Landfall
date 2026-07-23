@@ -15,6 +15,8 @@ export interface VoyageSceneProps {
   ratio: number; // 0..1(島までの近さ)
   label: string; // 残り表示(「あと3時間」など)
   onClick?: () => void;
+  /// ステップ目標のとき、各ステップの達成状況(順序どおり)。航路にブイが浮かぶ。
+  steps?: boolean[];
   /// 見出しに重ねる追加UI(完了ゴールのチェックボタンなど)。
   children?: ReactNode;
 }
@@ -36,6 +38,17 @@ const KNOLL_GEO = new THREE.SphereGeometry(0.6, 8, 6);
 const BEACH_GEO = new THREE.CylinderGeometry(1.9, 2.05, 0.07, 9);
 const WAKE_GEO = new THREE.PlaneGeometry(2.3, 0.4);
 const HORIZON_GEO = new THREE.PlaneGeometry(60, 0.08);
+
+// ステップのブイ(航路の目印)。細い柱+上の小球。達成で点灯、未達は暗い。
+const BUOY_POLE_GEO = new THREE.CylinderGeometry(0.03, 0.04, 0.5, 6);
+const BUOY_TOP_GEO = new THREE.SphereGeometry(0.12, 10, 8);
+const BUOY_LIT = "#F3C065"; // 灯のような暖色
+const BUOY_DIM = "#4A3A2A"; // 未達は沈んだ色
+
+/// ステップ位置を航路上に等間隔で割り付ける。両端(出発・島)は空ける。
+export function stepBuoyX(index: number, total: number): number {
+  return X_START + ((index + 1) / (total + 1)) * (X_END - X_START);
+}
 
 /// 低ポリの島。半球と円錐を組んだ丘+水面の際のわずかな浜。
 export function Island() {
@@ -112,8 +125,72 @@ export function Wake({ animate }: { animate: boolean }) {
   );
 }
 
+// ブイの素材(色に依存しないので一度だけ作る)。柱=木、上=達成で点灯/未達で沈む。
+const BUOY_POLE_MAT = new THREE.MeshStandardMaterial({
+  color: "#5A2A15",
+  flatShading: true,
+  roughness: 0.8,
+});
+const BUOY_LIT_MAT = new THREE.MeshStandardMaterial({
+  color: BUOY_LIT,
+  emissive: BUOY_LIT,
+  emissiveIntensity: 1.3,
+  roughness: 0.5,
+  fog: false,
+});
+const BUOY_DIM_MAT = new THREE.MeshStandardMaterial({
+  color: BUOY_DIM,
+  flatShading: true,
+  roughness: 0.9,
+});
+
+/// 航路の目印(ステップ)を浮かべる。onToggleがあれば当たり判定を付けてタップで反転。
+export function StepBuoys({
+  steps,
+  onToggle,
+}: {
+  steps: boolean[];
+  onToggle?: (index: number) => void;
+}) {
+  const n = steps.length;
+  return (
+    <>
+      {steps.map((done, i) => (
+        <group key={i} position={[stepBuoyX(i, n), 0, 0.5]}>
+          <mesh geometry={BUOY_POLE_GEO} material={BUOY_POLE_MAT} position={[0, 0.25, 0]} />
+          <mesh
+            geometry={BUOY_TOP_GEO}
+            material={done ? BUOY_LIT_MAT : BUOY_DIM_MAT}
+            position={[0, 0.55, 0]}
+          />
+          {onToggle && (
+            <mesh
+              position={[0, 0.4, 0]}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggle(i);
+              }}
+            >
+              <cylinderGeometry args={[0.3, 0.3, 1.1, 8]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
+          )}
+        </group>
+      ))}
+    </>
+  );
+}
+
 /// シーン本体。夜の海と島、ratioに応じた位置へlerpで進む船、微かなカメラの揺れ。
-function VoyageSea({ ratio, animate }: { ratio: number; animate: boolean }) {
+function VoyageSea({
+  ratio,
+  animate,
+  steps,
+}: {
+  ratio: number;
+  animate: boolean;
+  steps?: boolean[];
+}) {
   const parts = useMemo(() => boatProps(), []);
   const travel = useRef<THREE.Group>(null);
   const targetX = X_START + Math.min(Math.max(ratio, 0), 1) * (X_END - X_START);
@@ -168,6 +245,8 @@ function VoyageSea({ ratio, animate }: { ratio: number; animate: boolean }) {
       <Sea />
       <Horizon />
       <Island />
+      {/* ステップ目標なら、航路に目印のブイを浮かべる(達成で点灯)。 */}
+      {steps && steps.length > 0 && <StepBuoys steps={steps} />}
       {/* 航路上の船。揺れ(BoatModel内)+波紋+航跡ごと進む。 */}
       <group ref={travel} position={[xRef.current, 0, 0]} rotation={[0, 0.1, 0]} scale={0.55}>
         <Ripples animate={animate} />
@@ -179,7 +258,14 @@ function VoyageSea({ ratio, animate }: { ratio: number; animate: boolean }) {
 }
 
 /// 目的地カードの3D版。島名と残りはCanvas外のHTMLオーバーレイで重ねる。
-export default function VoyageScene({ name, ratio, label, onClick, children }: VoyageSceneProps) {
+export default function VoyageScene({
+  name,
+  ratio,
+  label,
+  onClick,
+  steps,
+  children,
+}: VoyageSceneProps) {
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
@@ -222,7 +308,7 @@ export default function VoyageScene({ name, ratio, label, onClick, children }: V
         frameloop={animate && visible ? "always" : "demand"}
         camera={{ position: CAM_POS, fov: 36 }}
       >
-        <VoyageSea ratio={ratio} animate={animate} />
+        <VoyageSea ratio={ratio} animate={animate} steps={steps} />
       </Canvas>
     </div>
   );

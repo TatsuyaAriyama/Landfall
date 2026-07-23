@@ -11,16 +11,19 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { Html, OrbitControls, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import { NIGHT_BG, Ripples, Sea } from "./SeaParts";
-import { Horizon, Island, Wake, X_END, X_START } from "./VoyageScene";
+import { Horizon, Island, StepBuoys, Wake, X_END, X_START } from "./VoyageScene";
 import { boatProps } from "../boat";
 import { playPlink } from "../audio";
 import type { UserData } from "../data";
 import {
+  MAX_STEPS,
   deleteDestination,
   destinationProgress,
   saveDestination,
   type Destination,
+  type DestinationStep,
 } from "../destinations";
+import { newUUID } from "../types";
 import { askConfirm, showToast } from "../overlays";
 import { t } from "../i18n";
 
@@ -288,6 +291,8 @@ function WorldScene({
   animate,
   boatX,
   islandLabel,
+  steps,
+  onToggleStep,
   onEntered,
   onExited,
 }: {
@@ -295,6 +300,8 @@ function WorldScene({
   animate: boolean;
   boatX: number;
   islandLabel: string;
+  steps?: boolean[];
+  onToggleStep?: (index: number) => void;
   onEntered: () => void;
   onExited: () => void;
 }) {
@@ -341,6 +348,8 @@ function WorldScene({
       <Sea />
       <Horizon />
       <Island />
+      {/* ステップ目標なら、航路にブイを浮かべる。タップでその場で達成/取消。 */}
+      {steps && steps.length > 0 && <StepBuoys steps={steps} onToggle={onToggleStep} />}
       {/* 入力中の島の名前が、島の上にライブで浮かぶ */}
       {islandLabel && (
         <Html
@@ -387,15 +396,19 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   const [name, setName] = useState(dest?.name ?? "");
   const [itemUUID, setItemUUID] = useState<string | undefined>(dest?.itemUUID);
   // 新規の目的地は期日が既定(一番使われる目標のため)。編集時は保存済みの種類に従う。
-  const [kind, setKind] = useState<"hours" | "date" | "done">(
+  const [kind, setKind] = useState<"hours" | "date" | "done" | "steps">(
     dest
-      ? dest.manual
-        ? "done"
-        : dest.targetDate && !dest.targetMinutes
-          ? "date"
-          : "hours"
+      ? dest.steps && dest.steps.length > 0
+        ? "steps"
+        : dest.manual
+          ? "done"
+          : dest.targetDate && !dest.targetMinutes
+            ? "date"
+            : "hours"
       : "date",
   );
+  // ステップ目標の編集リスト(順序付き)。チェックの反転は即保存する。
+  const [steps, setSteps] = useState<DestinationStep[]>(() => dest?.steps ?? []);
   const [hours, setHours] = useState(
     dest?.targetMinutes ? String(Math.round(dest.targetMinutes / 60)) : "20",
   );
@@ -412,16 +425,30 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
 
   const trimmed = name.replace(/^[\s　]+|[\s　]+$/g, "");
   const hoursNum = Number(hours);
+  // 名前のあるステップだけを有効とみなす(空行は保存時に落とす)。
+  const namedSteps = steps.filter((s) => s.name.trim().length > 0);
   const valid =
     trimmed.length > 0 &&
     (kind === "hours"
       ? hoursNum > 0 && hoursNum <= 10000
       : kind === "date"
         ? dateStr.length === 10
-        : dateStr.length === 0 || dateStr.length === 10); // 完了: 締切は任意
+        : kind === "steps"
+          ? namedSteps.length >= 1
+          : dateStr.length === 0 || dateStr.length === 10); // 完了: 締切は任意
 
   // ---- 世界の配置(カードと同じ航路・島) ----
-  const ratio = dest ? destinationProgress(dest, data.sessions).ratio : 0;
+  // ステップ目標は「達成数/全数」で船が進む(編集中の局所stateを即反映)。
+  const stepDoneFlags = steps.map((s) => Boolean(s.doneAt));
+  const stepsRatio = steps.length
+    ? stepDoneFlags.filter(Boolean).length / steps.length
+    : 0;
+  const ratio =
+    kind === "steps"
+      ? stepsRatio
+      : dest
+        ? destinationProgress(dest, data.sessions).ratio
+        : 0;
   const boatX = X_START + Math.min(Math.max(ratio, 0), 1) * (X_END - X_START);
 
   // ---- 閉じる(退場演出→onClose。reduced-motionはジャンプカット) ----
@@ -458,6 +485,42 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     };
   }, [requestClose]);
 
+  // ---- ステップの編集(追加・改名・削除・達成の反転) ----
+  // チェックの反転(パネル/世界のブイ)は、既存の目的地ならその場で確定する。
+  // 新規(未保存)の目的地は局所stateだけ動かし、確定は「保存」に委ねる
+  // (id未確定のまま書くと毎回別の島が生まれてしまうため)。
+  const persistSteps = (next: DestinationStep[]) => {
+    setSteps(next);
+    if (dest?.id && trimmed.length > 0 && next.some((s) => s.name.trim().length > 0)) {
+      // fire-and-forget。オフラインや一時的な失敗は握りつぶす(局所stateは進む)。
+      void saveDestination(uid, {
+        id: dest.id,
+        name: trimmed,
+        itemUUID,
+        steps: next,
+        createdAt: dest.createdAt,
+      }).catch(() => {});
+    }
+  };
+  const toggleStep = (index: number) => {
+    playPlink();
+    persistSteps(
+      steps.map((s, i) =>
+        i === index ? { ...s, doneAt: s.doneAt ? undefined : new Date() } : s,
+      ),
+    );
+  };
+  const addStep = () => {
+    if (steps.length >= MAX_STEPS) return;
+    setSteps((list) => [...list, { id: newUUID(), name: "" }]);
+  };
+  const removeStep = (index: number) => {
+    setSteps((list) => list.filter((_, i) => i !== index));
+  };
+  const renameStep = (index: number, value: string) => {
+    setSteps((list) => list.map((s, i) => (i === index ? { ...s, name: value } : s)));
+  };
+
   // ---- 保存/削除(DestinationDialogと同等) ----
   const save = async () => {
     if (!valid || working) return;
@@ -466,10 +529,15 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
       id: dest?.id,
       name: trimmed,
       itemUUID,
+      // 種類ごとに、その種類の値だけを書く(他は未設定にして排他を保つ)。
       targetMinutes: kind === "hours" ? Math.round(hoursNum * 60) : undefined,
-      targetDate: kind !== "hours" && dateStr ? new Date(`${dateStr}T00:00:00`) : undefined,
+      targetDate:
+        (kind === "date" || kind === "done") && dateStr
+          ? new Date(`${dateStr}T00:00:00`)
+          : undefined,
       manual: kind === "done" ? true : undefined,
       manualDone: kind === "done" ? dest?.manualDone : undefined,
+      steps: kind === "steps" ? namedSteps : undefined,
       createdAt: dest?.createdAt,
     });
     showToast(t("savedToast"));
@@ -546,6 +614,8 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
           animate={animate}
           boatX={boatX}
           islandLabel={trimmed}
+          steps={kind === "steps" ? stepDoneFlags : undefined}
+          onToggleStep={toggleStep}
           onEntered={handleEntered}
           onExited={handleExited}
         />
@@ -606,6 +676,12 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
             >
               {t("goalDone")}
             </button>
+            <button
+              className={`chip${kind === "steps" ? " selected" : ""}`}
+              onClick={() => setKind("steps")}
+            >
+              {t("goalSteps")}
+            </button>
           </div>
 
           <div style={{ marginTop: 14 }}>
@@ -645,6 +721,57 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                   setDateStr(e.target.value);
                 }}
               />
+            ) : kind === "steps" ? (
+              <>
+                <p className="quest-intro">{t("goalStepsDesc")}</p>
+                <div className="step-list">
+                  {steps.map((step, i) => (
+                    <div key={step.id} className="step-row">
+                      <button
+                        type="button"
+                        className={`step-check${step.doneAt ? " done" : ""}`}
+                        onClick={() => toggleStep(i)}
+                        aria-pressed={Boolean(step.doneAt)}
+                        aria-label={t("markDone")}
+                      >
+                        {step.doneAt ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                            <path
+                              d="M5 13l4 4L19 7"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        ) : null}
+                      </button>
+                      <input
+                        className={`field step-input${step.doneAt ? " done" : ""}`}
+                        value={step.name}
+                        onChange={(e) => renameStep(i, e.target.value)}
+                        placeholder={t("stepPlaceholder")}
+                        maxLength={60}
+                        aria-label={t("goalSteps")}
+                      />
+                      <button
+                        type="button"
+                        className="step-remove"
+                        onClick={() => removeStep(i)}
+                        aria-label={t("delete")}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {steps.length < MAX_STEPS && (
+                  <button type="button" className="step-add" onClick={addStep}>
+                    + {t("addStep")}
+                  </button>
+                )}
+              </>
             ) : (
               <>
                 <p className="quest-intro">{t("goalDoneDesc")}</p>
