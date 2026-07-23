@@ -94,6 +94,20 @@ function updateCape(geo: THREE.BufferGeometry, time: number) {
   geo.computeVertexNormals();
 }
 
+/// 肩マント(ショルダーケープ)。首から肩を包んで流れ落ちる短い外掛け。
+/// フード→肩→コートの衣服の流れを一続きにして、腕の付け根の「図形感」を隠す。
+function makeMantleGeometry(): THREE.BufferGeometry {
+  const pts = [
+    new THREE.Vector2(0.2, 0),
+    new THREE.Vector2(0.185, 0.05),
+    new THREE.Vector2(0.16, 0.11),
+    new THREE.Vector2(0.125, 0.17),
+    new THREE.Vector2(0.095, 0.21),
+    new THREE.Vector2(0.078, 0.24),
+  ];
+  return new THREE.LatheGeometry(pts, 22);
+}
+
 /// コート。裾へ向かって広がる袍(ローブ)。低ポリのラースで体積を出す。
 function makeCoatGeometry(): THREE.BufferGeometry {
   const pts = [
@@ -115,15 +129,19 @@ function makeCoatGeometry(): THREE.BufferGeometry {
 // キャラクターは布と同じくポリゴン感を出さない — セグメントを増やし、
 // 材質はスムースシェーディング(世界の低ポリとの対比で「生きもの」感を作る)。
 const COAT_GEO = makeCoatGeometry();
-const CHEST_GEO = new THREE.SphereGeometry(0.13, 16, 12);
+const MANTLE_GEO = makeMantleGeometry();
 const HOOD_GEO = new THREE.ConeGeometry(0.125, 0.3, 18);
 const FACE_GEO = new THREE.SphereGeometry(0.075, 14, 10);
 const EYE_GEO = new THREE.SphereGeometry(0.015, 8, 6);
 const SCARF_GEO = new THREE.TorusGeometry(0.105, 0.034, 9, 18);
-const ARM_GEO = new THREE.CylinderGeometry(0.038, 0.046, 0.3, 12);
-const HAND_GEO = new THREE.SphereGeometry(0.052, 12, 9);
-const LEG_GEO = new THREE.CylinderGeometry(0.048, 0.055, 0.24, 12);
-const BOOT_GEO = new THREE.SphereGeometry(0.085, 14, 10);
+const ARM_GEO = new THREE.CylinderGeometry(0.036, 0.044, 0.22, 12);
+// 袖口: 手首へ向かって開くフレア。「棒」ではなく「袖」に見せる要。
+const SLEEVE_CUFF_GEO = new THREE.CylinderGeometry(0.046, 0.064, 0.1, 12);
+const HAND_GEO = new THREE.SphereGeometry(0.048, 12, 9);
+// 足首はコートの裾内へ消え、ブーツのつま先だけが裾から前へ覗く。
+const ANKLE_GEO = new THREE.CylinderGeometry(0.042, 0.048, 0.18, 12);
+const BOOT_GEO = new THREE.SphereGeometry(0.075, 14, 10);
+const BOOT_CUFF_GEO = new THREE.CylinderGeometry(0.062, 0.07, 0.06, 12);
 const CLASP_RING_GEO = new THREE.TorusGeometry(0.036, 0.011, 8, 16);
 const CLASP_PIN_GEO = new THREE.CylinderGeometry(0.019, 0.019, 0.02, 12);
 // ランタンは開放型(上蓋+灯+底皿)。灯が枠に隠れず、どの角度からも見える。
@@ -232,15 +250,17 @@ export default function PhoenixModel({ animate = true }: { animate?: boolean }) 
   return (
     // 形は正面=+Zで組み、グループごと+X向きへ(船の舳先と同じ向き)。
     <group rotation={[0, Math.PI / 2, 0]}>
-      {/* 脚+ブーツ(接地したまま動かない)。裾に隠れる短い脚 */}
+      {/* 足(接地したまま動かない)。足首は裾の内へ、丸いブーツのつま先が
+          裾の前から覗く — 「立っている」ことがどの角度からも読めるように */}
       {[1, -1].map((s) => (
-        <group key={s} position={[s * 0.085, 0, 0.01]}>
-          <mesh geometry={LEG_GEO} material={RUST_DEEP_MAT} position={[0, 0.21, 0]} />
+        <group key={s} position={[s * 0.088, 0, 0]}>
+          <mesh geometry={ANKLE_GEO} material={RUST_DEEP_MAT} position={[0, 0.2, 0.02]} />
+          <mesh geometry={BOOT_CUFF_GEO} material={RUST_MAT} position={[0, 0.115, 0.03]} />
           <mesh
             geometry={BOOT_GEO}
             material={RUST_DEEP_MAT}
-            position={[0, 0.055, 0.02]}
-            scale={[1.05, 0.6, 1.3]}
+            position={[0, 0.052, 0.09]}
+            scale={[0.95, 0.68, 1.55]}
           />
         </group>
       ))}
@@ -250,10 +270,10 @@ export default function PhoenixModel({ animate = true }: { animate?: boolean }) 
         {/* コート: 裾へ広がる袍。裾の内側に深錆の縁で重さを出す */}
         <mesh geometry={COAT_GEO} material={CORAL_MAT} />
         <mesh geometry={COAT_GEO} material={RUST_MAT} position={[0, -0.02, 0]} scale={[0.97, 0.35, 0.97]} />
-        {/* 肩・胸 */}
-        <mesh geometry={CHEST_GEO} material={CORAL_MAT} position={[0, 0.9, 0]} scale={[1.1, 0.78, 1.05]} />
-        {/* 留め具: 紋章の丸い目穴(sandの環+midnightの芯) */}
-        <group position={[0, 0.885, 0.148]}>
+        {/* 肩マント: 首から肩へ流れ落ちる短い外掛け。腕はこの裾の下から出る */}
+        <mesh geometry={MANTLE_GEO} material={CORAL_MAT} position={[0, 0.78, 0]} />
+        {/* 留め具: 紋章の丸い目穴(sandの環+midnightの芯)。肩マントの前面に */}
+        <group position={[0, 0.868, 0.178]} rotation={[-0.34, 0, 0]}>
           <mesh geometry={CLASP_RING_GEO} material={SAND_MAT} />
           <mesh geometry={CLASP_PIN_GEO} material={FACE_MAT} rotation={[Math.PI / 2, 0, 0]} />
         </group>
@@ -280,17 +300,19 @@ export default function PhoenixModel({ animate = true }: { animate?: boolean }) 
           ))}
         </group>
 
-        {/* 左腕: 体側に添えて休める */}
-        <group ref={armL} position={[-0.15, 0.87, 0.01]} rotation={[0, 0, -0.16]}>
-          <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.14, 0]} />
-          <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.31, 0]} />
+        {/* 左腕: 肩マントの裾の下から出る袖。手首でフレアし、手を添えて休める */}
+        <group ref={armL} position={[-0.14, 0.8, 0.01]} rotation={[0, 0, -0.14]}>
+          <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.1, 0]} />
+          <mesh geometry={SLEEVE_CUFF_GEO} material={CORAL_MAT} position={[0, -0.22, 0]} />
+          <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
         </group>
 
         {/* 右腕+ランタン: 「今日の灯」を提げる */}
-        <group ref={armR} position={[0.15, 0.87, 0.01]} rotation={[0, 0, 0.16]}>
-          <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.14, 0]} />
-          <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.31, 0]} />
-          <group ref={lantern} position={[0, -0.36, 0]}>
+        <group ref={armR} position={[0.14, 0.8, 0.01]} rotation={[0, 0, 0.14]}>
+          <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.1, 0]} />
+          <mesh geometry={SLEEVE_CUFF_GEO} material={CORAL_MAT} position={[0, -0.22, 0]} />
+          <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
+          <group ref={lantern} position={[0, -0.33, 0]}>
             <mesh geometry={LANTERN_HANDLE_GEO} material={RUST_MAT} position={[0, -0.03, 0]} />
             <mesh geometry={LANTERN_CAP_GEO} material={RUST_MAT} position={[0, -0.075, 0]} />
             <mesh geometry={LANTERN_GLOW_GEO} material={LANTERN_GLOW_MAT} position={[0, -0.14, 0]} />
