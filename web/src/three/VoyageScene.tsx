@@ -241,7 +241,7 @@ function VoyageSea({
         fade
         speed={animate ? 0.5 : 0}
       />
-      <Moon position={[-8, 2.6, -16]} />
+      <Moon position={[1.8, 1.25, -14]} />
       <Sea />
       <Horizon />
       <Island />
