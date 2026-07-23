@@ -23,7 +23,7 @@ struct DestinationCard: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 14)
             }
-            .frame(height: 200)
+            .frame(height: 240)
             .frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
         }

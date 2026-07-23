@@ -58,7 +58,8 @@ struct VoyageWorldView: View {
             VoyageSceneView(
                 ratio: liveRatio,
                 steps: kind == .steps ? steps.map { $0.doneAt != nil } : [],
-                allowsCameraControl: true
+                allowsCameraControl: true,
+                immersive: true
             )
             .ignoresSafeArea()
 
