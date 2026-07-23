@@ -153,15 +153,20 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     return map;
   }, [todaySessions]);
 
-  const heading = new Intl.DateTimeFormat(lang, {
+  // 航海日誌のような日付。曜日は小さな見出し(帰帆の色)、日付はその下に。
+  const today = new Date();
+  const weekday = new Intl.DateTimeFormat(lang, { weekday: "long" }).format(today);
+  const monthDay = new Intl.DateTimeFormat(lang, {
     month: "long",
     day: "numeric",
-    weekday: "long",
-  }).format(new Date());
+  }).format(today);
 
   return (
     <div>
-      <h1 className="page-title">{heading}</h1>
+      <header className="today-dateline">
+        <span className="today-weekday">{weekday}</span>
+        <h1 className="today-date">{monthDay}</h1>
+      </header>
 
       <DestinationsSection uid={uid} data={data} />
 

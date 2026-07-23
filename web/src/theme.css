@@ -178,6 +178,31 @@ textarea {
   margin: 0;
 }
 
+/* 航海日誌のような日付。曜日を帰帆の色の小さな見出しにして、日付を大きく。
+   下に水平線の一筋(夜の海の世界と同じモチーフ)を淡く引く。 */
+.today-dateline {
+  margin: 2px 0 8px;
+}
+
+.today-weekday {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--return-orange);
+  margin-bottom: 3px;
+}
+
+.today-date {
+  font-size: 27px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--return-orange) 22%, transparent);
+}
+
 .page-sub {
   font-size: 14px;
   color: color-mix(in srgb, var(--ink) 55%, transparent);
