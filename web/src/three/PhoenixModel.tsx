@@ -8,8 +8,9 @@ import { useFrame } from "@react-three/fiber";
 //  - 燕尾のケープ = 紋章の翼と二叉の尾(背中に紋章のシルエットが宿る)
 //  - 胸の留め具   = 紋章の丸い目穴(sandの環+midnightの芯)
 //  - 手に提げるランタン = この世界の「今日の灯」
-// フードの闇に sand の両目が灯る。体は低ポリの体積で作り、どの角度でも成立する。
-// 品質言語は船と同じ(低ポリ+flatShading・フラット配色・影なし)。
+// フードの闇に sand の両目が灯る。体は体積で作り、どの角度でも成立する。
+// 配色は世界と同じフラットだが、キャラクターだけは布も体もスムース
+// シェーディング — 低ポリの世界(船・島)との対比で「生きもの」を際立たせる。
 //
 // 原点=接地点(足元 y=0)、前方=+X(船の舳先と同じ向き)。全高≈1.35。
 //
@@ -97,57 +98,64 @@ function updateCape(geo: THREE.BufferGeometry, time: number) {
 function makeCoatGeometry(): THREE.BufferGeometry {
   const pts = [
     new THREE.Vector2(0.235, 0.3),
+    new THREE.Vector2(0.225, 0.36),
     new THREE.Vector2(0.205, 0.44),
+    new THREE.Vector2(0.185, 0.52),
     new THREE.Vector2(0.165, 0.62),
+    new THREE.Vector2(0.148, 0.7),
     new THREE.Vector2(0.135, 0.78),
+    new THREE.Vector2(0.118, 0.86),
     new THREE.Vector2(0.105, 0.92),
   ];
-  return new THREE.LatheGeometry(pts, 9);
+  return new THREE.LatheGeometry(pts, 22);
 }
 
 // ジオメトリと材質は状態に依存しないので、モジュール読み込み時に一度だけ作る
 // (マントだけは毎フレーム頂点を書くため、コンポーネント内で個別に作る)。
+// キャラクターは布と同じくポリゴン感を出さない — セグメントを増やし、
+// 材質はスムースシェーディング(世界の低ポリとの対比で「生きもの」感を作る)。
 const COAT_GEO = makeCoatGeometry();
-const CHEST_GEO = new THREE.SphereGeometry(0.13, 9, 7);
-const HOOD_GEO = new THREE.ConeGeometry(0.125, 0.3, 8);
-const FACE_GEO = new THREE.SphereGeometry(0.075, 8, 6);
-const EYE_GEO = new THREE.SphereGeometry(0.015, 6, 5);
-const SCARF_GEO = new THREE.TorusGeometry(0.105, 0.034, 6, 9);
-const ARM_GEO = new THREE.CylinderGeometry(0.038, 0.046, 0.3, 7);
-const HAND_GEO = new THREE.SphereGeometry(0.052, 7, 6);
-const LEG_GEO = new THREE.CylinderGeometry(0.048, 0.055, 0.24, 7);
-const BOOT_GEO = new THREE.SphereGeometry(0.085, 8, 6);
-const CLASP_RING_GEO = new THREE.TorusGeometry(0.036, 0.011, 5, 10);
-const CLASP_PIN_GEO = new THREE.CylinderGeometry(0.019, 0.019, 0.02, 8);
+const CHEST_GEO = new THREE.SphereGeometry(0.13, 16, 12);
+const HOOD_GEO = new THREE.ConeGeometry(0.125, 0.3, 18);
+const FACE_GEO = new THREE.SphereGeometry(0.075, 14, 10);
+const EYE_GEO = new THREE.SphereGeometry(0.015, 8, 6);
+const SCARF_GEO = new THREE.TorusGeometry(0.105, 0.034, 9, 18);
+const ARM_GEO = new THREE.CylinderGeometry(0.038, 0.046, 0.3, 12);
+const HAND_GEO = new THREE.SphereGeometry(0.052, 12, 9);
+const LEG_GEO = new THREE.CylinderGeometry(0.048, 0.055, 0.24, 12);
+const BOOT_GEO = new THREE.SphereGeometry(0.085, 14, 10);
+const CLASP_RING_GEO = new THREE.TorusGeometry(0.036, 0.011, 8, 16);
+const CLASP_PIN_GEO = new THREE.CylinderGeometry(0.019, 0.019, 0.02, 12);
 // ランタンは開放型(上蓋+灯+底皿)。灯が枠に隠れず、どの角度からも見える。
+// 六角のシルエットは職人の道具らしさとして残す(面の陰影は滑らかに)。
 const LANTERN_CAP_GEO = new THREE.ConeGeometry(0.058, 0.05, 6);
 const LANTERN_BASE_GEO = new THREE.CylinderGeometry(0.045, 0.05, 0.02, 6);
-const LANTERN_GLOW_GEO = new THREE.SphereGeometry(0.042, 8, 6);
-const LANTERN_HANDLE_GEO = new THREE.CylinderGeometry(0.008, 0.008, 0.06, 5);
+const LANTERN_GLOW_GEO = new THREE.SphereGeometry(0.042, 12, 9);
+const LANTERN_HANDLE_GEO = new THREE.CylinderGeometry(0.008, 0.008, 0.06, 8);
 
 const CORAL_MAT = new THREE.MeshStandardMaterial({
   color: CORAL,
-  flatShading: true,
+  flatShading: false,
   roughness: 0.8,
 });
 const RUST_MAT = new THREE.MeshStandardMaterial({
   color: RUST,
-  flatShading: true,
+  flatShading: false,
   roughness: 0.85,
 });
 const RUST_DEEP_MAT = new THREE.MeshStandardMaterial({
   color: RUST_DEEP,
-  flatShading: true,
+  flatShading: false,
   roughness: 0.9,
 });
 const SAND_MAT = new THREE.MeshStandardMaterial({
   color: SAND,
-  flatShading: true,
+  flatShading: false,
   roughness: 0.85,
 });
 const FACE_MAT = new THREE.MeshStandardMaterial({
   color: MIDNIGHT,
-  flatShading: true,
+  flatShading: false,
   roughness: 0.6,
 });
 /// マント: 紋章の背景色。布だけはスムースシェーディング+両面描画で、
@@ -161,7 +169,7 @@ const CAPE_MAT = new THREE.MeshStandardMaterial({
 /// フードの闇に灯る両目。夜でも読めるよう、ごく弱い自照を持たせる。
 const EYE_MAT = new THREE.MeshStandardMaterial({
   color: SAND,
-  flatShading: true,
+  flatShading: false,
   roughness: 0.7,
   emissive: new THREE.Color(SAND),
   emissiveIntensity: 0.55,
@@ -170,7 +178,7 @@ const EYE_MAT = new THREE.MeshStandardMaterial({
 /// ランタンの灯。船のランタンと同じ色・同じゆらぎ(同時に1体なので共有で良い)。
 const LANTERN_GLOW_MAT = new THREE.MeshStandardMaterial({
   color: LANTERN,
-  flatShading: true,
+  flatShading: false,
   roughness: 0.8,
   emissive: new THREE.Color(LANTERN),
   emissiveIntensity: 1.5,
