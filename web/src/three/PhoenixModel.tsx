@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 
@@ -27,26 +27,70 @@ const SAND = "#EADEBD"; // 襟巻き・目・留め具の環
 const MIDNIGHT = "#1A1130"; // フードの闇(顔)・留め具の芯
 const LANTERN = "#F3C065"; // ランタンの灯(船のランタンと同色)
 
-/// ケープ。肩から背へ垂れ、裾は紋章そのもの — 左右へ流れる翼の先端と、
-/// 中央の燕尾の切れ込み。薄い一枚だが背面のシルエットで紋章を語る。
-function makeCapeGeometry(): THREE.BufferGeometry {
-  const s = new THREE.Shape();
-  s.moveTo(-0.17, 0);
-  s.lineTo(0.17, 0);
-  s.quadraticCurveTo(0.3, -0.18, 0.34, -0.52); // 右外縁 → 翼の先端
-  s.quadraticCurveTo(0.18, -0.42, 0.06, -0.5); // 裾: 内へ抉れて
-  s.lineTo(0, -0.36); // 燕尾の切れ込み
-  s.lineTo(-0.06, -0.5);
-  s.quadraticCurveTo(-0.18, -0.42, -0.34, -0.52); // 左の翼の先端
-  s.quadraticCurveTo(-0.3, -0.18, -0.17, 0);
-  const geo = new THREE.ExtrudeGeometry(s, {
-    depth: 0.035,
-    steps: 1,
-    curveSegments: 6,
-    bevelEnabled: false,
-  });
-  geo.translate(0, 0, -0.0175);
+// ---- マント(布の格子メッシュ) ----
+// 紋章の背景色(midnight)の一枚布。押し出し板ではなく、肩から垂れる
+// パラメトリックな格子を毎フレーム波で変位させて「ひらひらと靡く」を作る。
+// マントだけはスムースシェーディング(flatShading無し)で、ポリゴンの
+// 角を見せない。裾は紋章の名残 — 左右の翼の先端が長く、中央が浅い燕尾。
+
+const CAPE_ROWS = 16; // 縦(肩→裾)
+const CAPE_COLS = 13; // 横(左端→右端)
+
+/// マントの一点。u:-1..1(左→右)、v:0..1(肩→裾)。
+/// out に位置を書き込む。time で裾ほど大きく波打つ。
+function capePoint(
+  u: number,
+  v: number,
+  time: number,
+  out: { x: number; y: number; z: number },
+) {
+  const width = 0.16 + 0.21 * Math.pow(v, 1.15); // 裾へ向かって広がる
+  const length = 0.38 + 0.19 * Math.pow(Math.abs(u), 1.4); // 端が長い=燕尾の裾
+  const flutter = Math.pow(v, 1.5); // 肩は固定、裾ほど自由に
+  out.x = u * width + flutter * Math.sin(time * 1.3 + v * 2.0) * 0.02;
+  out.y = -v * length + flutter * Math.sin(u * 2.4 + time * 1.9) * 0.012;
+  out.z =
+    -0.02 -
+    0.24 * Math.pow(v, 1.1) + // コートの背面より外側を通って後ろへ膨らむ基本カーブ
+    flutter *
+      (Math.sin(v * 5.2 - time * 2.1) * 0.05 + Math.sin(u * 2.6 + time * 1.5) * 0.04);
+}
+
+/// マントの格子ジオメトリ(位置は後で capeUpdate が書く)。
+function buildCapeGeometry(): THREE.BufferGeometry {
+  const geo = new THREE.BufferGeometry();
+  const positions = new Float32Array(CAPE_ROWS * CAPE_COLS * 3);
+  geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  const indices: number[] = [];
+  for (let r = 0; r < CAPE_ROWS - 1; r++) {
+    for (let c = 0; c < CAPE_COLS - 1; c++) {
+      const a = r * CAPE_COLS + c;
+      const b = a + 1;
+      const d = a + CAPE_COLS;
+      const e = d + 1;
+      indices.push(a, d, b, b, d, e);
+    }
+  }
+  geo.setIndex(indices);
   return geo;
+}
+
+const capeScratch = { x: 0, y: 0, z: 0 };
+
+/// マントの全頂点を時刻 time の波で書き直す(168頂点なので毎フレームでも軽い)。
+function updateCape(geo: THREE.BufferGeometry, time: number) {
+  const attr = geo.getAttribute("position") as THREE.BufferAttribute;
+  let i = 0;
+  for (let r = 0; r < CAPE_ROWS; r++) {
+    const v = r / (CAPE_ROWS - 1);
+    for (let c = 0; c < CAPE_COLS; c++) {
+      const u = (c / (CAPE_COLS - 1)) * 2 - 1;
+      capePoint(u, v, time, capeScratch);
+      attr.setXYZ(i++, capeScratch.x, capeScratch.y, capeScratch.z);
+    }
+  }
+  attr.needsUpdate = true;
+  geo.computeVertexNormals();
 }
 
 /// コート。裾へ向かって広がる袍(ローブ)。低ポリのラースで体積を出す。
@@ -61,15 +105,14 @@ function makeCoatGeometry(): THREE.BufferGeometry {
   return new THREE.LatheGeometry(pts, 9);
 }
 
-// ジオメトリと材質は状態に依存しないので、モジュール読み込み時に一度だけ作る。
+// ジオメトリと材質は状態に依存しないので、モジュール読み込み時に一度だけ作る
+// (マントだけは毎フレーム頂点を書くため、コンポーネント内で個別に作る)。
 const COAT_GEO = makeCoatGeometry();
-const CAPE_GEO = makeCapeGeometry();
 const CHEST_GEO = new THREE.SphereGeometry(0.13, 9, 7);
 const HOOD_GEO = new THREE.ConeGeometry(0.125, 0.3, 8);
 const FACE_GEO = new THREE.SphereGeometry(0.075, 8, 6);
 const EYE_GEO = new THREE.SphereGeometry(0.015, 6, 5);
 const SCARF_GEO = new THREE.TorusGeometry(0.105, 0.034, 6, 9);
-const SCARF_TAIL_GEO = new THREE.BoxGeometry(0.09, 0.16, 0.02);
 const ARM_GEO = new THREE.CylinderGeometry(0.038, 0.046, 0.3, 7);
 const HAND_GEO = new THREE.SphereGeometry(0.052, 7, 6);
 const LEG_GEO = new THREE.CylinderGeometry(0.048, 0.055, 0.24, 7);
@@ -107,6 +150,14 @@ const FACE_MAT = new THREE.MeshStandardMaterial({
   flatShading: true,
   roughness: 0.6,
 });
+/// マント: 紋章の背景色。布だけはスムースシェーディング+両面描画で、
+/// 角のないひらひらとした流れを見せる。
+const CAPE_MAT = new THREE.MeshStandardMaterial({
+  color: MIDNIGHT,
+  flatShading: false,
+  roughness: 0.9,
+  side: THREE.DoubleSide,
+});
 /// フードの闇に灯る両目。夜でも読めるよう、ごく弱い自照を持たせる。
 const EYE_MAT = new THREE.MeshStandardMaterial({
   color: SAND,
@@ -132,14 +183,23 @@ const LANTERN_GLOW_MAT = new THREE.MeshStandardMaterial({
 export default function PhoenixModel({ animate = true }: { animate?: boolean }) {
   const core = useRef<THREE.Group>(null); // ブーツ以外(呼吸)
   const head = useRef<THREE.Group>(null);
-  const cape = useRef<THREE.Group>(null);
   const armR = useRef<THREE.Group>(null);
   const armL = useRef<THREE.Group>(null);
   const lantern = useRef<THREE.Group>(null);
 
+  // マントの布。頂点を毎フレーム書くのでインスタンスごとに持ち、離れる時に破棄する。
+  const capeGeo = useMemo(() => {
+    const geo = buildCapeGeometry();
+    updateCape(geo, 0); // 静止時(reduced-motion)もこの初期形で成立させる
+    return geo;
+  }, []);
+  useEffect(() => () => capeGeo.dispose(), [capeGeo]);
+
   useFrame(({ clock }) => {
     if (!animate) return;
     const time = clock.elapsedTime;
+    // マント: 布の波。裾ほど大きく靡く。
+    updateCape(capeGeo, time);
     // 呼吸: 体だけがゆっくり上下。足は甲板に植わったまま(重なりで吸収)。
     if (core.current) {
       core.current.position.y = Math.sin(time * 0.85) * 0.018;
@@ -149,11 +209,6 @@ export default function PhoenixModel({ animate = true }: { animate?: boolean }) 
     if (head.current) {
       head.current.rotation.y = Math.sin(time * 0.3) * 0.14;
       head.current.rotation.z = Math.sin(time * 0.85 + 2.1) * 0.02;
-    }
-    // ケープ: 海風を受けた裾のゆらぎ。
-    if (cape.current) {
-      cape.current.rotation.x = 0.18 + Math.sin(time * 0.75) * 0.045;
-      cape.current.rotation.z = Math.sin(time * 0.55 + 1.2) * 0.03;
     }
     // 腕: わずかな重心移動。右腕はランタンの重みでほんの少し遅れる。
     if (armR.current) armR.current.rotation.x = Math.sin(time * 0.85 + 0.4) * 0.03;
@@ -198,11 +253,9 @@ export default function PhoenixModel({ animate = true }: { animate?: boolean }) 
         {/* 襟巻き: sandの環+背に垂れる端 */}
         <mesh geometry={SCARF_GEO} material={SAND_MAT} position={[0, 0.96, 0]} rotation={[Math.PI / 2 + 0.08, 0, 0]} />
 
-        {/* ケープ: 肩から背へ。裾に紋章の翼の先端と燕尾の切れ込み */}
-        <group ref={cape} position={[0, 0.93, -0.125]} rotation={[0.18, 0, 0]}>
-          <mesh geometry={CAPE_GEO} material={CORAL_MAT} />
-          <mesh geometry={SCARF_TAIL_GEO} material={SAND_MAT} position={[0, -0.1, 0.025]} rotation={[0.05, 0, 0.08]} />
-        </group>
+        {/* マント: 紋章の背景色の一枚布。肩に固定され、裾ほど自由に靡く
+            (波は updateCape が毎フレーム頂点へ書く) */}
+        <mesh geometry={capeGeo} material={CAPE_MAT} position={[0, 0.93, -0.04]} />
 
         {/* 頭(首振りのピボット): 頭サイズの尖ったフード=紋章の冠羽。
             開口部の闇に両目が灯る */}
