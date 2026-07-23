@@ -19,6 +19,9 @@ const TABS: Tab[] = ["today", "trace", "logbook", "boat", "harbor"];
 // three.js を含む船スタジオは重いので、タブを開いたときだけ読み込む。
 const BoatStudio = lazy(() => import("./views/BoatStudio"));
 
+// 不死鳥(航海士)の360度ビューア。#phoenix で直接開ける(サインイン不要)。
+const PhoenixViewer = lazy(() => import("./three/PhoenixViewer"));
+
 /// 再読込しても開いていたタブに戻れるよう、タブを URL ハッシュに控える。
 function initialTab(): Tab {
   const hash = window.location.hash.replace("#", "");
@@ -28,6 +31,13 @@ function initialTab(): Tab {
 export default function App() {
   const { user, loading } = useAuthUser();
 
+  if (window.location.hash.startsWith("#phoenix")) {
+    return (
+      <Suspense fallback={null}>
+        <PhoenixViewer />
+      </Suspense>
+    );
+  }
   if (isDemo) return <Main uid="demo" />;
   if (loading) return null;
   if (!user) return <SignInView />;

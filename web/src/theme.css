@@ -2595,6 +2595,45 @@ textarea {
   color: color-mix(in srgb, var(--ink) 45%, transparent);
 }
 
+/* ---- 不死鳥ビューア(#phoenix) ---- */
+
+.phoenix-viewer {
+  position: fixed;
+  inset: 0;
+  background: #123830;
+}
+
+.phoenix-viewer canvas {
+  display: block;
+}
+
+.phoenix-viewer-ui {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.phoenix-viewer-ui .chip-row {
+  pointer-events: auto;
+  justify-content: center;
+}
+
+.phoenix-viewer-ui .chip {
+  color: var(--harbor-sand);
+  border-color: color-mix(in srgb, var(--harbor-sand) 35%, transparent);
+}
+
+.phoenix-viewer-ui .chip.selected {
+  background: var(--harbor-sand);
+  color: #123830;
+}
+
 /* 灯の説明の一行 */
 .harbor-world-hint {
   margin: 8px 2px 0;
