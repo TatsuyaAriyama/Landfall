@@ -38,15 +38,20 @@ function lootLabel(route: SeaRoute): string {
   return t("routeLootNone");
 }
 
-/// 嵐の印(小さな雲+雨脚)。
+/// ハリケーンの印(渦の二重うずまき+目)。
 function StormMark({ x, y, dim }: { x: number; y: number; dim: boolean }) {
   return (
-    <g transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`} opacity={dim ? 0.45 : 1}>
-      <circle cx="-3" cy="0" r="4" fill="#7FA8B8" />
-      <circle cx="3" cy="-1.5" r="5" fill="#7FA8B8" />
-      <rect x="-7" y="1.5" width="14" height="4" rx="2" fill="#7FA8B8" />
-      <line x1="-3" y1="7" x2="-4.5" y2="11" stroke="#7FA8B8" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="2" y1="7" x2="0.5" y2="11" stroke="#7FA8B8" strokeWidth="1.5" strokeLinecap="round" />
+    <g
+      transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`}
+      opacity={dim ? 0.45 : 1}
+      stroke="#7FA8B8"
+      fill="none"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      <path d="M 0 -7.5 A 7.5 7.5 0 1 0 7.5 0" />
+      <path d="M 0 -4.2 A 4.2 4.2 0 1 1 -4.2 0" />
+      <circle cx="0" cy="0" r="1.4" fill="#7FA8B8" stroke="none" />
     </g>
   );
 }

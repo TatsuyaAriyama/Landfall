@@ -121,8 +121,8 @@ const EYE_ORANGE = "#F5822A"; // returnOrange
 // 潮目3段階の見た目(0=満力、2=あと少し)。しきい値通過はdampで滑らかに。
 const BEAST_PHASE_SCALE = [1.15, 0.92, 0.7];
 const BEAST_PHASE_Y = [0, -0.26, -0.55];
-const STORM_PHASE_SCALE = [1.1, 0.9, 0.7];
-const STORM_PHASE_OPACITY = [1, 0.75, 0.5];
+// ハリケーンは「巨大」が身上。満力ではっきり大きく、弱まるほど痩せて低くなる。
+const HUR_PHASE_SCALE = [1.24, 1.0, 0.78];
 
 const BEAST_BODY_GEO = new THREE.SphereGeometry(0.6, 9, 7);
 const BEAST_HEAD_GEO = new THREE.ConeGeometry(0.3, 0.5, 7);
@@ -131,11 +131,14 @@ const TENT_SEG1_GEO = new THREE.CylinderGeometry(0.08, 0.14, 0.75, 6);
 const TENT_SEG2_GEO = new THREE.CylinderGeometry(0.035, 0.08, 0.6, 6);
 const TENT_TIP_GEO = new THREE.ConeGeometry(0.035, 0.3, 6);
 const CLOUD_GEO = new THREE.SphereGeometry(0.5, 8, 6);
-const STORM_VEIL_GEO = new THREE.SphereGeometry(1.7, 12, 10);
 const BOLT_GEO = new THREE.PlaneGeometry(1.0, 0.045);
+// ハリケーンの漏斗(海面へ降りる細い首)・目(淡い円盤)・海面のしぶきの環。
+const HUR_FUNNEL_GEO = new THREE.CylinderGeometry(0.58, 0.24, 0.9, 9, 1, true);
+const HUR_EYE_GEO = new THREE.CircleGeometry(0.3, 10);
+const HUR_SKIRT_GEO = new THREE.TorusGeometry(1.05, 0.13, 8, 28);
 
 // 材質は色に依存しないので、ジオメトリと同じくモジュールで一度だけ作る
-// (試練は同時に1体なので、目や雲のアニメも共有インスタンスで問題ない)。
+// (海域は同時に1体なので、目や雲のアニメも共有インスタンスで問題ない)。
 const KRAKEN_BODY_MAT = new THREE.MeshStandardMaterial({
   color: BEAST_BODY_COLOR,
   flatShading: true,
@@ -152,42 +155,72 @@ const KRAKEN_EYE_MAT = new THREE.MeshStandardMaterial({
   emissiveIntensity: 1.5,
   fog: false,
 });
-const STORM_CLOUD_MAT = new THREE.MeshStandardMaterial({
-  color: "#232D42",
+// ハリケーン: 夜の海に沈まない程度に持ち上げた嵐雲の青3段。稲光は薄紫のemissive。
+const HUR_TIER_MATS = ["#3A4C6B", "#2B3A55", "#1E2A3E"].map(
+  (color) =>
+    new THREE.MeshStandardMaterial({
+      color,
+      flatShading: true,
+      roughness: 0.95,
+      transparent: true,
+      emissive: new THREE.Color("#CECBF6"),
+      emissiveIntensity: 0,
+    }),
+);
+const HUR_FUNNEL_MAT = new THREE.MeshStandardMaterial({
+  color: "#131B29",
   flatShading: true,
-  roughness: 0.95,
+  roughness: 0.9,
   transparent: true,
-  emissive: new THREE.Color("#CECBF6"),
-  emissiveIntensity: 0,
+  side: THREE.DoubleSide,
 });
-const STORM_VEIL_MAT = new THREE.MeshBasicMaterial({
-  color: "#0B2028",
+const HUR_EYE_MAT = new THREE.MeshBasicMaterial({
+  color: "#EADEBD",
   transparent: true,
-  opacity: 0.26,
-  depthWrite: false,
+  opacity: 0.75,
+  fog: false,
 });
-const STORM_RAIN_MAT = new THREE.LineBasicMaterial({
+const HUR_SKIRT_MAT = new THREE.MeshBasicMaterial({
   color: "#7FA8B8",
   transparent: true,
-  opacity: 0.4,
+  opacity: 0.22,
+  depthWrite: false,
 });
 
-/// 細い雨のライン(疑似ランダムだが決定的な散らし)。
-function makeRainGeometry(): THREE.BufferGeometry {
-  const pts: number[] = [];
-  for (let i = 0; i < 30; i++) {
-    const a = (i / 30) * Math.PI * 2 + (i % 5) * 0.7;
-    const r = 0.25 + (((i * 37) % 100) / 100) * 0.85;
-    const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r * 0.8;
-    const y = 0.3 + (((i * 53) % 100) / 100) * 0.75;
-    pts.push(x, y, z, x, y - 0.24, z);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-  return geo;
-}
-const RAIN_GEO = makeRainGeometry();
+/// ハリケーンの積層。横からのカメラでも「回る嵐」と読めるよう、渦は上空の
+/// 円盤ではなく、下ほどすぼまる3段の雲リングの塔として組む(上段が明るく大きい)。
+/// 各段はゴツゴツした雲塊のリングで、段ごとに違う速さで回って渦を見せる。
+const HUR_TIERS: {
+  y: number;
+  r: number;
+  n: number;
+  size: number;
+  /// その段の回転速度の倍率(内側=下段ほど速い)。
+  speed: number;
+}[] = [
+  { y: 1.78, r: 1.18, n: 8, size: 1.0, speed: 0.55 },
+  { y: 1.28, r: 0.84, n: 7, size: 0.78, speed: 0.8 },
+  { y: 0.86, r: 0.55, n: 6, size: 0.58, speed: 1.15 },
+];
+
+/// 段内の雲塊の配置(決定的な揺らぎつき)。モジュールで一度だけ計算する。
+const HUR_TIER_PUFFS: { p: [number, number, number]; s: [number, number, number] }[][] =
+  HUR_TIERS.map((tier, ti) =>
+    Array.from({ length: tier.n }, (_, i) => {
+      const ang = (i / tier.n) * Math.PI * 2 + ti * 0.7;
+      const wob = ((ti * 11 + i * 17) % 10) / 10; // 0..0.9 の決定的な揺らぎ
+      const r = tier.r * (0.92 + wob * 0.16);
+      const size = tier.size * (0.85 + ((i * 7 + ti * 3) % 10) / 33);
+      return {
+        p: [Math.cos(ang) * r, tier.y + (wob - 0.45) * 0.14, Math.sin(ang) * r] as [
+          number,
+          number,
+          number,
+        ],
+        s: [size * 1.05, size * 0.55, size * 0.85] as [number, number, number],
+      };
+    }),
+  );
 
 // 触腕4本の配置角(XZ平面)。yawグループで局所+Xを放射方向へ向ける。
 const TENTACLES = [0, 1, 2, 3].map((i) => (i / 4) * Math.PI * 2 + 0.6);
@@ -320,18 +353,11 @@ function Kraken({
   );
 }
 
-/// 嵐。暗い雲の群れ+細い雨のライン+周囲の濃い膜。ゆっくり渦を巻き、
-/// 潮目で薄く小さくなり、討伐で晴れる。命中で雲が明滅する。
-const STORM_PUFFS: { p: [number, number, number]; s: [number, number, number] }[] = [
-  { p: [0, 0.08, 0], s: [1.65, 0.6, 1.15] },
-  { p: [0.62, -0.05, 0.28], s: [1.0, 0.45, 0.75] },
-  { p: [-0.6, -0.02, 0.3], s: [0.9, 0.42, 0.7] },
-  { p: [0.45, 0.02, -0.42], s: [0.95, 0.44, 0.7] },
-  { p: [-0.5, -0.06, -0.4], s: [1.05, 0.4, 0.8] },
-  { p: [0.02, -0.1, 0.55], s: [0.8, 0.36, 0.6] },
-];
-
-function StormCloud({
+/// 嵐の航海 — 巨大なハリケーン。下ほどすぼまる3段の雲リングが段ごとに違う
+/// 速さで回り、細い漏斗が海面へ降りて、しぶきの環を巻き上げる。右手前の
+/// 水平線から滑り込んで来て(接近)、潮目で痩せ、抜けると空へほどけながら
+/// 過ぎ去っていく。命中で稲光。
+function Hurricane({
   phase,
   defeating,
   animate,
@@ -343,77 +369,118 @@ function StormCloud({
   hitClock: { current: number };
 }) {
   const root = useRef<THREE.Group>(null);
-  const swirl = useRef<THREE.Group>(null);
-  const rain = useRef<THREE.Group>(null);
-  const baseScale = useRef(STORM_PHASE_SCALE[phase]);
-  const opacity = useRef(STORM_PHASE_OPACITY[phase]);
+  const tiers = useRef<(THREE.Group | null)[]>([]);
+  const skirt = useRef<THREE.Mesh>(null);
+  const appear = useRef(0); // 0=水平線の彼方 → 1=定位置(接近の滑り込み)
+  const baseScale = useRef(HUR_PHASE_SCALE[phase]);
+  const fade = useRef(1);
+  const drift = useRef(0); // 過ぎ去り(defeat)の横滑り
   const invalidate = useThree((s) => s.invalidate);
 
-  const applyOpacity = (value: number) => {
-    STORM_CLOUD_MAT.opacity = value;
-    STORM_VEIL_MAT.opacity = 0.26 * value;
-    STORM_RAIN_MAT.opacity = 0.4 * value;
+  const applyFade = (v: number) => {
+    for (const m of HUR_TIER_MATS) m.opacity = v;
+    HUR_FUNNEL_MAT.opacity = v;
+    HUR_EYE_MAT.opacity = 0.75 * v;
+    HUR_SKIRT_MAT.opacity = 0.22 * v;
   };
 
+  // reduced-motion(demandフレーム)時: 接近は省略して定位置に置き、一度だけ描く。
   useLayoutEffect(() => {
     if (animate) return;
-    baseScale.current = STORM_PHASE_SCALE[phase];
-    opacity.current = STORM_PHASE_OPACITY[phase];
-    root.current?.scale.setScalar(baseScale.current);
-    applyOpacity(opacity.current);
-    STORM_CLOUD_MAT.emissiveIntensity = 0;
+    appear.current = 1;
+    baseScale.current = HUR_PHASE_SCALE[phase];
+    fade.current = defeating ? 0 : 1;
+    const g = root.current;
+    if (g) {
+      g.position.set(ENCOUNTER_POS[0], 0, ENCOUNTER_POS[2]);
+      g.scale.setScalar(baseScale.current);
+    }
+    applyFade(fade.current);
+    for (const m of HUR_TIER_MATS) m.emissiveIntensity = 0;
     invalidate();
-  }, [phase, animate, invalidate]);
+  }, [phase, animate, defeating, invalidate]);
 
   useFrame(({ clock }, delta) => {
     if (!animate) return;
     const time = clock.elapsedTime;
-    const lambda = defeating ? 2.0 : 1.3;
+    const g = root.current;
+    if (!g) return;
+    appear.current = THREE.MathUtils.damp(appear.current, 1, 1.1, delta);
     baseScale.current = THREE.MathUtils.damp(
       baseScale.current,
-      defeating ? 0.3 : STORM_PHASE_SCALE[phase],
-      lambda,
+      defeating ? 0.35 : HUR_PHASE_SCALE[phase],
+      defeating ? 1.6 : 1.2,
       delta,
     );
-    opacity.current = THREE.MathUtils.damp(
-      opacity.current,
-      defeating ? 0 : STORM_PHASE_OPACITY[phase],
-      lambda,
-      delta,
+    fade.current = THREE.MathUtils.damp(fade.current, defeating ? 0 : 1, 1.8, delta);
+    drift.current = THREE.MathUtils.damp(drift.current, defeating ? 2.4 : 0, 1.1, delta);
+    // 接近: 右手前の水平線から定位置へ(島の背後は通らない)。
+    // 過ぎ去り: ほどけながら空へ昇り、右へ流れていく。
+    const t = appear.current;
+    g.position.set(
+      ENCOUNTER_POS[0] + (1 - t) * 3.0 + drift.current,
+      (1 - t) * 0.3 + (1 - fade.current) * 1.5,
+      ENCOUNTER_POS[2] + (1 - t) * 0.6,
     );
-    root.current?.scale.setScalar(baseScale.current);
-    if (swirl.current) swirl.current.rotation.y = time * 0.16; // ゆっくり渦を巻く
-    if (rain.current) rain.current.position.y = -1.05 - ((time * 0.5) % 0.25);
-    // 命中の明滅(emissiveの短いスパイク)。
+    // 命中で身震い(scaleパルス)。塔全体がわずかに傾いで揺れる。
     const since = time - hitClock.current;
-    const flash = since >= 0 && since < 0.4 ? 1 - since / 0.4 : 0;
-    STORM_CLOUD_MAT.emissiveIntensity = flash * 0.85;
-    applyOpacity(opacity.current);
+    const pulse = since >= 0 && since < 0.5 ? Math.sin((since / 0.5) * Math.PI) * 0.07 : 0;
+    g.scale.setScalar(baseScale.current * (0.55 + 0.45 * t) * (1 + pulse));
+    g.rotation.z = 0.05 + Math.sin(time * 0.4) * 0.02;
+    // 段ごとに違う速さで回る(下段=内側ほど速い)。弱まるほど回転もゆるむ。
+    const spin = (0.6 - phase * 0.1) * (0.4 + 0.6 * fade.current);
+    for (let i = 0; i < HUR_TIERS.length; i++) {
+      const tg = tiers.current[i];
+      if (tg) tg.rotation.y = -time * spin * HUR_TIERS[i].speed;
+    }
+    if (skirt.current) skirt.current.rotation.z = time * spin * 0.6;
+    // 稲光: 決定的な疑似ランダムのまたたき+命中の強い閃き。
+    const flick = Math.sin(time * 1.7) * Math.sin(time * 2.9 + 1.3) * Math.sin(time * 0.83 + 4.1);
+    const strikeFlash = since >= 0 && since < 0.4 ? 1 - since / 0.4 : 0;
+    const glow = (flick > 0.82 ? (flick - 0.82) * 3.2 : 0) + strikeFlash * 0.9;
+    HUR_TIER_MATS.forEach((m, i) => {
+      m.emissiveIntensity = glow * (1 - i * 0.25);
+    });
+    applyFade(fade.current);
   });
 
   return (
-    <group ref={root} position={[ENCOUNTER_POS[0], 1.05, ENCOUNTER_POS[2]]}>
-      <group ref={swirl}>
-        {STORM_PUFFS.map((puff, i) => (
-          <mesh
-            key={i}
-            geometry={CLOUD_GEO}
-            material={STORM_CLOUD_MAT}
-            position={puff.p}
-            scale={puff.s}
-          />
-        ))}
-      </group>
-      {/* 細い雨のライン。ゆっくり落ちてループする */}
-      <group ref={rain} position={[0, -1.05, 0]}>
-        <lineSegments geometry={RAIN_GEO} material={STORM_RAIN_MAT} />
-      </group>
-      {/* 周囲だけ濃いfog感(色を落とした半透明の膜) */}
+    <group ref={root} position={ENCOUNTER_POS}>
+      {/* 3段の雲リング。段ごとに別グループで回す */}
+      {HUR_TIER_PUFFS.map((puffs, ti) => (
+        <group
+          key={ti}
+          ref={(el) => {
+            tiers.current[ti] = el;
+          }}
+        >
+          {puffs.map((puff, i) => (
+            <mesh
+              key={i}
+              geometry={CLOUD_GEO}
+              material={HUR_TIER_MATS[ti]}
+              position={puff.p}
+              scale={puff.s}
+            />
+          ))}
+        </group>
+      ))}
+      {/* 漏斗: 塔の芯が海面へ降りる細い首 */}
+      <mesh geometry={HUR_FUNNEL_GEO} material={HUR_FUNNEL_MAT} position={[0, 0.5, 0]} />
+      {/* 目: 塔の頂の淡い円盤。カメラへ少し傾け、静けさを覗かせる */}
       <mesh
-        geometry={STORM_VEIL_GEO}
-        material={STORM_VEIL_MAT}
-        position={[0, -0.35, 0]}
-        scale={[1.2, 0.7, 1]}
+        geometry={HUR_EYE_GEO}
+        material={HUR_EYE_MAT}
+        position={[0, 2.0, 0.05]}
+        rotation={[-Math.PI / 2 + 0.32, 0, 0]}
+      />
+      {/* 海面のしぶきの環。漏斗の足元で巻き上がる */}
+      <mesh
+        ref={skirt}
+        geometry={HUR_SKIRT_GEO}
+        material={HUR_SKIRT_MAT}
+        position={[0, 0.08, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
       />
     </group>
   );
@@ -688,10 +755,10 @@ function HarborSea({
       >
         <div className="harbor-world-island">{roomName}</div>
       </Html>
-      {/* 海域: 船団と島の間の海獣/嵐。抜けるアニメの間は残して沈める/晴らす。 */}
+      {/* 海域: 船団と島の間のハリケーン/海獣。抜けるアニメの間は残して見送る/沈める。 */}
       {encounter &&
         (encounter.kind === "storm" ? (
-          <StormCloud
+          <Hurricane
             phase={encounter.phase}
             defeating={encounter.defeating}
             animate={animate}
@@ -888,6 +955,25 @@ export default function HarborWorld({
 
   const berths = useMemo(() => makeBerths(members), [members]);
 
+  // 嵐の航海 — ハリケーンの海域に入った瞬間、イベントの題字を一度だけ掲げる
+  // (同じ航海では再表示しない)。表示のトリガーと消灯タイマーは別のeffectに
+  // 分ける — 一緒にすると、StrictMode等でeffectが再実行された際に「表示済み」の
+  // 早期returnがタイマーだけを取り消し、題字が出っぱなしになる。
+  const [stormIntro, setStormIntro] = useState(false);
+  const stormIntroShown = useRef<number | null>(null);
+  const stormActive = encounterView?.kind === "storm" && !encounterView.defeating;
+  useEffect(() => {
+    if (!stormActive || identity === null) return;
+    if (stormIntroShown.current === identity) return;
+    stormIntroShown.current = identity;
+    setStormIntro(true);
+  }, [stormActive, identity]);
+  useEffect(() => {
+    if (!stormIntro) return;
+    const id = window.setTimeout(() => setStormIntro(false), 4600);
+    return () => window.clearTimeout(id);
+  }, [stormIntro]);
+
   // 一撃の発火。航海中だけ音を添え、海域が出ている間だけ一閃を飛ばす
   // (何もない海に光が飛ぶと行き先が謎になる)。
   useEffect(() => {
@@ -1024,6 +1110,13 @@ export default function HarborWorld({
             <span className="trial-remaining">
               {voyageRemainingLabel(voyage.targetMinutes - progressMinutes)}
             </span>
+          </div>
+        )}
+        {/* 嵐の航海の題字。ハリケーンの海域に入った瞬間、一度だけ掲げる。 */}
+        {stormIntro && !clearFx && arriveStage !== "fx" && (
+          <div className="trial-defeat" role="status">
+            <div className="trial-defeat-title">{t("stormEventTitle")}</div>
+            <div className="trial-defeat-sub">{t("stormEventSub")}</div>
           </div>
         )}
         {/* 海域を抜けた帯。世界の上にふわっと現れる一枚。 */}
