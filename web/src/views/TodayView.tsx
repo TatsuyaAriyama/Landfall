@@ -145,13 +145,14 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     () => todaySessions.reduce((sum, s) => sum + s.minutes, 0),
     [todaySessions],
   );
-  const todayByItem = useMemo(() => {
+  // タイルには「今日」ではなく、その項目のこれまでの総作業時間を出す。
+  const totalByItem = useMemo(() => {
     const map = new Map<string, number>();
-    for (const s of todaySessions) {
+    for (const s of data.sessions) {
       if (s.itemUUID) map.set(s.itemUUID, (map.get(s.itemUUID) ?? 0) + s.minutes);
     }
     return map;
-  }, [todaySessions]);
+  }, [data.sessions]);
 
   // 航海日誌のような日付。曜日は小さな見出し(帰帆の色)、日付はその下に。
   const today = new Date();
@@ -178,7 +179,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           const dragClass =
             item.id === dragId ? " dragging" : item.id === overId ? " drag-over" : "";
           const timing = timer?.itemId === item.id;
-          const todayMin = todayByItem.get(item.id) ?? 0;
+          const totalMin = totalByItem.get(item.id) ?? 0;
           return (
             <button
               key={item.id}
@@ -211,8 +212,8 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
               </div>
               <span className="tile-name">
                 <span className="tile-name-text">{item.name}</span>
-                {todayMin > 0 && (
-                  <span className="tile-today">{durationLabel(todayMin)}</span>
+                {totalMin > 0 && (
+                  <span className="tile-today">{durationLabel(totalMin)}</span>
                 )}
               </span>
               <span
@@ -353,10 +354,7 @@ export function SessionRow({
           {session.note ? ` · ${session.note}` : ""}
         </div>
       </div>
-      <span className="row-minutes">
-        {session.minutes}
-        {t("minutesUnit")}
-      </span>
+      <span className="row-minutes">{durationLabel(session.minutes)}</span>
       {onDelete && (
         <button className="minus-button" onClick={onDelete} aria-label={t("delete")}>
           −
