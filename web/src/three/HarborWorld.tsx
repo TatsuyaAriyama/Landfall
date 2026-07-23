@@ -9,6 +9,7 @@ import {
 } from "@react-three/fiber";
 import { Html, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
+import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
 import { Horizon, Island } from "./VoyageScene";
 import { boatPartsFromIds } from "../boat";
@@ -46,6 +47,8 @@ export interface StrikeEvent {
 export interface HarborWorldProps {
   room: HarborRoom;
   members: HarborMember[];
+  /// 自分のuid。自分の船の甲板に航海士(プレイヤー)を立たせる。
+  selfUid?: string;
   onSelectMember?: (member: HarborMember) => void;
   /// 共同航海。undefined=読込中(何も出さない)、null=航海なし。
   voyage?: HarborVoyage | null;
@@ -555,11 +558,13 @@ function MemberBoat({
   berth,
   lit,
   animate,
+  isSelf,
   onSelect,
 }: {
   berth: Berth;
   lit: boolean;
   animate: boolean;
+  isSelf: boolean;
   onSelect?: (member: HarborMember) => void;
 }) {
   const { member, phase } = berth;
@@ -597,6 +602,13 @@ function MemberBoat({
       <Ripples animate={animate} />
       <group ref={bob}>
         <BoatModel parts={parts} animate={animate} />
+        {/* 自分の船だけ、舳先に航海士(プレイヤー)を立たせる。
+            今日の灯が点いていれば灯を掲げるポーズで応える。 */}
+        {isSelf && (
+          <group position={[0.45, 0.5, 0]} scale={1.15}>
+            <PhoenixModel animate={animate} pose={lit ? "raise" : "idle"} />
+          </group>
+        )}
         {/* 今日の灯: 船尾の短い掲灯柱+暖色のランタン(emissiveな小球のみ) */}
         {lit && (
           <group position={[-0.88, 0.42, 0]}>
@@ -645,6 +657,7 @@ function HarborSea({
   berths,
   litIds,
   animate,
+  selfUid,
   onSelect,
   encounter,
   advanceOn,
@@ -657,6 +670,7 @@ function HarborSea({
   berths: Berth[];
   litIds: ReadonlySet<string>;
   animate: boolean;
+  selfUid?: string;
   onSelect?: (member: HarborMember) => void;
   encounter: EncounterView | null;
   /// 到着済み(船団を島へ寄せる)。マウント時に真なら最初から寄せた位置で描く。
@@ -788,6 +802,7 @@ function HarborSea({
             berth={berth}
             lit={litIds.has(berth.member.id)}
             animate={animate}
+            isSelf={berth.member.id === selfUid}
             onSelect={onSelect}
           />
         ))}
@@ -800,6 +815,7 @@ function HarborSea({
 export default function HarborWorld({
   room,
   members,
+  selfUid,
   onSelectMember,
   voyage,
   route,
@@ -1075,6 +1091,7 @@ export default function HarborWorld({
             berths={berths}
             litIds={litIds}
             animate={animate}
+            selfUid={selfUid}
             onSelect={onSelectMember}
             encounter={encounterView}
             advanceOn={arrived}

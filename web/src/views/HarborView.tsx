@@ -913,6 +913,7 @@ function RoomDetail({
             <HarborWorld
               room={room}
               members={members}
+              selfUid={uid}
               onSelectMember={onOpenMember}
               voyage={voyage}
               route={route}
