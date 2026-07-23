@@ -1284,6 +1284,46 @@ textarea {
     padding-bottom: 140px;
   }
 
+  /* 作業項目: スマホでは小さめのアイコン主体で、横一列に4つ並べる。
+     名前と総時間はアイコンの下に中央寄せで小さく積む。 */
+  .tile-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+
+  .tile {
+    gap: 6px;
+  }
+
+  .tile-name {
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    text-align: center;
+    width: 100%;
+  }
+
+  .tile-name-text {
+    font-size: 12px;
+    max-width: 100%;
+  }
+
+  .tile-today {
+    font-size: 10.5px;
+  }
+
+  .tile-edit {
+    top: 5px;
+    right: 5px;
+    width: 26px;
+    height: 26px;
+    font-size: 13px;
+  }
+
+  .tile-add {
+    font-size: 26px;
+  }
+
   .timer-chip {
     bottom: 84px;
   }
