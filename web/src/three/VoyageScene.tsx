@@ -242,7 +242,7 @@ function VoyageSea({
         speed={animate ? 0.5 : 0}
       />
       <Moon position={[1.8, 1.25, -14]} />
-      <Sea />
+      <Sea moonX={1.8} animate={animate} />
       <Horizon />
       <Island />
       {/* ステップ目標なら、航路に目印のブイを浮かべる(達成で点灯)。 */}

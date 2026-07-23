@@ -899,7 +899,7 @@ function HarborSea({
         speed={animate ? 0.5 : 0}
       />
       <Moon position={[-8, 2.8, -16]} />
-      <Sea />
+      <Sea moonX={-8} animate={animate} />
       <Horizon />
       {/* 右奥の島。上に港の名前が小さく浮かぶ。 */}
       <group position={ISLAND_SHIFT}>

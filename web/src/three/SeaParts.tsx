@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 
@@ -27,13 +27,72 @@ export function Moon({ position }: { position: [number, number, number] }) {
   );
 }
 
-/// 海。大きな円盤。縁は霧で夜に溶ける。
-export function Sea() {
-  return (
-    <mesh geometry={SEA_GEO} rotation={[-Math.PI / 2, 0, 0]}>
-      <meshBasicMaterial color={SEA_COLOR} />
-    </mesh>
+// 海の色。中心=月明かりの溜まり、縁=夜の背景色へ溶ける。
+const SEA_DEEP = "#123830"; // = NIGHT_BG。縁で背景に馴染ませる
+const SEA_MOON = "#BFD6C6"; // 水面に落ちる月光のハイライト(淡い青緑)
+
+// 円盤はXY平面。頂点座標(position.xy)をそのまま水面の2D座標として使う。
+// local +Y = 世界の -Z(水平線=月の方向)、local +X = 世界の +X。
+const SEA_VERT = /* glsl */ `
+  varying vec2 vPos;
+  void main() {
+    vPos = position.xy;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+const SEA_FRAG = /* glsl */ `
+  precision mediump float;
+  uniform vec3 uSea;
+  uniform vec3 uDeep;
+  uniform vec3 uMoon;
+  uniform float uMoonX;
+  uniform float uTime;
+  varying vec2 vPos;
+  void main() {
+    float r = length(vPos) / 30.0;
+    // 放射グラデーション: 中心は海色、縁は夜色へ(霧の代わりに背景へ溶かす)。
+    vec3 col = mix(uSea, uDeep, smoothstep(0.08, 0.62, r));
+    // 中心のほのかな月明かりの溜まり。
+    col += (uMoon - uSea) * 0.05 * (1.0 - smoothstep(0.0, 0.45, r));
+    // 月光の筋: 月の真下(uMoonX)に立ち、水平線側で強く手前で崩れる縦の光。
+    float dx = vPos.x - uMoonX;
+    float along = smoothstep(-5.0, 13.0, vPos.y);   // 月側(奥)ほど強い
+    float width = mix(2.8, 0.7, along);             // 水平線に近いほど細い
+    float band = exp(-(dx * dx) / (width * width));
+    // さざ波で反射を分断する、ゆっくりした揺らぎ。
+    float shimmer = 0.55 + 0.45 * sin(vPos.y * 1.1 - uTime * 1.4)
+                                * sin(vPos.x * 0.9 + uTime * 0.7);
+    float streak = clamp(band * along * shimmer, 0.0, 1.0) * 0.5;
+    col = mix(col, uMoon, streak);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+/// 海。大きな円盤に、放射グラデーションと月光の筋(月の真下に立つ揺らぐ光)。
+/// moonX にそのシーンの月のX座標を渡すと、反射がその真下に立つ。
+export function Sea({ moonX = 0, animate = true }: { moonX?: number; animate?: boolean }) {
+  const mat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: SEA_VERT,
+        fragmentShader: SEA_FRAG,
+        uniforms: {
+          uSea: { value: new THREE.Color(SEA_COLOR) },
+          uDeep: { value: new THREE.Color(SEA_DEEP) },
+          uMoon: { value: new THREE.Color(SEA_MOON) },
+          uMoonX: { value: moonX },
+          uTime: { value: 0 },
+        },
+      }),
+    [moonX],
   );
+  useEffect(() => () => mat.dispose(), [mat]);
+
+  useFrame(({ clock }) => {
+    if (animate) mat.uniforms.uTime.value = clock.elapsedTime;
+  });
+
+  return <mesh geometry={SEA_GEO} rotation={[-Math.PI / 2, 0, 0]} material={mat} />;
 }
 
 /// 波紋。船の周りをゆっくり広がって消えるリングを、位相をずらして3つ。

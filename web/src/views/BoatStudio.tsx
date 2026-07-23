@@ -42,7 +42,7 @@ function NightSea({ parts, animate }: { parts: BoatParts; animate: boolean }) {
         speed={animate ? 0.6 : 0}
       />
       <Moon position={[-8.5, 5.6, -14]} />
-      <Sea />
+      <Sea moonX={-8.5} animate={animate} />
       <Ripples animate={animate} />
       <BoatModel parts={parts} animate={animate} />
       <OrbitControls
@@ -82,7 +82,7 @@ function SailorStage({ pose, animate }: { pose: PhoenixPose; animate: boolean })
         speed={animate ? 0.6 : 0}
       />
       <Moon position={[-8.5, 5.6, -14]} />
-      <Sea />
+      <Sea moonX={-8.5} animate={animate} />
       <Ripples animate={animate} />
       <group scale={0.95}>
         <PhoenixModel animate={animate} pose={pose} />

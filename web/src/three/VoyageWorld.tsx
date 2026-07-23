@@ -345,7 +345,7 @@ function WorldScene({
       />
       <TappableMoon animate={animate} />
       <ShootingStar animate={animate} />
-      <Sea />
+      <Sea moonX={-8} animate={animate} />
       <Horizon />
       <Island />
       {/* ステップ目標なら、航路にブイを浮かべる。タップでその場で達成/取消。 */}
