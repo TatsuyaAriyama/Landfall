@@ -392,50 +392,31 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   );
   const [phase, setPhase] = useState<Phase>(animate ? "enter" : "idle");
 
-  // ---- 編集状態(DestinationDialogと同等) ----
+  // ---- 編集状態 ----
+  // 目標のかたちは2つだけ:「期日を決める」か「ステップで辿る」か。
+  // (累計時間/完了は廃止。累計時間は着岸時にどの形でも表示される)
   const [name, setName] = useState(dest?.name ?? "");
-  const [itemUUID, setItemUUID] = useState<string | undefined>(dest?.itemUUID);
-  // 新規の目的地は期日が既定(一番使われる目標のため)。編集時は保存済みの種類に従う。
-  const [kind, setKind] = useState<"hours" | "date" | "done" | "steps">(
-    dest
-      ? dest.steps && dest.steps.length > 0
-        ? "steps"
-        : dest.manual
-          ? "done"
-          : dest.targetDate && !dest.targetMinutes
-            ? "date"
-            : "hours"
-      : "date",
+  const [kind, setKind] = useState<"date" | "steps">(
+    dest?.steps && dest.steps.length > 0 ? "steps" : "date",
   );
   // ステップ目標の編集リスト(順序付き)。チェックの反転は即保存する。
   const [steps, setSteps] = useState<DestinationStep[]>(() => dest?.steps ?? []);
-  const [hours, setHours] = useState(
-    dest?.targetMinutes ? String(Math.round(dest.targetMinutes / 60)) : "20",
-  );
   const [dateStr, setDateStr] = useState(
     dest?.targetDate ? dest.targetDate.toISOString().slice(0, 10) : "",
   );
   const [working, setWorking] = useState(false);
   const confirmingRef = useRef(false);
-  // 期日/累計時間を「触った」印。既存の値がすでに有効でも、開いた直後には
+  // 期日を「触った」印。既存の値がすでに有効でも、開いた直後には
   // 自動保存しない(ただ見ただけで閉じてしまうのを防ぐ)ためのガード。
   const dateTouched = useRef(false);
-  const hoursTouched = useRef(false);
   const autoSavedRef = useRef(false);
 
   const trimmed = name.replace(/^[\s　]+|[\s　]+$/g, "");
-  const hoursNum = Number(hours);
   // 名前のあるステップだけを有効とみなす(空行は保存時に落とす)。
   const namedSteps = steps.filter((s) => s.name.trim().length > 0);
   const valid =
     trimmed.length > 0 &&
-    (kind === "hours"
-      ? hoursNum > 0 && hoursNum <= 10000
-      : kind === "date"
-        ? dateStr.length === 10
-        : kind === "steps"
-          ? namedSteps.length >= 1
-          : dateStr.length === 0 || dateStr.length === 10); // 完了: 締切は任意
+    (kind === "date" ? dateStr.length === 10 : namedSteps.length >= 1);
 
   // ---- 世界の配置(カードと同じ航路・島) ----
   // ステップ目標は「達成数/全数」で船が進む(編集中の局所stateを即反映)。
@@ -496,7 +477,6 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
       void saveDestination(uid, {
         id: dest.id,
         name: trimmed,
-        itemUUID,
         steps: next,
         createdAt: dest.createdAt,
       }).catch(() => {});
@@ -528,15 +508,8 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     await saveDestination(uid, {
       id: dest?.id,
       name: trimmed,
-      itemUUID,
-      // 種類ごとに、その種類の値だけを書く(他は未設定にして排他を保つ)。
-      targetMinutes: kind === "hours" ? Math.round(hoursNum * 60) : undefined,
-      targetDate:
-        (kind === "date" || kind === "done") && dateStr
-          ? new Date(`${dateStr}T00:00:00`)
-          : undefined,
-      manual: kind === "done" ? true : undefined,
-      manualDone: kind === "done" ? dest?.manualDone : undefined,
+      // 種類ごとに、その種類の値だけを書く(排他)。
+      targetDate: kind === "date" && dateStr ? new Date(`${dateStr}T00:00:00`) : undefined,
       steps: kind === "steps" ? namedSteps : undefined,
       createdAt: dest?.createdAt,
     });
@@ -544,13 +517,12 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     requestClose();
   };
 
-  // 期日/累計時間を設定し終えたら、そのまま保存してズームアウト(ホームへ戻る)。
-  // 「保存する」を別途押す一手間をなくす — 名前・項目だけの変更は従来通り
+  // 期日を選び終えたら、そのまま保存してズームアウト(ホームへ戻る)。
+  // 「保存する」を別途押す一手間をなくす — 名前だけの変更は従来通り
   // 保存ボタンで確定する(値を触っていなければここでは動かない)。
   useEffect(() => {
     // 目標の種類を切り替えたら、前の種類での「触った/自動保存済み」の印は捨てる。
     dateTouched.current = false;
-    hoursTouched.current = false;
     autoSavedRef.current = false;
   }, [kind]);
 
@@ -637,91 +609,39 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
         </div>
 
         <div className="voyage-world-panel">
-          <p className="section-label">{t("countsToward")}</p>
-          <div className="chip-row">
-            <button
-              className={`chip${itemUUID === undefined ? " selected" : ""}`}
-              onClick={() => setItemUUID(undefined)}
-            >
-              {t("allItems")}
-            </button>
-            {data.items.map((item) => (
-              <button
-                key={item.id}
-                className={`chip${itemUUID === item.id ? " selected" : ""}`}
-                onClick={() => setItemUUID(item.id)}
-              >
-                {item.name}
-              </button>
-            ))}
-          </div>
-
-          <p className="section-label">{t("goalKind")}</p>
+          {/* 質問形式:この島へは、どう向かう?(答えは2つ) */}
+          <p className="section-label">{t("goalQuestion")}</p>
           <div className="chip-row">
             <button
               className={`chip${kind === "date" ? " selected" : ""}`}
               onClick={() => setKind("date")}
             >
-              {t("goalDate")}
-            </button>
-            <button
-              className={`chip${kind === "hours" ? " selected" : ""}`}
-              onClick={() => setKind("hours")}
-            >
-              {t("goalHours")}
-            </button>
-            <button
-              className={`chip${kind === "done" ? " selected" : ""}`}
-              onClick={() => setKind("done")}
-            >
-              {t("goalDone")}
+              {t("goalDateOption")}
             </button>
             <button
               className={`chip${kind === "steps" ? " selected" : ""}`}
               onClick={() => setKind("steps")}
             >
-              {t("goalSteps")}
+              {t("goalStepsOption")}
             </button>
           </div>
 
           <div style={{ marginTop: 14 }}>
-            {kind === "hours" ? (
-              <div className="stepper-row" style={{ justifyContent: "flex-start" }}>
-                <span className="stepper-value">
-                  <input
-                    className="stepper-input"
-                    type="text"
-                    inputMode="numeric"
-                    value={hours}
-                    onChange={(e) => {
-                      hoursTouched.current = true;
-                      setHours(e.target.value.replace(/[^0-9]/g, ""));
-                    }}
-                    onBlur={() => {
-                      if (kind === "hours" && hoursTouched.current && valid && !working) {
-                        void save();
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") e.currentTarget.blur();
-                    }}
-                    aria-label={t("goalHours")}
-                  />
-                  <span className="stepper-unit">{t("hoursUnit")}</span>
-                </span>
-              </div>
-            ) : kind === "date" ? (
-              <input
-                className="field"
-                type="date"
-                value={dateStr}
-                min={new Date().toISOString().slice(0, 10)}
-                onChange={(e) => {
-                  dateTouched.current = true;
-                  setDateStr(e.target.value);
-                }}
-              />
-            ) : kind === "steps" ? (
+            {kind === "date" ? (
+              <>
+                <p className="quest-intro">{t("goalDateDesc")}</p>
+                <input
+                  className="field"
+                  type="date"
+                  value={dateStr}
+                  min={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => {
+                    dateTouched.current = true;
+                    setDateStr(e.target.value);
+                  }}
+                />
+              </>
+            ) : (
               <>
                 <p className="quest-intro">{t("goalStepsDesc")}</p>
                 <div className="step-list">
@@ -771,21 +691,6 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                     + {t("addStep")}
                   </button>
                 )}
-              </>
-            ) : (
-              <>
-                <p className="quest-intro">{t("goalDoneDesc")}</p>
-                <input
-                  className="field"
-                  type="date"
-                  value={dateStr}
-                  min={new Date().toISOString().slice(0, 10)}
-                  onChange={(e) => setDateStr(e.target.value)}
-                  aria-label={t("optionalDateLabel")}
-                />
-                <p className="row-sub" style={{ marginTop: 4 }}>
-                  {t("optionalDateLabel")}
-                </p>
               </>
             )}
           </div>

@@ -19,6 +19,7 @@ import { boatProps } from "../boat";
 import { BoatSvg, CoastSvg } from "../symbols";
 import { askConfirm } from "../overlays";
 import {
+  durationLabel,
   remainingDaysLabel,
   remainingHoursLabel,
   t,
@@ -175,6 +176,7 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
       {celebrating && (
         <LandfallCelebration
           dest={celebrating}
+          minutes={destinationProgress(celebrating, data.sessions).minutes}
           onClose={() => setCelebrating(null)}
         />
       )}
@@ -355,11 +357,14 @@ function DestinationCard({
 }
 
 /// 着岸の一枚。夜の海を船が島まで走り、「着岸。」の言葉が浮かぶ。
+/// 目標の種類に関わらず、ここまで積み重ねた航海の時間を添える。
 function LandfallCelebration({
   dest,
+  minutes,
   onClose,
 }: {
   dest: Destination;
+  minutes: number;
   onClose: () => void;
 }) {
   return (
@@ -383,6 +388,11 @@ function LandfallCelebration({
       <div className="landfall-words">
         <div className="landfall-title">{t("landfallExcl")}</div>
         <p className="landfall-line">{tf(t("reachedIsland"), { name: dest.name })}</p>
+        {minutes > 0 && (
+          <p className="landfall-time">
+            {tf(t("landfallTime"), { time: durationLabel(minutes) })}
+          </p>
+        )}
         <p className="landfall-sub">{t("voyageStays")}</p>
         <button className="landfall-close" onClick={onClose}>
           {t("close")}

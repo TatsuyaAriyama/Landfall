@@ -1777,6 +1777,20 @@ textarea {
   margin: 6px 0 0;
 }
 
+/* 着岸時に添える「航海した時間」。帰帆の色の小さなバッジ。 */
+.landfall-time {
+  display: inline-block;
+  margin: 12px 0 0;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  color: var(--return-orange);
+  background: color-mix(in srgb, var(--return-orange) 14%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
 .landfall-close {
   margin-top: 32px;
   min-height: 48px;

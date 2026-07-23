@@ -169,8 +169,7 @@ export function demoData(): UserData {
     {
       id: "DEST-1",
       name: "TOEIC",
-      itemUUID: "DEMO-1",
-      targetMinutes: 20 * 60,
+      targetDate: at(-30),
       createdAt: at(40),
       updatedAt: now,
     },
