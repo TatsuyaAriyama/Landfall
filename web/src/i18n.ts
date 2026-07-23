@@ -11,6 +11,7 @@ const ja = {
   trace: "軌跡",
   harbor: "港",
   signOut: "サインアウト",
+  signOutConfirm: "サインアウトしますか。記録は同期済みなので消えません。",
   loading: "読み込み中…",
   items: "作業項目",
   addItem: "項目を追加",
@@ -41,6 +42,10 @@ const ja = {
   tapDayHint: "日付を押すと、その日の記録が表示されます。",
   calendarTab: "カレンダー",
   indexTab: "索引",
+  todayJump: "今日",
+  monthTotal: "合計",
+  prevMonth: "前の月",
+  nextMonth: "次の月",
   searchNotes: "ひとことを検索",
   noNotes: "ひとことは、まだありません。記録に一言添えると、ここに集まります。",
   dayNote: "この日の振り返り",
@@ -100,6 +105,8 @@ const ja = {
   send: "送る",
   reactionHeart: "いいね。",
   reactionLighthouse: "見てるよ。",
+  share: "共有",
+  inviteNudge: "まだあなただけの港です。招待コードを送って、仲間を呼ぼう。",
   errRoomFull: "この港は満員です(4人まで)。",
   errTooManyRooms: "入れる港は、3つまでです。",
   errAlreadyOwns: "ひらける港は、ひとつまで。あなたの港が、もう海のどこかにあります。",
@@ -199,6 +206,9 @@ const ja = {
   monthCards: "月のカード",
   yearChart: "年間海図",
   saveImage: "画像で保存",
+  saveDaysCard: "「日々」を保存",
+  saveVoyageCard: "「航海」を保存",
+  saveTypeCard: "「タイプ」を保存",
 
   // 船
   boatSection: "船",
@@ -268,6 +278,7 @@ const en: Record<I18nKey, string> = {
   trace: "Trace",
   harbor: "Harbor",
   signOut: "Sign out",
+  signOutConfirm: "Sign out? Your records are synced and will not be lost.",
   loading: "Loading…",
   items: "Items",
   addItem: "Add an item",
@@ -297,6 +308,10 @@ const en: Record<I18nKey, string> = {
   noDayRecords: "No records this day. Rest is part of the voyage.",
   tapDayHint: "Tap a day to see its records.",
   calendarTab: "Calendar",
+  todayJump: "Today",
+  monthTotal: "Total",
+  prevMonth: "Previous month",
+  nextMonth: "Next month",
   indexTab: "Index",
   searchNotes: "Search notes",
   noNotes: "No notes yet. Add a word to a record and it gathers here.",
@@ -356,6 +371,8 @@ const en: Record<I18nKey, string> = {
   send: "Send",
   reactionHeart: "Nice.",
   reactionLighthouse: "I see you.",
+  share: "Share",
+  inviteNudge: "This harbor is just you so far. Send the invite code to bring friends aboard.",
   errRoomFull: "This harbor is full (up to 4 sailors).",
   errTooManyRooms: "You can be in up to 3 harbors.",
   errAlreadyOwns: "You can open one harbor. Yours is already out there.",
@@ -450,6 +467,9 @@ const en: Record<I18nKey, string> = {
   monthCards: "Monthly cards",
   yearChart: "Year chart",
   saveImage: "Save as image",
+  saveDaysCard: "Save “Days”",
+  saveVoyageCard: "Save “Voyage”",
+  saveTypeCard: "Save “Type”",
 
   boatSection: "Boat",
   boatTab: "Boat",
@@ -552,6 +572,41 @@ export function remainingDaysLabel(days: number): string {
 /// チャットの発言時刻。「14:32」。
 export function chatTimeLabel(date: Date): string {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+/// チャットの日付区切り。「7月21日(火)」。年が違えば年も付ける。
+export function chatDateLabel(date: Date, now: Date = new Date()): string {
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return new Intl.DateTimeFormat(lang, {
+    ...(sameYear ? {} : { year: "numeric" }),
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(date);
+}
+
+/// 時間量の表示。「1時間15分」「45分」「2時間」/ "1h 15m"。0分は「0分」。
+export function durationLabel(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (lang === "ja") {
+    if (h === 0) return `${m}分`;
+    return m === 0 ? `${h}時間` : `${h}時間${m}分`;
+  }
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+/// 学びの索引の件数。「12件」/「12 notes」。
+export function noteCountLabel(n: number): string {
+  return lang === "ja" ? `${n}件` : n === 1 ? "1 note" : `${n} notes`;
+}
+
+/// 港の招待の共有文。コードと合わせてOSの共有シートへ渡す。
+export function inviteShareLine(name: string, code: string): string {
+  return lang === "ja"
+    ? `Landfallの港「${name}」に招待されました。コード: ${code}`
+    : `You're invited to the harbor "${name}" on Landfall. Code: ${code}`;
 }
 
 /// 共同航海の残り表示。「あと◯時間」(1時間未満は分)。

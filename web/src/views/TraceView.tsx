@@ -4,7 +4,7 @@ import type { UserData } from "../data";
 import { deleteSession, setDayNote } from "../data";
 import { SessionRow } from "./TodayView";
 import { askConfirm } from "../overlays";
-import { lang, t } from "../i18n";
+import { durationLabel, lang, noteCountLabel, t } from "../i18n";
 
 // 軌跡: 月カレンダー。学んだ日(sunYellow)と休んだ日(seaGreen)を同格に描く。
 // やめた回数はいつも0。
@@ -104,21 +104,27 @@ function NotesIndex({ data }: { data: UserData }) {
           {t("noNotes")}
         </p>
       ) : (
-        <div className="rows" style={{ marginTop: 8 }}>
-          {visible.map((e, i) => (
-            <div key={i} className="row">
-              <div className="row-main">
-                <div className="row-sub" style={{ marginBottom: 2 }}>
-                  {fmt.format(e.date)}
-                  {e.itemName ? ` · ${e.itemName}` : ""}
-                </div>
-                <div className="row-title" style={{ fontWeight: 400, fontSize: 15 }}>
-                  {e.note}
+        <>
+          <p className="section-label">{noteCountLabel(visible.length)}</p>
+          <div className="rows">
+            {visible.map((e, i) => (
+              <div
+                key={`${e.date.getTime()}-${e.itemId ?? "day"}-${i}`}
+                className="row"
+              >
+                <div className="row-main">
+                  <div className="row-sub" style={{ marginBottom: 2 }}>
+                    {fmt.format(e.date)}
+                    {e.itemName ? ` · ${e.itemName}` : ""}
+                  </div>
+                  <div className="row-title" style={{ fontWeight: 400, fontSize: 15 }}>
+                    {e.note}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -126,6 +132,7 @@ function NotesIndex({ data }: { data: UserData }) {
 
 function CalendarView({ uid, data }: { uid: string; data: UserData }) {
   const today = startOfDay(new Date());
+  const todayMs = today.getTime();
   const [monthStart, setMonthStart] = useState(
     new Date(today.getFullYear(), today.getMonth(), 1),
   );
@@ -139,22 +146,33 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
 
   const weeks = useMemo(() => buildWeeks(monthStart), [monthStart]);
 
-  // 表示月の統計(当月なら今日まで)。
+  // 表示月の統計(当月なら今日まで)。合計時間もその月の今日までの記録に揃える
+  // (未来日付の記録=時計ずれ等が合計にだけ紛れ込まないように、日数と同じ境界)。
   const stats = useMemo(() => {
     let studied = 0;
     let rested = 0;
     const cursor = new Date(monthStart);
-    while (cursor.getMonth() === monthStart.getMonth() && cursor <= today) {
+    while (cursor.getMonth() === monthStart.getMonth() && cursor.getTime() <= todayMs) {
       if (dayById.has(dayId(cursor))) studied++;
       else rested++;
       cursor.setDate(cursor.getDate() + 1);
     }
-    return { studied, rested };
-  }, [monthStart, dayById, today]);
+    const minutes = data.sessions.reduce(
+      (sum, s) =>
+        s.date.getFullYear() === monthStart.getFullYear() &&
+        s.date.getMonth() === monthStart.getMonth() &&
+        startOfDay(s.date).getTime() <= todayMs
+          ? sum + s.minutes
+          : sum,
+      0,
+    );
+    return { studied, rested, minutes };
+  }, [monthStart, dayById, todayMs, data.sessions]);
 
-  const selectedSessions = data.sessions.filter(
-    (s) => dayId(s.date) === dayId(selected),
-  );
+  const selectedSessions = data.sessions
+    .filter((s) => dayId(s.date) === dayId(selected))
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+  const selectedTotal = selectedSessions.reduce((sum, s) => sum + s.minutes, 0);
   const selectedDay = dayById.get(dayId(selected));
 
   const monthTitle = new Intl.DateTimeFormat(lang, {
@@ -183,7 +201,7 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
         <button
           className="month-arrow"
           onClick={() => setMonthStart(shiftMonth(monthStart, -1))}
-          aria-label="previous month"
+          aria-label={t("prevMonth")}
         >
           ‹
         </button>
@@ -192,11 +210,25 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
           className="month-arrow"
           onClick={() => setMonthStart(shiftMonth(monthStart, 1))}
           disabled={isCurrentMonth}
-          aria-label="next month"
+          aria-label={t("nextMonth")}
         >
           ›
         </button>
       </div>
+      {/* 別の月を見ているときだけ、今日へ戻る近道を1行で。中央の月表示には重ねない。 */}
+      {!isCurrentMonth && (
+        <div className="month-today-row">
+          <button
+            className="chip"
+            onClick={() => {
+              setMonthStart(new Date(today.getFullYear(), today.getMonth(), 1));
+              setSelected(today);
+            }}
+          >
+            {t("todayJump")}
+          </button>
+        </div>
+      )}
 
       <div className="calendar">
         {weekdayNames.map((n, i) => (
@@ -237,9 +269,20 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
           <div className="stat-number">{stats.rested}</div>
           <div className="stat-label">{t("restedDays")}</div>
         </div>
+        <div className="stat">
+          <div className="stat-number stat-number-small">
+            {durationLabel(stats.minutes)}
+          </div>
+          <div className="stat-label">{t("monthTotal")}</div>
+        </div>
       </div>
 
-      <p className="section-label">{selectedTitle}</p>
+      <p className="section-label">
+        {selectedTitle}
+        {selectedTotal > 0 && (
+          <span className="section-label-sub"> · {durationLabel(selectedTotal)}</span>
+        )}
+      </p>
       {selectedSessions.length === 0 ? (
         <p className="empty-note">{t("noDayRecords")}</p>
       ) : (

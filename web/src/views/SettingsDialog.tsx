@@ -149,10 +149,21 @@ export function SettingsDialog({
         </div>
 
         <p className="section-label">{t("account")}</p>
+        {auth.currentUser?.email && (
+          <p className="page-sub" style={{ marginBottom: 10 }}>
+            {auth.currentUser.email}
+          </p>
+        )}
         <div className="rows">
           <button
             className="row row-button"
-            onClick={() => {
+            onClick={async () => {
+              const ok = await askConfirm({
+                title: t("signOut"),
+                message: t("signOutConfirm"),
+                confirmLabel: t("signOut"),
+              });
+              if (!ok) return;
               void signOut(auth);
               onClose();
             }}

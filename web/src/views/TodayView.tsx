@@ -20,9 +20,17 @@ import { TileSymbolSvg } from "../symbols";
 import { ItemEditor } from "./ItemEditor";
 import { DestinationsSection } from "./DestinationsSection";
 import { Modal, askConfirm, showToast } from "../overlays";
-import { lang, t } from "../i18n";
+import { durationLabel, lang, t } from "../i18n";
 
 const MINUTE_PRESETS = [15, 30, 45, 60, 90];
+
+// 前回記録した分数。次の記録ダイアログの初期値にする(いつも同じ長さの人の一手間を省く)。
+const LAST_MINUTES_KEY = "record.lastMinutes";
+
+function lastUsedMinutes(): number | null {
+  const n = Number(localStorage.getItem(LAST_MINUTES_KEY) ?? 0);
+  return Number.isFinite(n) && n >= 1 && n <= 6000 ? n : null;
+}
 
 // タイマー(iOS の FloatingTimerChip 相当)。再読込しても続くよう localStorage に控える。
 const TIMER_ITEM_KEY = "timer.itemId";
@@ -120,14 +128,30 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   };
 
   const todayId = dayId(new Date());
+  // 時刻順(古→新)に揃える。同期の届き順に依存させない。
   const todaySessions = useMemo(
-    () => data.sessions.filter((s) => dayId(s.date) === todayId),
+    () =>
+      data.sessions
+        .filter((s) => dayId(s.date) === todayId)
+        .sort((a, b) => a.date.getTime() - b.date.getTime()),
     [data.sessions, todayId],
   );
   const itemById = useMemo(
     () => new Map(data.items.map((i) => [i.id, i])),
     [data.items],
   );
+  // 今日の合計と項目ごとの分。見出しとタイルの小さなバッジに使う。
+  const todayTotal = useMemo(
+    () => todaySessions.reduce((sum, s) => sum + s.minutes, 0),
+    [todaySessions],
+  );
+  const todayByItem = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of todaySessions) {
+      if (s.itemUUID) map.set(s.itemUUID, (map.get(s.itemUUID) ?? 0) + s.minutes);
+    }
+    return map;
+  }, [todaySessions]);
 
   const heading = new Intl.DateTimeFormat(lang, {
     month: "long",
@@ -148,10 +172,12 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           const style = STYLE_COLORS[normalizeStyle(item.styleToken)];
           const dragClass =
             item.id === dragId ? " dragging" : item.id === overId ? " drag-over" : "";
+          const timing = timer?.itemId === item.id;
+          const todayMin = todayByItem.get(item.id) ?? 0;
           return (
             <button
               key={item.id}
-              className={`tile${dragClass}`}
+              className={`tile${dragClass}${timing ? " timing" : ""}`}
               onClick={() => setRecording(item)}
               draggable
               onDragStart={(e) => {
@@ -178,7 +204,12 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
                   bg={style.bg}
                 />
               </div>
-              <span className="tile-name">{item.name}</span>
+              <span className="tile-name">
+                <span className="tile-name-text">{item.name}</span>
+                {todayMin > 0 && (
+                  <span className="tile-today">{durationLabel(todayMin)}</span>
+                )}
+              </span>
               <span
                 className="tile-edit"
                 style={{ background: style.bg, color: style.fg }}
@@ -205,7 +236,12 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
 
       {todaySessions.length > 0 && (
         <>
-          <p className="section-label">{t("todaysLog")}</p>
+          <p className="section-label">
+            {t("todaysLog")}
+            {todayTotal > 0 && (
+              <span className="section-label-sub"> · {durationLabel(todayTotal)}</span>
+            )}
+          </p>
           <div className="rows">
             {todaySessions.map((s) => (
               <SessionRow
@@ -368,6 +404,14 @@ function TimerChip({
     }
   }, [mode, phaseKey]);
 
+  // 計測中はタブのタイトルにも時間を出す(別タブで作業していても進みが見える)。
+  useEffect(() => {
+    document.title = `${phaseLabel ? `${phaseLabel} ` : ""}${display} · Landfall`;
+    return () => {
+      document.title = "Landfall — Study Log";
+    };
+  }, [display, phaseLabel]);
+
   // BGM。チップが出ている間だけ流れる。
   useEffect(() => {
     startSound(sound);
@@ -418,7 +462,7 @@ function RecordDialog({
   onStartTimer?: (mode: TimerMode) => void;
   onClose: () => void;
 }) {
-  const [minutes, setMinutes] = useState(initialMinutes ?? 30);
+  const [minutes, setMinutes] = useState(() => initialMinutes ?? lastUsedMinutes() ?? 30);
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
   const style = STYLE_COLORS[normalizeStyle(item.styleToken)];
@@ -426,11 +470,9 @@ function RecordDialog({
   const save = async () => {
     if (working || minutes <= 0) return;
     setWorking(true);
-    await recordSession(
-      uid,
-      { item, minutes: Math.min(minutes, 6000), note },
-      data,
-    );
+    const clamped = Math.min(minutes, 6000);
+    localStorage.setItem(LAST_MINUTES_KEY, String(clamped));
+    await recordSession(uid, { item, minutes: clamped, note }, data);
     showToast(t("recordedToast"));
     onClose();
   };
@@ -468,6 +510,8 @@ function RecordDialog({
               type="text"
               inputMode="numeric"
               value={minutes}
+              // タップした瞬間に全選択して、そのまま新しい数を打ち込めるように。
+              onFocus={(e) => e.target.select()}
               onChange={(e) => {
                 const n = Number(e.target.value.replace(/[^0-9]/g, ""));
                 setMinutes(Number.isFinite(n) ? Math.min(n, 6000) : 0);

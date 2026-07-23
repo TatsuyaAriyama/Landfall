@@ -86,7 +86,13 @@ function MonthCards({ data }: { data: UserData }) {
 
       {/* 画像で保存(スマホでは共有シート)。SNSやアルバムへ。 */}
       <div className="chip-row" style={{ marginTop: 20, justifyContent: "center" }}>
-        {(["days", "voyage", "archetype"] as CardKind[]).map((kind, i) => (
+        {(
+          [
+            ["days", "saveDaysCard"],
+            ["voyage", "saveVoyageCard"],
+            ["archetype", "saveTypeCard"],
+          ] as [CardKind, "saveDaysCard" | "saveVoyageCard" | "saveTypeCard"][]
+        ).map(([kind, labelKey]) => (
           <button
             key={kind}
             className="chip"
@@ -113,7 +119,7 @@ function MonthCards({ data }: { data: UserData }) {
               void saveCanvas(canvas, `landfall-${ym.year}-${ym.month}-${kind}.png`);
             }}
           >
-            {t("saveImage")} {i + 1}
+            {t(labelKey)}
           </button>
         ))}
       </div>
@@ -188,7 +194,10 @@ function YearChart({ data }: { data: UserData }) {
             // その月に到達した島があれば、名前は出さず小さな灯りの印だけ点す
             // (名前・日付は下のReachedIslandsが読みやすい一覧として持つ — ここで
             //  フルサイズの島+文字を重ねると、細い年間航路の上で潰れて読めなくなる)。
-            const landed = islands.some((d) => d.achievedAt!.getMonth() === m);
+            // マウスを載せた人には <title> で島の名前をそっと明かす。
+            const landedNames = islands
+              .filter((d) => d.achievedAt!.getMonth() === m)
+              .map((d) => d.name);
             return (
               <g key={m}>
                 <circle
@@ -198,11 +207,14 @@ function YearChart({ data }: { data: UserData }) {
                   fill="#EADEBD"
                   opacity={count > 0 ? 0.35 + Math.min(0.65, count / 20) : 0.15}
                 />
-                {landed && (
-                  <path
-                    d={`M ${px(m) - 6} ${py(m) - 9} L ${px(m)} ${py(m) - 20} L ${px(m) + 6} ${py(m) - 9} Z`}
-                    fill="#F5822A"
-                  />
+                {landedNames.length > 0 && (
+                  <g>
+                    <title>{landedNames.join(" / ")}</title>
+                    <path
+                      d={`M ${px(m) - 6} ${py(m) - 9} L ${px(m)} ${py(m) - 20} L ${px(m) + 6} ${py(m) - 9} Z`}
+                      fill="#F5822A"
+                    />
+                  </g>
                 )}
                 <text
                   x={px(m)}

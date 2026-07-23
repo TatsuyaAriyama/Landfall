@@ -46,13 +46,21 @@ import { generateRoutes } from "../voyageMap";
 import { demoHarborMembers, demoRoom, demoVoyage, demoVoyageProgressMinutes, isDemo } from "../demo";
 import { PlayerProfile } from "../profile";
 import { grantLoot, hasLoot } from "../boat";
-import { STYLE_COLORS, normalizeStyle, normalizeSymbol, trimAll } from "../types";
+import { STYLE_COLORS, dayId, normalizeStyle, normalizeSymbol, trimAll } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { ProfileEditor } from "./ProfileEditor";
 import { MemberTrace } from "./MemberTrace";
 import { VoyageChartPanel } from "./VoyageChart";
 import { Modal, askConfirm, showToast } from "../overlays";
-import { chatLandfallLine, chatReturnLine, chatTimeLabel, t, type I18nKey } from "../i18n";
+import {
+  chatDateLabel,
+  chatLandfallLine,
+  chatReturnLine,
+  chatTimeLabel,
+  inviteShareLine,
+  t,
+  type I18nKey,
+} from "../i18n";
 
 // three.js を含む「みんなの海」は重いので、プライベートの港を開いたときだけ読み込む。
 const HarborWorld = lazy(() => import("../three/HarborWorld"));
@@ -808,7 +816,13 @@ function RoomDetail({
     setDraft("");
     // 送信後もフォーカスを保ち、続けて書けるようにする。
     inputRef.current?.focus();
-    await sendChat(room.id, text).catch(() => showToast(t("errGeneric")));
+    try {
+      await sendChat(room.id, text);
+    } catch {
+      // 書いた言葉を消さない — 入力欄へ戻して再送できるようにする。
+      setDraft(text);
+      showToast(t("errGeneric"));
+    }
   };
 
   const copyCode = async () => {
@@ -816,6 +830,16 @@ function RoomDetail({
     setCopied(true);
     showToast(t("copied"));
     setTimeout(() => setCopied(false), 1600);
+  };
+
+  // 招待をOSの共有シートで送る(対応ブラウザのみ表示)。
+  const shareInvite = () => {
+    void navigator
+      .share({
+        text: inviteShareLine(room.name, room.id),
+        url: "https://landfall-studylog.com",
+      })
+      .catch(() => {});
   };
 
   const leave = async () => {
@@ -872,6 +896,11 @@ function RoomDetail({
             <button className="quiet-button" onClick={copyCode}>
               {copied ? t("copied") : t("copy")}
             </button>
+            {typeof navigator !== "undefined" && "share" in navigator && (
+              <button className="quiet-button" onClick={shareInvite}>
+                {t("share")}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -927,39 +956,55 @@ function RoomDetail({
         ))}
       </div>
 
+      {/* まだひとりの港には、仲間を呼ぶ後押しをそっと出す。 */}
+      {!isDemo && room.memberIds.length <= 1 && (
+        <p className="invite-nudge">{t("inviteNudge")}</p>
+      )}
+
       {/* チャット */}
       <p className="section-label">{t("chatTitle")}</p>
       <div className="chat-box">
         {visibleMessages.length === 0 && (
           <p className="empty-note">{t("chatEmpty")}</p>
         )}
-        {visibleMessages.map((m) => (
-          <ChatRow
-            key={m.id}
-            uid={uid}
-            message={m}
-            name={nameOf(m.uid)}
-            sender={memberById.get(m.uid)}
-            onReact={(token) => void reactChat(room.id, m, token)}
-            onDelete={
-              m.uid === uid && nowTick - m.createdAt.getTime() < CHAT_DELETE_WINDOW_MS
-                ? async () => {
-                    if (
-                      await askConfirm({
-                        title: t("deleteSessionConfirm"),
-                        confirmLabel: t("delete"),
-                        danger: true,
-                      })
-                    ) {
-                      await deleteChat(room.id, m.id).catch(() => showToast(t("errGeneric")));
-                    }
-                  }
-                : undefined
-            }
-            onReport={m.uid !== uid ? () => void reportMsg(m) : undefined}
-            onBlock={m.uid !== uid ? () => void blockMsgAuthor(m) : undefined}
-          />
-        ))}
+        {visibleMessages.map((m, i) => {
+          // 日付が変わる境目に、その日を示す小さな区切りを挟む。
+          const prev = visibleMessages[i - 1];
+          const showDate = !prev || dayId(prev.createdAt) !== dayId(m.createdAt);
+          return (
+            <div key={m.id} style={{ display: "contents" }}>
+              {showDate && (
+                <div className="chat-date-sep">{chatDateLabel(m.createdAt)}</div>
+              )}
+              <ChatRow
+                uid={uid}
+                message={m}
+                name={nameOf(m.uid)}
+                sender={memberById.get(m.uid)}
+                onReact={(token) => void reactChat(room.id, m, token)}
+                onDelete={
+                  m.uid === uid && nowTick - m.createdAt.getTime() < CHAT_DELETE_WINDOW_MS
+                    ? async () => {
+                        if (
+                          await askConfirm({
+                            title: t("deleteSessionConfirm"),
+                            confirmLabel: t("delete"),
+                            danger: true,
+                          })
+                        ) {
+                          await deleteChat(room.id, m.id).catch(() =>
+                            showToast(t("errGeneric")),
+                          );
+                        }
+                      }
+                    : undefined
+                }
+                onReport={m.uid !== uid ? () => void reportMsg(m) : undefined}
+                onBlock={m.uid !== uid ? () => void blockMsgAuthor(m) : undefined}
+              />
+            </div>
+          );
+        })}
         <div ref={endRef} />
       </div>
       <div className="chat-input">

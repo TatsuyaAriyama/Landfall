@@ -98,10 +98,25 @@ export function ItemEditor({
     onClose();
   };
 
+  const previewStyle = STYLE_COLORS[styleToken];
+
   return (
     <Modal onClose={onClose}>
       <>
         <h2 className="dialog-title">{item ? t("editItem") : t("newItem")}</h2>
+
+        {/* プレビュー: 選んだ色×シンボルが、そのまま今日の画面のタイルになる。 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4 }}>
+          <div
+            className="tile-art"
+            style={{ background: previewStyle.bg, width: 52, aspectRatio: "1" }}
+          >
+            <TileSymbolSvg symbol={symbolToken} fg={previewStyle.fg} bg={previewStyle.bg} />
+          </div>
+          <div className="tile-name-text" style={{ fontSize: 17 }}>
+            {trimmedName || t("namePlaceholder")}
+          </div>
+        </div>
 
         <p className="section-label">{t("name")}</p>
         <input
