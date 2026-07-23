@@ -8,6 +8,16 @@ applyTheme(localStorage.getItem(THEME_KEY));
 
 // PWA: 本番のみ Service Worker を登録(オフライン起動・ホーム画面からアプリとして開ける)。
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  // 新しいSWが制御を引き継いだら(=更新が来たら)、一度だけ再読込して最新を反映する。
+  // これがないと、キャッシュ優先のアセットのせいで更新に気づけない。
+  // 初回インストール(元々コントローラなし)ではリロードしない。
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (reloading || !hadController) return;
+    reloading = true;
+    window.location.reload();
+  });
   window.addEventListener("load", () => {
     void navigator.serviceWorker.register("/sw.js");
   });
