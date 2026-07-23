@@ -7,6 +7,16 @@ struct DressView: View {
     @Query private var sessions: [StudySession]
     /// 色を選ぶたびに +1 して、3Dの色と選択枠を更新する。
     @State private var version = 0
+    @State private var mode: Mode = Self.initialMode
+
+    enum Mode { case boat, navigator }
+
+    private static var initialMode: Mode {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["LANDFALL_DRESS_NAV"] != nil { return .navigator }
+        #endif
+        return .boat
+    }
 
     private var totalMinutes: Int { totalStudyMinutes(sessions) }
 
@@ -16,17 +26,30 @@ struct DressView: View {
                 LFColor.paper.ignoresSafeArea()
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Your boat")
+                        Text(mode == .boat ? "Your boat" : "Your navigator")
                             .font(LFFont.copy(26))
                             .foregroundStyle(LFColor.ink)
                             .padding(.top, 32)
                             .padding(.horizontal, 24)
 
-                        BoatSceneView(parts: BoatCustomization.currentParts)
-                            .frame(height: 300)
-                            .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
-                            .padding(.horizontal, 20)
-                            .padding(.top, 16)
+                        HStack(spacing: 10) {
+                            modeChip("Boat", .boat)
+                            modeChip("Navigator", .navigator)
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.top, 12)
+
+                        Group {
+                            if mode == .boat {
+                                BoatSceneView(parts: BoatCustomization.currentParts)
+                            } else {
+                                NavigatorSceneView()
+                            }
+                        }
+                        .frame(height: 300)
+                        .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
+                        .padding(.horizontal, 20)
+                        .padding(.top, 14)
 
                         Text("Drag to look around.")
                             .font(LFFont.label(13))
@@ -34,20 +57,37 @@ struct DressView: View {
                             .padding(.horizontal, 24)
                             .padding(.top, 12)
 
-                        Text("Voyage so far: \(LF.duration(minutes: totalMinutes))")
-                            .font(LFFont.copy(15))
-                            .foregroundStyle(LFColor.ink.opacity(0.7))
-                            .padding(.horizontal, 24)
-                            .padding(.top, 4)
+                        if mode == .boat {
+                            Text("Voyage so far: \(LF.duration(minutes: totalMinutes))")
+                                .font(LFFont.copy(15))
+                                .foregroundStyle(LFColor.ink.opacity(0.7))
+                                .padding(.horizontal, 24)
+                                .padding(.top, 4)
 
-                        ForEach(BoatPart.allCases) { part in
-                            partSection(part)
+                            ForEach(BoatPart.allCases) { part in
+                                partSection(part)
+                            }
                         }
                     }
                     .padding(.bottom, 40)
                 }
             }
         }
+    }
+
+    private func modeChip(_ title: LocalizedStringKey, _ value: Mode) -> some View {
+        let selected = mode == value
+        return Button {
+            mode = value
+        } label: {
+            Text(title)
+                .font(LFFont.copy(15))
+                .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
+                .padding(.horizontal, 18).padding(.vertical, 9)
+                .background(Capsule().fill(selected ? LFColor.ink : Color.clear))
+                .overlay(Capsule().strokeBorder(LFColor.ink.opacity(selected ? 0 : 0.2), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     private func partSection(_ part: BoatPart) -> some View {

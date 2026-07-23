@@ -104,6 +104,95 @@ enum VoyageSceneKit {
         return scene
     }
 
+    // MARK: - 航海士(プレイヤー)
+
+    /// 低ポリの航海士。フードのローブ+暗い顔+背の二又マント+手のランタン。
+    /// Web PhoenixModel の衣装モチーフ(フード=紋、マント=翼/尾、ランタン=今日の灯)を簡略化。
+    static func makeNavigator() -> SCNNode {
+        let group = SCNNode()
+        group.name = "navigator"
+        let coat = UIColor(rgb: 0xF0997B)     // coral(ローブ)
+        let cape = UIColor(rgb: 0x1A1130)     // midnight(マント)
+        let face = UIColor(rgb: 0x2A2140)     // 暗い顔
+        let lanternColor = UIColor(rgb: 0xF3C065) // ember(灯)
+
+        // コート(裾広がりの円錐)。照明で沈むと茶色く見えるので、帆と同じく無光の
+        // フラットな明るいコーラルにする(アプリのフラットな世界観にも合う)。
+        let coatGeo = SCNCone(topRadius: 0.13, bottomRadius: 0.34, height: 0.85)
+        coatGeo.radialSegmentCount = 10
+        coatGeo.firstMaterial = unlitMaterial(coat)
+        let coatNode = SCNNode(geometry: coatGeo)
+        coatNode.position = SCNVector3(0, 0.42, 0)
+        group.addChildNode(coatNode)
+
+        // 頭(顔)
+        let headGeo = SCNSphere(radius: 0.15)
+        headGeo.segmentCount = 12
+        headGeo.firstMaterial = flatMaterial(face)
+        let headNode = SCNNode(geometry: headGeo)
+        headNode.position = SCNVector3(0, 0.92, 0.02)
+        group.addChildNode(headNode)
+
+        // フード(尖った頭巾)
+        let hoodGeo = SCNCone(topRadius: 0, bottomRadius: 0.19, height: 0.42)
+        hoodGeo.radialSegmentCount = 8
+        hoodGeo.firstMaterial = unlitMaterial(coat)
+        let hoodNode = SCNNode(geometry: hoodGeo)
+        hoodNode.position = SCNVector3(0, 1.05, -0.04)
+        hoodNode.eulerAngles.x = -0.15
+        group.addChildNode(hoodNode)
+
+        // マント(背の平面・二又の裾)
+        let capePath = UIBezierPath()
+        capePath.move(to: CGPoint(x: -0.28, y: 0))
+        capePath.addLine(to: CGPoint(x: 0.28, y: 0))
+        capePath.addLine(to: CGPoint(x: 0.18, y: -0.72))
+        capePath.addLine(to: CGPoint(x: 0, y: -0.52))
+        capePath.addLine(to: CGPoint(x: -0.18, y: -0.72))
+        capePath.close()
+        let capeGeo = SCNShape(path: capePath, extrusionDepth: 0.02)
+        capeGeo.firstMaterial = flatMaterial(cape)
+        let capeNode = SCNNode(geometry: capeGeo)
+        capeNode.position = SCNVector3(0, 0.86, -0.17)
+        capeNode.eulerAngles.x = 0.12
+        group.addChildNode(capeNode)
+
+        // ランタン(手前・発光)
+        let lanternGeo = SCNSphere(radius: 0.07)
+        let lm = SCNMaterial()
+        lm.lightingModel = .constant
+        lm.diffuse.contents = lanternColor
+        lm.emission.contents = lanternColor
+        lanternGeo.firstMaterial = lm
+        let lanternNode = SCNNode(geometry: lanternGeo)
+        lanternNode.position = SCNVector3(0.27, 0.52, 0.17)
+        group.addChildNode(lanternNode)
+
+        return group
+    }
+
+    /// 装い(航海士)のシーン。海に立つ自分の航海士を大きく中央に見せる。
+    static func makeNavigatorScene() -> SCNScene {
+        let scene = SCNScene()
+        scene.background.contents = seaDeep
+        scene.rootNode.addChildNode(makeSea())
+        scene.rootNode.addChildNode(makeMoon())
+        let nav = makeNavigator()
+        nav.scale = SCNVector3(1.7, 1.7, 1.7)
+        scene.rootNode.addChildNode(nav)
+        makeLights().forEach { scene.rootNode.addChildNode($0) }
+        let cam = SCNCamera()
+        cam.fieldOfView = 40
+        cam.zNear = 0.1
+        cam.zFar = 200
+        let camNode = SCNNode()
+        camNode.camera = cam
+        camNode.position = SCNVector3(0, 1.6, 4.2)
+        camNode.look(at: SCNVector3(0, 1.05, 0))
+        scene.rootNode.addChildNode(camNode)
+        return scene
+    }
+
     private static func makeSea() -> SCNNode {
         let plane = SCNPlane(width: 80, height: 80)
         plane.firstMaterial = unlitMaterial(sea)
@@ -395,4 +484,26 @@ struct BoatSceneView: UIViewRepresentable {
     }
 
     final class Coordinator { var key: String = "" }
+}
+
+/// 装い: 海に立つ自分の航海士(プレイヤー)。ドラッグで一周できる。
+struct NavigatorSceneView: UIViewRepresentable {
+    func makeUIView(context: Context) -> SCNView {
+        let view = SCNView()
+        view.scene = VoyageSceneKit.makeNavigatorScene()
+        view.backgroundColor = VoyageSceneKit.seaDeep
+        view.antialiasingMode = .multisampling2X
+        view.allowsCameraControl = true
+        view.autoenablesDefaultLighting = false
+        view.rendersContinuously = !UIAccessibility.isReduceMotionEnabled
+        if !UIAccessibility.isReduceMotionEnabled,
+           let nav = view.scene?.rootNode.childNode(withName: "navigator", recursively: false) {
+            let up = SCNAction.moveBy(x: 0, y: 0.05, z: 0, duration: 2.2)
+            up.timingMode = .easeInEaseOut
+            nav.runAction(.repeatForever(.sequence([up, up.reversed()])), forKey: "bob")
+        }
+        return view
+    }
+
+    func updateUIView(_ view: SCNView, context: Context) {}
 }
