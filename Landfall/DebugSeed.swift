@@ -105,6 +105,25 @@ enum DebugSeed {
             )
         }
 
+        // 目的地(島)。ステップ目標を1件、途中まで達成した状態で置く(ブイの点灯/消灯と
+        // 途中の船位置を確認できる)。createdAt は当月頭にして累計時間が乗るように。
+        let destCreatedAt = calendar.dateInterval(of: .month, for: today)?.start ?? today
+        let dest = Destination(
+            name: isJapanese ? "TOEIC" : "TOEIC",
+            createdAt: destCreatedAt,
+            steps: [
+                DestinationStep(name: isJapanese ? "単語帳を1周" : "One pass of the vocab book", doneAt: destCreatedAt),
+                DestinationStep(name: isJapanese ? "文法書を1周" : "One pass of grammar", doneAt: destCreatedAt),
+                DestinationStep(name: isJapanese ? "公式問題集を1回" : "Official test set once"),
+                DestinationStep(name: isJapanese ? "模試を2回" : "Two mock exams"),
+            ]
+        )
+        // LANDFALL_SEED_REACHED=1 で全ステップ達成にし、着岸演出の確認に使う。
+        if ProcessInfo.processInfo.environment["LANDFALL_SEED_REACHED"] != nil {
+            for i in dest.steps.indices { dest.steps[i].doneAt = destCreatedAt }
+        }
+        context.insert(dest)
+
         // 前月: Wrapped が生成できる(前月は常に利用可能)。不死鳥型が出る配置。
         if let monthStart = calendar.dateInterval(of: .month, for: today)?.start,
            let prevStart = calendar.date(byAdding: .month, value: -1, to: monthStart) {

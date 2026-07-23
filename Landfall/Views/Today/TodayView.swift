@@ -9,10 +9,13 @@ struct TodayView: View {
     @Query(sort: \StudyDay.date, order: .reverse) private var days: [StudyDay]
     @Query(sort: \StudyItem.sortOrder) private var items: [StudyItem]
     @Query private var sessions: [StudySession]
+    @Query private var destinations: [Destination]
 
     @State private var showingSettings = false
     @State private var creatingItem = false
     @State private var sharingToday = false
+    @State private var editingDestination = false
+    @State private var celebrating: Destination?
     @State private var path = NavigationPath()
     /// 「今日」。日跨ぎ後の初操作をブロックしないよう、前景復帰と日付変化で更新する。
     @State private var today = Date()
@@ -31,6 +34,12 @@ struct TodayView: View {
                         .padding(.top, 32)
 
                     ScrollView {
+                        DestinationCard(destination: activeDestination, sessions: sessions) {
+                            editingDestination = true
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.top, 20)
+
                         if items.isEmpty {
                             // 初回のホーム。破線の「+」だけにせず、静かに次の一歩を言葉で示す。
                             Text("Add your first thing, and set sail.")
@@ -67,7 +76,17 @@ struct TodayView: View {
         .sheet(isPresented: $sharingToday) {
             DayShareSheet(date: today)
         }
+        .fullScreenCover(isPresented: $editingDestination, onDismiss: { checkLandfall() }) {
+            VoyageWorldView(existing: activeDestination, sessions: sessions)
+        }
+        .fullScreenCover(item: $celebrating) { dest in
+            LandfallCelebrationView(
+                destination: dest,
+                minutes: dest.progress(sessions: sessions).minutes
+            ) { celebrating = nil }
+        }
         .onAppear {
+            checkLandfall()
             #if DEBUG
             DebugCardDump.runIfRequested()
             if ProcessInfo.processInfo.environment["LANDFALL_SETTINGS"] != nil {
@@ -76,14 +95,37 @@ struct TodayView: View {
             if ProcessInfo.processInfo.environment["LANDFALL_DETAIL"] != nil, let first = items.first {
                 path.append(first)
             }
+            if ProcessInfo.processInfo.environment["LANDFALL_EDIT_DEST"] != nil {
+                editingDestination = true
+            }
             #endif
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { today = Date() }
+            if phase == .active { today = Date(); checkLandfall() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
             today = Date()
         }
+    }
+
+    // MARK: - 目的地
+
+    /// 向かっている島(未着岸の1件)。着岸済みは残すが、カードには出さない。
+    private var activeDestination: Destination? {
+        destinations.first { $0.achievedAt == nil }
+    }
+
+    /// 着岸検知。到達したら achievedAt を刻んで演出を出す(一度だけ)。
+    /// 期日目標は開いた/前景復帰の瞬間、ステップ目標は編集を閉じた後にここを通る。
+    private func checkLandfall() {
+        guard let dest = activeDestination else { return }
+        let progress = dest.progress(sessions: sessions)
+        guard progress.reached else { return }
+        dest.achievedAt = Date()
+        dest.updatedAt = Date()
+        try? modelContext.save()
+        SyncService.shared.push(dest)
+        celebrating = dest
     }
 
     // MARK: - タイル

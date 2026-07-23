@@ -62,6 +62,29 @@ final class SyncService {
         daysCollection(uid).document(Self.dayDocID(date)).delete()
     }
 
+    func push(_ dest: Destination) {
+        guard let uid else { return }
+        // 目標は排他: ステップ目標なら期日を書かず、期日目標なら steps を書かない。
+        // 旧フィールド(targetMinutes/manual等)は書き込み用DTOに含めないので消える(意図的)。
+        let steps = dest.steps.isEmpty
+            ? nil
+            : dest.steps.map { DestinationStepDTO(id: $0.id, name: $0.name, doneAt: $0.doneAt) }
+        let dto = DestinationWriteDTO(
+            name: dest.name,
+            targetDate: dest.steps.isEmpty ? dest.targetDate : nil,
+            steps: steps,
+            createdAt: dest.createdAt,
+            achievedAt: dest.achievedAt,
+            updatedAt: Date()
+        )
+        try? destinationsCollection(uid).document(dest.uuid.uuidString).setData(from: dto)
+    }
+
+    func delete(_ dest: Destination) {
+        guard let uid else { return }
+        destinationsCollection(uid).document(dest.uuid.uuidString).delete()
+    }
+
     // MARK: - 同期の開始/停止
 
     /// サインイン直後と前景復帰で呼ぶ。初回だけローカルをまとめて push し、
@@ -87,6 +110,7 @@ final class SyncService {
         for item in (try? context.fetch(FetchDescriptor<StudyItem>())) ?? [] { push(item) }
         for session in (try? context.fetch(FetchDescriptor<StudySession>())) ?? [] { push(session) }
         for day in (try? context.fetch(FetchDescriptor<StudyDay>())) ?? [] { push(day) }
+        for dest in (try? context.fetch(FetchDescriptor<Destination>())) ?? [] { push(dest) }
         UserDefaults.standard.set(true, forKey: key)
     }
 
@@ -103,6 +127,10 @@ final class SyncService {
         listeners.append(daysCollection(uid).addSnapshotListener { [weak self] snap, _ in
             guard let self, let snap else { return }
             MainActor.assumeIsolated { self.applyDays(snap, context: context) }
+        })
+        listeners.append(destinationsCollection(uid).addSnapshotListener { [weak self] snap, _ in
+            guard let self, let snap else { return }
+            MainActor.assumeIsolated { self.applyDestinations(snap, context: context) }
         })
     }
 
@@ -189,6 +217,39 @@ final class SyncService {
         if changed { try? context.save() }
     }
 
+    private func applyDestinations(_ snap: QuerySnapshot, context: ModelContext) {
+        var changed = false
+        for change in snap.documentChanges {
+            let id = change.document.documentID
+            switch change.type {
+            case .added, .modified:
+                guard let dto = try? change.document.data(as: DestinationDTO.self) else { continue }
+                let remoteAt = dto.updatedAt ?? .distantPast
+                let steps = (dto.steps ?? []).map {
+                    DestinationStep(id: $0.id, name: $0.name, doneAt: $0.doneAt)
+                }
+                if let existing = fetchDestination(id, context) {
+                    if remoteAt > existing.updatedAt {
+                        existing.name = dto.name; existing.createdAt = dto.createdAt
+                        existing.targetDate = dto.targetDate; existing.achievedAt = dto.achievedAt
+                        existing.steps = steps; existing.updatedAt = remoteAt
+                        changed = true
+                    }
+                } else {
+                    let dest = Destination(name: dto.name, createdAt: dto.createdAt,
+                                           targetDate: dto.targetDate, steps: steps)
+                    if let u = UUID(uuidString: id) { dest.uuid = u }
+                    dest.achievedAt = dto.achievedAt
+                    dest.updatedAt = remoteAt
+                    context.insert(dest); changed = true
+                }
+            case .removed:
+                if let existing = fetchDestination(id, context) { context.delete(existing); changed = true }
+            }
+        }
+        if changed { try? context.save() }
+    }
+
     private func fetchItem(_ id: String, _ context: ModelContext) -> StudyItem? {
         guard let u = UUID(uuidString: id) else { return nil }
         var d = FetchDescriptor<StudyItem>(predicate: #Predicate { $0.uuid == u }); d.fetchLimit = 1
@@ -204,12 +265,17 @@ final class SyncService {
         var d = FetchDescriptor<StudyDay>(predicate: #Predicate { $0.date == dayStart }); d.fetchLimit = 1
         return (try? context.fetch(d))?.first
     }
+    private func fetchDestination(_ id: String, _ context: ModelContext) -> Destination? {
+        guard let u = UUID(uuidString: id) else { return nil }
+        var d = FetchDescriptor<Destination>(predicate: #Predicate { $0.uuid == u }); d.fetchLimit = 1
+        return (try? context.fetch(d))?.first
+    }
 
     // MARK: - アカウント削除時: リモートの記録を全て消す
 
     func deleteAllRemoteData() async throws {
         guard let uid else { return }
-        for collection in [itemsCollection(uid), sessionsCollection(uid), daysCollection(uid)] {
+        for collection in [itemsCollection(uid), sessionsCollection(uid), daysCollection(uid), destinationsCollection(uid)] {
             let snapshot = try await collection.getDocuments()
             for doc in snapshot.documents { try await doc.reference.delete() }
         }
@@ -225,6 +291,9 @@ final class SyncService {
     }
     private func daysCollection(_ uid: String) -> CollectionReference {
         db.collection("users").document(uid).collection("days")
+    }
+    private func destinationsCollection(_ uid: String) -> CollectionReference {
+        db.collection("users").document(uid).collection("destinations")
     }
 
     private static let dayFormatter: DateFormatter = {
@@ -262,5 +331,38 @@ private struct SessionDTO: Codable {
 private struct DayDTO: Codable {
     var date: Date
     var note: String?
+    var updatedAt: Date?
+}
+
+/// ステップ1件(Firestore の steps 配列要素 = map)。doneAt は Timestamp に自動変換。
+private struct DestinationStepDTO: Codable {
+    var id: String
+    var name: String
+    var doneAt: Date?
+}
+
+/// 目的地の読み取り用。旧フィールド(targetMinutes/manual/manualDone/itemUUID)は
+/// Web の旧データを読めるように残すが、書き込みには使わない。
+private struct DestinationDTO: Codable {
+    var name: String
+    var targetDate: Date?
+    var steps: [DestinationStepDTO]?
+    var createdAt: Date
+    var achievedAt: Date?
+    var updatedAt: Date?
+    // 読み取り互換のみ(復号を通すため。参照はしない)。
+    var targetMinutes: Int?
+    var manual: Bool?
+    var manualDone: Bool?
+    var itemUUID: String?
+}
+
+/// 書き込み用。今の2種類(期日/ステップ)だけを書き、旧フィールドは残さない。
+private struct DestinationWriteDTO: Codable {
+    var name: String
+    var targetDate: Date?
+    var steps: [DestinationStepDTO]?
+    var createdAt: Date
+    var achievedAt: Date?
     var updatedAt: Date?
 }

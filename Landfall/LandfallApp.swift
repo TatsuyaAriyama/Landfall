@@ -35,7 +35,7 @@ struct LandfallApp: App {
     /// 壊れたローカルストアを退避して作り直す。記録はクラウド(Firestore)に
     /// 控えがあり、次回サインイン時の同期で戻る。
     private static func makeContainer() -> ModelContainer {
-        let schema = Schema([StudyDay.self, StudyItem.self, StudySession.self])
+        let schema = Schema([StudyDay.self, StudyItem.self, StudySession.self, Destination.self])
         let config = ModelConfiguration(schema: schema)
         #if DEBUG
         // 動作確認用データ投入時は毎回まっさらから始める。SwiftData の削除永続化に依存せず、
