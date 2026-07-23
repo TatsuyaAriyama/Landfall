@@ -34,12 +34,15 @@ enum PlayerProfile {
     /// 港(プライベート/パブリック共通)のメンバードキュメントに書くプロフィール一式。
     /// 長さはFirestoreルールの上限に合わせて切り詰める。
     static func harborProfileData() -> [String: Any] {
-        [
+        var data: [String: Any] = [
             "displayName": String(displayName.prefix(60)),
             "styleToken": styleToken,
             "symbolToken": symbolToken,
             "resolve": String(resolve.prefix(80)),
         ]
+        // 「みんなの海」で各自の船を出すための部位id(色ではなくid)。Web boatShareData 準拠。
+        for (key, value) in BoatCustomization.shareData { data[key] = value }
+        return data
     }
 }
 

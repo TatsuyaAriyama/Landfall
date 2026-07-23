@@ -46,26 +46,65 @@ enum VoyageSceneKit {
     }
 
     // MARK: - 素材
+    //
+    // Web は three.js の meshStandardMaterial(PBR + flatShading + roughness)。
+    // three.js は既定で HDR + ACES トーンマッピング + リニア色管理で描くため、
+    // SceneKit でも (1) lightingModel=.physicallyBased (2) カメラ wantsHDR+bloom
+    // (3) 被フォグ素材にカメラ距離フォグ を揃えないと同じ絵にならない。
 
-    /// 低ポリのフラット陰影(面法線をフラグメントで再計算)。flatShading 相当。
-    private static let flatShade: [SCNShaderModifierEntryPoint: String] = [
-        .surface: "_surface.normal = normalize(cross(dfdx(_surface.position), dfdy(_surface.position)));"
-    ]
+    /// 面法線をフラグメントで再計算して低ポリのファセットを出す(flatShading 相当)。
+    private static let flatNormalBody =
+        "_surface.normal = normalize(cross(dfdx(_surface.position.xyz), dfdy(_surface.position.xyz)));"
 
-    static func flatMaterial(_ color: UIColor, doubleSided: Bool = false) -> SCNMaterial {
+    /// Web <fog NIGHT_BG 12 30> 相当。被フォグ素材にだけ差す、カメラ距離の線形フォグ。
+    /// リニア空間で出力色を夜色へ寄せる(月/海/水平線/点灯ブイ/波紋/航跡には差さない)。
+    private static let fogFragment = """
+    float _fogD = length(_surface.position.xyz);
+    float _fogF = clamp((_fogD - 12.0) / (30.0 - 12.0), 0.0, 1.0);
+    float3 _fogC = pow(float3(0.0706, 0.2196, 0.1882), 2.2); // #123830 → linear
+    _output.color.rgb = mix(_output.color.rgb, _fogC, _fogF);
+    """
+
+    /// 船体の幅絞り(舳先/船尾へ向けて奥行きを絞る)。Web の頂点後処理を GPU で。
+    private static let hullTaperGeometry = """
+    float _hx = _geometry.position.x;
+    float _hn = clamp(abs(_hx - 0.1) - 0.35, 0.0, 1.0);
+    _geometry.position.z *= (1.0 - 0.55 * _hn * _hn);
+    """
+
+    /// PBR のフラット素材(meshStandardMaterial color+flatShading+roughness 相当)。
+    static func litMaterial(
+        _ color: UIColor,
+        roughness: CGFloat = 0.9,
+        doubleSided: Bool = false,
+        fogged: Bool = true,
+        hullTaper: Bool = false
+    ) -> SCNMaterial {
         let m = SCNMaterial()
-        m.lightingModel = .lambert
+        m.lightingModel = .physicallyBased
         m.diffuse.contents = color
+        m.roughness.contents = roughness
+        m.metalness.contents = 0.0
         m.isDoubleSided = doubleSided
-        m.shaderModifiers = flatShade
+        var mods: [SCNShaderModifierEntryPoint: String] = [.surface: flatNormalBody]
+        if hullTaper { mods[.geometry] = hullTaperGeometry }
+        if fogged { mods[.fragment] = fogFragment }
+        m.shaderModifiers = mods
         return m
     }
 
-    static func unlitMaterial(_ color: UIColor) -> SCNMaterial {
+    /// 旧名の別名(既存呼び出しの互換)。
+    static func flatMaterial(_ color: UIColor, doubleSided: Bool = false) -> SCNMaterial {
+        litMaterial(color, doubleSided: doubleSided)
+    }
+
+    /// 発光・自照の素材(月・水平線・旗の目など)。フォグは差さない。
+    static func unlitMaterial(_ color: UIColor, fogged: Bool = false) -> SCNMaterial {
         let m = SCNMaterial()
         m.lightingModel = .constant
         m.diffuse.contents = color
         m.isDoubleSided = true
+        if fogged { m.shaderModifiers = [.fragment: fogFragment] }
         return m
     }
 
@@ -119,6 +158,7 @@ enum VoyageSceneKit {
         m.lightingModel = .constant
         m.diffuse.contents = nightBG
         m.emission.contents = sand
+        m.emission.intensity = 0.95   // Web emissiveIntensity 0.95
         sphere.firstMaterial = m
         let node = SCNNode(geometry: sphere)
         node.position = position
@@ -187,7 +227,7 @@ enum VoyageSceneKit {
 
         let beachGeo = SCNCone(topRadius: 1.9, bottomRadius: 2.05, height: 0.07)
         beachGeo.radialSegmentCount = 9
-        beachGeo.firstMaterial = flatMaterial(beach)
+        beachGeo.firstMaterial = litMaterial(beach, roughness: 0.95)
         let beachNode = SCNNode(geometry: beachGeo)
         beachNode.position = SCNVector3(0, 0.03, 0.1)
         group.addChildNode(beachNode)
@@ -222,7 +262,7 @@ enum VoyageSceneKit {
     // MARK: - 船(Web BoatModel の忠実移植)
 
     /// 舳先の上がった三日月型の船体。Webと同じ側面プロフィールを押し出し(面取り=ベベル)、
-    /// 端に向けて幅を絞って上から見ても船形にする(頂点を後処理)。
+    /// 端へ向けた幅絞りは素材の .geometry シェーダで行う(hullTaper)。
     private static func makeHullGeometry(color: UIColor) -> SCNGeometry {
         let path = UIBezierPath()
         path.move(to: CGPoint(x: -1.02, y: 0.42))
@@ -234,13 +274,39 @@ enum VoyageSceneKit {
         path.close()
         path.flatness = 0.12   // Web curveSegments: 9 相当の粗さ(低ポリの丸み)
 
-        // SCNShape の頂点再構築(端へ向けた幅絞り)は実行環境によって描画されない
-        // ことがあるため行わない。三日月の側面プロフィール+面取り+フラット陰影が
-        // 見た目の主役なので、押し出しのままで Web の読みは保てる。
         let shape = SCNShape(path: path, extrusionDepth: 0.5)
         shape.chamferRadius = 0.13
         shape.chamferMode = .both
-        shape.firstMaterial = flatMaterial(color)
+        shape.firstMaterial = litMaterial(color, roughness: 0.85, hullTaper: true)
+        return shape
+    }
+
+    /// 旗(pennant/swallow/kraken)の平面形。Web makeFlagGeometry(ShapeGeometry)相当。
+    private static func makeFlagGeometry(kind: String, color: UIColor) -> SCNGeometry {
+        let s = UIBezierPath()
+        switch kind {
+        case "pennant":
+            s.move(to: CGPoint(x: 0, y: 0))
+            s.addLine(to: CGPoint(x: 0, y: 0.22))
+            s.addLine(to: CGPoint(x: -0.5, y: 0.11))
+        case "swallow":
+            s.move(to: CGPoint(x: 0, y: 0))
+            s.addLine(to: CGPoint(x: 0, y: 0.22))
+            s.addLine(to: CGPoint(x: -0.52, y: 0.22))
+            s.addLine(to: CGPoint(x: -0.33, y: 0.11))
+            s.addLine(to: CGPoint(x: -0.52, y: 0))
+        default: // kraken: 触腕を思わせる、曲線の二叉
+            s.move(to: CGPoint(x: 0, y: 0))
+            s.addLine(to: CGPoint(x: 0, y: 0.22))
+            s.addQuadCurve(to: CGPoint(x: -0.56, y: 0.21), controlPoint: CGPoint(x: -0.36, y: 0.28))
+            s.addQuadCurve(to: CGPoint(x: -0.27, y: 0.11), controlPoint: CGPoint(x: -0.36, y: 0.16))
+            s.addQuadCurve(to: CGPoint(x: -0.56, y: 0.01), controlPoint: CGPoint(x: -0.36, y: 0.06))
+            s.addQuadCurve(to: CGPoint(x: 0, y: 0), controlPoint: CGPoint(x: -0.36, y: -0.06))
+        }
+        s.close()
+        s.flatness = 0.01
+        let shape = SCNShape(path: s, extrusionDepth: 0)
+        shape.firstMaterial = litMaterial(color, roughness: 0.9, doubleSided: true)
         return shape
     }
 
@@ -277,23 +343,24 @@ enum VoyageSceneKit {
         let data = Data(bytes: &idx, count: idx.count * 4)
         let elem = SCNGeometryElement(data: data, primitiveType: .triangles, primitiveCount: idx.count / 3, bytesPerIndex: 4)
         let geo = SCNGeometry(sources: [src, normals], elements: [elem])
-        geo.firstMaterial = flatMaterial(color, doubleSided: true)
+        geo.firstMaterial = litMaterial(color, roughness: 0.95, doubleSided: true)
         return geo
     }
 
-    /// 帆船一式(Web BoatModel)。"boatBob" 直下に組み、揺れは外側のアニメータが担う。
-    static func makeBoatModel(sail: UIColor, hull: UIColor) -> SCNNode {
+    /// 帆船一式(Web BoatModel 完全移植)。"boatBob" 直下に組み、揺れは外側のアニメータが担う。
+    static func makeBoatModel(_ parts: BoatParts) -> SCNNode {
         let model = SCNNode()
         model.name = "boatModel"
 
-        let hullNode = SCNNode(geometry: makeHullGeometry(color: hull))
+        // 船体
+        let hullNode = SCNNode(geometry: makeHullGeometry(color: parts.hull))
         hullNode.name = "boatHull"
         model.addChildNode(hullNode)
 
-        // デッキ(少し暗い同系色の薄い蓋)
+        // デッキ(少し暗い同系色の薄い蓋 = hull*0.72)
         let deckGeo = SCNCylinder(radius: 1, height: 0.06)
         deckGeo.radialSegmentCount = 14
-        deckGeo.firstMaterial = flatMaterial(hull.scaled(0.72))
+        deckGeo.firstMaterial = litMaterial(parts.hull.scaled(0.72), roughness: 0.9)
         let deckNode = SCNNode(geometry: deckGeo)
         deckNode.name = "boatDeck"
         deckNode.position = SCNVector3(0.05, 0.47, 0)
@@ -303,7 +370,7 @@ enum VoyageSceneKit {
         // マスト
         let mastGeo = SCNCone(topRadius: 0.035, bottomRadius: 0.028, height: 2.3)
         mastGeo.radialSegmentCount = 8
-        mastGeo.firstMaterial = flatMaterial(wood)
+        mastGeo.firstMaterial = litMaterial(wood, roughness: 0.8)
         let mastNode = SCNNode(geometry: mastGeo)
         mastNode.position = SCNVector3(0.1, 1.42, 0)
         model.addChildNode(mastNode)
@@ -314,25 +381,67 @@ enum VoyageSceneKit {
         rig.eulerAngles.y = 0.16
         let boomGeo = SCNCylinder(radius: 0.024, height: 1.15)
         boomGeo.radialSegmentCount = 8
-        boomGeo.firstMaterial = flatMaterial(wood)
+        boomGeo.firstMaterial = litMaterial(wood, roughness: 0.8)
         let boomNode = SCNNode(geometry: boomGeo)
         boomNode.position = SCNVector3(-0.55, 0.68, 0)
         boomNode.eulerAngles.z = .pi / 2
         rig.addChildNode(boomNode)
-        let mainNode = SCNNode(geometry: makeSailGeometry(width: 1.0, height: 1.8, bulge: 0.16, shear: 0, color: sail))
-        mainNode.name = "boatSail"
+        let mainNode = SCNNode(geometry: makeSailGeometry(width: 1.0, height: 1.8, bulge: 0.16, shear: 0, color: parts.sail))
+        mainNode.name = "boatSailMain"
         mainNode.position = SCNVector3(0, 0.72, 0)
         rig.addChildNode(mainNode)
         model.addChildNode(rig)
 
-        // ジブ(前帆): 舳先からマスト頂へ斜めのラフ
-        let jibNode = SCNNode(geometry: makeSailGeometry(width: 0.72, height: 1.5, bulge: 0.1, shear: 0.92, color: sail))
-        jibNode.name = "boatSail"
+        // ジブ(前帆): 舳先からマスト頂へ斜めのラフ。独立色。
+        let jibNode = SCNNode(geometry: makeSailGeometry(width: 0.72, height: 1.5, bulge: 0.1, shear: 0.92, color: parts.jib))
+        jibNode.name = "boatSailJib"
         jibNode.position = SCNVector3(1.1, 0.62, 0)
         jibNode.eulerAngles.y = 0.12
         model.addChildNode(jibNode)
 
+        // 船体のライン(喫水近くの細い帯 = Torus)。none なら省略。
+        if let stripe = parts.stripe {
+            let torus = SCNTorus(ringRadius: 1, pipeRadius: 0.05)
+            torus.ringSegmentCount = 40
+            torus.pipeSegmentCount = 8
+            torus.firstMaterial = litMaterial(stripe, roughness: 0.85)
+            let stripeNode = SCNNode(geometry: torus)
+            stripeNode.name = "boatStripe"
+            stripeNode.position = SCNVector3(0.06, 0.2, 0)
+            stripeNode.eulerAngles.x = .pi / 2
+            stripeNode.scale = SCNVector3(0.93, 0.47, 0.5)
+            model.addChildNode(stripeNode)
+        }
+
+        // 旗(マスト頂ではためく)。none 以外のとき。
+        if ["pennant", "swallow", "kraken"].contains(parts.flag) {
+            let flagColor = flagColorFor(parts.flag)
+            let flagGroup = SCNNode()
+            flagGroup.name = "boatFlag"
+            flagGroup.position = SCNVector3(0.1, 2.34, 0)
+            let flagNode = SCNNode(geometry: makeFlagGeometry(kind: parts.flag, color: flagColor))
+            flagGroup.addChildNode(flagNode)
+            // 海獣の旗には returnOrange の小さな目を添える(2Dの図案と同じ)。
+            if parts.flag == "kraken" {
+                let eye = SCNShape(path: UIBezierPath(ovalIn: CGRect(x: -0.028, y: -0.028, width: 0.056, height: 0.056)), extrusionDepth: 0)
+                eye.firstMaterial = unlitMaterial(UIColor(rgb: 0xF5822A))
+                let eyeNode = SCNNode(geometry: eye)
+                eyeNode.position = SCNVector3(-0.12, 0.11, 0.002)
+                flagGroup.addChildNode(eyeNode)
+            }
+            model.addChildNode(flagGroup)
+        }
+
         return model
+    }
+
+    /// 旗の配色(Web FLAG_COLORS)。
+    static func flagColorFor(_ flag: String) -> UIColor {
+        switch flag {
+        case "pennant": return UIColor(rgb: 0xF5822A)  // returnOrange
+        case "swallow": return UIColor(rgb: 0xF0997B)  // coral
+        default: return UIColor(rgb: 0x1A1130)          // kraken = midnight
+        }
     }
 
     // MARK: - 波紋・航跡(Web Ripples / Wake)
@@ -407,22 +516,25 @@ enum VoyageSceneKit {
         group.name = "buoy_\(index)"
         let pole = SCNCone(topRadius: 0.03, bottomRadius: 0.04, height: 0.5)
         pole.radialSegmentCount = 6
-        pole.firstMaterial = flatMaterial(wood)
+        pole.firstMaterial = litMaterial(wood, roughness: 0.8)
         let poleNode = SCNNode(geometry: pole)
         poleNode.position = SCNVector3(0, 0.25, 0)
         group.addChildNode(poleNode)
         let top = SCNSphere(radius: 0.12)
         top.segmentCount = 10
-        let m = SCNMaterial()
         if done {
-            m.lightingModel = .constant
+            // 達成 = 灯のように点る(Web BUOY_LIT_MAT: emissive 1.3, roughness 0.5, fog off)。
+            let m = SCNMaterial()
+            m.lightingModel = .physicallyBased
             m.diffuse.contents = ember
+            m.emission.contents = ember
+            m.emission.intensity = 1.3
+            m.roughness.contents = 0.5
+            m.metalness.contents = 0.0
+            top.firstMaterial = m
         } else {
-            m.lightingModel = .lambert
-            m.diffuse.contents = buoyDim
-            m.shaderModifiers = flatShade
+            top.firstMaterial = litMaterial(buoyDim, roughness: 0.9)
         }
-        top.firstMaterial = m
         let topNode = SCNNode(geometry: top)
         topNode.position = SCNVector3(0, 0.55, 0)
         group.addChildNode(topNode)
@@ -468,6 +580,12 @@ enum VoyageSceneKit {
         cam.fieldOfView = fov
         cam.zNear = 0.1
         cam.zFar = 200
+        // three.js 既定の HDR + フィルミックトーンマッピングに相当(リニア色管理+ハイライト圧縮)。
+        // Web は EffectComposer/Bloom を使っていないので、ブルームは差さない(切る)。
+        cam.wantsHDR = true
+        cam.wantsExposureAdaptation = false
+        cam.exposureOffset = 0
+        cam.bloomIntensity = 0
         let node = SCNNode()
         node.name = "camera"
         node.camera = cam
@@ -505,10 +623,7 @@ enum VoyageSceneKit {
         travel.addChildNode(makeWake())
         let bob = SCNNode()
         bob.name = "boatBob"
-        bob.addChildNode(makeBoatModel(
-            sail: BoatCustomization.uiColor(.sail),
-            hull: BoatCustomization.uiColor(.hull)
-        ))
+        bob.addChildNode(makeBoatModel(BoatCustomization.currentParts))
         travel.addChildNode(bob)
         scene.rootNode.addChildNode(travel)
 
@@ -533,7 +648,7 @@ enum VoyageSceneKit {
         travel.addChildNode(makeRipples())
         let bob = SCNNode()
         bob.name = "boatBob"
-        bob.addChildNode(makeBoatModel(sail: parts.sail, hull: parts.hull))
+        bob.addChildNode(makeBoatModel(parts))
         travel.addChildNode(bob)
         scene.rootNode.addChildNode(travel)
         makeLights().forEach { scene.rootNode.addChildNode($0) }
@@ -667,6 +782,10 @@ final class VoyageAnimator: NSObject, SCNSceneRendererDelegate {
             bob.eulerAngles.z = sin(t * 0.6) * 0.03
             bob.eulerAngles.x = sin(t * 0.5 + 1.2) * 0.015
         }
+        // 旗のはためき(Web flagGroup rot.y = sin(t*5.2)*0.22)。再構築されうるので毎回探す。
+        if let flag = bob?.childNode(withName: "boatFlag", recursively: true) {
+            flag.eulerAngles.y = sin(t * 5.2) * 0.22
+        }
         // 波紋(Web Ripples: 周期7秒・位相ずらし3枚)
         for (i, node) in rippleNodes.enumerated() {
             let phase = (t / 7 + Float(i) / 3).truncatingRemainder(dividingBy: 1)
@@ -759,29 +878,18 @@ struct BoatSceneView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
-        // 色が変わったら、シーンを作り直さず素材だけ差し替える(手回しの視点を保つ)。
+        // 色・ライン・旗が変わったら、船だけ作り直す(カメラの手回し視点は保たれる)。
         guard key != context.coordinator.key else { return }
         context.coordinator.key = key
-        guard let model = view.scene?.rootNode.childNode(withName: "boatModel", recursively: true) else { return }
-        model.enumerateChildNodes { node, _ in
-            switch node.name {
-            case "boatHull": node.geometry?.firstMaterial?.diffuse.contents = parts.hull
-            case "boatDeck": node.geometry?.firstMaterial?.diffuse.contents = parts.hull.scaled(0.72)
-            case "boatSail": node.geometry?.firstMaterial?.diffuse.contents = parts.sail
-            default: break
-            }
-        }
-        // リグ(ブーム下)の帆も拾う。
-        model.childNodes.forEach { rig in
-            rig.childNodes.forEach { node in
-                if node.name == "boatSail" {
-                    node.geometry?.firstMaterial?.diffuse.contents = parts.sail
-                }
-            }
-        }
+        guard let bob = view.scene?.rootNode.childNode(withName: "boatBob", recursively: true) else { return }
+        bob.childNode(withName: "boatModel", recursively: false)?.removeFromParentNode()
+        bob.addChildNode(VoyageSceneKit.makeBoatModel(parts))
     }
 
-    private var key: String { "\(parts.sail.hashValue)|\(parts.hull.hashValue)" }
+    private var key: String {
+        let stripe = parts.stripe?.hashValue ?? 0
+        return "\(parts.sail.hashValue)|\(parts.jib.hashValue)|\(parts.hull.hashValue)|\(stripe)|\(parts.flag)"
+    }
 
     final class Coordinator {
         let animator = VoyageAnimator()

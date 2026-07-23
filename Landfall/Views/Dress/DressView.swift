@@ -1,11 +1,11 @@
 import SwiftUI
 import SwiftData
 
-/// 装い。夜の海に浮かぶ自分の船を3Dで眺めながら、帆と船体の色を着せ替える。
-/// 色は累計時間で解放される(Web BoatStudio 相当)。
+/// 装い。夜の海に浮かぶ自分の船を3Dで眺めながら、帆・ジブ・船体・ライン・旗を着せ替える。
+/// 選択肢は累計時間(または共同航海の戦利品)で解放される(Web BoatStudio 完全移植)。
 struct DressView: View {
     @Query private var sessions: [StudySession]
-    /// 色を選ぶたびに +1 して、3Dの色と選択枠を更新する。
+    /// 選ぶたびに +1 して、3Dの色と選択枠を更新する。
     @State private var version = 0
     @State private var mode: Mode = Self.initialMode
 
@@ -13,6 +13,13 @@ struct DressView: View {
 
     private static var initialMode: Mode {
         #if DEBUG
+        // 全部位が乗った船を検証するためのデモ選択(タップ検証が塞がれているため)。
+        if ProcessInfo.processInfo.environment["LANDFALL_DEMO_BOAT"] != nil {
+            BoatCustomization.select(.jib, "seaGreen")
+            BoatCustomization.select(.hull, "coral")
+            BoatCustomization.select(.stripe, "returnOrange")
+            BoatCustomization.select(.flag, "kraken")
+        }
         if ProcessInfo.processInfo.environment["LANDFALL_DRESS_NAV"] != nil { return .navigator }
         #endif
         return .boat
@@ -41,7 +48,9 @@ struct DressView: View {
 
                         Group {
                             if mode == .boat {
+                                // versionでidentityを変え、選択のたびに確実に反映する。
                                 BoatSceneView(parts: BoatCustomization.currentParts)
+                                    .id(version)
                             } else {
                                 NavigatorSceneView()
                             }
@@ -99,7 +108,7 @@ struct DressView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(part.options) { option in
-                        swatch(part, option)
+                        optionButton(part, option)
                     }
                 }
                 .padding(.horizontal, 24)
@@ -108,30 +117,65 @@ struct DressView: View {
         .padding(.top, 20)
     }
 
-    private func swatch(_ part: BoatPart, _ option: BoatOption) -> some View {
+    /// 色を持つ選択肢は丸スウォッチ、色を持たない(なし・旗)ものはテキストチップ。
+    @ViewBuilder
+    private func optionButton(_ part: BoatPart, _ option: BoatOption) -> some View {
         let unlocked = option.isUnlocked(totalMinutes: totalMinutes)
         let selected = BoatCustomization.selectedID(part) == option.id
-        return Button {
-            guard unlocked else { return }
-            BoatCustomization.select(part, option.id)
-            Haptics.tap(.light)
-            version += 1
-        } label: {
-            Circle()
-                .fill(option.color)
-                .frame(width: 44, height: 44)
-                .opacity(unlocked ? 1 : 0.3)
-                .overlay(Circle().strokeBorder(LFColor.returnOrange, lineWidth: selected ? 3 : 0))
-                .overlay {
-                    if !unlocked {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(LFColor.inkFixed.opacity(0.5))
-                    }
+        if let color = option.color {
+            Button { choose(part, option, unlocked) } label: {
+                Circle()
+                    .fill(color)
+                    .frame(width: 44, height: 44)
+                    .opacity(unlocked ? 1 : 0.3)
+                    .overlay(Circle().strokeBorder(LFColor.returnOrange, lineWidth: selected ? 3 : 0))
+                    .overlay { if !unlocked { lockGlyph } }
+            }
+            .buttonStyle(.plain)
+            .disabled(!unlocked)
+            .accessibilityLabel(Text(option.id))
+        } else {
+            Button { choose(part, option, unlocked) } label: {
+                HStack(spacing: 5) {
+                    Text(optionLabel(option.id))
+                    if !unlocked { Image(systemName: "lock.fill").font(.system(size: 10)) }
                 }
+                .font(LFFont.copy(14))
+                .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
+                .opacity(unlocked ? 1 : 0.4)
+                .padding(.horizontal, 14).frame(height: 44)
+                .background(Capsule().fill(selected ? LFColor.ink : Color.clear))
+                .overlay(Capsule().strokeBorder(LFColor.ink.opacity(selected ? 0 : 0.2), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(!unlocked)
         }
-        .buttonStyle(.plain)
-        .disabled(!unlocked)
-        .accessibilityLabel(Text(option.id))
+    }
+
+    private var lockGlyph: some View {
+        Image(systemName: "lock.fill")
+            .font(.system(size: 12))
+            .foregroundStyle(LFColor.inkFixed.opacity(0.5))
+    }
+
+    private func choose(_ part: BoatPart, _ option: BoatOption, _ unlocked: Bool) {
+        guard unlocked else { return }
+        BoatCustomization.select(part, option.id)
+        Haptics.tap(.light)
+        version += 1
+        // 参加中の港(プライベート/パブリック)の「みんなの海」へも反映(fire-and-forget)。
+        RoomService.shared.pushProfileToAllRooms()
+        PublicHarborService.shared.pushProfile()
+    }
+
+    /// 色を持たない選択肢の表示名(なし・旗の種類)。
+    private func optionLabel(_ id: String) -> LocalizedStringKey {
+        switch id {
+        case "none": return "None"
+        case "pennant": return "Pennant"
+        case "swallow": return "Swallow"
+        case "kraken": return "Kraken"
+        default: return LocalizedStringKey(id)
+        }
     }
 }
