@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Stars } from "@react-three/drei";
 import { Moon, NIGHT_BG } from "./SeaParts";
-import PhoenixModel from "./PhoenixModel";
+import PhoenixModel, { type PhoenixPose } from "./PhoenixModel";
 import PhoenixBird from "./PhoenixBird";
 
 // 航海士フェニックスの360度ビューア。URLハッシュ #phoenix で開く。
@@ -12,8 +12,16 @@ import PhoenixBird from "./PhoenixBird";
 
 const YAWS = [0, 90, 180, 270];
 
+const POSES: { key: PhoenixPose; label: string }[] = [
+  { key: "idle", label: "待機" },
+  { key: "walk", label: "歩く" },
+  { key: "raise", label: "掲げる" },
+  { key: "hail", label: "手を振る" },
+];
+
 export default function PhoenixViewer() {
   const [form, setForm] = useState<"hero" | "bird">("hero");
+  const [pose, setPose] = useState<PhoenixPose>("idle");
   const [yaw, setYaw] = useState(0);
   const [autoRotate, setAutoRotate] = useState(true);
 
@@ -28,7 +36,7 @@ export default function PhoenixViewer() {
         <Stars radius={42} depth={18} count={320} factor={2.0} saturation={0} fade speed={0.4} />
         <Moon position={[-8, 4.2, -14]} />
         <group rotation={[0, (yaw * Math.PI) / 180, 0]}>
-          {form === "hero" ? <PhoenixModel animate /> : <PhoenixBird animate />}
+          {form === "hero" ? <PhoenixModel animate pose={pose} /> : <PhoenixBird animate />}
         </group>
         <OrbitControls
           target={[0, 0.62, 0]}
@@ -59,6 +67,19 @@ export default function PhoenixViewer() {
             海鳥
           </button>
         </div>
+        {form === "hero" && (
+          <div className="chip-row">
+            {POSES.map((p) => (
+              <button
+                key={p.key}
+                className={`chip${pose === p.key ? " selected" : ""}`}
+                onClick={() => setPose(p.key)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="chip-row">
           {YAWS.map((deg) => (
             <button

@@ -38,23 +38,26 @@ const CAPE_ROWS = 16; // 縦(肩→裾)
 const CAPE_COLS = 13; // 横(左端→右端)
 
 /// マントの一点。u:-1..1(左→右)、v:0..1(肩→裾)。
-/// out に位置を書き込む。time で裾ほど大きく波打つ。
+/// out に位置を書き込む。time で裾ほど大きく波打ち、wind(1=待機)が強いほど
+/// 速く大きく、裾が後方へ流される(歩行の向かい風)。
 function capePoint(
   u: number,
   v: number,
   time: number,
+  wind: number,
   out: { x: number; y: number; z: number },
 ) {
   const width = 0.16 + 0.21 * Math.pow(v, 1.15); // 裾へ向かって広がる
   const length = 0.38 + 0.19 * Math.pow(Math.abs(u), 1.4); // 端が長い=燕尾の裾
-  const flutter = Math.pow(v, 1.5); // 肩は固定、裾ほど自由に
-  out.x = u * width + flutter * Math.sin(time * 1.3 + v * 2.0) * 0.02;
-  out.y = -v * length + flutter * Math.sin(u * 2.4 + time * 1.9) * 0.012;
+  const flutter = Math.pow(v, 1.5) * wind; // 肩は固定、裾ほど自由に
+  const t = time * (0.7 + 0.3 * wind); // 風が強いほど波も速い
+  out.x = u * width + flutter * Math.sin(t * 1.3 + v * 2.0) * 0.02;
+  out.y = -v * length + flutter * Math.sin(u * 2.4 + t * 1.9) * 0.012;
   out.z =
     -0.02 -
-    0.24 * Math.pow(v, 1.1) + // コートの背面より外側を通って後ろへ膨らむ基本カーブ
+    (0.24 + (wind - 1) * 0.09) * Math.pow(v, 1.1) + // 風で裾が後方へ流される
     flutter *
-      (Math.sin(v * 5.2 - time * 2.1) * 0.05 + Math.sin(u * 2.6 + time * 1.5) * 0.04);
+      (Math.sin(v * 5.2 - t * 2.1) * 0.05 + Math.sin(u * 2.6 + t * 1.5) * 0.04);
 }
 
 /// マントの格子ジオメトリ(位置は後で capeUpdate が書く)。
@@ -78,15 +81,15 @@ function buildCapeGeometry(): THREE.BufferGeometry {
 
 const capeScratch = { x: 0, y: 0, z: 0 };
 
-/// マントの全頂点を時刻 time の波で書き直す(168頂点なので毎フレームでも軽い)。
-function updateCape(geo: THREE.BufferGeometry, time: number) {
+/// マントの全頂点を時刻 time・風 wind の波で書き直す(168頂点なので毎フレームでも軽い)。
+function updateCape(geo: THREE.BufferGeometry, time: number, wind = 1) {
   const attr = geo.getAttribute("position") as THREE.BufferAttribute;
   let i = 0;
   for (let r = 0; r < CAPE_ROWS; r++) {
     const v = r / (CAPE_ROWS - 1);
     for (let c = 0; c < CAPE_COLS; c++) {
       const u = (c / (CAPE_COLS - 1)) * 2 - 1;
-      capePoint(u, v, time, capeScratch);
+      capePoint(u, v, time, wind, capeScratch);
       attr.setXYZ(i++, capeScratch.x, capeScratch.y, capeScratch.z);
     }
   }
@@ -203,15 +206,42 @@ const LANTERN_GLOW_MAT = new THREE.MeshStandardMaterial({
   fog: false,
 });
 
+/// キャラクターのポーズ。ゲーム側から切り替えると、減衰補間でなめらかに遷移する。
+///  - idle:  待機。呼吸と見渡し、ランタンの静かな振り子
+///  - walk:  歩行(その場)。移動そのものはゲーム側が position を動かす
+///  - raise: 灯を高く掲げる(記録の瞬間・お祝いに)
+///  - hail:  手を振って挨拶(港の仲間へ)
+export type PhoenixPose = "idle" | "walk" | "raise" | "hail";
+
+/// ポーズごとの基本角(振りの中心)。振動はこの上に足す。
+const POSE_BASE: Record<
+  PhoenixPose,
+  { armRx: number; armRz: number; armLx: number; armLz: number; lean: number; wind: number }
+> = {
+  idle: { armRx: 0, armRz: 0.14, armLx: 0, armLz: -0.14, lean: 0, wind: 1 },
+  walk: { armRx: 0, armRz: 0.12, armLx: 0, armLz: -0.12, lean: 0.09, wind: 1.7 },
+  raise: { armRx: -2.35, armRz: 0.06, armLx: 0, armLz: -0.16, lean: -0.04, wind: 1.15 },
+  hail: { armRx: 0, armRz: 0.14, armLx: 0, armLz: -2.55, lean: 0, wind: 1.1 },
+};
+
 /// 小さな航海士。ローブの体積+燕尾のケープ+尖ったフード+提げたランタンで、
 /// 「夜の海を渡ってきた旅の相棒」を2.5頭身に凝縮する。
-/// 待機: 呼吸、ケープと襟巻きの揺れ、水平線を見渡す首、ランタンの振り子。
-export default function PhoenixModel({ animate = true }: { animate?: boolean }) {
-  const core = useRef<THREE.Group>(null); // ブーツ以外(呼吸)
+export default function PhoenixModel({
+  animate = true,
+  pose = "idle",
+}: {
+  animate?: boolean;
+  pose?: PhoenixPose;
+}) {
+  const core = useRef<THREE.Group>(null); // 足以外(呼吸・歩行の弾み)
   const head = useRef<THREE.Group>(null);
   const armR = useRef<THREE.Group>(null);
   const armL = useRef<THREE.Group>(null);
+  const legR = useRef<THREE.Group>(null);
+  const legL = useRef<THREE.Group>(null);
   const lantern = useRef<THREE.Group>(null);
+  // ポーズの基本角の現在値(減衰補間でPOSE_BASEへ寄せていく)。
+  const cur = useRef({ armRx: 0, armRz: 0.14, armLx: 0, armLz: -0.14, lean: 0, wind: 1 });
 
   // マントの布。頂点を毎フレーム書くのでインスタンスごとに持ち、離れる時に破棄する。
   const capeGeo = useMemo(() => {
@@ -221,45 +251,97 @@ export default function PhoenixModel({ animate = true }: { animate?: boolean }) 
   }, []);
   useEffect(() => () => capeGeo.dispose(), [capeGeo]);
 
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, delta) => {
     if (!animate) return;
     const time = clock.elapsedTime;
-    // マント: 布の波。裾ほど大きく靡く。
-    updateCape(capeGeo, time);
-    // 呼吸: 体だけがゆっくり上下。足は甲板に植わったまま(重なりで吸収)。
+    const target = POSE_BASE[pose];
+    const c = cur.current;
+    // ポーズの基本角へなめらかに寄せる(切替の瞬間に跳ねない)。
+    c.armRx = THREE.MathUtils.damp(c.armRx, target.armRx, 6, delta);
+    c.armRz = THREE.MathUtils.damp(c.armRz, target.armRz, 6, delta);
+    c.armLx = THREE.MathUtils.damp(c.armLx, target.armLx, 6, delta);
+    c.armLz = THREE.MathUtils.damp(c.armLz, target.armLz, 6, delta);
+    c.lean = THREE.MathUtils.damp(c.lean, target.lean, 6, delta);
+    c.wind = THREE.MathUtils.damp(c.wind, target.wind, 4, delta);
+
+    // マント: 布の波。歩行中は向かい風で強く靡く。
+    updateCape(capeGeo, time, c.wind);
+
+    const walking = pose === "walk";
+    const stride = 5.4; // 歩調(rad/s)
+    const step = Math.sin(time * stride);
+
+    // 体: 待機は呼吸、歩行は歩調に合わせた弾み。
     if (core.current) {
-      core.current.position.y = Math.sin(time * 0.85) * 0.018;
-      core.current.rotation.x = Math.sin(time * 0.85 + 0.9) * 0.01;
+      core.current.position.y = walking
+        ? Math.abs(Math.cos(time * stride)) * 0.035
+        : Math.sin(time * 0.85) * 0.018;
+      core.current.rotation.x = c.lean + Math.sin(time * 0.85 + 0.9) * 0.01;
+      core.current.rotation.z = walking ? step * 0.03 : 0;
     }
-    // 首: 水平線をゆっくり見渡す。
+    // 首: 見渡し。掲げ(raise)のときは灯を見上げる。
     if (head.current) {
-      head.current.rotation.y = Math.sin(time * 0.3) * 0.14;
+      head.current.rotation.y = Math.sin(time * 0.3) * (walking ? 0.05 : 0.14);
+      head.current.rotation.x = pose === "raise" ? -0.14 : 0;
       head.current.rotation.z = Math.sin(time * 0.85 + 2.1) * 0.02;
     }
-    // 腕: わずかな重心移動。右腕はランタンの重みでほんの少し遅れる。
-    if (armR.current) armR.current.rotation.x = Math.sin(time * 0.85 + 0.4) * 0.03;
-    if (armL.current) armL.current.rotation.x = Math.sin(time * 0.85 + 1.1) * 0.025;
-    // ランタン: 手元から下がる振り子。灯は船のランタンと同じゆらぎ。
+    // 脚: 歩行は股関節から交互に振る。それ以外は接地に戻す。
+    const legSwing = walking ? 0.55 : 0;
+    if (legR.current) {
+      legR.current.rotation.x = THREE.MathUtils.damp(
+        legR.current.rotation.x,
+        step * legSwing,
+        10,
+        delta,
+      );
+    }
+    if (legL.current) {
+      legL.current.rotation.x = THREE.MathUtils.damp(
+        legL.current.rotation.x,
+        -step * legSwing,
+        10,
+        delta,
+      );
+    }
+    // 腕: 基本角+ポーズごとの振動。歩行は脚と逆位相で振り、挨拶は手を振る。
+    const armSwing = walking ? -step * 0.32 : Math.sin(time * 0.85 + 0.4) * 0.03;
+    if (armR.current) {
+      armR.current.rotation.x = c.armRx + armSwing;
+      armR.current.rotation.z = c.armRz;
+    }
+    if (armL.current) {
+      const wave = pose === "hail" ? Math.sin(time * 7.2) * 0.3 : 0;
+      armL.current.rotation.x = c.armLx + (walking ? step * 0.32 : Math.sin(time * 0.85 + 1.1) * 0.025);
+      armL.current.rotation.z = c.armLz + wave;
+    }
+    // ランタン: 腕の傾きを打ち消して常にほぼ鉛直に垂れる振り子。
     if (lantern.current) {
-      lantern.current.rotation.x = Math.sin(time * 0.9) * 0.1;
+      lantern.current.rotation.x =
+        -(c.armRx + armSwing) + Math.sin(time * 0.9) * (walking ? 0.2 : 0.1);
       lantern.current.rotation.z = Math.sin(time * 0.7 + 0.6) * 0.12;
     }
-    LANTERN_GLOW_MAT.emissiveIntensity = 1.5 + Math.sin(time * 2.1) * 0.3;
+    // 灯: 掲げたときはひときわ明るく。
+    const glowBase = pose === "raise" ? 2.3 : 1.5;
+    LANTERN_GLOW_MAT.emissiveIntensity = glowBase + Math.sin(time * 2.1) * 0.3;
   });
 
   return (
     // 形は正面=+Zで組み、グループごと+X向きへ(船の舳先と同じ向き)。
     <group rotation={[0, Math.PI / 2, 0]}>
-      {/* 足(接地したまま動かない)。足首は裾の内へ、丸いブーツのつま先が
-          裾の前から覗く — 「立っている」ことがどの角度からも読めるように */}
+      {/* 足。ピボットは裾に隠れた股関節の高さ — 歩行はここから交互に振る。
+          足首は裾の内へ、丸いブーツのつま先が裾の前から覗く */}
       {[1, -1].map((s) => (
-        <group key={s} position={[s * 0.088, 0, 0]}>
-          <mesh geometry={ANKLE_GEO} material={RUST_DEEP_MAT} position={[0, 0.2, 0.02]} />
-          <mesh geometry={BOOT_CUFF_GEO} material={RUST_MAT} position={[0, 0.115, 0.03]} />
+        <group
+          key={s}
+          ref={s === 1 ? legR : legL}
+          position={[s * 0.088, 0.42, 0]}
+        >
+          <mesh geometry={ANKLE_GEO} material={RUST_DEEP_MAT} position={[0, -0.22, 0.02]} />
+          <mesh geometry={BOOT_CUFF_GEO} material={RUST_MAT} position={[0, -0.305, 0.03]} />
           <mesh
             geometry={BOOT_GEO}
             material={RUST_DEEP_MAT}
-            position={[0, 0.052, 0.09]}
+            position={[0, -0.368, 0.09]}
             scale={[0.95, 0.68, 1.55]}
           />
         </group>
