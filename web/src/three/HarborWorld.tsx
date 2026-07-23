@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as THREE from "three";
 import {
   Canvas,
@@ -7,7 +14,7 @@ import {
   type RootState,
   type ThreeEvent,
 } from "@react-three/fiber";
-import { Html, Stars } from "@react-three/drei";
+import { Html, OrbitControls, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
@@ -61,6 +68,15 @@ export interface HarborWorldProps {
 
 const CAM_POS: [number, number, number] = [0.2, 2.6, 8.4];
 const CAM_TARGET: [number, number, number] = [0.5, 0.35, 0];
+
+// 没入(みんなの海に入る)ときの遠景→近景ドリー。遠景はコンパクトの構図そのまま。
+type WorldPhase = "enter" | "idle" | "exit";
+const HARBOR_FAR_POS = new THREE.Vector3(CAM_POS[0], CAM_POS[1], CAM_POS[2]);
+const HARBOR_FAR_TARGET = new THREE.Vector3(CAM_TARGET[0], CAM_TARGET[1], CAM_TARGET[2]);
+const HARBOR_DOLLY_SECONDS = 1.2;
+function easeInOutCubic(v: number): number {
+  return v < 0.5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2;
+}
 // 島(VoyageSceneのIslandは[3.5,0,-0.9]基準)を右奥へ寄せる分。
 const ISLAND_SHIFT: [number, number, number] = [0.9, 0, -1.9];
 const ISLAND_TOP: [number, number, number] = [
@@ -553,6 +569,123 @@ function StrikeBolt({
   );
 }
 
+/// 没入の入退場カメラ。enter=遠景(コンパクトの構図)から近景へドリーイン、
+/// idle=OrbitControlsに委ねる、exit=いまの視点から遠景へ戻る。VoyageWorldと同作法。
+function HarborCameraRig({
+  phase,
+  animate,
+  near,
+  onEntered,
+  onExited,
+}: {
+  phase: WorldPhase;
+  animate: boolean;
+  near: { pos: THREE.Vector3; target: THREE.Vector3 };
+  onEntered: () => void;
+  onExited: () => void;
+}) {
+  const camera = useThree((s) => s.camera);
+  const invalidate = useThree((s) => s.invalidate);
+  const startAt = useRef<number | null>(null);
+  const fromPos = useRef(new THREE.Vector3());
+  const fromTarget = useRef(new THREE.Vector3());
+  const look = useRef(new THREE.Vector3());
+  const done = useRef(false);
+
+  // reduced-motion は近景へジャンプカット。
+  const initialised = useRef(false);
+  useLayoutEffect(() => {
+    if (initialised.current || animate) return;
+    initialised.current = true;
+    camera.position.copy(near.pos);
+    camera.lookAt(near.target);
+    invalidate();
+  }, [animate, camera, near, invalidate]);
+
+  useEffect(() => {
+    startAt.current = null;
+    done.current = false;
+  }, [phase]);
+
+  useFrame(({ clock }) => {
+    if (!animate || phase === "idle" || done.current) return;
+    const now = clock.elapsedTime;
+    if (startAt.current === null) {
+      startAt.current = now;
+      // enter は「いまの視点(=遠景)」から、exit は「いま眺めている視点」から始める。
+      fromPos.current.copy(camera.position);
+      fromTarget.current.copy(phase === "enter" ? HARBOR_FAR_TARGET : near.target);
+    }
+    const raw = Math.min((now - startAt.current) / HARBOR_DOLLY_SECONDS, 1);
+    const k = easeInOutCubic(raw);
+    const toPos = phase === "enter" ? near.pos : HARBOR_FAR_POS;
+    const toT = phase === "enter" ? near.target : HARBOR_FAR_TARGET;
+    camera.position.lerpVectors(fromPos.current, toPos, k);
+    look.current.lerpVectors(fromTarget.current, toT, k);
+    camera.lookAt(look.current);
+    if (raw >= 1) {
+      done.current = true;
+      if (phase === "enter") onEntered();
+      else onExited();
+    }
+  });
+  return null;
+}
+
+/// 近景の構図を画面比で決め、入退場カメラと(idle中の)手回しをまとめる。
+function ImmersiveCamera({
+  phase,
+  animate,
+  onEntered,
+  onExited,
+}: {
+  phase: WorldPhase;
+  animate: boolean;
+  onEntered: () => void;
+  onExited: () => void;
+}) {
+  const size = useThree((s) => s.size);
+  const near = useMemo(() => {
+    const aspect = size.width / Math.max(size.height, 1);
+    const wide = aspect >= 1.05;
+    // 横長は少し引いて船団と島を広く、縦長はさらに引いて狭い視野を補う。
+    return wide
+      ? {
+          pos: new THREE.Vector3(0.2, 1.75, 6.2),
+          target: new THREE.Vector3(0.4, 0.5, -0.4),
+          maxPolar: Math.PI * 0.54,
+        }
+      : {
+          pos: new THREE.Vector3(0.2, 1.85, 7.4),
+          target: new THREE.Vector3(0.4, 0.35, -0.4),
+          maxPolar: Math.PI * 0.5,
+        };
+  }, [size.width, size.height]);
+
+  return (
+    <>
+      <HarborCameraRig
+        phase={phase}
+        animate={animate}
+        near={near}
+        onEntered={onEntered}
+        onExited={onExited}
+      />
+      {phase === "idle" && (
+        <OrbitControls
+          target={[near.target.x, near.target.y, near.target.z]}
+          enablePan={false}
+          enableDamping
+          minDistance={3.2}
+          maxDistance={12}
+          minPolarAngle={Math.PI * 0.14}
+          maxPolarAngle={near.maxPolar}
+        />
+      )}
+    </>
+  );
+}
+
 /// 一隻の船。位相の違う揺れ+名前ラベル+今日の灯+タップで軌跡へ。
 function MemberBoat({
   berth,
@@ -665,6 +798,11 @@ function HarborSea({
   hitClock,
   bolts,
   onBoltDone,
+  immersive,
+  phase,
+  onEnterWorld,
+  onWorldEntered,
+  onWorldExited,
 }: {
   roomName: string;
   berths: Berth[];
@@ -680,6 +818,13 @@ function HarborSea({
   hitClock: { current: number };
   bolts: Bolt[];
   onBoltDone: (id: number) => void;
+  /// 没入(みんなの海に入る)モードと入退場フェーズ。
+  immersive: boolean;
+  phase: WorldPhase;
+  /// コンパクト時、海(空・水面)をタップすると世界へ入る。
+  onEnterWorld: () => void;
+  onWorldEntered: () => void;
+  onWorldExited: () => void;
 }) {
   const camera = useThree((s) => s.camera);
   const invalidate = useThree((s) => s.invalidate);
@@ -807,6 +952,28 @@ function HarborSea({
           />
         ))}
       </group>
+      {/* コンパクト時、船以外(空・水面)をどこでもタップで世界へ入るための、
+          見えない受け皿。中を向いた大球で、船・月より奥に置く(船のタップが
+          stopPropagationで勝つので、船=軌跡/それ以外=入場、と自然に分かれる)。 */}
+      {!immersive && (
+        <mesh onClick={onEnterWorld}>
+          <sphereGeometry args={[46, 16, 12]} />
+          <meshBasicMaterial
+            side={THREE.BackSide}
+            transparent
+            opacity={0}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+      {immersive && (
+        <ImmersiveCamera
+          phase={phase}
+          animate={animate}
+          onEntered={onWorldEntered}
+          onExited={onWorldExited}
+        />
+      )}
     </>
   );
 }
@@ -829,6 +996,49 @@ export default function HarborWorld({
   const glRef = useRef<RootState | null>(null);
   const [flash, setFlash] = useState(false);
   const flashTimer = useRef<number | undefined>(undefined);
+
+  // ---- 没入(みんなの海に入る) ----
+  const [immersive, setImmersive] = useState(false);
+  const [phase, setPhase] = useState<WorldPhase>("idle");
+  const enterWorld = useCallback(() => {
+    setImmersive((on) => {
+      if (on) return on;
+      setPhase(
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "idle" : "enter",
+      );
+      return true;
+    });
+  }, []);
+  const requestClose = useCallback(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setImmersive(false);
+      setPhase("idle");
+      return;
+    }
+    setPhase((p) => (p === "exit" ? p : "exit"));
+  }, []);
+  const handleWorldEntered = useCallback(() => {
+    setPhase((p) => (p === "enter" ? "idle" : p));
+  }, []);
+  const handleWorldExited = useCallback(() => {
+    setImmersive(false);
+    setPhase("idle");
+  }, []);
+
+  // 没入中は Esc で出る+背景スクロールを固定(Modalと同じ作法)。
+  useEffect(() => {
+    if (!immersive) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") requestClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [immersive, requestClose]);
 
   // ---- 共同航海: 進捗・海域・到着・一撃 ----
   const target = voyage?.targetMinutes ?? 0;
@@ -1077,10 +1287,13 @@ export default function HarborWorld({
 
   return (
     <>
-      <div ref={rootRef} className="harbor-world">
+      <div
+        ref={rootRef}
+        className={`harbor-world${immersive ? " immersive" : ""}`}
+      >
         <Canvas
           dpr={[1, 2]}
-          frameloop={animate && visible ? "always" : "demand"}
+          frameloop={animate && (visible || immersive) ? "always" : "demand"}
           camera={{ position: CAM_POS, fov: 36 }}
           onCreated={(state) => {
             glRef.current = state;
@@ -1099,8 +1312,23 @@ export default function HarborWorld({
             hitClock={hitClock}
             bolts={bolts}
             onBoltDone={(id) => setBolts((list) => list.filter((b) => b.id !== id))}
+            immersive={immersive}
+            phase={phase}
+            onEnterWorld={enterWorld}
+            onWorldEntered={handleWorldEntered}
+            onWorldExited={handleWorldExited}
           />
         </Canvas>
+        {/* コンパクト時の誘い。海(空・水面)をタップで世界へ入る。 */}
+        {!immersive && (
+          <div className="harbor-world-enter-hint">{t("enterWorldHint")}</div>
+        )}
+        {/* 没入時に世界から出るボタン。 */}
+        {immersive && (
+          <button className="harbor-world-close" onClick={requestClose}>
+            {t("close")}
+          </button>
+        )}
         {/* 航海の進捗(連続バー+海域の印+残り)。個人の内訳や順位は出さない。 */}
         {voyageActive && voyage && activeRoute && (
           <div className="trial-bar">

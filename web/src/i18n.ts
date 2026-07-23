@@ -117,6 +117,7 @@ const ja = {
   // みんなの海(港の3D)
   takePhoto: "写真を撮る",
   lanternHint: "今日走った船には、灯がともる。",
+  enterWorldHint: "海をタップして、世界に入る",
 
   // 共同航海(海図と航路)
   voyageTitle: "共同航海",
@@ -391,6 +392,7 @@ const en: Record<I18nKey, string> = {
 
   takePhoto: "Take a photo",
   lanternHint: "Boats that sailed today carry a light.",
+  enterWorldHint: "Tap the sea to enter the world",
 
   voyageTitle: "Voyage together",
   voyageIntro:

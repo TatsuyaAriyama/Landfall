@@ -2321,6 +2321,59 @@ textarea {
   display: block;
 }
 
+/* 没入モード: パネルが全画面へ広がり、世界の中へズームインする。
+   z-indexは.voyage-worldと同じ段(overlay/toastより下、ページUIより上)。 */
+.harbor-world.immersive {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  height: auto;
+  margin-top: 0;
+  border-radius: 0;
+  color-scheme: dark;
+}
+
+.harbor-world.immersive canvas {
+  /* ドラッグで世界を回す(ページは背後で固定済み) */
+  touch-action: none;
+}
+
+/* 海をタップで世界へ入る誘い(コンパクト時、上辺中央に控えめに。
+   下辺は進捗バー・残り時間・写真ボタンが使うので避ける) */
+.harbor-world-enter-hint {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  z-index: 2;
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: color-mix(in srgb, var(--harbor-sand) 76%, transparent);
+  background: color-mix(in srgb, #0d2a24 52%, transparent);
+  border-radius: 999px;
+  padding: 4px 12px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* 世界から出るボタン(没入時、右上) */
+.harbor-world-close {
+  position: absolute;
+  top: calc(12px + env(safe-area-inset-top));
+  right: 14px;
+  z-index: 4;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: 14px;
+  color: var(--harbor-sand);
+  border: 1px solid color-mix(in srgb, #eadebd 26%, transparent);
+  background: color-mix(in srgb, #0d2a24 60%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
 /* 船の上の名前(drei Htmlでアンカー)。sandの小さなピル。 */
 .harbor-world-name {
   font-size: 12px;
