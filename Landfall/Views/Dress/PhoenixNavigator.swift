@@ -375,7 +375,24 @@ enum PhoenixNavigator {
         nav.scale = SCNVector3(0.95, 0.95, 0.95)
         scene.rootNode.addChildNode(nav)
 
-        VoyageSceneKit.makeLights().forEach { scene.rootNode.addChildNode($0) }
+        // 照明は Web SailorStage と同値(ambient 0.6 / directional 1.4 / fill 0.28)。
+        // 船スタジオより明るく、キャラクターをしっかり見せる。
+        let ambient = SCNLight(); ambient.type = .ambient
+        ambient.color = UIColor(rgb: 0xFFE9C8); ambient.intensity = 600
+        let ambientNode = SCNNode(); ambientNode.light = ambient
+        scene.rootNode.addChildNode(ambientNode)
+
+        let key = SCNLight(); key.type = .directional
+        key.color = UIColor(rgb: 0xEADEBD); key.intensity = 1400
+        let keyNode = SCNNode(); keyNode.light = key
+        keyNode.position = SCNVector3(-6, 8, -5); keyNode.look(at: SCNVector3(0, 0.6, 0))
+        scene.rootNode.addChildNode(keyNode)
+
+        let fill = SCNLight(); fill.type = .directional
+        fill.color = UIColor(rgb: 0x5DCAA5); fill.intensity = 280
+        let fillNode = SCNNode(); fillNode.light = fill
+        fillNode.position = SCNVector3(5, 3, 6); fillNode.look(at: SCNVector3(0, 0.6, 0))
+        scene.rootNode.addChildNode(fillNode)
 
         let cam = SCNCamera()
         cam.fieldOfView = 40
@@ -412,6 +429,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private weak var lantern: SCNNode?
     private weak var cape: SCNNode?
     private weak var glowMat: SCNMaterial?
+    private var rippleNodes: [SCNNode] = []
 
     // ポーズ基本角の現在値(POSE_BASE へ減衰補間)
     private var armRx: Float = 0, armRz: Float = 0.14
@@ -430,6 +448,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         lantern = nav.childNode(withName: "lantern", recursively: true)
         cape = nav.childNode(withName: "cape", recursively: true)
         glowMat = nav.childNode(withName: "lanternGlow", recursively: true)?.geometry?.firstMaterial
+        rippleNodes = (0..<3).compactMap { scene.rootNode.childNode(withName: "ripple\($0)", recursively: true) }
     }
 
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
@@ -491,6 +510,14 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         // 灯: 掲げたときはひときわ明るく
         let glowBase: Float = pose == .raise ? 2.3 : 1.5
         glowMat?.emission.intensity = CGFloat(glowBase + sin(t * 2.1) * 0.3)
+
+        // 足元の波紋(Web Ripples: 周期7秒・位相ずらし3枚)。海の演出。
+        for (i, node) in rippleNodes.enumerated() {
+            let phase = (t / 7 + Float(i) / 3).truncatingRemainder(dividingBy: 1)
+            let s = 0.8 + phase * 5.5
+            node.scale = SCNVector3(s, s, 1)
+            node.opacity = CGFloat(sin(min(phase * 3, 1) * .pi / 2) * (1 - phase) * 0.2)
+        }
     }
 }
 
@@ -516,6 +543,15 @@ struct PhoenixNavigatorView: UIViewRepresentable {
         animator.pose = pose
         view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
         view.delegate = animator
+        // 360度見渡しは「航海士の胴の中心」を軸に回す(Web OrbitControls target=[0,0.62,0])。
+        // target を設定しないと海の円盤を含む重心で回ってしまう。
+        let cc = view.defaultCameraController
+        cc.interactionMode = .orbitTurntable
+        cc.target = SCNVector3(0, 0.62, 0)
+        cc.automaticTarget = false
+        cc.inertiaEnabled = true
+        cc.minimumVerticalAngle = -4
+        cc.maximumVerticalAngle = 80
         return view
     }
 

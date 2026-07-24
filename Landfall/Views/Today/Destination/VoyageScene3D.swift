@@ -1008,6 +1008,13 @@ struct BoatSceneView: UIViewRepresentable {
         context.coordinator.animator.animate = !reduceMotion
         view.delegate = context.coordinator.animator
         context.coordinator.key = key
+        view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
+        // 手回しは「船の中心」を軸に回す(Web BoatStudio OrbitControls target=[0,0.7,0])。
+        let cc = view.defaultCameraController
+        cc.interactionMode = .orbitTurntable
+        cc.target = SCNVector3(0, 0.7, 0)
+        cc.automaticTarget = false
+        cc.inertiaEnabled = true
         // ゆっくり一周して船体まで見せる(Web BoatStudio の autoRotate 相当)。
         if !reduceMotion,
            let travel = view.scene?.rootNode.childNode(withName: "travel", recursively: false) {
