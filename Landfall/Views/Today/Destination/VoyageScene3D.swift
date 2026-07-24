@@ -1055,13 +1055,9 @@ struct ImmersiveVoyageView: UIViewRepresentable {
         }
         view.delegate = coord
 
-        // タップ / パン(オービット) / ピンチ(距離)。
+        // ブイ/船/月のタップだけ自前で拾う(オービット・ズームは標準コントローラが担当)。
         let tap = UITapGestureRecognizer(target: coord, action: #selector(WorldCoordinator.onTap(_:)))
         view.addGestureRecognizer(tap)
-        let pan = UIPanGestureRecognizer(target: coord, action: #selector(WorldCoordinator.onPan(_:)))
-        view.addGestureRecognizer(pan)
-        let pinch = UIPinchGestureRecognizer(target: coord, action: #selector(WorldCoordinator.onPinch(_:)))
-        view.addGestureRecognizer(pinch)
         return view
     }
 
@@ -1138,11 +1134,14 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
         self.scene = view.scene
         self.reduceMotion = reduceMotion
         camera = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
+        view.pointOfView = camera
         computeNear()
         if reduceMotion {
             // ジャンプカット: 最初から近景で idle。
             phase = .idle
-            applyOrbit()
+            camera?.position = nearPos()
+            camera?.look(at: target)
+            enableOrbit()
             onIdleChange(true)
         } else {
             phase = .enter
@@ -1184,37 +1183,34 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
         )
     }
 
-    private func applyOrbit() {
-        camera?.position = nearPos()
-        camera?.look(at: target)
+    /// idle のオービットは SceneKit 標準のカメラコントローラに任せる
+    /// (drei OrbitControls と同じ、慣性付きターンテーブル)。自前パンより滑らか。
+    private func enableOrbit() {
+        guard let view else { return }
+        view.pointOfView = camera
+        let c = view.defaultCameraController
+        c.pointOfView = camera
+        c.interactionMode = .orbitTurntable
+        c.target = target
+        c.automaticTarget = false
+        c.inertiaEnabled = true          // = enableDamping
+        // 水平線の下(海中)へ潜らせず、真上へも回り込ませない(Web polar 0.16π..0.46π 相当)。
+        c.minimumVerticalAngle = 4
+        c.maximumVerticalAngle = 68
+        view.allowsCameraControl = true
     }
 
     func requestExit() {
         guard phase == .idle, !exitRequested else { return }
         exitRequested = true
+        view?.allowsCameraControl = false   // 退場ドリーは自前で動かすので標準操作を切る
         if reduceMotion { onClosed(); return }
         onIdleChange(false)
         phase = .exit
         phaseStart = nil
     }
 
-    // MARK: ジェスチャ
-
-    @objc func onPan(_ g: UIPanGestureRecognizer) {
-        guard phase == .idle, let v = view else { return }
-        let t = g.translation(in: v)
-        g.setTranslation(.zero, in: v)
-        azimuth -= Float(t.x) * 0.006
-        polar = max(minPolar, min(maxPolar, polar - Float(t.y) * 0.006))
-        applyOrbit()
-    }
-
-    @objc func onPinch(_ g: UIPinchGestureRecognizer) {
-        guard phase == .idle else { return }
-        distance = max(minDist, min(maxDist, distance / Float(g.scale)))
-        g.scale = 1
-        applyOrbit()
-    }
+    // MARK: タップ(ブイ/船/月)
 
     @objc func onTap(_ g: UITapGestureRecognizer) {
         guard phase == .idle, let v = view else { return }
@@ -1274,10 +1270,12 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
             camera?.position = fromPos.lerp(toPos, k)
             camera?.look(at: fromT.lerp(toT, k))
             if raw >= 1 {
-                // 完了通知は SwiftUI の状態を触るのでメインスレッドへ(ここは描画スレッド)。
+                // 完了通知・カメラ操作の有効化はメインスレッドで(ここは描画スレッド)。
                 if phase == .enter {
-                    phase = .idle; applyOrbit()
-                    DispatchQueue.main.async { self.onIdleChange(true) }
+                    phase = .idle
+                    camera?.position = nearPos()
+                    camera?.look(at: target)
+                    DispatchQueue.main.async { self.enableOrbit(); self.onIdleChange(true) }
                 } else {
                     DispatchQueue.main.async { self.onClosed() }
                 }
