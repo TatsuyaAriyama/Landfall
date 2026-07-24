@@ -322,5 +322,9 @@
 "Sail color" = "帆の色";
 "Hull" = "船体";
 "Your navigator" = "あなたの航海士";
+"Idle" = "待機";
+"Walk" = "歩く";
+"Raise" = "掲げる";
+"Wave" = "手を振る";
 "Boat" = "船";
 "Navigator" = "航海士";

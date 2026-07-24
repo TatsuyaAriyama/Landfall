@@ -8,6 +8,14 @@ struct DressView: View {
     /// 選ぶたびに +1 して、3Dの色と選択枠を更新する。
     @State private var version = 0
     @State private var mode: Mode = Self.initialMode
+    /// 航海士のポーズ(待機/歩く/掲げる/手を振る)。
+    @State private var navPose: PhoenixPose = {
+        #if DEBUG
+        if let p = ProcessInfo.processInfo.environment["LANDFALL_NAV_POSE"],
+           let pose = PhoenixPose(rawValue: p) { return pose }
+        #endif
+        return .idle
+    }()
 
     enum Mode { case boat, navigator }
 
@@ -52,7 +60,7 @@ struct DressView: View {
                                 BoatSceneView(parts: BoatCustomization.currentParts)
                                     .id(version)
                             } else {
-                                NavigatorSceneView()
+                                PhoenixNavigatorView(pose: navPose)
                             }
                         }
                         .frame(height: 300)
@@ -65,6 +73,19 @@ struct DressView: View {
                             .foregroundStyle(LFColor.ink.opacity(0.5))
                             .padding(.horizontal, 24)
                             .padding(.top, 12)
+
+                        if mode == .navigator {
+                            // ポーズ切替(待機/歩く/掲げる/手を振る)。Web SailorStage 相当。
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 10) {
+                                    ForEach(PhoenixPose.allCases) { pose in
+                                        poseChip(pose)
+                                    }
+                                }
+                                .padding(.horizontal, 24)
+                            }
+                            .padding(.top, 10)
+                        }
 
                         if mode == .boat {
                             Text("Voyage so far: \(LF.duration(minutes: totalMinutes))")
@@ -93,6 +114,22 @@ struct DressView: View {
                 .font(LFFont.copy(15))
                 .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
                 .padding(.horizontal, 18).padding(.vertical, 9)
+                .background(Capsule().fill(selected ? LFColor.ink : Color.clear))
+                .overlay(Capsule().strokeBorder(LFColor.ink.opacity(selected ? 0 : 0.2), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func poseChip(_ pose: PhoenixPose) -> some View {
+        let selected = navPose == pose
+        return Button {
+            navPose = pose
+            Haptics.tap(.light)
+        } label: {
+            Text(pose.title)
+                .font(LFFont.copy(15))
+                .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
+                .padding(.horizontal, 16).padding(.vertical, 8)
                 .background(Capsule().fill(selected ? LFColor.ink : Color.clear))
                 .overlay(Capsule().strokeBorder(LFColor.ink.opacity(selected ? 0 : 0.2), lineWidth: 1))
         }
