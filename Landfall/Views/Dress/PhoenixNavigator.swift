@@ -195,7 +195,14 @@ enum PhoenixNavigator {
     static func makeNavigatorNode() -> SCNNode {
         let root = SCNNode()
         root.name = "navigator"
-        root.eulerAngles.y = .pi / 2   // 正面 +Z で組み、+X 向きへ
+        // 正面 +Z で組む。Web PhoenixModel は +π/2 だが、SceneKit と three.js は同じ +Y
+        // オイラー角でも向きが逆になるため、Web と同じ見え(顔が左向きの3/4)にするには -π/2。
+        root.eulerAngles.y = -.pi / 2
+        #if DEBUG
+        if let y = ProcessInfo.processInfo.environment["LANDFALL_NAV_YAW"], let deg = Float(y) {
+            root.eulerAngles.y = deg * .pi / 180
+        }
+        #endif
 
         // 脚(股関節ピボット)。足首は裾内、丸いブーツのつま先が前へ覗く。
         for s: Float in [1, -1] {
