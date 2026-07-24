@@ -392,6 +392,8 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
   const [phase, setPhase] = useState<Phase>(animate ? "enter" : "idle");
+  // 海など「外側」をタップすると、編集UIをフェードして世界に入り込む(もう一度タップで戻る)。
+  const [uiHidden, setUiHidden] = useState(false);
 
   // ---- 編集状態 ----
   // 目標のかたちは2つだけ:「期日を決める」か「ステップで辿る」か。
@@ -581,6 +583,10 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
         dpr={[1, 2]}
         frameloop={animate ? "always" : "demand"}
         camera={{ position: [FAR_POS.x, FAR_POS.y, FAR_POS.z], fov: 44 }}
+        // 海など「外側」(オブジェクト以外)をタップ = 編集UIをフェードして世界に入り込む/戻す。
+        onPointerMissed={() => {
+          if (phase === "idle") setUiHidden((h) => !h);
+        }}
       >
         <WorldScene
           phase={phase}
@@ -594,7 +600,7 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
         />
       </Canvas>
 
-      <div className={`voyage-world-ui${phase === "idle" ? "" : " hidden"}`}>
+      <div className={`voyage-world-ui${phase === "idle" && !uiHidden ? "" : " hidden"}`}>
         <div className="voyage-world-top">
           <input
             className="field voyage-world-name"

@@ -1075,10 +1075,12 @@ struct ImmersiveVoyageView: UIViewRepresentable {
     var onIdleChange: (Bool) -> Void
     var onClosed: () -> Void
     var onTapBoat: () -> Void
+    /// 海など「何も無い所」をタップしたとき(編集UIを隠して世界に入り込む)。
+    var onTapWorld: () -> Void
 
     func makeCoordinator() -> WorldCoordinator {
         WorldCoordinator(onToggleStep: onToggleStep, onIdleChange: onIdleChange,
-                         onClosed: onClosed, onTapBoat: onTapBoat)
+                         onClosed: onClosed, onTapBoat: onTapBoat, onTapWorld: onTapWorld)
     }
 
     func makeUIView(context: Context) -> SCNView {
@@ -1127,13 +1129,16 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
     private let onIdleChange: (Bool) -> Void
     private let onClosed: () -> Void
     private let onTapBoat: () -> Void
+    private let onTapWorld: () -> Void
 
     init(onToggleStep: @escaping (Int) -> Void, onIdleChange: @escaping (Bool) -> Void,
-         onClosed: @escaping () -> Void, onTapBoat: @escaping () -> Void) {
+         onClosed: @escaping () -> Void, onTapBoat: @escaping () -> Void,
+         onTapWorld: @escaping () -> Void) {
         self.onToggleStep = onToggleStep
         self.onIdleChange = onIdleChange
         self.onClosed = onClosed
         self.onTapBoat = onTapBoat
+        self.onTapWorld = onTapWorld
     }
 
     var targetX: Float = 0
@@ -1279,6 +1284,8 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
                 node = n.parent
             }
         }
+        // どのオブジェクトにも当たらない = 海など「外側」のタップ。編集UIを隠して世界に入り込む。
+        onTapWorld()
     }
 
     // MARK: ブイの作り直し(数や達成が変わったとき。カメラは保つ)

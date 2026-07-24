@@ -22,6 +22,8 @@ struct VoyageWorldView: View {
     @State private var dateTouched = false
     /// 入場ドリーが終わって操作可能になったか(遷移中は編集UIを隠す)。
     @State private var isIdle = false
+    /// 海など「外側」をタップして世界に入り込んでいる(編集UIをフェード)。
+    @State private var uiHidden = false
     /// 退場ドリーを開始する要求(true でズームアウト→dismiss)。
     @State private var closing = false
     @FocusState private var nameFocused: Bool
@@ -72,22 +74,32 @@ struct VoyageWorldView: View {
                     withAnimation(.easeOut(duration: 0.25)) { isIdle = idle }
                 },
                 onClosed: { dismiss() },
-                onTapBoat: { SoundFX.plink(); Haptics.tap(.light) }
+                onTapBoat: { SoundFX.plink(); Haptics.tap(.light) },
+                onTapWorld: {
+                    // 海など「外側」をタップ = 編集UIをフェードして世界に入り込む/戻す。
+                    withAnimation(.easeInOut(duration: 0.35)) { uiHidden.toggle() }
+                    Haptics.tap(.light)
+                }
             )
             .ignoresSafeArea()
 
-            // 入場・退場の遷移中は編集UIを隠す(Web voyage-world-ui hidden)。
+            // 遷移中(enter/exit)と、世界に入り込んでいる間(uiHidden)は編集UIを隠す。
             Group {
                 closeButton
                 panel
             }
-            .opacity(isIdle ? 1 : 0)
-            .allowsHitTesting(isIdle)
+            .opacity(isIdle && !uiHidden ? 1 : 0)
+            .allowsHitTesting(isIdle && !uiHidden)
         }
         .background(Color(VoyageSceneKit.seaDeep).ignoresSafeArea())
         .onChange(of: kind) { _, _ in
             // 目標の種類を切り替えたら、前の種類での「触った」印は捨てる。
             dateTouched = false
+        }
+        .onAppear {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["LANDFALL_IMMERSE"] != nil { uiHidden = true }
+            #endif
         }
         .confirmationDialog("Delete this destination", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive) { remove() }
