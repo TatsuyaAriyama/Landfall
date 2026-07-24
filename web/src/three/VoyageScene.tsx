@@ -26,8 +26,11 @@ const BEACH = "#DCCFA9";
 
 // カメラは固定の斜め視点。航路は左(X_START)から島の手前(X_END)まで。
 // (VoyageWorld=没入エディタが同じ構図から入場するため、位置関係を共有する)
-const CAM_POS: [number, number, number] = [0.4, 2.5, 8.2];
-const CAM_TARGET = new THREE.Vector3(0, 0.35, 0);
+// カード(ホームの主役)の establishing 構図。航海の全景を引きで一望する
+// (没入エディタの入場もここから始まる。iOS cardCam と同値)。
+const CAM_POS: [number, number, number] = [0.7, 3.6, 12.0];
+const CAM_TARGET = new THREE.Vector3(0.3, 0.05, -1.4);
+const CAM_FOV = 40;
 // 目標の島は遠い — 航路を長くとって一つ一つを離す(iOS VoyageSceneKit と同値)。
 export const X_START = -5.2;
 export const X_END = 2.6;
@@ -345,7 +348,7 @@ export default function VoyageScene({
       <Canvas
         dpr={[1, 2]}
         frameloop={animate && visible ? "always" : "demand"}
-        camera={{ position: CAM_POS, fov: 36 }}
+        camera={{ position: CAM_POS, fov: CAM_FOV }}
       >
         <VoyageSea ratio={ratio} animate={animate} steps={steps} />
       </Canvas>

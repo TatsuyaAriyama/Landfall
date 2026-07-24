@@ -41,6 +41,12 @@ enum VoyageSceneKit {
     static let xStart: Float = -5.2
     static let xEnd: Float = 2.6
 
+    // カード(ホームの主役)の establishing 構図。航海の全景を引きで一望する。
+    // 没入エディタの入場もここから始まり、寄っていく(Web CAM_POS / FAR_POS と同値)。
+    static let cardCamPos = SCNVector3(0.7, 3.6, 12.0)
+    static let cardCamTarget = SCNVector3(0.3, 0.05, -1.4)
+    static let cardCamFov: CGFloat = 40
+
     static func boatX(_ ratio: Double) -> Float {
         xStart + Float(min(max(ratio, 0), 1)) * (xEnd - xStart)
     }
@@ -681,7 +687,7 @@ enum VoyageSceneKit {
 
         makeLights().forEach { scene.rootNode.addChildNode($0) }
         scene.rootNode.addChildNode(
-            makeCamera(position: SCNVector3(0.4, 2.5, 8.2), target: SCNVector3(0, 0.35, 0), fov: 36)
+            makeCamera(position: cardCamPos, target: cardCamTarget, fov: cardCamFov)
         )
         return scene
     }
@@ -1136,9 +1142,9 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
     private weak var camera: SCNNode?
     private var reduceMotion = false
 
-    // 遠景(カードと同じ)/近景。
-    private let farPos = SCNVector3(0.4, 2.5, 8.2)
-    private let farTarget = SCNVector3(0, 0.35, 0)
+    // 遠景(カードと同じ establishing 構図)/近景。
+    private let farPos = VoyageSceneKit.cardCamPos
+    private let farTarget = VoyageSceneKit.cardCamTarget
     private let dolly = 1.2
 
     private var phase: VoyagePhase = .enter

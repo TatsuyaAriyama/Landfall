@@ -41,8 +41,9 @@ export interface VoyageWorldProps {
 type Phase = "enter" | "idle" | "exit";
 
 // カードと同じ遠景から、船と島を望む近景へドリーインする。
-const FAR_POS = new THREE.Vector3(0.4, 2.5, 8.2);
-const FAR_TARGET = new THREE.Vector3(0, 0.35, 0);
+// カードと同じ establishing 構図から入場する(iOS cardCam と同値)。
+const FAR_POS = new THREE.Vector3(0.7, 3.6, 12.0);
+const FAR_TARGET = new THREE.Vector3(0.3, 0.05, -1.4);
 const DOLLY_SECONDS = 1.2;
 const ISLAND_POS: [number, number, number] = [3.5, 0, -0.9];
 
