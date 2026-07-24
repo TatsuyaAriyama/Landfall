@@ -16,6 +16,7 @@ struct TodayView: View {
     @State private var sharingToday = false
     @State private var editingDestination = false
     @State private var celebrating: Destination?
+    @State private var pendingDelete: StudySession?
     @State private var path = NavigationPath()
     /// 「今日」。日跨ぎ後の初操作をブロックしないよう、前景復帰と日付変化で更新する。
     @State private var today = Date()
@@ -37,32 +38,38 @@ struct TodayView: View {
                         DestinationCard(destination: activeDestination, sessions: sessions) {
                             editingDestination = true
                         }
-                        .padding(.horizontal, 28)
+                        .padding(.horizontal, 24)
                         .padding(.top, 20)
 
+                        // 作業項目(Web: section-label「作業項目」→ 4列タイル)
+                        sectionLabel("Items")
+                            .padding(.horizontal, 24)
+                            .padding(.top, 28)
+
                         if items.isEmpty {
-                            // 初回のホーム。破線の「+」だけにせず、静かに次の一歩を言葉で示す。
-                            Text("Add your first thing, and set sail.")
-                                .font(LFFont.copy(16))
+                            Text("Create your first item and log a step today.")
+                                .font(LFFont.copy(15))
                                 .foregroundStyle(LFColor.ink.opacity(0.5))
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: .infinity)
-                                .padding(.horizontal, 28)
-                                .padding(.top, 44)
+                                .lineSpacing(4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 24)
+                                .padding(.top, 4)
                         }
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 22)], spacing: 26) {
+
+                        // スマホは横一列に4つ。アイコンの下に名前+総作業時間を中央寄せで小さく積む。
+                        LazyVGrid(columns: fourColumns, spacing: 18) {
                             ForEach(items) { item in
                                 tileCell(item)
                             }
                             addTile
                         }
-                        .padding(.horizontal, 28)
-                        .padding(.top, items.isEmpty ? 24 : 36)
-                        .padding(.bottom, 24)
-                    }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
 
-                    todaySummary
-                        .padding(.bottom, 12)
+                        todayLogSection
+
+                        Color.clear.frame(height: 28)
+                    }
                 }
 
                 settingsButton
@@ -75,6 +82,16 @@ struct TodayView: View {
         .sheet(isPresented: $creatingItem) { ItemEditorSheet(existing: nil) }
         .sheet(isPresented: $sharingToday) {
             DayShareSheet(date: today)
+        }
+        .confirmationDialog(
+            "Delete this record?",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let s = pendingDelete { deleteSession(s) }
+                pendingDelete = nil
+            }
         }
         .fullScreenCover(isPresented: $editingDestination, onDismiss: { checkLandfall() }) {
             VoyageWorldView(existing: activeDestination, sessions: sessions)
@@ -130,11 +147,13 @@ struct TodayView: View {
 
     // MARK: - タイル
 
+    /// スマホ4列のタイル。アイコンの下に名前、その下に総作業時間(帰帆色)を中央寄せで。
     private func tileCell(_ item: StudyItem) -> some View {
-        Button {
+        let total = totalByItem[item.uuid] ?? 0
+        return Button {
             path.append(item)
         } label: {
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 ItemTileArt(item: item)
                     .overlay(alignment: .topTrailing) {
                         if timerItemID == item.uuid.uuidString {
@@ -144,12 +163,20 @@ struct TodayView: View {
                                 .offset(x: 4, y: -4)
                         }
                     }
-                Text(item.name)
-                    .font(LFFont.label(13))
-                    .foregroundStyle(LFColor.ink)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .frame(height: 34, alignment: .top)
+                VStack(spacing: 1) {
+                    Text(item.name)
+                        .font(LFFont.label(12))
+                        .foregroundStyle(LFColor.ink)
+                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
+                    if total > 0 {
+                        Text(LF.duration(minutes: total))
+                            .font(LFFont.label(11))
+                            .foregroundStyle(LFColor.returnOrange)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                    }
+                }
             }
         }
         .buttonStyle(LFPressableButtonStyle())
@@ -162,23 +189,28 @@ struct TodayView: View {
         }
     }
 
+    /// 4列固定(Web mobile: grid-template-columns repeat(4,1fr))。
+    private var fourColumns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: 12), count: 4)
+    }
+
     private var addTile: some View {
         Button {
             creatingItem = true
         } label: {
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .stroke(LFColor.ink.opacity(0.25), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
                     Text("+")
-                        .font(LFFont.label(30))
+                        .font(LFFont.label(26))
                         .foregroundStyle(LFColor.ink.opacity(0.45))
                 }
                 .aspectRatio(1, contentMode: .fit)
                 Text("Add")
-                    .font(LFFont.label(13))
+                    .font(LFFont.label(12))
                     .foregroundStyle(LFColor.ink.opacity(0.45))
-                    .frame(height: 34, alignment: .top)
+                    .lineLimit(1)
             }
         }
         .buttonStyle(LFPressableButtonStyle())
@@ -207,33 +239,147 @@ struct TodayView: View {
         return true
     }
 
-    // MARK: - 今日の静かなサマリー
+    // MARK: - 今日の記録(Web: section-label「今日の記録 · 合計」+ rows)
+
+    /// 今日のセッション(時刻順 古→新)。同期の届き順に依存させない。
+    private var todaysSessions: [StudySession] {
+        let calendar = Calendar.current
+        return sessions
+            .filter { calendar.isDate($0.date, inSameDayAs: today) }
+            .sorted { $0.date < $1.date }
+    }
+
+    /// 項目ごとの総作業時間(全期間・分)。タイルの小さなバッジに使う。
+    private var totalByItem: [UUID: Int] {
+        var map: [UUID: Int] = [:]
+        for s in sessions {
+            if let id = s.item?.uuid { map[id, default: 0] += s.minutes }
+        }
+        return map
+    }
 
     @ViewBuilder
-    private var todaySummary: some View {
-        let calendar = Calendar.current
-        let todays = sessions.filter { calendar.isDate($0.date, inSameDayAs: today) }
+    private var todayLogSection: some View {
+        let todays = todaysSessions
         if !todays.isEmpty {
             let total = todays.reduce(0) { $0 + $1.minutes }
-            let itemCount = Set(todays.compactMap { $0.item?.uuid }).count
-            // タップで今日ぶんを1枚にして持ち出せる。
-            Button {
-                Haptics.tap()
-                sharingToday = true
-            } label: {
-                HStack(spacing: 8) {
-                    Text("Today  \(LF.duration(minutes: total)) · \(itemCount) items")
-                        .font(LFFont.label(14))
-                        .monospacedDigit()
+            HStack(spacing: 0) {
+                Text("Today's log")
+                    .font(LFFont.label(13))
+                    .tracking(1)
+                    .foregroundStyle(LFColor.ink.opacity(0.5))
+                Text(" · \(LF.duration(minutes: total))")
+                    .font(LFFont.label(13))
+                    .foregroundStyle(LFColor.ink.opacity(0.38))
+                    .monospacedDigit()
+                Spacer()
+                // 今日ぶんを1枚にして持ち出す(iOSの持ち出し機能はここに残す)。
+                Button {
+                    Haptics.tap()
+                    sharingToday = true
+                } label: {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 12, weight: .regular))
+                        .font(.system(size: 14, weight: .regular))
+                        .foregroundStyle(LFColor.ink.opacity(0.45))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
                 }
-                .foregroundStyle(LFColor.ink.opacity(0.5))
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Share this day"))
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 30)
+            .padding(.bottom, 4)
+
+            VStack(spacing: 0) {
+                ForEach(Array(todays.enumerated()), id: \.element.persistentModelID) { index, session in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(LFColor.ink.opacity(0.08))
+                            .frame(height: 1)
+                    }
+                    logRow(session)
+                }
+            }
+            .padding(.horizontal, 24)
+        }
+    }
+
+    /// 記録の1行(Web SessionRow): 小アイコン・項目名・時刻&ひとこと・分・削除。
+    private func logRow(_ session: StudySession) -> some View {
+        HStack(spacing: 14) {
+            Group {
+                if let item = session.item {
+                    ItemTileArt(item: item)
+                } else {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(LFColor.ink.opacity(0.1))
+                }
+            }
+            .frame(width: 34, height: 34)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(session.item?.name ?? "—")
+                    .font(LFFont.copy(16))
+                    .foregroundStyle(LFColor.ink)
+                    .lineLimit(1)
+                Text(rowSubtitle(session))
+                    .font(LFFont.label(13))
+                    .foregroundStyle(LFColor.ink.opacity(0.5))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Text(LF.duration(minutes: session.minutes))
+                .font(LFFont.label(15))
+                .foregroundStyle(LFColor.ink.opacity(0.7))
+                .monospacedDigit()
+
+            Button {
+                pendingDelete = session
+            } label: {
+                Image(systemName: "minus")
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundStyle(LFColor.deepRust)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("Share this day"))
+            .accessibilityLabel(Text("Delete"))
+        }
+        .padding(.vertical, 12)
+    }
+
+    /// 「HH:mm · ひとこと」(時刻は24時間・ゼロ埋め、Webと同じ)。
+    private func rowSubtitle(_ session: StudySession) -> String {
+        let c = Calendar.current.dateComponents([.hour, .minute], from: session.date)
+        let time = String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0)
+        if let note = session.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "\(time) · \(note)"
+        }
+        return time
+    }
+
+    private func deleteSession(_ session: StudySession) {
+        let date = session.date
+        SyncService.shared.delete(session)
+        modelContext.delete(session)
+        StudyDayStore.unmarkDayIfEmpty(date, context: modelContext)
+        try? modelContext.save()
+        RoomService.shared.publishCurrentMonth(context: modelContext)
+        WidgetBridge.refresh(context: modelContext)
+        Haptics.tap()
+    }
+
+    /// 見出しラベル(Web section-label)。
+    private func sectionLabel(_ text: LocalizedStringKey) -> some View {
+        HStack {
+            Text(text)
+                .font(LFFont.label(13))
+                .tracking(1)
+                .foregroundStyle(LFColor.ink.opacity(0.5))
+            Spacer()
         }
     }
 

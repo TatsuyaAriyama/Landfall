@@ -104,7 +104,7 @@
 "Edit record" = "記録を編集";
 "Time" = "時間";
 "Delete record" = "この記録を削除";
-"Delete this record?" = "この記録を削除する?";
+"Delete this record?" = "この記録を削除しますか。";
 
 /* 日の詳細 */
 "%@ · %lld items this day" = "この日 %@・%lld項目";
@@ -286,6 +286,11 @@
 "This harbor is full (up to 4 sailors)." = "この港は満員です(4人まで)。";
 "You can be in up to 3 harbors." = "入れる港は、3つまでです。";
 "You can open one harbor. Yours is already out there." = "ひらける港は、ひとつまで。あなたの港が、もう海のどこかにあります。";
+
+/* 今日(ホーム) */
+"Items" = "作業項目";
+"Today's log" = "今日の記録";
+"Create your first item and log a step today." = "最初の項目を作って、今日の一歩を刻もう。";
 
 /* 目的地(島・目標) */
 "Set a destination." = "目的地を設定しよう。";
