@@ -39,11 +39,14 @@ const BEACH_GEO = new THREE.CylinderGeometry(1.9, 2.05, 0.07, 9);
 const WAKE_GEO = new THREE.PlaneGeometry(2.3, 0.4);
 const HORIZON_GEO = new THREE.PlaneGeometry(60, 0.08);
 
-// ステップのブイ(航路の目印)。細い柱+上の小球。達成で点灯、未達は暗い。
-const BUOY_POLE_GEO = new THREE.CylinderGeometry(0.03, 0.04, 0.5, 6);
-const BUOY_TOP_GEO = new THREE.SphereGeometry(0.12, 10, 8);
-const BUOY_LIT = "#F3C065"; // 灯のような暖色
-const BUOY_DIM = "#4A3A2A"; // 未達は沈んだ色
+// ステップ = 航路に浮かぶ小さな島。未達=静かな砂の小島、達成=緑が芽吹き浜に灯がともる。
+// 船はこれらを巡って島へ向かう(ピン=柱+玉 は廃止)。
+const ISLET_BEACH_GEO = new THREE.CylinderGeometry(0.34, 0.44, 0.06, 8);
+const ISLET_HILL_LIT_GEO = new THREE.ConeGeometry(0.26, 0.36, 6);
+const ISLET_HILL_DIM_GEO = new THREE.ConeGeometry(0.26, 0.26, 6);
+const ISLET_ROCK_GEO = new THREE.SphereGeometry(0.11, 6, 5);
+const ISLET_GLOW_GEO = new THREE.SphereGeometry(0.06, 10, 8);
+const ISLET_EMBER = "#F3C065"; // 浜の灯
 
 /// ステップ位置を航路上に等間隔で割り付ける。両端(出発・島)は空ける。
 export function stepBuoyX(index: number, total: number): number {
@@ -125,26 +128,37 @@ export function Wake({ animate }: { animate: boolean }) {
   );
 }
 
-// ブイの素材(色に依存しないので一度だけ作る)。柱=木、上=達成で点灯/未達で沈む。
-const BUOY_POLE_MAT = new THREE.MeshStandardMaterial({
-  color: "#5A2A15",
+// 小島の素材(色に依存しないので一度だけ作る)。浜=砂、丘=達成で緑/未達で砂、岩、灯。
+const ISLET_BEACH_MAT = new THREE.MeshStandardMaterial({
+  color: BEACH,
   flatShading: true,
-  roughness: 0.8,
+  roughness: 0.95,
 });
-const BUOY_LIT_MAT = new THREE.MeshStandardMaterial({
-  color: BUOY_LIT,
-  emissive: BUOY_LIT,
-  emissiveIntensity: 1.3,
-  roughness: 0.5,
-  fog: false,
-});
-const BUOY_DIM_MAT = new THREE.MeshStandardMaterial({
-  color: BUOY_DIM,
+const ISLET_HILL_LIT_MAT = new THREE.MeshStandardMaterial({
+  color: "#5DCAA5", // 芽吹いた緑(seaGreen)
   flatShading: true,
   roughness: 0.9,
 });
+const ISLET_HILL_DIM_MAT = new THREE.MeshStandardMaterial({
+  color: SAND,
+  flatShading: true,
+  roughness: 0.9,
+});
+const ISLET_ROCK_MAT = new THREE.MeshStandardMaterial({
+  color: "#7A6B57",
+  flatShading: true,
+  roughness: 0.95,
+});
+const ISLET_GLOW_MAT = new THREE.MeshStandardMaterial({
+  color: ISLET_EMBER,
+  emissive: ISLET_EMBER,
+  emissiveIntensity: 1.4,
+  roughness: 0.5,
+  fog: false,
+});
 
-/// 航路の目印(ステップ)を浮かべる。onToggleがあれば当たり判定を付けてタップで反転。
+/// ステップの小島を航路に浮かべる。達成した島は緑が芽吹き浜に灯がともる。
+/// onToggleがあれば当たり判定を付けてタップで達成/取消。
 export function StepBuoys({
   steps,
   onToggle,
@@ -157,21 +171,35 @@ export function StepBuoys({
     <>
       {steps.map((done, i) => (
         <group key={i} position={[stepBuoyX(i, n), 0, 0.5]}>
-          <mesh geometry={BUOY_POLE_GEO} material={BUOY_POLE_MAT} position={[0, 0.25, 0]} />
+          {/* 浜 */}
+          <mesh geometry={ISLET_BEACH_GEO} material={ISLET_BEACH_MAT} position={[0, 0.03, 0]} />
+          {/* 丘(達成=緑で少し高く / 未達=砂) */}
           <mesh
-            geometry={BUOY_TOP_GEO}
-            material={done ? BUOY_LIT_MAT : BUOY_DIM_MAT}
-            position={[0, 0.55, 0]}
+            geometry={done ? ISLET_HILL_LIT_GEO : ISLET_HILL_DIM_GEO}
+            material={done ? ISLET_HILL_LIT_MAT : ISLET_HILL_DIM_MAT}
+            position={[-0.03, 0.06 + (done ? 0.18 : 0.13), 0]}
+            rotation={[0, i * 1.7, 0]}
           />
+          {/* 小岩(シルエットの変化) */}
+          <mesh
+            geometry={ISLET_ROCK_GEO}
+            material={ISLET_ROCK_MAT}
+            position={[0.2, 0.05, 0.09]}
+            scale={[1, 0.7, 1]}
+          />
+          {/* 達成した島の浜の灯(たき火/ランタン) */}
+          {done && (
+            <mesh geometry={ISLET_GLOW_GEO} material={ISLET_GLOW_MAT} position={[0.17, 0.11, 0.2]} />
+          )}
           {onToggle && (
             <mesh
-              position={[0, 0.4, 0]}
+              position={[0, 0.2, 0]}
               onClick={(e) => {
                 e.stopPropagation();
                 onToggle(i);
               }}
             >
-              <cylinderGeometry args={[0.3, 0.3, 1.1, 8]} />
+              <cylinderGeometry args={[0.5, 0.5, 0.8, 8]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
           )}

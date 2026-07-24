@@ -509,35 +509,62 @@ enum VoyageSceneKit {
         return node
     }
 
-    // MARK: - ブイ(Web StepBuoys)
+    // MARK: - ステップの小島(航路に浮かぶ低ポリの島。巡っていく)
 
-    static func makeBuoy(index: Int, total: Int, done: Bool) -> SCNNode {
+    static let verdant = UIColor(rgb: 0x5DCAA5)   // 達成した島の緑
+    static let isletRock = UIColor(rgb: 0x7A6B57) // 小岩
+
+    /// ステップ1つ=航路に浮かぶ小さな島。未達=静かな砂の小島、達成=緑が芽吹き浜に灯がともる。
+    /// 船はこれらを巡って島へ向かう。ピン(柱+玉)は廃止。
+    static func makeStepIslet(index: Int, total: Int, done: Bool) -> SCNNode {
         let group = SCNNode()
-        group.name = "buoy_\(index)"
-        let pole = SCNCone(topRadius: 0.03, bottomRadius: 0.04, height: 0.5)
-        pole.radialSegmentCount = 6
-        pole.firstMaterial = litMaterial(wood, roughness: 0.8)
-        let poleNode = SCNNode(geometry: pole)
-        poleNode.position = SCNVector3(0, 0.25, 0)
-        group.addChildNode(poleNode)
-        let top = SCNSphere(radius: 0.12)
-        top.segmentCount = 10
+        group.name = "step_\(index)"
+
+        // 浜(水際の平たい円盤)
+        let beachGeo = SCNCone(topRadius: 0.34, bottomRadius: 0.44, height: 0.06)
+        beachGeo.radialSegmentCount = 8
+        beachGeo.firstMaterial = litMaterial(beach, roughness: 0.95)
+        let beachNode = SCNNode(geometry: beachGeo)
+        beachNode.position = SCNVector3(0, 0.03, 0)
+        group.addChildNode(beachNode)
+
+        // 丘(低ポリの小山)。達成=芽吹いた緑で少し高く、未達=静かな砂。
+        let hillH: Float = done ? 0.36 : 0.26
+        let hillGeo = SCNCone(topRadius: 0, bottomRadius: 0.26, height: CGFloat(hillH))
+        hillGeo.radialSegmentCount = 6
+        hillGeo.firstMaterial = litMaterial(done ? verdant : sand, roughness: 0.9)
+        let hillNode = SCNNode(geometry: hillGeo)
+        hillNode.position = SCNVector3(-0.03, 0.06 + hillH / 2, 0)
+        hillNode.eulerAngles.y = Float(index) * 1.7   // 島ごとに向きを変えて表情を出す
+        group.addChildNode(hillNode)
+
+        // 小岩(シルエットに変化を与える)
+        let rockGeo = SCNSphere(radius: 0.11)
+        rockGeo.segmentCount = 6
+        rockGeo.firstMaterial = litMaterial(isletRock, roughness: 0.95)
+        let rockNode = SCNNode(geometry: rockGeo)
+        rockNode.position = SCNVector3(0.2, 0.05, 0.09)
+        rockNode.scale = SCNVector3(1, 0.7, 1)
+        group.addChildNode(rockNode)
+
         if done {
-            // 達成 = 灯のように点る(Web BUOY_LIT_MAT: emissive 1.3, roughness 0.5, fog off)。
-            let m = SCNMaterial()
-            m.lightingModel = .physicallyBased
-            m.diffuse.contents = ember
-            m.emission.contents = ember
-            m.emission.intensity = 1.3
-            m.roughness.contents = 0.5
-            m.metalness.contents = 0.0
-            top.firstMaterial = m
-        } else {
-            top.firstMaterial = litMaterial(buoyDim, roughness: 0.9)
+            // 達成した島には、浜に温かい灯(たき火/ランタン)。HDRでやわらかくにじむ。
+            let glowGeo = SCNSphere(radius: 0.06)
+            glowGeo.segmentCount = 10
+            let gm = SCNMaterial()
+            gm.lightingModel = .physicallyBased
+            gm.diffuse.contents = ember
+            gm.emission.contents = ember
+            gm.emission.intensity = 1.4
+            gm.roughness.contents = 0.5
+            gm.metalness.contents = 0.0
+            glowGeo.firstMaterial = gm
+            let glowNode = SCNNode(geometry: glowGeo)
+            glowNode.name = "step_glow"
+            glowNode.position = SCNVector3(0.17, 0.11, 0.2)
+            group.addChildNode(glowNode)
         }
-        let topNode = SCNNode(geometry: top)
-        topNode.position = SCNVector3(0, 0.55, 0)
-        group.addChildNode(topNode)
+
         let x = xStart + (Float(index + 1) / Float(total + 1)) * (xEnd - xStart)
         group.position = SCNVector3(x, 0, 0.5)
         return group
@@ -610,7 +637,7 @@ enum VoyageSceneKit {
         scene.rootNode.addChildNode(makeHorizon())
         scene.rootNode.addChildNode(makeIsland())
         for (i, done) in steps.enumerated() {
-            scene.rootNode.addChildNode(makeBuoy(index: i, total: steps.count, done: done))
+            scene.rootNode.addChildNode(makeStepIslet(index: i, total: steps.count, done: done))
         }
 
         // 航路上の船。波紋+航跡ごと進む(Web: group scale 0.55, rot y 0.1)。
@@ -1220,7 +1247,7 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
             var node: SCNNode? = hit.node
             while let n = node {
                 if let name = n.name {
-                    if name.hasPrefix("buoy_"), let idx = Int(name.dropFirst(5)) {
+                    if name.hasPrefix("step_"), name != "step_glow", let idx = Int(name.dropFirst(5)) {
                         onToggleStep(idx)   // 反転・plink・保存は SwiftUI 側
                         return
                     }
@@ -1240,9 +1267,9 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
 
     func rebuildBuoys(steps: [Bool]) {
         guard let root = scene?.rootNode else { return }
-        root.childNodes.filter { $0.name?.hasPrefix("buoy_") == true }.forEach { $0.removeFromParentNode() }
+        root.childNodes.filter { $0.name?.hasPrefix("step_") == true }.forEach { $0.removeFromParentNode() }
         for (i, done) in steps.enumerated() {
-            root.addChildNode(VoyageSceneKit.makeBuoy(index: i, total: steps.count, done: done))
+            root.addChildNode(VoyageSceneKit.makeStepIslet(index: i, total: steps.count, done: done))
         }
     }
 
