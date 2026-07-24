@@ -1102,7 +1102,12 @@ struct ImmersiveVoyageView: UIViewRepresentable {
         }
         view.delegate = coord
 
-        // ブイ/船/月のタップだけ自前で拾う(オービット・ズームは標準コントローラが担当)。
+        // 視点操作: 1本指パン=回転 / ピンチ=ズーム(カメラコントローラを自前駆動)。タップ=各操作。
+        let pan = UIPanGestureRecognizer(target: coord, action: #selector(WorldCoordinator.onPan(_:)))
+        pan.maximumNumberOfTouches = 1   // 2本指(ピンチ)では回転させない
+        view.addGestureRecognizer(pan)
+        let pinch = UIPinchGestureRecognizer(target: coord, action: #selector(WorldCoordinator.onPinch(_:)))
+        view.addGestureRecognizer(pinch)
         let tap = UITapGestureRecognizer(target: coord, action: #selector(WorldCoordinator.onTap(_:)))
         view.addGestureRecognizer(tap)
         return view
@@ -1170,6 +1175,8 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
     private var startTime: TimeInterval?
     private var lastTime: TimeInterval = 0
     private var exitRequested = false
+    /// idle に入って視点操作(回転/ズーム)を受け付けてよいか。
+    private var orbitEnabled = false
 
     // 演出タイマ
     private var boatHopAt: TimeInterval = -.infinity
@@ -1233,8 +1240,9 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
         )
     }
 
-    /// idle のオービットは SceneKit 標準のカメラコントローラに任せる
-    /// (drei OrbitControls と同じ、慣性付きターンテーブル)。自前パンより滑らか。
+    /// idle の視点操作。回転は SceneKit 標準コントローラの慣性付きターンテーブル(drei
+    /// OrbitControls 相当)を、パン=回転 / ピンチ=ズーム として自前ジェスチャで駆動する
+    /// (allowsCameraControl だとズームの当たりが不安定なため、明示的に効かせる)。
     private func enableOrbit() {
         guard let view else { return }
         view.pointOfView = camera
@@ -1247,20 +1255,57 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
         // 水平線の下(海中)へ潜らせず、真上へも回り込ませない(Web polar 0.16π..0.46π 相当)。
         c.minimumVerticalAngle = 4
         c.maximumVerticalAngle = 68
-        view.allowsCameraControl = true
+        orbitEnabled = true
     }
 
     func requestExit() {
         guard phase == .idle, !exitRequested else { return }
         exitRequested = true
-        view?.allowsCameraControl = false   // 退場ドリーは自前で動かすので標準操作を切る
+        orbitEnabled = false                // 退場ドリー中は視点操作を止める
         if reduceMotion { onClosed(); return }
         onIdleChange(false)
         phase = .exit
         phaseStart = nil
     }
 
-    // MARK: タップ(ブイ/船/月)
+    // MARK: 視点操作(パン=回転 / ピンチ=ズーム)
+
+    @objc func onPan(_ g: UIPanGestureRecognizer) {
+        guard orbitEnabled, let view else { return }
+        let c = view.defaultCameraController
+        let loc = g.location(in: view)
+        let vp = view.bounds.size
+        switch g.state {
+        case .began:
+            c.beginInteraction(loc, withViewport: vp)
+        case .changed:
+            c.continueInteraction(loc, withViewport: vp, sensitivity: 1.0)
+        case .ended, .cancelled:
+            let v = g.velocity(in: view)
+            c.endInteraction(loc, withViewport: vp, velocity: CGPoint(x: v.x / 120, y: v.y / 120))
+        default:
+            break
+        }
+    }
+
+    @objc func onPinch(_ g: UIPinchGestureRecognizer) {
+        guard orbitEnabled, let view, let cam = camera else { return }
+        let c = view.defaultCameraController
+        // 指を広げる(scale>1)= 拡大(近づく)。
+        let delta = Float(g.scale - 1) * 4.0
+        g.scale = 1
+        c.dolly(by: delta, onScreenPoint: CGPoint(x: view.bounds.midX, y: view.bounds.midY), viewport: view.bounds.size)
+        // 近づき/離れすぎを防ぐ(注視点からの距離を [3, 26] にクランプ)。
+        let off = SCNVector3(cam.position.x - target.x, cam.position.y - target.y, cam.position.z - target.z)
+        let d = off.length
+        let minD: Float = 3, maxD: Float = 26
+        if d < minD || d > maxD {
+            let k = max(minD, min(maxD, d)) / max(d, 0.0001)
+            cam.position = SCNVector3(target.x + off.x * k, target.y + off.y * k, target.z + off.z * k)
+        }
+    }
+
+    // MARK: タップ(ブイ/船/月/外側)
 
     @objc func onTap(_ g: UITapGestureRecognizer) {
         guard phase == .idle, let v = view else { return }
