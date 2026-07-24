@@ -41,9 +41,9 @@ export interface VoyageWorldProps {
 type Phase = "enter" | "idle" | "exit";
 
 // カードと同じ遠景から、船と島を望む近景へドリーインする。
-// カードと同じ establishing 構図から入場する(iOS cardCam と同値)。
-const FAR_POS = new THREE.Vector3(0.7, 3.6, 12.0);
-const FAR_TARGET = new THREE.Vector3(0.3, 0.05, -1.4);
+// カードと同じ establishing 構図(引き+俯瞰の斜め)から入場する(iOS cardCam と同値)。
+const FAR_POS = new THREE.Vector3(2.2, 8.2, 14.0);
+const FAR_TARGET = new THREE.Vector3(0.2, 0.5, 0.2);
 const DOLLY_SECONDS = 1.2;
 const ISLAND_POS: [number, number, number] = [3.5, 0, -0.9];
 
@@ -580,7 +580,7 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
       <Canvas
         dpr={[1, 2]}
         frameloop={animate ? "always" : "demand"}
-        camera={{ position: [FAR_POS.x, FAR_POS.y, FAR_POS.z], fov: 36 }}
+        camera={{ position: [FAR_POS.x, FAR_POS.y, FAR_POS.z], fov: 44 }}
       >
         <WorldScene
           phase={phase}

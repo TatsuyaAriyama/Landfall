@@ -28,9 +28,9 @@ const BEACH = "#DCCFA9";
 // (VoyageWorld=没入エディタが同じ構図から入場するため、位置関係を共有する)
 // カード(ホームの主役)の establishing 構図。航海の全景を引きで一望する
 // (没入エディタの入場もここから始まる。iOS cardCam と同値)。
-const CAM_POS: [number, number, number] = [0.7, 3.6, 12.0];
-const CAM_TARGET = new THREE.Vector3(0.3, 0.05, -1.4);
-const CAM_FOV = 40;
+const CAM_POS: [number, number, number] = [2.2, 8.2, 14.0];
+const CAM_TARGET = new THREE.Vector3(0.2, 0.5, 0.2);
+const CAM_FOV = 44;
 // 目標の島は遠い — 航路を長くとって一つ一つを離す(iOS VoyageSceneKit と同値)。
 export const X_START = -5.2;
 export const X_END = 2.6;

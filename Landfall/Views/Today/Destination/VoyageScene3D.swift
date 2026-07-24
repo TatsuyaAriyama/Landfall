@@ -41,11 +41,11 @@ enum VoyageSceneKit {
     static let xStart: Float = -5.2
     static let xEnd: Float = 2.6
 
-    // カード(ホームの主役)の establishing 構図。航海の全景を引きで一望する。
-    // 没入エディタの入場もここから始まり、寄っていく(Web CAM_POS / FAR_POS と同値)。
-    static let cardCamPos = SCNVector3(0.7, 3.6, 12.0)
-    static let cardCamTarget = SCNVector3(0.3, 0.05, -1.4)
-    static let cardCamFov: CGFloat = 40
+    // カード(ホームの主役)の establishing 構図。航海の全景を、引き+俯瞰の斜め(3/4)で
+    // 綺麗に一望する(真横を避ける)。没入エディタの入場もここから寄っていく(Web と同値)。
+    static let cardCamPos = SCNVector3(2.2, 8.2, 14.0)
+    static let cardCamTarget = SCNVector3(0.2, 0.5, 0.2)
+    static let cardCamFov: CGFloat = 44
 
     static func boatX(_ ratio: Double) -> Float {
         xStart + Float(min(max(ratio, 0), 1)) * (xEnd - xStart)
@@ -933,10 +933,11 @@ final class VoyageAnimator: NSObject, SCNSceneRendererDelegate {
         }
         // 航跡の明滅(Web Wake)
         wake?.opacity = CGFloat(0.34 + sin(t * 1.4) * 0.07)
-        // カメラのごくわずかな揺れ(酔わない振幅。Web VoyageSea)
+        // カメラのごくわずかな揺れ(酔わない振幅。Web VoyageSea)。establishing 構図を基準に揺らす。
         if swayCamera, let camera {
-            camera.position = SCNVector3(0.4 + sin(t * 0.22) * 0.07, 2.5 + sin(t * 0.35 + 1.0) * 0.04, 8.2)
-            camera.look(at: SCNVector3(0, 0.35, 0))
+            let b = VoyageSceneKit.cardCamPos
+            camera.position = SCNVector3(b.x + sin(t * 0.22) * 0.10, b.y + sin(t * 0.35 + 1.0) * 0.06, b.z)
+            camera.look(at: VoyageSceneKit.cardCamTarget)
         }
     }
 }
