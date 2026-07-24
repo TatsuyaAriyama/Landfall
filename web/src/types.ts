@@ -19,6 +19,8 @@ export const TILE_SYMBOLS = [
   "phoenix",
   "book",
   "pen",
+  "sailboat",
+  "attire",
 ] as const;
 export type TileSymbolToken = (typeof TILE_SYMBOLS)[number];
 

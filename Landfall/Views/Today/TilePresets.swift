@@ -48,6 +48,8 @@ enum TileSymbol: String, CaseIterable, Identifiable {
     case phoenix     // 再生・再開
     case book        // 読む
     case pen         // 書く
+    case sailboat    // 帆船(港)
+    case attire      // 旗(装い)
 
     var id: String { rawValue }
 
@@ -95,6 +97,10 @@ struct TileSymbolView: View {
             case .book:
                 BookShape()
                     .fill(fg)
+            case .sailboat:
+                SailboatShape().fill(fg)
+            case .attire:
+                AttireShape().fill(fg)
             case .pen:
                 ZStack {
                     Capsule(style: .continuous)
@@ -135,6 +141,47 @@ struct BookShape: Shape {
         p.addLine(to: pt(104, 160))
         p.addLine(to: pt(96, 160))
         p.closeSubpath()
+        return p
+    }
+}
+
+/// 帆船(港)。マスト+メインセイル+ジブ+三日月の船体。Web sailboat と同座標(200x200)。
+struct SailboatShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x / 200 * rect.width, y: rect.minY + y / 200 * rect.height)
+        }
+        var p = Path()
+        // マスト
+        p.addRect(CGRect(x: pt(98, 34).x, y: pt(98, 34).y,
+                         width: 4 / 200 * rect.width, height: 116 / 200 * rect.height))
+        // メインセイル(左)
+        p.move(to: pt(95, 40)); p.addLine(to: pt(95, 146)); p.addLine(to: pt(48, 146)); p.closeSubpath()
+        // ジブ(右)
+        p.move(to: pt(105, 56)); p.addLine(to: pt(105, 146)); p.addLine(to: pt(146, 146)); p.closeSubpath()
+        // 船体(三日月)
+        p.move(to: pt(30, 150)); p.addLine(to: pt(170, 150))
+        p.addQuadCurve(to: pt(100, 180), control: pt(148, 178))
+        p.addQuadCurve(to: pt(30, 150), control: pt(52, 178))
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// 装い。旗竿+燕尾ペナント。Web attire と同座標(200x200)。
+struct AttireShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x / 200 * rect.width, y: rect.minY + y / 200 * rect.height)
+        }
+        var p = Path()
+        // 旗竿
+        p.addRoundedRect(in: CGRect(x: pt(52, 24).x, y: pt(52, 24).y,
+                                    width: 11 / 200 * rect.width, height: 152 / 200 * rect.height),
+                         cornerSize: CGSize(width: 5.5 / 200 * rect.width, height: 5.5 / 200 * rect.width))
+        // 燕尾ペナント(はためく旗)
+        p.move(to: pt(63, 34)); p.addLine(to: pt(150, 44)); p.addLine(to: pt(118, 63))
+        p.addLine(to: pt(150, 82)); p.addLine(to: pt(63, 92)); p.closeSubpath()
         return p
     }
 }

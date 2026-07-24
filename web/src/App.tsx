@@ -6,7 +6,7 @@ import { TraceView } from "./views/TraceView";
 import { HarborView } from "./views/HarborView";
 import { LogbookView } from "./views/LogbookView";
 import { SettingsDialog } from "./views/SettingsDialog";
-import { BoatSvg, BrandMark, TileSymbolSvg } from "./symbols";
+import { BrandMark, TileSymbolSvg } from "./symbols";
 import type { ReactNode } from "react";
 import { OfflineWatcher, OverlayHost } from "./overlays";
 import { t } from "./i18n";
@@ -75,8 +75,8 @@ function Main({ uid }: { uid: string }) {
             ["today", t("today"), <TileSymbolSvg symbol="wheel" fg="currentColor" bg="var(--paper)" />],
             ["trace", t("trace"), <TileSymbolSvg symbol="compass" fg="currentColor" bg="var(--paper)" />],
             ["logbook", t("logbook"), <TileSymbolSvg symbol="book" fg="currentColor" bg="var(--paper)" />],
-            ["boat", t("boatTab"), <BoatSvg sail="currentColor" hull="currentColor" />],
-            ["harbor", t("harbor"), <TileSymbolSvg symbol="lighthouse" fg="currentColor" bg="var(--paper)" />],
+            ["boat", t("boatTab"), <TileSymbolSvg symbol="attire" fg="currentColor" bg="var(--paper)" />],
+            ["harbor", t("harbor"), <TileSymbolSvg symbol="sailboat" fg="currentColor" bg="var(--paper)" />],
           ] as [Tab, string, ReactNode][]
         ).map(([key, label, icon]) => (
           <button

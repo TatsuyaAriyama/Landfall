@@ -152,26 +152,21 @@ struct ContentView: View {
 
     var body: some View {
         TabView(selection: $selection) {
+            // タブアイコンは Web と同じ航海シンボル(舵輪/羅針盤/本/旗/帆船)。
             TodayView()
-                .tabItem { Label("Home", systemImage: "house") }
+                .tabItem { Label { Text("Home") } icon: { TabSymbolIcon.image(.wheel) } }
                 .tag(0)
             TraceView()
-                .tabItem { Label("Trace", systemImage: "waveform") }
+                .tabItem { Label { Text("Trace") } icon: { TabSymbolIcon.image(.compass) } }
                 .tag(1)
             WrappedView()
-                .tabItem {
-                    Label {
-                        Text("Logbook")
-                    } icon: {
-                        Image(systemName: "rectangle.portrait")
-                    }
-                }
+                .tabItem { Label { Text("Logbook") } icon: { TabSymbolIcon.image(.book) } }
                 .tag(3)
             DressView()
-                .tabItem { Label("Style", systemImage: "paintpalette") }
+                .tabItem { Label { Text("Style") } icon: { TabSymbolIcon.image(.attire) } }
                 .tag(4)
             HarborView()
-                .tabItem { Label("Harbor", systemImage: "sailboat") }
+                .tabItem { Label { Text("Harbor") } icon: { TabSymbolIcon.image(.sailboat) } }
                 .tag(2)
         }
         .tint(LFColor.returnOrange)

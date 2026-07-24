@@ -127,6 +127,24 @@ export function TileSymbolSvg({
           </g>
         </svg>
       );
+    case "sailboat":
+      // 港。マスト+メインセイル+ジブ+三日月の船体(iOS 港アイコンに寄せた帆船)。
+      return (
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <rect x="98" y="34" width="4" height="116" fill={fg} />
+          <path d="M 95 40 L 95 146 L 48 146 Z" fill={fg} />
+          <path d="M 105 56 L 105 146 L 146 146 Z" fill={fg} />
+          <path d="M 30 150 L 170 150 Q 148 178 100 180 Q 52 178 30 150 Z" fill={fg} />
+        </svg>
+      );
+    case "attire":
+      // 装い。旗竿+燕尾ペナント(船の旗カスタムを象徴する、はためく旗)。
+      return (
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <rect x="52" y="24" width="11" height="152" rx="5.5" fill={fg} />
+          <path d="M 63 34 L 150 44 L 118 63 L 150 82 L 63 92 Z" fill={fg} />
+        </svg>
+      );
   }
 }
 
