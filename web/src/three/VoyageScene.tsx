@@ -28,8 +28,9 @@ const BEACH = "#DCCFA9";
 // (VoyageWorld=没入エディタが同じ構図から入場するため、位置関係を共有する)
 const CAM_POS: [number, number, number] = [0.4, 2.5, 8.2];
 const CAM_TARGET = new THREE.Vector3(0, 0.35, 0);
-export const X_START = -3.6;
-export const X_END = 1.8;
+// 目標の島は遠い — 航路を長くとって一つ一つを離す(iOS VoyageSceneKit と同値)。
+export const X_START = -5.2;
+export const X_END = 2.6;
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
 const HILL_GEO = new THREE.ConeGeometry(1.25, 1.05, 7);
@@ -41,11 +42,13 @@ const HORIZON_GEO = new THREE.PlaneGeometry(60, 0.08);
 
 // ステップ = 航路に浮かぶ小さな島。未達=静かな砂の小島、達成=緑が芽吹き浜に灯がともる。
 // 船はこれらを巡って島へ向かう(ピン=柱+玉 は廃止)。
-const ISLET_BEACH_GEO = new THREE.CylinderGeometry(0.34, 0.44, 0.06, 8);
-const ISLET_HILL_LIT_GEO = new THREE.ConeGeometry(0.26, 0.36, 6);
-const ISLET_HILL_DIM_GEO = new THREE.ConeGeometry(0.26, 0.26, 6);
-const ISLET_ROCK_GEO = new THREE.SphereGeometry(0.11, 6, 5);
-const ISLET_GLOW_GEO = new THREE.SphereGeometry(0.06, 10, 8);
+const ISLET_BEACH_GEO = new THREE.CylinderGeometry(0.56, 0.74, 0.09, 9);
+const ISLET_HILL_LIT_GEO = new THREE.ConeGeometry(0.46, 0.72, 6);
+const ISLET_HILL_DIM_GEO = new THREE.ConeGeometry(0.46, 0.52, 6);
+const ISLET_KNOLL_LIT_GEO = new THREE.ConeGeometry(0.3, 0.4, 6);
+const ISLET_KNOLL_DIM_GEO = new THREE.ConeGeometry(0.3, 0.3, 6);
+const ISLET_ROCK_GEO = new THREE.SphereGeometry(0.17, 6, 5);
+const ISLET_GLOW_GEO = new THREE.SphereGeometry(0.085, 10, 8);
 const ISLET_EMBER = "#F3C065"; // 浜の灯
 
 /// ステップ位置を航路上に等間隔で割り付ける。両端(出発・島)は空ける。
@@ -170,36 +173,44 @@ export function StepBuoys({
   return (
     <>
       {steps.map((done, i) => (
-        <group key={i} position={[stepBuoyX(i, n), 0, 0.5]}>
+        // 前後に散らして群島感を出す(一直線に並べない)。
+        <group key={i} position={[stepBuoyX(i, n), 0, 0.7 + (i % 2) * 0.7]}>
           {/* 浜 */}
-          <mesh geometry={ISLET_BEACH_GEO} material={ISLET_BEACH_MAT} position={[0, 0.03, 0]} />
-          {/* 丘(達成=緑で少し高く / 未達=砂) */}
+          <mesh geometry={ISLET_BEACH_GEO} material={ISLET_BEACH_MAT} position={[0, 0.045, 0]} />
+          {/* 丘(達成=緑で高く / 未達=砂で低め) */}
           <mesh
             geometry={done ? ISLET_HILL_LIT_GEO : ISLET_HILL_DIM_GEO}
             material={done ? ISLET_HILL_LIT_MAT : ISLET_HILL_DIM_MAT}
-            position={[-0.03, 0.06 + (done ? 0.18 : 0.13), 0]}
+            position={[-0.05, 0.09 + (done ? 0.36 : 0.26), 0]}
             rotation={[0, i * 1.7, 0]}
+          />
+          {/* 副丘(二つ目の起伏でシルエットに厚みを) */}
+          <mesh
+            geometry={done ? ISLET_KNOLL_LIT_GEO : ISLET_KNOLL_DIM_GEO}
+            material={done ? ISLET_HILL_LIT_MAT : ISLET_HILL_DIM_MAT}
+            position={[0.34, 0.09 + (done ? 0.2 : 0.15), 0.12]}
+            rotation={[0, i * 0.9, 0]}
           />
           {/* 小岩(シルエットの変化) */}
           <mesh
             geometry={ISLET_ROCK_GEO}
             material={ISLET_ROCK_MAT}
-            position={[0.2, 0.05, 0.09]}
-            scale={[1, 0.7, 1]}
+            position={[-0.42, 0.07, 0.18]}
+            scale={[1, 0.66, 1]}
           />
           {/* 達成した島の浜の灯(たき火/ランタン) */}
           {done && (
-            <mesh geometry={ISLET_GLOW_GEO} material={ISLET_GLOW_MAT} position={[0.17, 0.11, 0.2]} />
+            <mesh geometry={ISLET_GLOW_GEO} material={ISLET_GLOW_MAT} position={[0.16, 0.17, 0.5]} />
           )}
           {onToggle && (
             <mesh
-              position={[0, 0.2, 0]}
+              position={[0, 0.3, 0]}
               onClick={(e) => {
                 e.stopPropagation();
                 onToggle(i);
               }}
             >
-              <cylinderGeometry args={[0.5, 0.5, 0.8, 8]} />
+              <cylinderGeometry args={[0.8, 0.8, 1.0, 8]} />
               <meshBasicMaterial transparent opacity={0} depthWrite={false} />
             </mesh>
           )}

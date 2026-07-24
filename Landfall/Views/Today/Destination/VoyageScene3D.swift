@@ -37,9 +37,9 @@ enum VoyageSceneKit {
     static let buoyDim = UIColor(rgb: 0x4A3A2A)   // 未達ブイ
     static let ripple = UIColor(rgb: 0x7FB8A6)    // 波紋
 
-    // 航路(Web VoyageScene と同値)
-    static let xStart: Float = -3.6
-    static let xEnd: Float = 1.8
+    // 航路(Web VoyageScene と同値)。目標の島は遠い — 航路を長くとって一つ一つを離す。
+    static let xStart: Float = -5.2
+    static let xEnd: Float = 2.6
 
     static func boatX(_ ratio: Double) -> Float {
         xStart + Float(min(max(ratio, 0), 1)) * (xEnd - xStart)
@@ -514,59 +514,70 @@ enum VoyageSceneKit {
     static let verdant = UIColor(rgb: 0x5DCAA5)   // 達成した島の緑
     static let isletRock = UIColor(rgb: 0x7A6B57) // 小岩
 
-    /// ステップ1つ=航路に浮かぶ小さな島。未達=静かな砂の小島、達成=緑が芽吹き浜に灯がともる。
-    /// 船はこれらを巡って島へ向かう。ピン(柱+玉)は廃止。
+    /// ステップ1つ=航路に浮かぶ「島」。目標地点なので存在感を持たせる(船と釣り合う大きさ)。
+    /// 未達=静かな砂の島、達成=緑が芽吹き浜に灯がともる。前後に散らして群島に。ピンは廃止。
     static func makeStepIslet(index: Int, total: Int, done: Bool) -> SCNNode {
         let group = SCNNode()
         group.name = "step_\(index)"
 
         // 浜(水際の平たい円盤)
-        let beachGeo = SCNCone(topRadius: 0.34, bottomRadius: 0.44, height: 0.06)
-        beachGeo.radialSegmentCount = 8
+        let beachGeo = SCNCone(topRadius: 0.56, bottomRadius: 0.74, height: 0.09)
+        beachGeo.radialSegmentCount = 9
         beachGeo.firstMaterial = litMaterial(beach, roughness: 0.95)
         let beachNode = SCNNode(geometry: beachGeo)
-        beachNode.position = SCNVector3(0, 0.03, 0)
+        beachNode.position = SCNVector3(0, 0.045, 0)
         group.addChildNode(beachNode)
 
-        // 丘(低ポリの小山)。達成=芽吹いた緑で少し高く、未達=静かな砂。
-        let hillH: Float = done ? 0.36 : 0.26
-        let hillGeo = SCNCone(topRadius: 0, bottomRadius: 0.26, height: CGFloat(hillH))
+        // 丘(低ポリの山)。達成=芽吹いた緑で高く、未達=静かな砂で低め。
+        let hillH: Float = done ? 0.72 : 0.52
+        let hillGeo = SCNCone(topRadius: 0, bottomRadius: 0.46, height: CGFloat(hillH))
         hillGeo.radialSegmentCount = 6
         hillGeo.firstMaterial = litMaterial(done ? verdant : sand, roughness: 0.9)
         let hillNode = SCNNode(geometry: hillGeo)
-        hillNode.position = SCNVector3(-0.03, 0.06 + hillH / 2, 0)
+        hillNode.position = SCNVector3(-0.05, 0.09 + hillH / 2, 0)
         hillNode.eulerAngles.y = Float(index) * 1.7   // 島ごとに向きを変えて表情を出す
         group.addChildNode(hillNode)
 
+        // 副丘(小さな二つ目の起伏)でシルエットに厚みを出す
+        let knollGeo = SCNCone(topRadius: 0, bottomRadius: 0.3, height: done ? 0.4 : 0.3)
+        knollGeo.radialSegmentCount = 6
+        knollGeo.firstMaterial = litMaterial(done ? verdant : sand, roughness: 0.9)
+        let knollNode = SCNNode(geometry: knollGeo)
+        knollNode.position = SCNVector3(0.34, 0.09 + (done ? 0.2 : 0.15), 0.12)
+        knollNode.eulerAngles.y = Float(index) * 0.9
+        group.addChildNode(knollNode)
+
         // 小岩(シルエットに変化を与える)
-        let rockGeo = SCNSphere(radius: 0.11)
+        let rockGeo = SCNSphere(radius: 0.17)
         rockGeo.segmentCount = 6
         rockGeo.firstMaterial = litMaterial(isletRock, roughness: 0.95)
         let rockNode = SCNNode(geometry: rockGeo)
-        rockNode.position = SCNVector3(0.2, 0.05, 0.09)
-        rockNode.scale = SCNVector3(1, 0.7, 1)
+        rockNode.position = SCNVector3(-0.42, 0.07, 0.18)
+        rockNode.scale = SCNVector3(1, 0.66, 1)
         group.addChildNode(rockNode)
 
         if done {
             // 達成した島には、浜に温かい灯(たき火/ランタン)。HDRでやわらかくにじむ。
-            let glowGeo = SCNSphere(radius: 0.06)
+            let glowGeo = SCNSphere(radius: 0.085)
             glowGeo.segmentCount = 10
             let gm = SCNMaterial()
             gm.lightingModel = .physicallyBased
             gm.diffuse.contents = ember
             gm.emission.contents = ember
-            gm.emission.intensity = 1.4
+            gm.emission.intensity = 1.5
             gm.roughness.contents = 0.5
             gm.metalness.contents = 0.0
             glowGeo.firstMaterial = gm
             let glowNode = SCNNode(geometry: glowGeo)
             glowNode.name = "step_glow"
-            glowNode.position = SCNVector3(0.17, 0.11, 0.2)
+            glowNode.position = SCNVector3(0.16, 0.17, 0.5)
             group.addChildNode(glowNode)
         }
 
+        // 前後に散らして群島感を出す(一直線に並べない)。
         let x = xStart + (Float(index + 1) / Float(total + 1)) * (xEnd - xStart)
-        group.position = SCNVector3(x, 0, 0.5)
+        let z: Float = 0.7 + Float(index % 2) * 0.7
+        group.position = SCNVector3(x, 0, z)
         return group
     }
 
