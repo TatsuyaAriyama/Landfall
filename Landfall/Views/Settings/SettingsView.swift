@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// アプリアイコンの現在値取得と切り替え。setAlternateIconName は iOS のみ。
 enum AppIconStore {
@@ -26,7 +27,10 @@ struct SettingsView: View {
     @EnvironmentObject private var auth: AuthService
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
     @AppStorage(AppTheme.storageKey) private var appTheme = AppTheme.system.rawValue
+    @Query private var destinations: [Destination]
     @State private var current: AppIconOption = .harbor
+    /// 削除しようとしている到達済みの島(確認ダイアログ用)。
+    @State private var pendingDeleteIsland: Destination?
     @State private var confirmingDeleteAccount = false
     @State private var deletingAccount = false
     @AppStorage(NotificationService.enabledKey) private var notifyEnabled = false
@@ -84,6 +88,15 @@ struct SettingsView: View {
                     }
                 }
 
+                // 到達した島。本人の記録なので、要らなくなったものは削除できる。
+                if !reachedIslands.isEmpty {
+                    sectionLabel("Islands reached")
+                        .padding(.top, 36)
+                        .padding(.bottom, 18)
+
+                    reachedIslandsSection
+                }
+
                 sectionLabel("Account")
                     .padding(.top, 36)
                     .padding(.bottom, 18)
@@ -109,6 +122,76 @@ struct SettingsView: View {
         } message: {
             Text("This permanently deletes your account and synced record. This cannot be undone.")
         }
+        .confirmationDialog(
+            "Delete this destination",
+            isPresented: Binding(
+                get: { pendingDeleteIsland != nil },
+                set: { if !$0 { pendingDeleteIsland = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let island = pendingDeleteIsland { deleteIsland(island) }
+                pendingDeleteIsland = nil
+            }
+        } message: {
+            Text("Delete this destination? Your records stay.")
+        }
+    }
+
+    // MARK: - 到達した島
+
+    /// 着岸した目的地。新しい順に並べる。
+    private var reachedIslands: [Destination] {
+        destinations
+            .filter { $0.achievedAt != nil }
+            .sorted { ($0.achievedAt ?? .distantPast) > ($1.achievedAt ?? .distantPast) }
+    }
+
+    private var reachedIslandsSection: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(reachedIslands.enumerated()), id: \.element.persistentModelID) { index, island in
+                if index > 0 {
+                    Rectangle()
+                        .fill(LFColor.ink.opacity(0.08))
+                        .frame(height: 1)
+                }
+                HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: island.name)
+                            .font(LFFont.copy(16))
+                            .foregroundStyle(LFColor.ink)
+                            .lineLimit(1)
+                        if let at = island.achievedAt {
+                            Text(verbatim: LF.dayMonth(at))
+                                .font(LFFont.label(13))
+                                .foregroundStyle(LFColor.returnOrange)
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    Button {
+                        pendingDeleteIsland = island
+                    } label: {
+                        Image(systemName: "minus")
+                            .font(.system(size: 15, weight: .regular))
+                            .foregroundStyle(LFColor.deepRust)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Delete"))
+                }
+                .padding(.vertical, 10)
+            }
+        }
+    }
+
+    /// 到達した島を削除する(同期先からも消す)。作業の記録そのものは残る。
+    private func deleteIsland(_ island: Destination) {
+        SyncService.shared.delete(island)
+        modelContext.delete(island)
+        try? modelContext.save()
+        Haptics.tap()
     }
 
     // そっと戻れる通知。オフ既定。オンにすると許可を求め、選んだ時刻に一度だけ静かに鳴る。

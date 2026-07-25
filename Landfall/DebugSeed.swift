@@ -124,6 +124,17 @@ enum DebugSeed {
         }
         context.insert(dest)
 
+        // 到達済みの島。設定画面の「到達した島」一覧と削除を確認するために置く。
+        if let reachedAt = calendar.date(byAdding: .day, value: -20, to: today) {
+            let reached = Destination(
+                name: isJapanese ? "英検準1級" : "Reading marathon",
+                createdAt: calendar.date(byAdding: .day, value: -60, to: today) ?? today,
+                steps: [DestinationStep(name: isJapanese ? "過去問を3年分" : "Three years of past papers", doneAt: reachedAt)]
+            )
+            reached.achievedAt = reachedAt
+            context.insert(reached)
+        }
+
         // 前月: Wrapped が生成できる(前月は常に利用可能)。不死鳥型が出る配置。
         if let monthStart = calendar.dateInterval(of: .month, for: today)?.start,
            let prevStart = calendar.date(byAdding: .month, value: -1, to: monthStart) {

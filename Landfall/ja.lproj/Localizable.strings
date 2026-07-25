@@ -309,6 +309,7 @@
 "Delete this destination" = "この目的地を削除";
 "Delete this destination? Your records stay." = "この目的地を削除しますか。作業の記録は消えません。";
 "Delete" = "削除";
+"Islands reached" = "到達した島";
 "Landfall." = "着岸。";
 "You reached %@." = "%@に到達しました。";
 "Time at sea · %@" = "航海した時間 · %@";

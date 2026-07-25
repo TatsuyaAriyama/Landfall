@@ -10,6 +10,7 @@ import * as THREE from "three";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { Html, OrbitControls, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
+import PhoenixModel from "./PhoenixModel";
 import { NIGHT_BG, Ripples, Sea } from "./SeaParts";
 import {
   Horizon,
@@ -285,6 +286,10 @@ function PlayfulBoat({ boatX, animate }: { boatX: number; animate: boolean }) {
       </mesh>
       <group ref={hop}>
         <BoatModel parts={parts} animate={animate} />
+        {/* 甲板の自分の航海士(カード・港と同じ配置) */}
+        <group position={[0.45, 0.5, 0]} scale={1.15}>
+          <PhoenixModel animate={animate} pose="idle" />
+        </group>
       </group>
       {/* 透明な当たり判定(船体+帆を覆う) */}
       <mesh geometry={BOAT_HIT_GEO} position={[0.1, 1.0, 0]} onClick={onTap}>

@@ -10,6 +10,8 @@ import { ArchetypeSymbolSvg, BoatGroup } from "../symbols";
 import { boatProps } from "../boat";
 import { drawCard, saveCanvas, type CardKind } from "../share";
 import { lang, t, yearChartTitle, type I18nKey } from "../i18n";
+import { deleteDestination } from "../destinations";
+import { askConfirm } from "../overlays";
 
 // 航海誌。月末に生まれる、その月のまとめカード(iOS の Wrapped と同じ内容)。
 // カードは絵はがき(iOS: 390x693、固定デザインのため常にライトの配色で描く)。
@@ -22,7 +24,7 @@ const ARCHETYPE_KEYS: Record<Archetype, { name: I18nKey; tag: I18nKey; sub: I18n
   morningCalm: { name: "typeMorningCalm", tag: "tagMorningCalm", sub: "subMorningCalm" },
 };
 
-export function LogbookView({ data }: { data: UserData }) {
+export function LogbookView({ uid, data }: { uid: string; data: UserData }) {
   const [view, setView] = useState<"cards" | "year">("cards");
   return (
     <div>
@@ -41,7 +43,7 @@ export function LogbookView({ data }: { data: UserData }) {
         </button>
       </div>
       {view === "cards" ? <MonthCards data={data} /> : <YearChart data={data} />}
-      <ReachedIslands data={data} />
+      <ReachedIslands uid={uid} data={data} />
     </div>
   );
 }
@@ -243,12 +245,22 @@ function YearChart({ data }: { data: UserData }) {
 }
 
 /// 到達した島。目的地に着岸した記録が、ここに残り続ける。
-function ReachedIslands({ data }: { data: UserData }) {
+/// 本人の記録なので、要らなくなった島は削除できる(確認あり)。
+function ReachedIslands({ uid, data }: { uid: string; data: UserData }) {
   const reached = data.destinations
     .filter((d) => d.achievedAt)
     .sort((a, b) => (b.achievedAt?.getTime() ?? 0) - (a.achievedAt?.getTime() ?? 0));
   if (reached.length === 0) return null;
   const fmt = new Intl.DateTimeFormat(lang, { year: "numeric", month: "long", day: "numeric" });
+  const remove = async (id: string) => {
+    const ok = await askConfirm({
+      title: t("deleteDestination"),
+      message: t("deleteDestinationConfirm"),
+      confirmLabel: t("delete"),
+      danger: true,
+    });
+    if (ok) await deleteDestination(uid, id);
+  };
   return (
     <div>
       <p className="section-label">{t("reachedIslands")}</p>
@@ -260,6 +272,13 @@ function ReachedIslands({ data }: { data: UserData }) {
               <div className="row-title">{d.name}</div>
               <div className="row-sub">{d.achievedAt ? fmt.format(d.achievedAt) : ""}</div>
             </div>
+            <button
+              className="minus-button"
+              onClick={() => void remove(d.id)}
+              aria-label={t("delete")}
+            >
+              −
+            </button>
           </div>
         ))}
       </div>

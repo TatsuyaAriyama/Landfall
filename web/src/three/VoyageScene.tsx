@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
+import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
 import { boatProps } from "../boat";
 import { shortDateLabel } from "../i18n";
@@ -389,6 +390,10 @@ function VoyageSea({
         <Ripples animate={animate} />
         <Wake animate={animate} />
         <BoatModel parts={parts} animate={animate} />
+        {/* 甲板の自分の航海士(港の「みんなの海」と同じ配置) */}
+        <group position={[0.45, 0.5, 0]} scale={1.15}>
+          <PhoenixModel animate={animate} pose="idle" />
+        </group>
       </group>
     </>
   );

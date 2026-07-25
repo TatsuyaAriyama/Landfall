@@ -466,6 +466,20 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         let dt = Float(min(max(time - lastTime, 0), 0.1))
         lastTime = time
 
+        step(t: t, dt: dt)
+
+        // 足元の波紋(Web Ripples: 周期7秒・位相ずらし3枚)。海の演出。
+        for (i, node) in rippleNodes.enumerated() {
+            let phase = (t / 7 + Float(i) / 3).truncatingRemainder(dividingBy: 1)
+            let s = 0.8 + phase * 5.5
+            node.scale = SCNVector3(s, s, 1)
+            node.opacity = CGFloat(sin(min(phase * 3, 1) * .pi / 2) * (1 - phase) * 0.2)
+        }
+    }
+
+    /// 航海士の1フレーム分の動き。目的地の船上など、別のシーンからも呼べるように
+    /// 切り出してある(bind 済みであることが前提)。
+    func step(t: Float, dt: Float) {
         let base = poseBase(pose)
         armRx = damp(armRx, base.armRx, 6, dt)
         armRz = damp(armRz, base.armRz, 6, dt)
@@ -517,14 +531,11 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         // 灯: 掲げたときはひときわ明るく
         let glowBase: Float = pose == .raise ? 2.3 : 1.5
         glowMat?.emission.intensity = CGFloat(glowBase + sin(t * 2.1) * 0.3)
+    }
 
-        // 足元の波紋(Web Ripples: 周期7秒・位相ずらし3枚)。海の演出。
-        for (i, node) in rippleNodes.enumerated() {
-            let phase = (t / 7 + Float(i) / 3).truncatingRemainder(dividingBy: 1)
-            let s = 0.8 + phase * 5.5
-            node.scale = SCNVector3(s, s, 1)
-            node.opacity = CGFloat(sin(min(phase * 3, 1) * .pi / 2) * (1 - phase) * 0.2)
-        }
+    /// 外部シーン(目的地の船上など)から使うときの束ね直し。
+    func bindIfNeeded(_ scene: SCNScene) {
+        if boundScene !== scene || core == nil { bind(scene) }
     }
 }
 

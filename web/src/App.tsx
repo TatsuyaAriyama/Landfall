@@ -102,7 +102,7 @@ function Main({ uid }: { uid: string }) {
       ) : tab === "trace" ? (
         <TraceView uid={uid} data={data} />
       ) : tab === "logbook" ? (
-        <LogbookView data={data} />
+        <LogbookView uid={uid} data={data} />
       ) : tab === "boat" ? (
         <Suspense fallback={<p className="empty-note">{t("loading")}</p>}>
           <BoatStudio data={data} />

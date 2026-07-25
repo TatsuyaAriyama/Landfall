@@ -743,6 +743,11 @@ enum VoyageSceneKit {
         let bob = SCNNode()
         bob.name = "boatBob"
         bob.addChildNode(makeBoatModel(BoatCustomization.currentParts))
+        // 自分の航海士を甲板に乗せる(港の「みんなの海」と同じ配置)。
+        let sailor = PhoenixNavigator.makeNavigatorNode()
+        sailor.position = SCNVector3(0.45, 0.5, 0)
+        sailor.scale = SCNVector3(1.15, 1.15, 1.15)
+        bob.addChildNode(sailor)
         travel.addChildNode(bob)
         if immersive {
             // 船タップの当たり判定(船体+帆を覆う。Web BOAT_HIT_GEO)+ タップ波紋リング。
@@ -965,6 +970,8 @@ final class VoyageAnimator: NSObject, SCNSceneRendererDelegate {
     private weak var camera: SCNNode?
     private var rippleNodes: [SCNNode] = []
     private var lastTime: TimeInterval = 0
+    /// 甲板に乗せた航海士を動かす(装いタブと同じ動き)。
+    private let sailor = PhoenixAnimator()
 
     private func bind(_ scene: SCNScene) {
         boundScene = scene
@@ -1005,6 +1012,9 @@ final class VoyageAnimator: NSObject, SCNSceneRendererDelegate {
             node.childNode(withName: "step_flag", recursively: false)?
                 .eulerAngles.y = sin(t * 4.6 + Float(i) * 0.8) * 0.2
         }
+        // 甲板の航海士(呼吸・見渡し・ランタンの揺れ)。
+        sailor.bindIfNeeded(scene)
+        sailor.step(t: t, dt: dt)
         // 波紋(Web Ripples: 周期7秒・位相ずらし3枚)
         for (i, node) in rippleNodes.enumerated() {
             let phase = (t / 7 + Float(i) / 3).truncatingRemainder(dividingBy: 1)
