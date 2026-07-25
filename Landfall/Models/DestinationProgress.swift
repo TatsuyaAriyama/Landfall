@@ -65,4 +65,11 @@ extension Destination {
     var nextStepName: String? {
         steps.first(where: { $0.doneAt == nil })?.name
     }
+
+    /// 直近に辿り着いた小島(達成日が最も新しいステップ)。ホームのカードに
+    /// 「いつその小さな目標を達成したか」を小さく添えるために使う。
+    var latestDoneStep: DestinationStep? {
+        steps.filter { $0.doneAt != nil }
+            .max { ($0.doneAt ?? .distantPast) < ($1.doneAt ?? .distantPast) }
+    }
 }

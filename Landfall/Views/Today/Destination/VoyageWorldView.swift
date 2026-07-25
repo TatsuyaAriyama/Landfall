@@ -66,7 +66,7 @@ struct VoyageWorldView: View {
         ZStack(alignment: .bottom) {
             ImmersiveVoyageView(
                 ratio: liveRatio,
-                steps: kind == .steps ? steps.map { $0.doneAt != nil } : [],
+                steps: kind == .steps ? steps.map { VoyageStep(doneAt: $0.doneAt) } : [],
                 islandName: trimmedName,
                 closeRequested: closing,
                 onToggleStep: { index in toggleStep(index: index) },

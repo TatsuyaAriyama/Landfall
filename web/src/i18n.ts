@@ -644,6 +644,13 @@ export function chatDateLabel(date: Date, now: Date = new Date()): string {
   }).format(date);
 }
 
+/// 短い日付。「7月25日」/ "Jul 25"。ステップを達成した日の記録に使う
+/// (iOS の LF.dayMonth と同じ書式)。
+export function shortDateLabel(date: Date): string {
+  return new Intl.DateTimeFormat(lang, { month: lang === "ja" ? "long" : "short", day: "numeric" })
+    .format(date);
+}
+
 /// 時間量の表示。「1時間15分」「45分」「2時間」/ "1h 15m"。0分は「0分」。
 export function durationLabel(minutes: number): string {
   const h = Math.floor(minutes / 60);

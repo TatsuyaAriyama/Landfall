@@ -5,18 +5,28 @@ import { Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
 import { boatProps } from "../boat";
+import { shortDateLabel } from "../i18n";
 
 // 目的地の航海シーン。自分の船が、夜の海を島へ向かって走っている。
 // 記録するほど(ratioが増えるほど)船が島に近づく。BoatStudioと同じ
 // 品質言語(低ポリ+flatShading、夜の海、星、月、波紋)に従う。
+
+/// 航路に置くステップ1つ分。達成の有無と、いつ辿り着いたか
+/// (iOS の VoyageStep と同じ形)。
+export interface VoyageStep {
+  done: boolean;
+  doneAt?: Date;
+}
 
 export interface VoyageSceneProps {
   name: string;
   ratio: number; // 0..1(島までの近さ)
   label: string; // 残り表示(「あと3時間」など)
   onClick?: () => void;
-  /// ステップ目標のとき、各ステップの達成状況(順序どおり)。航路にブイが浮かぶ。
-  steps?: boolean[];
+  /// ステップ目標のとき、各ステップの達成状況(順序どおり)。航路に小島が浮かぶ。
+  steps?: VoyageStep[];
+  /// 見出しの下に添える小さな一言(直近で辿り着いた小島と日付など)。
+  footnote?: string;
   /// 見出しに重ねる追加UI(完了ゴールのチェックボタンなど)。
   children?: ReactNode;
 }
@@ -28,12 +38,13 @@ const BEACH = "#DCCFA9";
 // (VoyageWorld=没入エディタが同じ構図から入場するため、位置関係を共有する)
 // カード(ホームの主役)の establishing 構図。航海の全景を引きで一望する
 // (没入エディタの入場もここから始まる。iOS cardCam と同値)。
-const CAM_POS: [number, number, number] = [2.2, 8.2, 14.0];
-const CAM_TARGET = new THREE.Vector3(0.2, 0.5, 0.2);
-const CAM_FOV = 44;
-// 目標の島は遠い — 航路を長くとって一つ一つを離す(iOS VoyageSceneKit と同値)。
-export const X_START = -5.2;
-export const X_END = 2.6;
+const CAM_POS: [number, number, number] = [0.6, 7.2, 12.5];
+const CAM_TARGET = new THREE.Vector3(-2.2, 0.5, 0.2);
+const CAM_FOV = 42;
+// ステップの島は「そう簡単には届かない目標」なので、航路を長くとって一つ一つを
+// 遠くに置く(島の間に開けた海を残す)。iOS VoyageSceneKit と同値。
+export const X_START = -9.0;
+export const X_END = 4.2;
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
 const HILL_GEO = new THREE.ConeGeometry(1.25, 1.05, 7);
@@ -53,6 +64,19 @@ const ISLET_KNOLL_DIM_GEO = new THREE.ConeGeometry(0.3, 0.3, 6);
 const ISLET_ROCK_GEO = new THREE.SphereGeometry(0.17, 6, 5);
 const ISLET_GLOW_GEO = new THREE.SphereGeometry(0.085, 10, 8);
 const ISLET_EMBER = "#F3C065"; // 浜の灯
+
+// 制覇の旗(達成した島の頂に立てる)。旗竿+風になびく三角旗。
+const FLAG_POLE_H = 0.5;
+const FLAG_POLE_GEO = new THREE.CylinderGeometry(0.015, 0.015, FLAG_POLE_H, 6);
+const FLAG_CLOTH_GEO = (() => {
+  const s = new THREE.Shape();
+  s.moveTo(0, 0);
+  s.lineTo(0, 0.17);
+  s.lineTo(0.3, 0.085);
+  s.closePath();
+  return new THREE.ShapeGeometry(s);
+})();
+const RETURN_ORANGE = "#F5822A"; // 帰帆色(旗・達成日)
 
 /// ステップ位置を航路上に等間隔で割り付ける。両端(出発・島)は空ける。
 export function stepBuoyX(index: number, total: number): number {
@@ -163,19 +187,86 @@ const ISLET_GLOW_MAT = new THREE.MeshStandardMaterial({
   fog: false,
 });
 
-/// ステップの小島を航路に浮かべる。達成した島は緑が芽吹き浜に灯がともる。
+const FLAG_POLE_MAT = new THREE.MeshStandardMaterial({
+  color: "#5A2A15",
+  flatShading: true,
+  roughness: 0.8,
+});
+const FLAG_CLOTH_MAT = new THREE.MeshStandardMaterial({
+  color: RETURN_ORANGE,
+  flatShading: true,
+  roughness: 0.9,
+  side: THREE.DoubleSide,
+});
+
+/// 3D空間に浮かぶ小さな文字板(常にカメラを向く)。達成日の記録に使う。
+/// Canvas に描いた文字をテクスチャにする(iOS makeDateLabel と同じ作り)。
+function DateLabel({ text, y }: { text: string; y: number }) {
+  const texture = useMemo(() => {
+    const c = document.createElement("canvas");
+    const scale = 2;
+    const font = `500 ${22 * scale}px -apple-system, system-ui, sans-serif`;
+    const ctx0 = c.getContext("2d");
+    if (!ctx0) return null;
+    ctx0.font = font;
+    const w = ctx0.measureText(text).width;
+    c.width = Math.ceil(w + 18 * scale);
+    c.height = Math.ceil(34 * scale);
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    ctx.font = font;
+    ctx.fillStyle = RETURN_ORANGE;
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 9 * scale, c.height / 2);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }, [text]);
+  useEffect(() => () => texture?.dispose(), [texture]);
+  if (!texture) return null;
+  const h = 0.46;
+  const w = h * (texture.image.width / texture.image.height);
+  return (
+    <sprite position={[0, y, 0]} scale={[w, h, 1]}>
+      <spriteMaterial map={texture} transparent depthWrite={false} fog={false} />
+    </sprite>
+  );
+}
+
+/// 制覇の旗。丘の頂に立てる旗竿と、風になびく三角旗。
+function StepFlag({ hillHeight, phase }: { hillHeight: number; phase: number }) {
+  const flag = useRef<THREE.Group>(null);
+  useFrame(({ clock }) => {
+    if (flag.current) {
+      flag.current.rotation.y = Math.sin(clock.elapsedTime * 4.6 + phase) * 0.2;
+    }
+  });
+  return (
+    <group ref={flag} position={[-0.05, 0.09 + hillHeight, 0]}>
+      <mesh geometry={FLAG_POLE_GEO} material={FLAG_POLE_MAT} position={[0, FLAG_POLE_H / 2, 0]} />
+      <mesh
+        geometry={FLAG_CLOTH_GEO}
+        material={FLAG_CLOTH_MAT}
+        position={[0.012, FLAG_POLE_H - 0.2, 0]}
+      />
+    </group>
+  );
+}
+
+/// 航路に浮かぶステップの小島。達成した島は緑が芽吹き、旗が立ち、浜に灯がともる。
+/// `doneAt` があれば、いつ辿り着いたかを島の上に小さなオレンジ文字で掲げる。
 /// onToggleがあれば当たり判定を付けてタップで達成/取消。
 export function StepBuoys({
   steps,
   onToggle,
 }: {
-  steps: boolean[];
+  steps: VoyageStep[];
   onToggle?: (index: number) => void;
 }) {
   const n = steps.length;
   return (
     <>
-      {steps.map((done, i) => (
+      {steps.map(({ done, doneAt }, i) => (
         // 前後に散らして群島感を出す(一直線に並べない)。
         <group key={i} position={[stepBuoyX(i, n), 0, 0.7 + (i % 2) * 0.7]}>
           {/* 浜 */}
@@ -205,6 +296,10 @@ export function StepBuoys({
           {done && (
             <mesh geometry={ISLET_GLOW_GEO} material={ISLET_GLOW_MAT} position={[0.16, 0.17, 0.5]} />
           )}
+          {/* 制覇の証の旗。島ごとに位相をずらして同じ風になびかせる */}
+          {done && <StepFlag hillHeight={0.72} phase={i * 0.8} />}
+          {/* いつ辿り着いたかを、島の上に小さく残す */}
+          {done && doneAt && <DateLabel text={shortDateLabel(doneAt)} y={0.72 + 0.62} />}
           {onToggle && (
             <mesh
               position={[0, 0.3, 0]}
@@ -231,7 +326,7 @@ function VoyageSea({
 }: {
   ratio: number;
   animate: boolean;
-  steps?: boolean[];
+  steps?: VoyageStep[];
 }) {
   const parts = useMemo(() => boatProps(), []);
   const travel = useRef<THREE.Group>(null);
@@ -306,6 +401,7 @@ export default function VoyageScene({
   label,
   onClick,
   steps,
+  footnote,
   children,
 }: VoyageSceneProps) {
   const [animate] = useState(
@@ -345,6 +441,8 @@ export default function VoyageScene({
         <span className="voyage-remaining">{label}</span>
         {children}
       </div>
+      {/* 直近に辿り着いた小島と、その日付(小さなオレンジ文字) */}
+      {footnote && <span className="voyage-footnote">{footnote}</span>}
       <Canvas
         dpr={[1, 2]}
         frameloop={animate && visible ? "always" : "demand"}

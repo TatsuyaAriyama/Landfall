@@ -2357,6 +2357,24 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* 直近に辿り着いた小島と、その日付。他の場所と同じ小さなオレンジ文字で、
+   見出しの下にそっと添える。 */
+.voyage-footnote {
+  position: absolute;
+  top: 38px;
+  left: 18px;
+  right: 18px;
+  z-index: 1;
+  pointer-events: none;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--return-orange);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ---- 目的地の没入エディタ(3Dカードから入る世界) ---- */
 
 .voyage-world {

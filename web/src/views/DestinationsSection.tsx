@@ -22,6 +22,7 @@ import {
   durationLabel,
   remainingDaysLabel,
   remainingHoursLabel,
+  shortDateLabel,
   t,
   tf,
 } from "../i18n";
@@ -89,6 +90,17 @@ function destSubLabel(dest: Destination, progress: DestinationProgress): string 
       : tf(t("stepsCount"), { done: progress.stepsDone ?? 0, total: progress.stepsTotal });
   }
   return remainingLabel(progress);
+}
+
+/// 直近に辿り着いた小島(達成日が最も新しいステップ)。「いつその小さな目標を
+/// 達成したか」をカードに小さく添えるために使う。iOS の latestDoneStep と同じ。
+function latestDoneStep(dest: Destination): { name: string; doneAt: Date } | null {
+  let latest: { name: string; doneAt: Date } | null = null;
+  for (const s of dest.steps ?? []) {
+    if (!s.doneAt) continue;
+    if (!latest || s.doneAt > latest.doneAt) latest = { name: s.name, doneAt: s.doneAt };
+  }
+  return latest;
 }
 
 export function DestinationsSection({ uid, data }: { uid: string; data: UserData }) {
@@ -253,7 +265,9 @@ function VoyageCard({
   const item = dest.itemUUID ? data.items.find((i) => i.id === dest.itemUUID) : undefined;
   const name = item ? `${dest.name} · ${item.name}` : dest.name;
   const label = destSubLabel(dest, progress);
-  const stepFlags = dest.steps?.map((s) => Boolean(s.doneAt));
+  const stepFlags = dest.steps?.map((s) => ({ done: Boolean(s.doneAt), doneAt: s.doneAt }));
+  // 直近に辿り着いた小島と、その日付(カードの下に小さなオレンジ文字で)。
+  const latest = latestDoneStep(dest);
   // カードが見えている=世界に入る可能性があるので、チャンクを先読みしておく。
   useEffect(() => {
     void loadVoyageWorld();
@@ -282,6 +296,9 @@ function VoyageCard({
           label={label}
           steps={stepFlags}
           onClick={onClick}
+          footnote={
+            latest ? `${latest.name} · ${shortDateLabel(latest.doneAt)}` : undefined
+          }
         >
           {onMarkDone && <CompleteCheckButton onMarkDone={onMarkDone} />}
         </VoyageScene>

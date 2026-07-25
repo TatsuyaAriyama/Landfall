@@ -25,6 +25,13 @@ extension UIColor {
     }
 }
 
+/// 3D の航路に置くステップ1つ分。達成の有無と、いつ辿り着いたか。
+/// SwiftData のモデルに依存させず、シーン生成に必要な最小限だけを持つ。
+struct VoyageStep: Equatable {
+    var doneAt: Date?
+    var done: Bool { doneAt != nil }
+}
+
 enum VoyageSceneKit {
     // 配色(web/src/three と同値)
     static let nightBG = UIColor(rgb: 0x123830)   // NIGHT_BG
@@ -36,16 +43,18 @@ enum VoyageSceneKit {
     static let ember = UIColor(rgb: 0xF3C065)     // 点灯ブイ
     static let buoyDim = UIColor(rgb: 0x4A3A2A)   // 未達ブイ
     static let ripple = UIColor(rgb: 0x7FB8A6)    // 波紋
+    static let returnOrange = UIColor(rgb: 0xF5822A) // 帰帆色(制覇の旗・達成日)
 
-    // 航路(Web VoyageScene と同値)。目標の島は遠い — 航路を長くとって一つ一つを離す。
-    static let xStart: Float = -5.2
-    static let xEnd: Float = 2.6
+    // 航路(Web VoyageScene と同値)。ステップの島は「そう簡単には届かない目標」なので、
+    // 航路を長くとって一つ一つを遠くに置く(島の間に開けた海を残す)。
+    static let xStart: Float = -9.0
+    static let xEnd: Float = 4.2
 
     // カード(ホームの主役)の establishing 構図。航海の全景を、引き+俯瞰の斜め(3/4)で
     // 綺麗に一望する(真横を避ける)。没入エディタの入場もここから寄っていく(Web と同値)。
-    static let cardCamPos = SCNVector3(2.2, 8.2, 14.0)
-    static let cardCamTarget = SCNVector3(0.2, 0.5, 0.2)
-    static let cardCamFov: CGFloat = 44
+    static let cardCamPos = SCNVector3(0.6, 7.2, 12.5)
+    static let cardCamTarget = SCNVector3(-2.2, 0.5, 0.2)
+    static let cardCamFov: CGFloat = 42
 
     static func boatX(_ ratio: Double) -> Float {
         xStart + Float(min(max(ratio, 0), 1)) * (xEnd - xStart)
@@ -521,8 +530,9 @@ enum VoyageSceneKit {
     static let isletRock = UIColor(rgb: 0x7A6B57) // 小岩
 
     /// ステップ1つ=航路に浮かぶ「島」。目標地点なので存在感を持たせる(船と釣り合う大きさ)。
-    /// 未達=静かな砂の島、達成=緑が芽吹き浜に灯がともる。前後に散らして群島に。ピンは廃止。
-    static func makeStepIslet(index: Int, total: Int, done: Bool) -> SCNNode {
+    /// 未達=静かな砂の島、達成=緑が芽吹き、旗が立ち、浜に灯がともる。前後に散らして群島に。
+    /// `doneAt` を渡すと、達成した日付を島の上に小さなオレンジ文字で掲げる。
+    static func makeStepIslet(index: Int, total: Int, done: Bool, doneAt: Date? = nil) -> SCNNode {
         let group = SCNNode()
         group.name = "step_\(index)"
 
@@ -563,6 +573,9 @@ enum VoyageSceneKit {
         group.addChildNode(rockNode)
 
         if done {
+            // 制覇の証として、丘の頂に旗を立てる(旗竿+はためく三角旗)。
+            group.addChildNode(makeStepFlag(hillHeight: hillH))
+
             // 達成した島には、浜に温かい灯(たき火/ランタン)。HDRでやわらかくにじむ。
             let glowGeo = SCNSphere(radius: 0.085)
             glowGeo.segmentCount = 10
@@ -578,6 +591,11 @@ enum VoyageSceneKit {
             glowNode.name = "step_glow"
             glowNode.position = SCNVector3(0.16, 0.17, 0.5)
             group.addChildNode(glowNode)
+
+            // いつ辿り着いたかを、島の上に小さなオレンジ文字で残す。
+            if let doneAt {
+                group.addChildNode(makeDateLabel(text: LF.dayMonth(doneAt), y: hillH + 0.62))
+            }
         }
 
         // 前後に散らして群島感を出す(一直線に並べない)。
@@ -585,6 +603,61 @@ enum VoyageSceneKit {
         let z: Float = 0.7 + Float(index % 2) * 0.7
         group.position = SCNVector3(x, 0, z)
         return group
+    }
+
+    /// 制覇の旗。丘の頂に立てる旗竿と、風にはためく三角旗(帰帆色)。
+    private static func makeStepFlag(hillHeight: Float) -> SCNNode {
+        let flag = SCNNode()
+        flag.name = "step_flag"
+        flag.position = SCNVector3(-0.05, 0.09 + hillHeight, 0)
+
+        let poleH: Float = 0.5
+        let poleGeo = SCNCylinder(radius: 0.015, height: CGFloat(poleH))
+        poleGeo.radialSegmentCount = 6
+        poleGeo.firstMaterial = litMaterial(wood, roughness: 0.8)
+        let pole = SCNNode(geometry: poleGeo)
+        pole.position = SCNVector3(0, poleH / 2, 0)
+        flag.addChildNode(pole)
+
+        // 三角旗。旗竿の上部から風下へなびく。
+        let path = UIBezierPath()
+        path.move(to: CGPoint(x: 0, y: 0))
+        path.addLine(to: CGPoint(x: 0, y: 0.17))
+        path.addLine(to: CGPoint(x: 0.3, y: 0.085))
+        path.close()
+        let clothGeo = SCNShape(path: path, extrusionDepth: 0.004)
+        clothGeo.firstMaterial = litMaterial(returnOrange, roughness: 0.9, doubleSided: true)
+        let cloth = SCNNode(geometry: clothGeo)
+        cloth.name = "step_flag_cloth"
+        cloth.position = SCNVector3(0.012, poleH - 0.2, 0)
+        flag.addChildNode(cloth)
+        return flag
+    }
+
+    /// 3D空間に浮かぶ小さな文字板(常にカメラを向く)。達成日の記録に使う。
+    static func makeDateLabel(text: String, y: Float) -> SCNNode {
+        let font = UIFont.systemFont(ofSize: 44, weight: .medium)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: returnOrange]
+        let size = (text as NSString).size(withAttributes: attrs)
+        let pad: CGFloat = 18
+        let w = size.width + pad * 2
+        let h = size.height + pad
+        let image = UIGraphicsImageRenderer(size: CGSize(width: w, height: h)).image { _ in
+            (text as NSString).draw(at: CGPoint(x: pad, y: pad / 2), withAttributes: attrs)
+        }
+        let worldH: CGFloat = 0.46
+        let plane = SCNPlane(width: worldH * (w / h), height: worldH)
+        let m = SCNMaterial()
+        m.lightingModel = .constant
+        m.diffuse.contents = image
+        m.isDoubleSided = true
+        m.writesToDepthBuffer = false
+        plane.firstMaterial = m
+        let node = SCNNode(geometry: plane)
+        node.name = "step_date"
+        node.position = SCNVector3(0, y, 0)
+        node.constraints = [SCNBillboardConstraint()]
+        return node
     }
 
     // MARK: - 光・カメラ
@@ -642,7 +715,7 @@ enum VoyageSceneKit {
 
     /// 目的地の航海シーン。Web VoyageScene と同じ構図:
     /// 夜の海・星・月(カード=x1.8の月の出 / 没入=左上奥)・水平線・右奥の島・ブイ・船。
-    static func makeScene(ratio: Double, steps: [Bool], immersive: Bool = false) -> SCNScene {
+    static func makeScene(ratio: Double, steps: [VoyageStep], immersive: Bool = false) -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = nightBG
         let moonX: Float = immersive ? -8 : 1.8
@@ -653,8 +726,10 @@ enum VoyageSceneKit {
         ))
         scene.rootNode.addChildNode(makeHorizon())
         scene.rootNode.addChildNode(makeIsland())
-        for (i, done) in steps.enumerated() {
-            scene.rootNode.addChildNode(makeStepIslet(index: i, total: steps.count, done: done))
+        for (i, step) in steps.enumerated() {
+            scene.rootNode.addChildNode(
+                makeStepIslet(index: i, total: steps.count, done: step.done, doneAt: step.doneAt)
+            )
         }
 
         // 航路上の船。波紋+航跡ごと進む(Web: group scale 0.55, rot y 0.1)。
@@ -924,6 +999,12 @@ final class VoyageAnimator: NSObject, SCNSceneRendererDelegate {
         if let flag = bob?.childNode(withName: "boatFlag", recursively: true) {
             flag.eulerAngles.y = sin(t * 5.2) * 0.22
         }
+        // 制覇した島の旗も、同じ風になびかせる(島ごとに位相をずらす)。
+        for (i, node) in scene.rootNode.childNodes.enumerated()
+        where node.name?.hasPrefix("step_") == true {
+            node.childNode(withName: "step_flag", recursively: false)?
+                .eulerAngles.y = sin(t * 4.6 + Float(i) * 0.8) * 0.2
+        }
         // 波紋(Web Ripples: 周期7秒・位相ずらし3枚)
         for (i, node) in rippleNodes.enumerated() {
             let phase = (t / 7 + Float(i) / 3).truncatingRemainder(dividingBy: 1)
@@ -944,10 +1025,16 @@ final class VoyageAnimator: NSObject, SCNSceneRendererDelegate {
 
 // MARK: - SwiftUI ラッパ
 
-/// 目的地の3Dビュー。ratio で船が進み、steps でブイが点灯する。
+/// ステップの見た目が変わったかを判定するための鍵(達成状態と達成日)。
+/// これが変わったときだけシーンを作り直す。
+func voyageStepsKey(_ steps: [VoyageStep]) -> String {
+    steps.map { $0.doneAt.map { String(Int($0.timeIntervalSince1970)) } ?? "-" }.joined(separator: ",")
+}
+
+/// 目的地の3Dビュー。ratio で船が進み、steps で島に旗が立つ。
 struct VoyageSceneView: UIViewRepresentable {
     var ratio: Double
-    var steps: [Bool]
+    var steps: [VoyageStep]
     var animate: Bool = true
     var allowsCameraControl: Bool = false
     /// 没入(全画面)構図か。月が左上奥になり、星が増える(Web VoyageWorld)。
@@ -969,14 +1056,14 @@ struct VoyageSceneView: UIViewRepresentable {
         animator.targetX = VoyageSceneKit.boatX(ratio)
         animator.swayCamera = !allowsCameraControl
         view.delegate = animator
-        context.coordinator.stepsKey = steps.map { $0 ? "1" : "0" }.joined()
+        context.coordinator.stepsKey = voyageStepsKey(steps)
         return view
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
-        let key = steps.map { $0 ? "1" : "0" }.joined()
+        let key = voyageStepsKey(steps)
         if key != context.coordinator.stepsKey {
-            // ブイの本数/点灯が変わったらシーンを作り直す。
+            // 島の本数/達成状態が変わったらシーンを作り直す。
             context.coordinator.stepsKey = key
             view.scene = VoyageSceneKit.makeScene(ratio: ratio, steps: steps, immersive: immersive)
         }
@@ -1073,7 +1160,7 @@ enum VoyagePhase { case enter, idle, exit }
 /// idle中は自前のオービット操作で一周でき、ブイ/船/月をタップできる。閉じるは逆再生。
 struct ImmersiveVoyageView: UIViewRepresentable {
     var ratio: Double
-    var steps: [Bool]
+    var steps: [VoyageStep]
     var islandName: String
     /// 閉じる要求(true にするとドリーアウト→onClosed)。
     var closeRequested: Bool
@@ -1103,7 +1190,7 @@ struct ImmersiveVoyageView: UIViewRepresentable {
         let coord = context.coordinator
         coord.attach(view: view, reduceMotion: reduceMotion)
         coord.targetX = VoyageSceneKit.boatX(ratio)
-        coord.stepsKey = steps.map { $0 ? "1" : "0" }.joined()
+        coord.stepsKey = voyageStepsKey(steps)
         if let label = view.scene?.rootNode.childNode(withName: "islandLabel", recursively: false) {
             VoyageSceneKit.updateIslandLabel(label, text: islandName)
         }
@@ -1122,7 +1209,7 @@ struct ImmersiveVoyageView: UIViewRepresentable {
 
     func updateUIView(_ view: SCNView, context: Context) {
         let coord = context.coordinator
-        let key = steps.map { $0 ? "1" : "0" }.joined()
+        let key = voyageStepsKey(steps)
         if key != coord.stepsKey {
             coord.stepsKey = key
             coord.rebuildBuoys(steps: steps)
@@ -1340,13 +1427,17 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
         onTapWorld()
     }
 
-    // MARK: ブイの作り直し(数や達成が変わったとき。カメラは保つ)
+    // MARK: 島の作り直し(数や達成が変わったとき。カメラは保つ)
 
-    func rebuildBuoys(steps: [Bool]) {
+    func rebuildBuoys(steps: [VoyageStep]) {
         guard let root = scene?.rootNode else { return }
         root.childNodes.filter { $0.name?.hasPrefix("step_") == true }.forEach { $0.removeFromParentNode() }
-        for (i, done) in steps.enumerated() {
-            root.addChildNode(VoyageSceneKit.makeStepIslet(index: i, total: steps.count, done: done))
+        for (i, step) in steps.enumerated() {
+            root.addChildNode(
+                VoyageSceneKit.makeStepIslet(
+                    index: i, total: steps.count, done: step.done, doneAt: step.doneAt
+                )
+            )
         }
     }
 

@@ -14,7 +14,7 @@ struct DestinationCard: View {
     var body: some View {
         // 空状態はやや進んだ位置に船を置いて「もう海がある」感を出す(Web EmptySeaCard と同じ)。
         let ratio = progress?.ratio ?? 0.32
-        let stepFlags = destination?.steps.map { $0.doneAt != nil } ?? []
+        let stepFlags = destination?.steps.map { VoyageStep(doneAt: $0.doneAt) } ?? []
 
         Button(action: onTap) {
             ZStack(alignment: .top) {
@@ -33,16 +33,25 @@ struct DestinationCard: View {
     @ViewBuilder
     private var overlay: some View {
         if let destination, let progress {
-            HStack(alignment: .firstTextBaseline) {
-                Text(verbatim: destination.name)
-                    .font(LFFont.copy(16))
-                    .foregroundStyle(LFColor.harborSand)
-                    .lineLimit(1)
-                Spacer(minLength: 12)
-                progressLabel(for: destination, progress: progress)
-                    .font(LFFont.label(13))
-                    .foregroundStyle(LFColor.harborSand.opacity(0.7))
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(verbatim: destination.name)
+                        .font(LFFont.copy(16))
+                        .foregroundStyle(LFColor.harborSand)
+                        .lineLimit(1)
+                    Spacer(minLength: 12)
+                    progressLabel(for: destination, progress: progress)
+                        .font(LFFont.label(13))
+                        .foregroundStyle(LFColor.harborSand.opacity(0.7))
+                        .lineLimit(1)
+                }
+                // 直近で辿り着いた小島と、その日付(小さなオレンジ文字)。
+                if let latest = destination.latestDoneStep {
+                    Text(verbatim: "\(latest.name) · \(LF.dayMonth(latest.doneAt ?? Date()))")
+                        .font(LFFont.label(11))
+                        .foregroundStyle(LFColor.returnOrange)
+                        .lineLimit(1)
+                }
             }
         } else {
             HStack {

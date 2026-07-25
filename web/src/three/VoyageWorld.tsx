@@ -11,7 +11,15 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { Html, OrbitControls, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import { NIGHT_BG, Ripples, Sea } from "./SeaParts";
-import { Horizon, Island, StepBuoys, Wake, X_END, X_START } from "./VoyageScene";
+import {
+  Horizon,
+  Island,
+  StepBuoys,
+  Wake,
+  X_END,
+  X_START,
+  type VoyageStep,
+} from "./VoyageScene";
 import { boatProps } from "../boat";
 import { playPlink } from "../audio";
 import type { UserData } from "../data";
@@ -301,7 +309,7 @@ function WorldScene({
   animate: boolean;
   boatX: number;
   islandLabel: string;
-  steps?: boolean[];
+  steps?: VoyageStep[];
   onToggleStep?: (index: number) => void;
   onEntered: () => void;
   onExited: () => void;
@@ -423,9 +431,12 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
 
   // ---- 世界の配置(カードと同じ航路・島) ----
   // ステップ目標は「達成数/全数」で船が進む(編集中の局所stateを即反映)。
-  const stepDoneFlags = steps.map((s) => Boolean(s.doneAt));
+  const stepDoneFlags: VoyageStep[] = steps.map((s) => ({
+    done: Boolean(s.doneAt),
+    doneAt: s.doneAt,
+  }));
   const stepsRatio = steps.length
-    ? stepDoneFlags.filter(Boolean).length / steps.length
+    ? stepDoneFlags.filter((s) => s.done).length / steps.length
     : 0;
   const ratio =
     kind === "steps"
