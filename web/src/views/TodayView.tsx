@@ -200,12 +200,13 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   };
 
   const todayId = dayId(new Date());
-  // 時刻順(古→新)に揃える。同期の届き順に依存させない。
+  // 時刻順(新→古)に揃える。記録した直後のものが一番上に来るように
+  // (同期の届き順には依存させない)。
   const todaySessions = useMemo(
     () =>
       data.sessions
         .filter((s) => dayId(s.date) === todayId)
-        .sort((a, b) => a.date.getTime() - b.date.getTime()),
+        .sort((a, b) => b.date.getTime() - a.date.getTime()),
     [data.sessions, todayId],
   );
   const itemById = useMemo(
