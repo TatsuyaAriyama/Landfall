@@ -4,7 +4,13 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <!-- iOS/iPadOSのホーム画面アイコン。iPad(152)・iPad Pro(167)・iPhone(180)が
+         それぞれ等倍のPNGを選べるように sizes を明示する。
+         ?v= は、以前配信していた壊れたPNGがキャッシュに残っている端末に
+         取り直させるため(URLが変わらないとiOSは再取得しない)。 -->
+    <link rel="apple-touch-icon" sizes="152x152" href="/icon-152.png?v=2" />
+    <link rel="apple-touch-icon" sizes="167x167" href="/icon-167.png?v=2" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png?v=2" />
     <meta name="theme-color" content="#184A40" />
     <!-- viewport-fit=cover で、Android/iOSの切り欠き・ジェスチャーバー分の
          safe-area-inset を有効化する(下部タブが被らないように) -->
@@ -14,6 +20,10 @@
     />
     <!-- Androidのホーム追加でスタンドアロン起動(display:standaloneと合わせて) -->
     <meta name="mobile-web-app-capable" content="yes" />
+    <!-- iOS/iPadOSも同様に。manifestのshort_nameを読まない版のiOSがあるので、
+         ホーム画面に出る名前もここで明示しておく。 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Landfall" />
     <meta name="description" content="Landfall — 学習記録アプリ。スマートフォン・タブレット・PCで、記録が同期します。" />
     <meta name="color-scheme" content="light dark" />
     <link rel="canonical" href="https://landfall-studylog.com/" />

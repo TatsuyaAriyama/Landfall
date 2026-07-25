@@ -16,6 +16,26 @@ npm run dev
 
 Firebase 設定は `web/.env.local`(gitignore 済み)。雛形は `.env.example`。
 
+## アイコン(ホーム画面に追加したときの見た目)
+
+`public/` のアイコンPNGは手で書き出さず、**必ず**次で再生成する:
+
+```sh
+npm run icons
+```
+
+- ソースは `public/favicon.svg` ひとつ。図案を直すときはこのSVGだけを直す。
+- 出力は全面塗り・アルファなしのPNG。角丸は iOS/Android 側がマスクを掛けるので
+  こちらでは丸めない(丸めると透明部分が黒く出る)。
+- `maskable` はプラットフォームが外周20%を切り落とすため、図案を80%に縮めてある。
+- 書き出し後にCRC・IEND・展開可否まで検証する。以前 `icon-180.png` と
+  `icon-512.png` が壊れたPNGのままコミットされ、iPadOS が apple-touch-icon を
+  デコードできずホーム画面のアイコンが崩れていたため。
+- manifest の `icons` に SVG は入れない。iOS はアプリアイコンにSVGを使えず、
+  それを選んでしまうとアイコンが出なくなる。
+- 差し替えたら `index.html` と `manifest.webmanifest` の `?v=` を上げる。
+  URLが変わらないと iOS は古いアイコンを取り直さない。
+
 ## デプロイ(Cloudflare Pages / Git 連携)
 
 リポジトリを push すると Cloudflare Pages が自動でビルド・公開する。Pages プロジェクトの設定:
