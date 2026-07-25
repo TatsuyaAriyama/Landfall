@@ -238,6 +238,15 @@ const ja = {
   discardVoyage: "航海をやめる",
   backToVoyage: "航海に戻る",
   lookAroundHint: "ドラッグで見渡せる。世界をタップすると、これだけになる。",
+  takeBreak: "休憩する",
+  endBreak: "航海に戻る",
+  // 浮きピルは幅が狭いので短く。意味は上と同じ。
+  takeBreakShort: "休憩",
+  endBreakShort: "再開",
+  // 休憩中は時計が止まる。止まっていることが伝わる言い方にする。
+  restingNow: "錨を下ろしている",
+  // 浮きピルは幅が厳しいので短く(長いと右端の✕がはみ出す)。
+  restingShort: "休憩中",
   switchVoyageConfirm: "いまの航海をやめて、別の項目を始めますか。いまの記録は残りません。",
 
   // 航海誌の追加
@@ -263,6 +272,7 @@ const ja = {
   posePoint: "陸を指す",
   poseStargaze: "星を読む",
   poseRest: "一息つく",
+  poseSit: "腰を下ろす",
   boatHint: "ドラッグで一周できます。",
   sailColor: "帆の色",
   jibLabel: "前帆",
@@ -550,6 +560,12 @@ const en: Record<I18nKey, string> = {
   discardVoyage: "Abandon the voyage",
   backToVoyage: "Back to the voyage",
   lookAroundHint: "Drag to look around. Tap the world to see only it.",
+  takeBreak: "Take a break",
+  endBreak: "Back to the voyage",
+  takeBreakShort: "Break",
+  endBreakShort: "Resume",
+  restingNow: "At anchor",
+  restingShort: "Resting",
   switchVoyageConfirm:
     "Abandon this voyage and start another item? Nothing will be recorded.",
 
@@ -574,6 +590,7 @@ const en: Record<I18nKey, string> = {
   posePoint: "Sight land",
   poseStargaze: "Stargaze",
   poseRest: "Rest",
+  poseSit: "Sit",
   boatHint: "Drag to look around.",
   sailColor: "Sail color",
   jibLabel: "Jib",

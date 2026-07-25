@@ -29,11 +29,18 @@ function gapMs(): number {
 
 /// 甲板の航海士がいま取るべき姿。待機を基本に、ときどき見渡す。
 /// enabled=false(動きを控える設定)のときは、待機のまま動かさない。
-export function useNavigatorPose(enabled = true): PhoenixPose {
+///
+/// override は、世界の側に「いまはこの姿でいてほしい」事情があるときに渡す
+/// (休憩中の sit など)。そのあいだ見渡しは差し込まない — 休んでいる人が
+/// ときどき立ち上がって見張りを始めては、休憩に見えない。
+export function useNavigatorPose(
+  enabled = true,
+  override: PhoenixPose | null = null,
+): PhoenixPose {
   const [looking, setLooking] = useState(false);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || override) return;
     let timer = 0;
     // 見渡し始めるまでは gapMs、見渡してから戻るまでは LOOKOUT_MS。
     const schedule = (toLookout: boolean) => {
@@ -50,7 +57,8 @@ export function useNavigatorPose(enabled = true): PhoenixPose {
       window.clearTimeout(timer);
       setLooking(false);
     };
-  }, [enabled]);
+  }, [enabled, override]);
 
+  if (override) return override;
   return looking ? "lookout" : BASE_POSE;
 }

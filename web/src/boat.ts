@@ -107,6 +107,7 @@ const POSES = [
   "point",
   "stargaze",
   "rest",
+  "sit",
 ] as const;
 export type NavigatorPose = (typeof POSES)[number];
 

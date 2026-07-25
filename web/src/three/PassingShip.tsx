@@ -16,8 +16,9 @@ const LIGHT = "#F3C065"; // ランタンと同じ灯の色
 /// 灯までの距離と高さ。霧(12〜34)の外側だが、灯は fog={false} なので霞まない。
 const DIST = 26;
 const Y = 0.36;
-/// 端から端まで。画面の外から入って外へ抜ける幅。
-const SPAN = 30;
+/// 端から端まで。縦長の画面がこの距離で見渡せる幅(片側6弱)より少し広くとり、
+/// 画面の外で灯り、外で消えるようにする。広げすぎると、見えない時間ばかりになる。
+const SPAN = 16;
 /// 渡りきるまでの秒数。1分弱 = 遠くの帆船の速さ。
 const CROSS_SEC = 58;
 /// 出入りのフェード(渡りの割合)。ぱっと現れると「点いた」に見えてしまう。
@@ -31,9 +32,6 @@ const GAP_MAX = 300;
 
 const LAMP_GEO = new THREE.SphereGeometry(0.085, 10, 8);
 const HALO_GEO = new THREE.SphereGeometry(0.24, 10, 8);
-/// 水面に落ちる灯の影。月光の筋と同じく、こちらへ向かって細く伸びる。
-const REFLECT_GEO = new THREE.PlaneGeometry(0.14, 1.6);
-
 function span(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
@@ -42,7 +40,6 @@ export default function PassingShip({ animate }: { animate: boolean }) {
   const group = useRef<THREE.Group>(null);
   const lamp = useRef<THREE.MeshBasicMaterial>(null);
   const halo = useRef<THREE.MeshBasicMaterial>(null);
-  const reflect = useRef<THREE.MeshBasicMaterial>(null);
 
   const startAt = useRef<number | null>(null);
   const nextAt = useRef(span(FIRST_MIN, FIRST_MAX));
@@ -81,7 +78,6 @@ export default function PassingShip({ animate }: { animate: boolean }) {
     const f = Math.min(1, Math.min(p, 1 - p) / FADE);
     if (lamp.current) lamp.current.opacity = 0.95 * f;
     if (halo.current) halo.current.opacity = 0.3 * f;
-    if (reflect.current) reflect.current.opacity = 0.13 * f;
   });
 
   return (
@@ -106,21 +102,6 @@ export default function PassingShip({ animate }: { animate: boolean }) {
           fog={false}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      {/* 水面の照り返し。灯の真下から手前へ伸ばす。 */}
-      <mesh
-        geometry={REFLECT_GEO}
-        position={[0, -Y + 0.008, 0.8]}
-        rotation={[-Math.PI / 2, 0, 0]}
-      >
-        <meshBasicMaterial
-          ref={reflect}
-          color={LIGHT}
-          transparent
-          opacity={0}
-          fog={false}
-          depthWrite={false}
         />
       </mesh>
     </group>

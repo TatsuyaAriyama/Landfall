@@ -114,6 +114,7 @@ const POSES: [PhoenixPose, I18nKey][] = [
   ["point", "posePoint"],
   ["stargaze", "poseStargaze"],
   ["rest", "poseRest"],
+  ["sit", "poseSit"],
 ];
 
 /// 装いタブ。上が3Dステージ、下がカスタマイズ。

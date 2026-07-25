@@ -308,6 +308,19 @@ interface PoseBase {
   sit: number;
 }
 
+// ---- 立ち座りの寸法 ----
+/// 股関節の高さ(立っているとき)。JSXの脚グループの初期位置と同値。
+const LEG_HIP_Y = 0.42;
+/// 座ったときに股関節が落ちる量。
+/// このモデルの原点(y=0)は「接地面」そのもの — 甲板に立たせるときも y=0 が
+/// 甲板の高さになる。だから座らせるときに下げてよいのは、いちばん低い見える部品
+/// (コートの裾 y=0.3)が y=0 に着くところまで。それ以上下げると体が甲板の下へ
+/// 潜り、船にめり込んで見える。
+const SIT_DROP = 0.3;
+/// 座ったときに脚を前へ倒す角(rad)。水平まで倒すと下がった腰の高さのぶん
+/// 脚が甲板から浮くので、少し手前で止めて爪先を甲板に着ける。
+const SIT_SPREAD = 1.24;
+
 const POSE_BASE: Record<PhoenixPose, PoseBase> = {
   idle: {
     armRx: 0, armRz: 0.14, armLx: 0, armLz: -0.14,
@@ -408,6 +421,11 @@ export default function PhoenixModel({
   // 呼吸と見渡しは「速さ」もポーズごとに変わるので、時刻ではなく位相を積む
   // (速さが変わった瞬間に sin の位相が飛んで、動きが跳ねるのを防ぐ)。
   const phase = useRef({ breath: 0, scan: 0 });
+  // 立ち座りだけは、他の持ち替えと同じ速さでは軽すぎる。腰を下ろすとき・
+  // 立ち上がるときは体重が移るぶん時間がかかるので、その遷移のあいだだけ
+  // 補間をゆっくりにする(座り終えても、次にポーズが変わるまでこの速さのまま)。
+  const lastPose = useRef<PhoenixPose>(pose);
+  const heavy = useRef(false);
 
   // マントの布。頂点を毎フレーム書くのでインスタンスごとに持ち、離れる時に破棄する。
   const capeGeo = useMemo(() => {
@@ -422,9 +440,17 @@ export default function PhoenixModel({
     const time = clock.elapsedTime;
     const target = POSE_BASE[pose];
     const c = cur.current;
+    // 立ち座りをまたぐ持ち替えかどうかを、ポーズが変わった瞬間に決める。
+    if (pose !== lastPose.current) {
+      heavy.current = pose === "sit" || lastPose.current === "sit";
+      lastPose.current = pose;
+    }
     // ポーズの基本値へなめらかに寄せる(切替の瞬間に跳ねない)。
     // 姿勢は速く、風と灯はゆっくり — 体が動いたあとから世界が追いつく。
-    const to = (k: keyof PoseBase, lambda = 6) => {
+    // 立ち座りだけは 1/4 の速さ(落ち着くまで約2秒)。ゆっくり腰を下ろし、
+    // ゆっくり立ち上がる。体重の移動は、持ち替えより時間がかかる。
+    const settle = heavy.current ? 1.5 : 6;
+    const to = (k: keyof PoseBase, lambda = settle) => {
       c[k] = THREE.MathUtils.damp(c[k], target[k], lambda, delta);
     };
     to("armRx");
@@ -439,8 +465,9 @@ export default function PhoenixModel({
     to("sway");
     to("breathAmp");
     to("breathSpeed");
-    to("wind", 4);
-    to("glow", 3);
+    to("sit");
+    to("wind", settle * 0.66);
+    to("glow", settle * 0.5);
 
     // 呼吸と見渡しの位相を、いまの速さで進める。
     const ph = phase.current;
@@ -453,12 +480,15 @@ export default function PhoenixModel({
     const walking = pose === "walk";
     const stride = 5.4; // 歩調(rad/s)
     const step = Math.sin(time * stride);
+    // 座ったときに股関節が落ちる量。脚を前へ倒したときブーツが甲板に触れる高さ。
+    const drop = c.sit * SIT_DROP;
 
     // 体: 待機は呼吸、歩行は歩調に合わせた弾み。
     if (core.current) {
-      core.current.position.y = walking
-        ? Math.abs(Math.cos(time * stride)) * 0.035
-        : Math.sin(ph.breath) * 0.018 * c.breathAmp;
+      core.current.position.y =
+        (walking
+          ? Math.abs(Math.cos(time * stride)) * 0.035
+          : Math.sin(ph.breath) * 0.018 * c.breathAmp) - drop;
       core.current.rotation.x = c.lean + Math.sin(ph.breath + 0.9) * 0.01 * c.breathAmp;
       core.current.rotation.z = walking ? step * 0.03 : 0;
       // 見渡し: 上体ごと左右へ。首と同じ周期を少し遅れて追いかけることで、
@@ -472,20 +502,20 @@ export default function PhoenixModel({
       head.current.rotation.x = c.headX;
       head.current.rotation.z = Math.sin(ph.breath + 2.1) * 0.02 * c.breathAmp;
     }
-    // 脚: 歩行は股関節から交互に振る。それ以外は接地に戻す。
+    // 脚: 歩行は股関節から交互に振る。座るときは股関節ごと下がり、脚は前へ倒れる
+    // (一本の脚なので膝は折らない — 甲板に脚を投げ出して座る姿になる)。
+    // それ以外は接地に戻す。
     const legSwing = walking ? 0.55 : 0;
-    if (legR.current) {
-      legR.current.rotation.x = THREE.MathUtils.damp(
-        legR.current.rotation.x,
-        step * legSwing,
-        10,
-        delta,
-      );
-    }
-    if (legL.current) {
-      legL.current.rotation.x = THREE.MathUtils.damp(
-        legL.current.rotation.x,
-        -step * legSwing,
+    const legSit = -SIT_SPREAD * c.sit;
+    for (const [leg, sign] of [
+      [legR, 1],
+      [legL, -1],
+    ] as const) {
+      if (!leg.current) continue;
+      leg.current.position.y = LEG_HIP_Y - drop;
+      leg.current.rotation.x = THREE.MathUtils.damp(
+        leg.current.rotation.x,
+        sign * step * legSwing + legSit,
         10,
         delta,
       );
@@ -525,7 +555,7 @@ export default function PhoenixModel({
         <group
           key={s}
           ref={s === 1 ? legR : legL}
-          position={[s * 0.088, 0.42, 0]}
+          position={[s * 0.088, LEG_HIP_Y, 0]}
         >
           <mesh geometry={ANKLE_GEO} material={RUST_DEEP_MAT} position={[0, -0.22, 0.02]} />
           <mesh geometry={BOOT_CUFF_GEO} material={RUST_MAT} position={[0, -0.305, 0.03]} />

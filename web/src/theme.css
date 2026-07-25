@@ -1887,6 +1887,25 @@ textarea {
   flex: none;
 }
 
+/* 休憩。世界を閉じていても休めるように、浮きピルにも置く
+   (世界の中にしか無いと、実際に作業している間は手が届かない)。 */
+.timer-break {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--paper) 75%, transparent);
+  border: 1px solid color-mix(in srgb, var(--paper) 35%, transparent);
+  border-radius: 999px;
+  padding: 0 12px;
+  min-height: 30px;
+  flex: none;
+}
+
+/* 休憩中。時計が止まっていることが、ピルを見ただけで分かるようにする。 */
+.timer-break.on {
+  color: #141414;
+  background: var(--sun-yellow);
+  border-color: transparent;
+}
+
 .timer-finish {
   background: var(--return-orange);
   color: #141414;
@@ -2561,6 +2580,28 @@ textarea {
   background: color-mix(in srgb, #0d2a24 68%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+}
+
+/* 休憩。時計を止める唯一の操作なので、設定チップより一段はっきりさせる
+   (ただし記録するボタンほど強くはしない — 航海の途中の行動なので)。 */
+.voyaging-break {
+  min-height: 36px;
+  margin-top: 12px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--ink) 42%, transparent);
+  background: color-mix(in srgb, #0d2a24 62%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* 休憩中は、押せば戻れることが分かるよう塗る。 */
+.voyaging-break.on {
+  color: var(--ink-fixed);
+  background: var(--sun-yellow);
+  border-color: transparent;
 }
 
 /* 航海の進み方(ポモドーロ・音)。時計の下に小さく添える控えめな切り替え。
@@ -3296,4 +3337,29 @@ textarea {
   font-size: 15px;
   font-variant-numeric: tabular-nums;
   color: var(--return-orange);
+}
+
+/* 狭い画面のピル。操作が4つ(音・休憩・終了・✕)あると一行には収まらず、
+   右端の✕から順にはみ出す。名前と時計を一行目に回して二段にする —
+   どれかを削るより、少し背の高い小さなカードになるほうが理に適っている。 */
+@media (max-width: 440px) {
+  .timer-chip {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 8px;
+    gap: 10px;
+    border-radius: 22px;
+    padding: 10px 14px;
+    max-width: 94vw;
+  }
+
+  /* 名前と時計で一行目を使い切る(押せば航海へ戻る、は変わらない)。 */
+  .timer-back {
+    flex: 1 0 100%;
+    justify-content: center;
+  }
+
+  .timer-name {
+    max-width: 52vw;
+  }
 }

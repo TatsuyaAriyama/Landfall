@@ -34,9 +34,13 @@ import { durationLabel, lang, t } from "../i18n";
 import {
   clockLabel,
   creditedMinutes,
+  elapsedSec,
+  endBreak,
   eraseTimer,
+  isOnBreak,
   pomoPhase,
   readTimer,
+  startBreak,
   writeTimer,
   type RunningTimer,
   type TimerMode,
@@ -108,7 +112,13 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   // 項目をタップしたら、その場で計測をはじめて航海の世界へ入る。
   // 分数を手で入れる画面は出さない(記録=航海そのもの)。
   const startTimer = (item: StudyItem, mode: TimerMode = "free") => {
-    const next: RunningTimer = { itemId: item.id, startedAt: Date.now(), mode };
+    const next: RunningTimer = {
+      itemId: item.id,
+      startedAt: Date.now(),
+      mode,
+      breakMs: 0,
+      breakStartedAt: null,
+    };
     writeTimer(next);
     setTimer(next);
     setRecording(null);
@@ -142,6 +152,18 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     const next: RunningTimer = { ...timer, mode: timer.mode === "pomo" ? "free" : "pomo" };
     writeTimer(next);
     setTimer(next);
+  };
+
+  /// 休憩に入る/おえる。時計はそのあいだ止まり、記録にも入らない。
+  /// 休憩ぶんは切り替えた瞬間に引かれるので、いまの時刻も同時に取り直す
+  /// (1秒ごとの now のままだと、再開の瞬間だけ時計が1秒巻き戻って見える)。
+  const toggleBreak = () => {
+    if (!timer) return;
+    const at = Date.now();
+    const next = isOnBreak(timer) ? endBreak(timer, at) : startBreak(timer, at);
+    writeTimer(next);
+    setTimer(next);
+    setNow(at);
   };
 
   /// 航海を終えてそのまま記録する。ダイアログは挟まない。
@@ -334,14 +356,14 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           <Suspense fallback={<div className="voyaging-world" />}>
             <VoyagingWorld
               itemName={data.items.find((i) => i.id === timer.itemId)?.name ?? ""}
-              startedAt={timer.startedAt}
-              mode={timer.mode}
+              timer={timer}
               hasDestination={data.destinations.some((d) => !d.achievedAt)}
               saving={saving}
               onFinish={(note) => void finishTimer(note)}
               onMinimize={() => setVoyaging(false)}
               onToggleMode={toggleMode}
               onManual={switchToManual}
+              onToggleBreak={toggleBreak}
               onDiscard={async () => {
                 if (await askConfirm({ title: t("timerDiscardConfirm"), danger: true })) {
                   clearTimer();
@@ -356,10 +378,10 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
       {timer && !voyaging && (
         <TimerChip
           item={data.items.find((i) => i.id === timer.itemId)}
-          startedAt={timer.startedAt}
-          mode={timer.mode}
+          timer={timer}
           now={now}
           onOpen={() => setVoyaging(true)}
+          onToggleBreak={toggleBreak}
           onFinish={() => void finishTimer("")}
           onDiscard={async () => {
             if (
@@ -447,37 +469,46 @@ export function SessionRow({
 /// ポモドーロは「集中 24:59」のように残り時間を出し、区切りでやわらかい合図が鳴る。
 function TimerChip({
   item,
-  startedAt,
-  mode,
+  timer,
   now,
   onOpen,
+  onToggleBreak,
   onFinish,
   onDiscard,
 }: {
   item?: StudyItem;
-  startedAt: number;
-  mode: TimerMode;
+  timer: RunningTimer;
   now: number;
   onOpen: () => void;
+  onToggleBreak: () => void;
   onFinish: () => void;
   onDiscard: () => void;
 }) {
   const [sound, setSound] = useState<SoundMode>(() => soundPref());
-  const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
+  // 休憩中は時計が止まる(elapsedSecが休憩ぶんを引く)。止まった数字だけでは
+  // 事故に見えるので、局面の代わりに「錨を下ろしている」と出す。
+  const resting = isOnBreak(timer);
+  const elapsed = elapsedSec(timer, now);
 
-  const phase = mode === "pomo" ? pomoPhase(elapsed) : null;
-  const phaseLabel = phase ? (phase.inFocus ? t("focusLabel") : t("breakLabel")) : "";
+  const phase = timer.mode === "pomo" && !resting ? pomoPhase(elapsed) : null;
+  const phaseLabel = resting
+    ? t("restingShort")
+    : phase
+      ? phase.inFocus
+        ? t("focusLabel")
+        : t("breakLabel")
+      : "";
   const phaseKey = phase?.key ?? "";
   const display = clockLabel(phase ? phase.left : elapsed);
 
   // 区切り(集中⇄休憩)の合図。開始直後には鳴らさない。
   const prevPhase = useRef(phaseKey);
   useEffect(() => {
-    if (mode === "pomo" && prevPhase.current !== phaseKey) {
+    if (timer.mode === "pomo" && prevPhase.current !== phaseKey) {
       prevPhase.current = phaseKey;
       playChime();
     }
-  }, [mode, phaseKey]);
+  }, [timer.mode, phaseKey]);
 
   // 計測中はタブのタイトルにも時間を出す(別タブで作業していても進みが見える)。
   useEffect(() => {
@@ -514,6 +545,14 @@ function TimerChip({
       </button>
       <button className="timer-sound" onClick={cycleSound}>
         {soundLabel}
+      </button>
+      {/* 休憩。世界を閉じて実際に作業しているときこそ要る操作なので、
+          世界の中だけでなくここにも置く。 */}
+      <button
+        className={`timer-break${resting ? " on" : ""}`}
+        onClick={onToggleBreak}
+      >
+        {resting ? t("endBreakShort") : t("takeBreakShort")}
       </button>
       <button className="timer-finish" onClick={onFinish}>
         {t("timerFinish")}

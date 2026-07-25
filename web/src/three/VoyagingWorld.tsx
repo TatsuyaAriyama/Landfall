@@ -18,7 +18,7 @@ import {
   stopSound,
   type SoundMode,
 } from "../audio";
-import { clockLabel, elapsedSec, pomoPhase, type TimerMode } from "../timer";
+import { clockLabel, elapsedSec, isOnBreak, pomoPhase, type RunningTimer } from "../timer";
 import { t } from "../i18n";
 import { useBackToClose } from "../backClose";
 
@@ -36,6 +36,11 @@ import { useBackToClose } from "../backClose";
 const CAM_POS: [number, number, number] = [-5.6, 2.4, 8.6];
 const CAM_TARGET = new THREE.Vector3(0.8, 1.15, 0);
 const CAM_FOV = 38;
+
+/// 既定のカメラが向いている方位(Y軸まわり)。他人の船の灯は、この向きに対して
+/// 横切らせる — 世界の座標軸に沿って走らせると、カメラは斜めを向いているので
+/// 航路のほとんどが画面の外を通ってしまう。
+const VIEW_YAW = Math.atan2(-(CAM_TARGET.x - CAM_POS[0]), -(CAM_TARGET.z - CAM_POS[2]));
 
 // 月と目的地の島の位置。縦長画面での見え方を実機で合わせた値。
 const MOON_POS: [number, number, number] = [5.1, 3.3, -5.5];
@@ -57,8 +62,13 @@ const SWELL_LAYERS = [
   { count: 12, zMin: 0.8, zSpread: 4.6, speed: 1.2, opacity: 0.22, len: 0.8 },
 ];
 
-function PassingSwells({ animate }: { animate: boolean }) {
+/// 休憩中の流れの速さ(通常=1)。錨を下ろしたら止まりきらずに漂う程度まで落ちる。
+const RESTING_FLOW = 0.12;
+
+function PassingSwells({ animate, resting }: { animate: boolean; resting: boolean }) {
   const layers = useRef<(THREE.Group | null)[]>([]);
+  // 速さは即座に切り替えず、船足が落ちるように減衰で寄せる。
+  const flow = useRef(1);
   // 毎フレーム乱数を引かない。決まった散らし方で並べる。
   const swells = useMemo(
     () =>
@@ -75,11 +85,12 @@ function PassingSwells({ animate }: { animate: boolean }) {
 
   useFrame((_, delta) => {
     if (!animate) return;
+    flow.current = THREE.MathUtils.damp(flow.current, resting ? RESTING_FLOW : 1, 0.7, delta);
     SWELL_LAYERS.forEach((layer, li) => {
       const group = layers.current[li];
       if (!group) return;
       for (const child of group.children) {
-        child.position.x -= delta * layer.speed;
+        child.position.x -= delta * layer.speed * flow.current;
         if (child.position.x < SWELL_MIN_X) child.position.x += SWELL_SPAN;
       }
     });
@@ -137,11 +148,12 @@ const VOYAGING_GULLS: GullFlock = [
 /// 距離は漸近的に縮めるので、追い越して背後へ抜けてしまうことはない。
 const ISLAND_APPROACH = 1.2; // 開始時は最終距離の2.2倍だけ遠い
 const ISLAND_TAU = 1500; // 25分でおよそ半分まで詰まる
-function ApproachingIsland({ startedAt, animate }: { startedAt: number; animate: boolean }) {
+function ApproachingIsland({ timer, animate }: { timer: RunningTimer; animate: boolean }) {
   const group = useRef<THREE.Group>(null);
 
   const place = (g: THREE.Group) => {
-    const elapsed = Math.max(0, (Date.now() - startedAt) / 1000);
+    // 近づく距離は「働いた時間」で決まる。休憩しているあいだ、島は近づかない。
+    const elapsed = elapsedSec(timer);
     const k = 1 + ISLAND_APPROACH * Math.exp(-elapsed / ISLAND_TAU);
     g.position.set(ISLAND_POS[0] * k, ISLAND_POS[1], ISLAND_POS[2] * k);
   };
@@ -167,15 +179,18 @@ function ApproachingIsland({ startedAt, animate }: { startedAt: number; animate:
 function VoyagingSea({
   animate,
   showIsland,
-  startedAt,
+  timer,
+  resting,
 }: {
   animate: boolean;
   showIsland: boolean;
-  startedAt: number;
+  timer: RunningTimer;
+  resting: boolean;
 }) {
   const parts = useMemo(() => boatProps(), []);
-  // 甲板の航海士。待機を基本に、ときどき辺りを見渡す(navigatorPose.ts)。
-  const pose = useNavigatorPose(animate);
+  // 甲板の航海士。待機を基本にときどき辺りを見渡し、休憩中は腰を下ろす
+  // (立ち座りだけは PhoenixModel がゆっくり補間する)。
+  const pose = useNavigatorPose(animate, resting ? "sit" : null);
 
   // カメラは OrbitControls に任せる(見渡せるようにするため)。
   // ここで camera.position / lookAt を書くと操作と取り合いになるので触らない。
@@ -204,12 +219,15 @@ function VoyagingSea({
       {/* 水面の月光の筋は月の真下に立てる。 */}
       <Sea moonX={MOON_POS[0]} animate={animate} />
       <Horizon />
-      <PassingSwells animate={animate} />
+      <PassingSwells animate={animate} resting={resting} />
       <Gulls flock={VOYAGING_GULLS} animate={animate} />
-      {/* 数分に一度、水平線の手前を他人の船の灯が渡っていく。 */}
-      <PassingShip animate={animate} />
+      {/* 数分に一度、水平線の手前を他人の船の灯が渡っていく。
+          既定の視線を横切る向きに置く(VIEW_YAW)。 */}
+      <group rotation={[0, VIEW_YAW, 0]}>
+        <PassingShip animate={animate} />
+      </group>
       {/* 目的地があるなら、その島を遠くの前方に置く。何へ向かっているかが見える。 */}
-      {showIsland && <ApproachingIsland startedAt={startedAt} animate={animate} />}
+      {showIsland && <ApproachingIsland timer={timer} animate={animate} />}
       {/* 自分の船。配置は VoyageScene と同値(甲板の航海士も同じ位置・姿)。
           同心円の波紋(Ripples)は「その場で揺れている」に見えるので、走っている
           この画面では使わない。後ろへ引く航跡と、流れる水の筋で進みを見せる。 */}
@@ -237,8 +255,8 @@ function VoyagingSea({
 
 export interface VoyagingWorldProps {
   itemName: string;
-  startedAt: number;
-  mode: TimerMode;
+  /// 走っている航海そのもの(休憩の状態を含む)。
+  timer: RunningTimer;
   /// 目的地が設定されているか。遠くに島を出すかどうかだけに使う。
   hasDestination: boolean;
   /// 記録の書き込み中。二重に押させない。
@@ -250,12 +268,13 @@ export interface VoyagingWorldProps {
   onToggleMode: () => void;
   /// 手で分数を入れる従来の記録へ逃げる(計測を始め忘れたとき用)。
   onManual: () => void;
+  /// 休憩に入る/休憩をおえる。時計はこのあいだ止まる。
+  onToggleBreak: () => void;
 }
 
 export default function VoyagingWorld({
   itemName,
-  startedAt,
-  mode,
+  timer,
   hasDestination,
   saving = false,
   onFinish,
@@ -263,7 +282,10 @@ export default function VoyagingWorld({
   onMinimize,
   onToggleMode,
   onManual,
+  onToggleBreak,
 }: VoyagingWorldProps) {
+  const mode = timer.mode;
+  const resting = isOnBreak(timer);
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
@@ -280,8 +302,8 @@ export default function VoyagingWorld({
     return () => clearInterval(id);
   }, []);
 
-  const sec = elapsedSec({ itemId: "", startedAt, mode }, now);
-  const phase = mode === "pomo" ? pomoPhase(sec) : null;
+  const sec = elapsedSec(timer, now);
+  const phase = mode === "pomo" && !resting ? pomoPhase(sec) : null;
   // 自由計測は経過を数え上げ、ポモドーロは今の局面の残りを数え下げる。
   const display = phase ? clockLabel(phase.left) : clockLabel(sec);
 
@@ -366,7 +388,8 @@ export default function VoyagingWorld({
         <VoyagingSea
           animate={animate}
           showIsland={hasDestination}
-          startedAt={startedAt}
+          timer={timer}
+          resting={resting}
         />
       </Canvas>
 
@@ -376,12 +399,28 @@ export default function VoyagingWorld({
             <p className="voyaging-item">{itemName}</p>
             <p className="voyaging-clock">{display}</p>
             <p className="voyaging-phase">
-              {phase
-                ? phase.inFocus
-                  ? t("focusLabel")
-                  : t("breakLabel")
-                : t("voyagingNow")}
+              {resting
+                ? t("restingNow")
+                : phase
+                  ? phase.inFocus
+                    ? t("focusLabel")
+                    : t("breakLabel")
+                  : t("voyagingNow")}
             </p>
+            {/* 休憩。押すと時計が止まり、甲板の航海士が腰を下ろす。
+                設定(下のチップ)でも記録の締め(下のパネル)でもない、
+                この航海の途中の行動なので、時計のすぐ下に単独で置く。 */}
+            <button
+              className={`voyaging-break${resting ? " on" : ""}`}
+              onClick={() => {
+                // 休憩ぶんはこの瞬間に引かれる。1秒ごとの now のままだと
+                // 再開した瞬間だけ時計が1秒巻き戻って見えるので、取り直す。
+                setNow(Date.now());
+                onToggleBreak();
+              }}
+            >
+              {resting ? t("endBreak") : t("takeBreak")}
+            </button>
             {/* 航海の「進み方」の設定。下の行動(記録する/やめる)とは別ものなので、
                 時計のそばに小さく置いて混ぜない。 */}
             <div className="voyaging-modes">

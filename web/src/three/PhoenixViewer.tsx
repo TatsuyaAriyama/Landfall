@@ -21,6 +21,7 @@ const POSES: { key: PhoenixPose; label: string }[] = [
   { key: "point", label: "陸を指す" },
   { key: "stargaze", label: "星を読む" },
   { key: "rest", label: "一息つく" },
+  { key: "sit", label: "腰を下ろす" },
 ];
 
 export default function PhoenixViewer() {
