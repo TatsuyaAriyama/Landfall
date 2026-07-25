@@ -7,11 +7,13 @@
 # 逆に /assets/ の中身はファイル名にハッシュが入っていて中身が変われば名前も
 # 変わるので、長く持たせて良い(immutable)。
 
+# no-cache は Cloudflare 側で max-age=14400 に正規化されてしまったので、
+# トップページと同じ「max-age=0 + 毎回検証」の形で書く(こちらは通る)。
 /sw.js
-  Cache-Control: no-cache
+  Cache-Control: public, max-age=0, must-revalidate
 
 /manifest.webmanifest
-  Cache-Control: no-cache
+  Cache-Control: public, max-age=0, must-revalidate
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
