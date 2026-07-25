@@ -13,6 +13,8 @@ const ja = {
     "Instagram・LINEなどアプリ内のブラウザでは、Googleサインインができません。右上のメニューから「ブラウザで開く」を選んでください。",
   signInStorageBlocked:
     "この端末の設定(プライベートブラウズ等)でサインインがブロックされました。通常のブラウズモードでお試しください。",
+  signInPopupBlocked:
+    "ポップアップがブロックされました。ブラウザの設定でこのサイトのポップアップを許可して、もう一度お試しください。",
   today: "ホーム",
   trace: "軌跡",
   harbor: "港",
@@ -307,6 +309,8 @@ const en: Record<I18nKey, string> = {
     "Google sign-in doesn't work inside Instagram, LINE, or similar in-app browsers. Please open this page in Safari or Chrome from the menu.",
   signInStorageBlocked:
     "Sign-in was blocked by this browser's settings (e.g. private browsing). Please try again in normal browsing mode.",
+  signInPopupBlocked:
+    "The sign-in popup was blocked. Please allow popups for this site in your browser settings and try again.",
   today: "Home",
   trace: "Trace",
   harbor: "Harbor",

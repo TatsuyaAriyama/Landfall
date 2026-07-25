@@ -63,6 +63,9 @@ function messageForCode(code: string): string | null {
   if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
     return null; // 本人が閉じただけなので、エラーとしては見せない。
   }
+  if (code === "auth/popup-blocked") {
+    return t("signInPopupBlocked");
+  }
   if (code === "auth/web-storage-unsupported" || code === "auth/operation-not-supported-in-this-environment") {
     return t("signInStorageBlocked");
   }
