@@ -22,7 +22,8 @@ import {
   type VoyageStep,
 } from "./VoyageScene";
 import { Gulls, type GullFlock } from "./Gulls";
-import { boatProps, navigatorPose } from "../boat";
+import { boatProps } from "../boat";
+import { useNavigatorPose } from "./navigatorPose";
 import { playPlink } from "../audio";
 import type { UserData } from "../data";
 import {
@@ -276,6 +277,8 @@ function ShootingStar({ animate }: { animate: boolean }) {
 /// 連打はタイムラインを巻き直すだけなので壊れない。
 function PlayfulBoat({ boatX, animate }: { boatX: number; animate: boolean }) {
   const parts = useMemo(() => boatProps(), []);
+  // 甲板の航海士。選んだ姿のまま、ときどき辺りを見渡す。
+  const pose = useNavigatorPose(animate);
   const hop = useRef<THREE.Group>(null);
   const ringMesh = useRef<THREE.Mesh>(null);
   const ringMat = useRef<THREE.MeshBasicMaterial>(null);
@@ -341,7 +344,7 @@ function PlayfulBoat({ boatX, animate }: { boatX: number; animate: boolean }) {
         <BoatModel parts={parts} animate={animate} />
         {/* 甲板の自分の航海士(カードと同じ配置。姿は装いで選んだもの) */}
         <group position={[0.88, 0.57, 0.22]} scale={0.62}>
-          <PhoenixModel animate={animate} pose={navigatorPose()} />
+          <PhoenixModel animate={animate} pose={pose} />
         </group>
       </group>
       {/* 透明な当たり判定(船体+帆を覆う) */}

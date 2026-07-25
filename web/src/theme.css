@@ -3287,3 +3287,13 @@ textarea {
 .dest-card {
   touch-action: manipulation;
 }
+
+/* 記録の入力で、分の打ち込みを「時間・分」でどう読むかを添える一行。
+   90 と出ていても 1時間30分 だとすぐ分からないため。 */
+.stepper-reading {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--return-orange);
+}

@@ -15,6 +15,7 @@ const YAWS = [0, 90, 180, 270];
 const POSES: { key: PhoenixPose; label: string }[] = [
   { key: "idle", label: "待機" },
   { key: "walk", label: "歩く" },
+  { key: "lookout", label: "見渡す" },
   { key: "raise", label: "掲げる" },
   { key: "hail", label: "手を振る" },
   { key: "point", label: "陸を指す" },

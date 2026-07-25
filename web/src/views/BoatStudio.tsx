@@ -108,6 +108,7 @@ function SailorStage({ pose, animate }: { pose: PhoenixPose; animate: boolean })
 const POSES: [PhoenixPose, I18nKey][] = [
   ["idle", "poseIdle"],
   ["walk", "poseWalk"],
+  ["lookout", "poseLookout"],
   ["raise", "poseRaise"],
   ["hail", "poseHail"],
   ["point", "posePoint"],

@@ -7,7 +7,9 @@ import {
 } from "../harbor";
 import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
-import { fullDateLabel, lang, t, tf } from "../i18n";
+import { fullDateLabel, lang, t, tf,
+  durationLabel,
+} from "../i18n";
 
 /// 港のメンバーの月間の軌跡。学んだ日と、日ごとの記録(項目・分・ひとこと)。
 /// プライベート(rooms)とパブリック(publicHarbors)で同じ画面を使う。
@@ -170,10 +172,7 @@ export function MemberTrace({
                           </div>
                         )}
                       </div>
-                      <span className="row-minutes">
-                        {s.minutes}
-                        {t("minutesUnit")}
-                      </span>
+                      <span className="row-minutes">{durationLabel(s.minutes)}</span>
                     </div>
                   );
                 })}

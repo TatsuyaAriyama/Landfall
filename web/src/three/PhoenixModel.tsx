@@ -214,7 +214,16 @@ const LANTERN_GLOW_MAT = new THREE.MeshStandardMaterial({
 ///  - point:    空いた手で水平線の先を指す(目的地が見えた)
 ///  - stargaze: 灯を落として星を読む(進路を確かめる静かな夜)
 ///  - rest:     灯を両手で囲んで一息つく(休んだ日も、航海のうち)
-export type PhoenixPose = "idle" | "walk" | "raise" | "hail" | "point" | "stargaze" | "rest";
+///  - lookout:  体ごと向きを変えて辺りを見渡す(見張り)
+export type PhoenixPose =
+  | "idle"
+  | "walk"
+  | "lookout"
+  | "raise"
+  | "hail"
+  | "point"
+  | "stargaze"
+  | "rest";
 
 /// ポーズごとの基本値(振りの中心)。振動はこの上に足す。
 /// 全項目が減衰補間の対象なので、どのポーズからどのポーズへ切り替えても
@@ -235,6 +244,9 @@ interface PoseBase {
   /// 首の見渡し。振幅(rad)と速さ(rad/s)。何かを見つめるポーズでは小さくする。
   scan: number;
   scanSpeed: number;
+  /// 上体ごと左右へ向き直る振幅(rad)。首と同じ周期で、少し遅れて追う
+  /// (首だけが動くのは「気配を窺う」、体まで回るのが「見渡す」)。
+  turn: number;
   /// 腕とランタンのゆらぎの強さ。止まって見せたいポーズほど小さく。
   sway: number;
   /// 呼吸の深さ(1=待機)と速さ(rad/s)。休むポーズほど深く、遅く。
@@ -248,36 +260,51 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
   idle: {
     armRx: 0, armRz: 0.14, armLx: 0, armLz: -0.14,
     lean: 0, wind: 1, headX: 0, scan: 0.14, scanSpeed: 0.3,
+    turn: 0,
     sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5,
   },
   walk: {
     armRx: 0, armRz: 0.12, armLx: 0, armLz: -0.12,
     lean: 0.09, wind: 1.7, headX: 0, scan: 0.05, scanSpeed: 0.3,
+    turn: 0,
     sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5,
+  },
+  // 見渡す: 上体ごと左右へ向き直り、左手を額にかざして水平線を追う。
+  // 首だけ動かす待機と違い、体まで回る — しかも体は首より遅れて追う。
+  // 星を読む(見上げて静止)とは、首の上下と体の回転で対になる。
+  lookout: {
+    armRx: 0.02, armRz: 0.16, armLx: -2.3, armLz: 0.14,
+    lean: 0.02, wind: 1.2, headX: -0.02, scan: 0.46, scanSpeed: 0.55,
+    turn: 0.4,
+    sway: 0.7, breathAmp: 1, breathSpeed: 0.8, glow: 1.5,
   },
   raise: {
     armRx: -2.35, armRz: 0.06, armLx: 0, armLz: -0.16,
     lean: -0.04, wind: 1.15, headX: -0.14, scan: 0.14, scanSpeed: 0.3,
+    turn: 0,
     sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 2.3,
   },
   hail: {
     armRx: 0, armRz: 0.14, armLx: 0, armLz: -2.55,
     lean: 0, wind: 1.1, headX: 0, scan: 0.14, scanSpeed: 0.3,
+    turn: 0,
     sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5,
   },
   // 陸を指す: 左手をほぼ水平に伸ばして舳先の先を指し、上体は前へ。
   // 首は振らない — 見つけたものから目を離さない姿が、この仕草の要。
   // 灯を提げた右腕は前傾の釣り合いでわずかに後ろへ流れる。
   point: {
-    armRx: 0.1, armRz: 0.12, armLx: -1.66, armLz: 0.06,
-    lean: 0.12, wind: 1.45, headX: -0.08, scan: 0.02, scanSpeed: 0.2,
+    armRx: 0.1, armRz: 0.12, armLx: -1.8, armLz: 0.06,
+    lean: 0.14, wind: 1.45, headX: -0.08, scan: 0.02, scanSpeed: 0.2,
+    turn: 0,
     sway: 0.25, breathAmp: 0.8, breathSpeed: 0.9, glow: 1.6,
   },
   // 星を読む: 空を仰ぎ、左手を額にかざす。灯は後ろへ下げて暗く落とす
   // (手元が明るいと星は読めない)。首はゆっくり、星座をなぞる速さで巡る。
   stargaze: {
-    armRx: 0.3, armRz: 0.2, armLx: -2.45, armLz: 0.1,
+    armRx: 0.3, armRz: 0.2, armLx: -2.58, armLz: 0.1,
     lean: -0.1, wind: 0.8, headX: -0.46, scan: 0.2, scanSpeed: 0.16,
+    turn: 0,
     sway: 0.5, breathAmp: 1.2, breathSpeed: 0.7, glow: 0.85,
   },
   // 一息つく: 両手を前で合わせて灯を囲み、うつむいてその光を見る。
@@ -285,6 +312,7 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
   rest: {
     armRx: -0.8, armRz: -0.3, armLx: -0.86, armLz: 0.32,
     lean: 0.07, wind: 0.75, headX: 0.32, scan: 0.05, scanSpeed: 0.22,
+    turn: 0,
     sway: 0.6, breathAmp: 1.75, breathSpeed: 0.58, glow: 2,
   },
 };
@@ -337,6 +365,7 @@ export default function PhoenixModel({
     to("headX");
     to("scan");
     to("scanSpeed");
+    to("turn");
     to("sway");
     to("breathAmp");
     to("breathSpeed");
@@ -362,6 +391,9 @@ export default function PhoenixModel({
         : Math.sin(ph.breath) * 0.018 * c.breathAmp;
       core.current.rotation.x = c.lean + Math.sin(ph.breath + 0.9) * 0.01 * c.breathAmp;
       core.current.rotation.z = walking ? step * 0.03 : 0;
+      // 見渡し: 上体ごと左右へ。首と同じ周期を少し遅れて追いかけることで、
+      // 「首が先に向いて、体があとからついてくる」生きものの順序になる。
+      core.current.rotation.y = Math.sin(ph.scan - 0.55) * c.turn;
     }
     // 首: ポーズごとの上下と見渡し。何かを見つめるポーズでは振幅がほぼ0になり、
     // 「目を離さない」ことそのものが仕草の意味になる。

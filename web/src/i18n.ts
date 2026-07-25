@@ -257,6 +257,7 @@ const ja = {
   sailorTitle: "あなたの航海士",
   poseIdle: "待機",
   poseWalk: "歩く",
+  poseLookout: "見渡す",
   poseRaise: "掲げる",
   poseHail: "手を振る",
   posePoint: "陸を指す",
@@ -567,6 +568,7 @@ const en: Record<I18nKey, string> = {
   sailorTitle: "Your navigator",
   poseIdle: "Idle",
   poseWalk: "Walk",
+  poseLookout: "Look out",
   poseRaise: "Raise",
   poseHail: "Wave",
   posePoint: "Sight land",
@@ -672,11 +674,10 @@ export function remainingDaysLabel(days: number): string {
 export function deadlineRemainingLabel(remainingMs: number): string {
   const minutes = Math.max(0, Math.ceil(remainingMs / 60000));
   if (minutes >= 1440) return remainingDaysLabel(Math.round(minutes / 1440));
-  if (minutes >= 60) {
-    const h = Math.floor(minutes / 60);
-    return lang === "ja" ? `あと${h}時間` : `${h}h to go`;
-  }
-  return lang === "ja" ? `あと${minutes}分` : `${minutes}m to go`;
+  // 1時間を超えたら分を捨てていた(90分残りが「あと1時間」に見えていた)。
+  // 時間の表記はアプリ全体で durationLabel に揃える。
+  if (lang === "ja") return `あと${durationLabel(minutes)}`;
+  return `${durationLabel(minutes)} to go`;
 }
 
 /// チャットの発言時刻。「14:32」。
@@ -759,8 +760,8 @@ export function reviewLine(name: string, gapDays: number): string {
 /// チャットの自動行。iOS の書式と同じ文になるようにする。
 export function chatLandfallLine(name: string, item: string, minutes: number): string {
   return lang === "ja"
-    ? `${name}が着岸 — ${item}、${minutes}分`
-    : `${name} made landfall — ${item}, ${minutes} min`;
+    ? `${name}が着岸 — ${item}、${durationLabel(minutes)}`
+    : `${name} made landfall — ${item}, ${durationLabel(minutes)}`;
 }
 
 export function chatReturnLine(name: string, gapDays: number): string {

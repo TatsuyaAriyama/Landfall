@@ -7,7 +7,8 @@ import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Sea } from "./SeaParts";
 import { Horizon, Island, Wake } from "./VoyageScene";
 import { Gulls, type GullFlock } from "./Gulls";
-import { boatProps, navigatorPose } from "../boat";
+import { boatProps } from "../boat";
+import { useNavigatorPose } from "./navigatorPose";
 import {
   playChime,
   setSoundPref,
@@ -172,6 +173,8 @@ function VoyagingSea({
   startedAt: number;
 }) {
   const parts = useMemo(() => boatProps(), []);
+  // 甲板の航海士。選んだ姿のまま、ときどき辺りを見渡す。
+  const pose = useNavigatorPose(animate);
 
   // カメラは OrbitControls に任せる(見渡せるようにするため)。
   // ここで camera.position / lookAt を書くと操作と取り合いになるので触らない。
@@ -211,7 +214,7 @@ function VoyagingSea({
         <Wake animate={animate} />
         <BoatModel parts={parts} animate={animate} />
         <group position={[0.88, 0.57, 0.22]} scale={0.62}>
-          <PhoenixModel animate={animate} pose={navigatorPose()} />
+          <PhoenixModel animate={animate} pose={pose} />
         </group>
       </group>
       {/* ドラッグで360度見渡せる。水平は制限なし、俯角は水面より下へ潜らせない

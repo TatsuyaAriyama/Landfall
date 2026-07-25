@@ -7,7 +7,8 @@ import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
 import { Gulls, type GullFlock } from "./Gulls";
 import { TAP_SLOP } from "./VoyageWorld";
-import { boatProps, navigatorPose } from "../boat";
+import { boatProps } from "../boat";
+import { useNavigatorPose } from "./navigatorPose";
 import { shortDateLabel } from "../i18n";
 
 // 目的地の航海シーン。自分の船が、夜の海を島へ向かって走っている。
@@ -356,6 +357,8 @@ function VoyageSea({
   steps?: VoyageStep[];
 }) {
   const parts = useMemo(() => boatProps(), []);
+  // 甲板の航海士。選んだ姿のまま、ときどき辺りを見渡す。
+  const pose = useNavigatorPose(animate);
   const travel = useRef<THREE.Group>(null);
   const targetX = X_START + Math.min(Math.max(ratio, 0), 1) * (X_END - X_START);
   const xRef = useRef(targetX);
@@ -422,7 +425,7 @@ function VoyageSea({
             避けつつ舳先の反りに脚が入らない x=0.88、帆に隠れない手前の舷側 z=+0.22。
             姿は装いで選んだもの。iOS VoyageSceneKit と同値。 */}
         <group position={[0.88, 0.57, 0.22]} scale={0.62}>
-          <PhoenixModel animate={animate} pose={navigatorPose()} />
+          <PhoenixModel animate={animate} pose={pose} />
         </group>
       </group>
     </>

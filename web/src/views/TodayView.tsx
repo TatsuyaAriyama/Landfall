@@ -607,6 +607,9 @@ function RecordDialog({
             +
           </button>
         </div>
+        {/* 分だけだと1時間を超えたときに読み取れない(90と出ても1時間30分だと
+            すぐ分からない)。打ち込みは分のままが速いので、読み方だけ添える。 */}
+        {minutes >= 60 && <p className="stepper-reading">{durationLabel(minutes)}</p>}
         <div className="chip-row" style={{ justifyContent: "center", marginTop: 14 }}>
           {MINUTE_PRESETS.map((m) => (
             <button
@@ -614,7 +617,7 @@ function RecordDialog({
               className={`chip${minutes === m ? " selected" : ""}`}
               onClick={() => setMinutes(m)}
             >
-              {m}
+              {durationLabel(m)}
             </button>
           ))}
         </div>
