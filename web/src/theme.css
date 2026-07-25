@@ -1996,15 +1996,31 @@ textarea {
   }
 }
 
+/* 月。淡い暈(かさ)を伴って夜空に浮かぶ。暈は box-shadow の柔らかい環で、
+   グラデーション塗りは使わない(フラットの世界観を保つ)。 */
 .harbor-moon {
   position: absolute;
-  top: 10%;
-  right: 12%;
+  top: 9%;
+  right: 14%;
   width: clamp(40px, 5vw, 56px);
   height: clamp(40px, 5vw, 56px);
   border-radius: 50%;
   background: var(--harbor-sand);
   opacity: 0.85;
+  box-shadow:
+    0 0 0 10px color-mix(in srgb, var(--harbor-sand) 8%, transparent),
+    0 0 0 22px color-mix(in srgb, var(--harbor-sand) 4%, transparent),
+    0 0 60px 18px color-mix(in srgb, var(--harbor-sand) 12%, transparent);
+  animation: harbor-moonbreathe 7s ease-in-out infinite alternate;
+}
+
+@keyframes harbor-moonbreathe {
+  from {
+    opacity: 0.78;
+  }
+  to {
+    opacity: 0.92;
+  }
 }
 
 /* 中央の言葉とボタン */
@@ -2037,36 +2053,71 @@ textarea {
 .harbor-actions {
   width: min(340px, 100%);
   margin-top: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* サインインの入口。Apple は黒地、Google は白地の公式ボタン意匠に沿いつつ、
+   角丸と字送りだけこの世界に合わせる。 */
+.harbor-signin-button {
+  width: 100%;
+  height: 54px;
+  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  transition: transform 0.12s ease-out, opacity 0.12s ease-out, background 0.15s ease-out;
+}
+
+.harbor-signin-button svg {
+  flex: none;
+  display: block;
+}
+
+.harbor-signin-button:active {
+  transform: scale(0.985);
+}
+
+.harbor-signin-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.harbor-apple {
+  background: #000;
+  color: #fff;
+}
+
+.harbor-apple:hover:not(:disabled) {
+  background: #141414;
 }
 
 .harbor-google {
-  width: 100%;
-  height: 56px;
-  border-radius: var(--radius);
-  background: var(--harbor-sand);
-  color: var(--harbor-teal);
-  font-size: 16px;
-  font-weight: 500;
-  transition: background 0.15s ease-out, transform 0.12s ease-out, opacity 0.12s ease-out;
+  background: #fff;
+  color: #1f1f1f;
 }
 
-.harbor-google:hover {
-  background: #f5ecd2;
+.harbor-google:hover:not(:disabled) {
+  background: #f3f3f3;
 }
 
-.harbor-google:active {
-  transform: scale(0.98);
-}
-
-.harbor-google:disabled {
-  opacity: 0.5;
-  cursor: default;
+/* 入口に添える一言。アカウントの用途をここで静かに伝える。 */
+.harbor-note {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--harbor-sand) 42%, transparent);
 }
 
 .harbor-error {
   font-size: 14px;
   color: var(--coral);
-  margin: 16px 0 0;
+  margin: 8px 0 0;
 }
 
 /* 海 */
@@ -2084,6 +2135,25 @@ textarea {
   top: 40%;
   height: 2px;
   background: color-mix(in srgb, var(--harbor-sand) 25%, transparent);
+}
+
+/* 月光の道。月(右上)の真下、水平線から手前へ細く落ちて、端ほど淡く消える光。
+   単色の塗りに mask で減衰をかけ、板に見えないようにする(海面の反射)。 */
+.harbor-moonpath {
+  position: absolute;
+  top: 40%;
+  left: 86%;
+  width: clamp(52px, 7vw, 86px);
+  height: 58%;
+  transform: translateX(-50%);
+  background: var(--harbor-sand);
+  opacity: 0.16;
+  clip-path: polygon(46% 0, 54% 0, 82% 100%, 18% 100%);
+  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent);
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent);
+  pointer-events: none;
+  /* 海岸(手前の陸)より上に置いて、光の道が隠れないようにする。 */
+  z-index: 1;
 }
 
 .harbor-glint {
@@ -2158,7 +2228,8 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   .harbor-boat,
-  .harbor-star {
+  .harbor-star,
+  .harbor-moon {
     animation: none;
   }
 }

@@ -2,8 +2,9 @@ import {
   getRedirectResult,
   signInWithPopup,
   signInWithRedirect,
+  type AuthProvider,
 } from "firebase/auth";
-import { auth, googleProvider } from "./firebase";
+import { appleProvider, auth, googleProvider } from "./firebase";
 
 // iPad / iPhone の Safari はトラッキング防止(ITP)とポップアップ制限が厳しく、
 // signInWithPopup が失敗・ブロックされやすい。これらの端末では同じタブで遷移して
@@ -33,18 +34,18 @@ export async function completeRedirectSignIn(): Promise<void> {
 // disabled をすり抜けたイベントでポップアップ/リダイレクトが二重に起きるのを防ぐ。
 let signInInFlight = false;
 
-/// Google サインイン。モバイル Safari はリダイレクト、それ以外はポップアップ。
+/// 共通のサインイン。モバイル Safari はリダイレクト、それ以外はポップアップ。
 /// ポップアップが塞がれた場合もリダイレクトに切り替えて確実にログインさせる。
-export async function signInWithGoogle(): Promise<void> {
+async function signInWith(provider: AuthProvider): Promise<void> {
   if (signInInFlight) return;
   signInInFlight = true;
   try {
     if (prefersRedirect()) {
-      await signInWithRedirect(auth, googleProvider);
+      await signInWithRedirect(auth, provider);
       return; // ここでページが遷移するため戻らない
     }
     try {
-      await signInWithPopup(auth, googleProvider);
+      await signInWithPopup(auth, provider);
     } catch (e) {
       const code = (e as { code?: string }).code ?? "";
       if (
@@ -52,7 +53,7 @@ export async function signInWithGoogle(): Promise<void> {
         code === "auth/operation-not-supported-in-this-environment" ||
         code === "auth/cancelled-popup-request"
       ) {
-        await signInWithRedirect(auth, googleProvider);
+        await signInWithRedirect(auth, provider);
         return;
       }
       throw e;
@@ -60,4 +61,14 @@ export async function signInWithGoogle(): Promise<void> {
   } finally {
     signInInFlight = false;
   }
+}
+
+/// Google サインイン。
+export function signInWithGoogle(): Promise<void> {
+  return signInWith(googleProvider);
+}
+
+/// Apple サインイン(Sign in with Apple)。
+export function signInWithApple(): Promise<void> {
+  return signInWith(appleProvider);
 }

@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
 import {
   getFirestore,
   initializeFirestore,
@@ -38,3 +38,9 @@ function createFirestore() {
 export const db = createFirestore();
 
 export const googleProvider = new GoogleAuthProvider();
+
+// Apple サインイン。Firebase コンソールで Apple プロバイダを有効にしておく必要がある
+// (Apple Developer の Services ID / キーの登録が前提。docs/WEB_APPLE_SIGNIN.md)。
+export const appleProvider = new OAuthProvider("apple.com");
+appleProvider.addScope("email");
+appleProvider.addScope("name");
