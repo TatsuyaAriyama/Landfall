@@ -324,7 +324,7 @@ const CONTACT_EVERY = 5;
 const LEG_HIP_Y = 0.42;
 /// 座ったときに股関節が落ちる量。裾が床に着くあたりが自然に見える。
 /// 下げすぎても接地判定(上記)が押し戻すので、床にめり込むことはない。
-const SIT_DROP = 0.75; // TEMP-VERIFY 極端な値でも床を割らないこと
+const SIT_DROP = 0.3;
 /// 座ったときに脚を前へ倒す角(rad)。水平まで倒すと下がった腰の高さのぶん
 /// 脚が甲板から浮くので、少し手前で止めて爪先を甲板に着ける。
 const SIT_SPREAD = 1.24;
@@ -572,9 +572,6 @@ export default function PhoenixModel({
         CONTACT_BOX.applyMatrix4(CONTACT_INV);
         lift.current = Math.max(0, -CONTACT_BOX.min.y);
         body.position.y = applied;
-        // TEMP-VERIFY: 補正前の深さと、補正を当てたあとの最下点
-        const w = window as unknown as { __contact?: string };
-        w.__contact = `tick=${tick.current} kids=${body.children.length} coreY=${core.current ? core.current.position.y.toFixed(3) : "?"} sit=${c.sit.toFixed(2)} rawMinY=${CONTACT_BOX.min.y.toFixed(3)} lift=${lift.current.toFixed(3)} appliedY=${applied.toFixed(3)}`;
       }
       // 測り直しは間引くので、その間は補間でつなぐ(段になって見えないように)。
       body.position.y = THREE.MathUtils.damp(body.position.y, lift.current, 12, delta);
