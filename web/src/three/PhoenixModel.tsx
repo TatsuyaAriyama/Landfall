@@ -308,15 +308,23 @@ interface PoseBase {
   sit: number;
 }
 
+// ---- 接地(当たり判定) ----
+// このモデルの原点 y=0 は「床」そのもの — 甲板に立たせるときも y=0 が甲板の高さになる。
+// ポーズによっては体のどこかが y=0 より下へ出てしまう(座る、など)。そこで毎フレーム、
+// 実際に姿勢を当てたあとの体の当たり判定(AABB)を測り、床を割ったぶんだけ全体を
+// 持ち上げる。数値の手調整で「これ以上下げない」と決めるより確実で、これから足す
+// ポーズにも自動で効く。押し上げるだけで、決して下げない(歩行で足が浮くのは正しい)。
+const CONTACT_BOX = new THREE.Box3();
+const CONTACT_INV = new THREE.Matrix4();
+/// 当たり判定を測り直す間隔(フレーム)。最下点はゆっくりしか変わらないので毎フレームは要らない。
+const CONTACT_EVERY = 5;
+
 // ---- 立ち座りの寸法 ----
 /// 股関節の高さ(立っているとき)。JSXの脚グループの初期位置と同値。
 const LEG_HIP_Y = 0.42;
-/// 座ったときに股関節が落ちる量。
-/// このモデルの原点(y=0)は「接地面」そのもの — 甲板に立たせるときも y=0 が
-/// 甲板の高さになる。だから座らせるときに下げてよいのは、いちばん低い見える部品
-/// (コートの裾 y=0.3)が y=0 に着くところまで。それ以上下げると体が甲板の下へ
-/// 潜り、船にめり込んで見える。
-const SIT_DROP = 0.3;
+/// 座ったときに股関節が落ちる量。裾が床に着くあたりが自然に見える。
+/// 下げすぎても接地判定(上記)が押し戻すので、床にめり込むことはない。
+const SIT_DROP = 0.75; // TEMP-VERIFY 極端な値でも床を割らないこと
 /// 座ったときに脚を前へ倒す角(rad)。水平まで倒すと下がった腰の高さのぶん
 /// 脚が甲板から浮くので、少し手前で止めて爪先を甲板に着ける。
 const SIT_SPREAD = 1.24;
@@ -416,6 +424,11 @@ export default function PhoenixModel({
   const legR = useRef<THREE.Group>(null);
   const legL = useRef<THREE.Group>(null);
   const lantern = useRef<THREE.Group>(null);
+  // 接地判定用。root=モデルの座標系、contact=床に押し上げられる体ぜんたい。
+  const root = useRef<THREE.Group>(null);
+  const contact = useRef<THREE.Group>(null);
+  const lift = useRef(0);
+  const tick = useRef(0);
   // ポーズの基本値の現在値(減衰補間でPOSE_BASEへ寄せていく)。
   const cur = useRef<PoseBase>({ ...POSE_BASE.idle });
   // 呼吸と見渡しは「速さ」もポーズごとに変わるので、時刻ではなく位相を積む
@@ -544,100 +557,126 @@ export default function PhoenixModel({
     // 灯: ポーズごとの明るさ。掲げれば燃え、星を読むときは落とす。
     // ゆらぎは明るさに比例させる(暗く落とした灯がちらついて見えないように)。
     LANTERN_GLOW_MAT.emissiveIntensity = c.glow + Math.sin(time * 2.1) * 0.2 * c.glow;
+
+    // 接地: 姿勢を当てたあとの体を実際に測り、床(y=0)を割ったぶんだけ押し上げる。
+    // 測るときだけ補正を外した素の姿に戻す(補正込みで測ると押し上げが積み上がる)。
+    const body = contact.current;
+    if (body && root.current) {
+      if (tick.current++ % CONTACT_EVERY === 0) {
+        const applied = body.position.y;
+        body.position.y = 0;
+        CONTACT_BOX.setFromObject(body);
+        // ワールドで測った箱をモデルの座標系へ戻す(親は Y 回転と一様拡大だけなので
+        // 上下の向きは保たれ、min.y がそのまま「床からの深さ」になる)。
+        CONTACT_INV.copy(root.current.matrixWorld).invert();
+        CONTACT_BOX.applyMatrix4(CONTACT_INV);
+        lift.current = Math.max(0, -CONTACT_BOX.min.y);
+        body.position.y = applied;
+        // TEMP-VERIFY: 補正前の深さと、補正を当てたあとの最下点
+        const w = window as unknown as { __contact?: string };
+        w.__contact = `rawMinY=${CONTACT_BOX.min.y.toFixed(3)} lift=${lift.current.toFixed(3)} appliedY=${applied.toFixed(3)} finalMinY=${(CONTACT_BOX.min.y + applied).toFixed(3)}`;
+      }
+      // 測り直しは間引くので、その間は補間でつなぐ(段になって見えないように)。
+      body.position.y = THREE.MathUtils.damp(body.position.y, lift.current, 12, delta);
+    }
   });
 
   return (
     // 形は正面=+Zで組み、グループごと+X向きへ(船の舳先と同じ向き)。
-    <group rotation={[0, Math.PI / 2, 0]}>
-      {/* 足。ピボットは裾に隠れた股関節の高さ — 歩行はここから交互に振る。
-          足首は裾の内へ、丸いブーツのつま先が裾の前から覗く */}
-      {[1, -1].map((s) => (
-        <group
-          key={s}
-          ref={s === 1 ? legR : legL}
-          position={[s * 0.088, LEG_HIP_Y, 0]}
-        >
-          <mesh geometry={ANKLE_GEO} material={RUST_DEEP_MAT} position={[0, -0.22, 0.02]} />
-          <mesh geometry={BOOT_CUFF_GEO} material={RUST_MAT} position={[0, -0.305, 0.03]} />
-          <mesh
-            geometry={BOOT_GEO}
-            material={RUST_DEEP_MAT}
-            position={[0, -0.368, 0.09]}
-            scale={[0.95, 0.68, 1.55]}
-          />
-          {/* 靴底とかかと。一段明るい面で足の輪郭と前後の向きを出す */}
-          <mesh geometry={SOLE_GEO} material={RUST_MAT} position={[0, -0.404, 0.088]} />
-          <mesh geometry={HEEL_GEO} material={RUST_DEEP_MAT} position={[0, -0.418, 0.012]} />
-        </group>
-      ))}
-
-      {/* 体(呼吸のまとまり) */}
-      <group ref={core}>
-        {/* 腰のベルト。これが無いとコートが「裾へ広がる円錐」にしか見えない */}
-        <mesh
-          geometry={BELT_GEO}
-          material={RUST_DEEP_MAT}
-          position={[0, 0.585, 0]}
-          rotation={[Math.PI / 2, 0, 0]}
-        />
-        <mesh geometry={BUCKLE_GEO} material={SAND_MAT} position={[0, 0.585, 0.172]} />
-
-        {/* コート: 裾へ広がる袍。裾の内側に深錆の縁で重さを出す */}
-        <mesh geometry={COAT_GEO} material={CORAL_MAT} />
-        <mesh geometry={COAT_GEO} material={RUST_MAT} position={[0, -0.02, 0]} scale={[0.97, 0.35, 0.97]} />
-        {/* 肩マント: 首から肩へ流れ落ちる短い外掛け。腕はこの裾の下から出る */}
-        <mesh geometry={MANTLE_GEO} material={CORAL_MAT} position={[0, 0.78, 0]} />
-        {/* 留め具: 紋章の丸い目穴(sandの環+midnightの芯)。肩マントの前面に */}
-        <group position={[0, 0.868, 0.178]} rotation={[-0.34, 0, 0]}>
-          <mesh geometry={CLASP_RING_GEO} material={SAND_MAT} />
-          <mesh geometry={CLASP_PIN_GEO} material={FACE_MAT} rotation={[Math.PI / 2, 0, 0]} />
-        </group>
-
-        {/* 襟巻き: sandの環+背に垂れる端 */}
-        <mesh geometry={SCARF_GEO} material={SAND_MAT} position={[0, 0.96, 0]} rotation={[Math.PI / 2 + 0.08, 0, 0]} />
-
-        {/* マント: 紋章の背景色の一枚布。肩に固定され、裾ほど自由に靡く
-            (波は updateCape が毎フレーム頂点へ書く) */}
-        <mesh geometry={capeGeo} material={CAPE_MAT} position={[0, 0.93, -0.04]} />
-
-        {/* 頭(首振りのピボット): 頭サイズの尖ったフード=紋章の冠羽。
-            開口部の闇に両目が灯る */}
-        <group ref={head} position={[0, 0.98, 0]}>
-          <mesh geometry={HOOD_GEO} material={HOOD_MAT} position={[0, 0.03, 0]} rotation={[-0.04, 0, 0]} />
-          {/* 顔の闇。フードの開口部に収まる大きさで、少しだけ前に出す */}
-          <mesh
-            geometry={FACE_GEO}
-            material={FACE_MAT}
-            position={[0, 0.058, 0.055]}
-            scale={[1.02, 1.12, 0.62]}
-          />
-          {[1, -1].map((s) => (
+    <group ref={root} rotation={[0, Math.PI / 2, 0]}>
+      {/* 体ぜんたい。床にめり込むポーズのとき、この群ごと押し上げられる
+          (接地判定は useFrame の末尾)。 */}
+      <group ref={contact}>
+        {/* 足。ピボットは裾に隠れた股関節の高さ — 歩行はここから交互に振る。
+            足首は裾の内へ、丸いブーツのつま先が裾の前から覗く */}
+        {[1, -1].map((s) => (
+          <group
+            key={s}
+            ref={s === 1 ? legR : legL}
+            position={[s * 0.088, LEG_HIP_Y, 0]}
+          >
+            <mesh geometry={ANKLE_GEO} material={RUST_DEEP_MAT} position={[0, -0.22, 0.02]} />
+            <mesh geometry={BOOT_CUFF_GEO} material={RUST_MAT} position={[0, -0.305, 0.03]} />
             <mesh
-              key={s}
-              geometry={EYE_GEO}
-              material={EYE_MAT}
-              position={[s * 0.03, 0.062, 0.094]}
+              geometry={BOOT_GEO}
+              material={RUST_DEEP_MAT}
+              position={[0, -0.368, 0.09]}
+              scale={[0.95, 0.68, 1.55]}
             />
-          ))}
-        </group>
+            {/* 靴底とかかと。一段明るい面で足の輪郭と前後の向きを出す */}
+            <mesh geometry={SOLE_GEO} material={RUST_MAT} position={[0, -0.404, 0.088]} />
+            <mesh geometry={HEEL_GEO} material={RUST_DEEP_MAT} position={[0, -0.418, 0.012]} />
+          </group>
+        ))}
 
-        {/* 左腕: 肩マントの裾の下から出る袖。手首でフレアし、手を添えて休める */}
-        <group ref={armL} position={[-0.163, 0.8, 0.035]} rotation={[0, 0, -0.14]}>
-          <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.1, 0]} />
-          <mesh geometry={SLEEVE_CUFF_GEO} material={RUST_MAT} position={[0, -0.22, 0]} />
-          <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
-        </group>
+        {/* 体(呼吸のまとまり) */}
+        <group ref={core}>
+          {/* 腰のベルト。これが無いとコートが「裾へ広がる円錐」にしか見えない */}
+          <mesh
+            geometry={BELT_GEO}
+            material={RUST_DEEP_MAT}
+            position={[0, 0.585, 0]}
+            rotation={[Math.PI / 2, 0, 0]}
+          />
+          <mesh geometry={BUCKLE_GEO} material={SAND_MAT} position={[0, 0.585, 0.172]} />
 
-        {/* 右腕+ランタン: 「今日の灯」を提げる */}
-        <group ref={armR} position={[0.163, 0.8, 0.035]} rotation={[0, 0, 0.14]}>
-          <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.1, 0]} />
-          <mesh geometry={SLEEVE_CUFF_GEO} material={RUST_MAT} position={[0, -0.22, 0]} />
-          <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
-          <group ref={lantern} position={[0, -0.33, 0]}>
-            <mesh geometry={LANTERN_HANDLE_GEO} material={RUST_MAT} position={[0, -0.03, 0]} />
-            <mesh geometry={LANTERN_CAP_GEO} material={RUST_MAT} position={[0, -0.075, 0]} />
-            <mesh geometry={LANTERN_GLOW_GEO} material={LANTERN_GLOW_MAT} position={[0, -0.14, 0]} />
-            <mesh geometry={LANTERN_BASE_GEO} material={RUST_MAT} position={[0, -0.19, 0]} />
+          {/* コート: 裾へ広がる袍。裾の内側に深錆の縁で重さを出す */}
+          <mesh geometry={COAT_GEO} material={CORAL_MAT} />
+          <mesh geometry={COAT_GEO} material={RUST_MAT} position={[0, -0.02, 0]} scale={[0.97, 0.35, 0.97]} />
+          {/* 肩マント: 首から肩へ流れ落ちる短い外掛け。腕はこの裾の下から出る */}
+          <mesh geometry={MANTLE_GEO} material={CORAL_MAT} position={[0, 0.78, 0]} />
+          {/* 留め具: 紋章の丸い目穴(sandの環+midnightの芯)。肩マントの前面に */}
+          <group position={[0, 0.868, 0.178]} rotation={[-0.34, 0, 0]}>
+            <mesh geometry={CLASP_RING_GEO} material={SAND_MAT} />
+            <mesh geometry={CLASP_PIN_GEO} material={FACE_MAT} rotation={[Math.PI / 2, 0, 0]} />
+          </group>
+
+          {/* 襟巻き: sandの環+背に垂れる端 */}
+          <mesh geometry={SCARF_GEO} material={SAND_MAT} position={[0, 0.96, 0]} rotation={[Math.PI / 2 + 0.08, 0, 0]} />
+
+          {/* マント: 紋章の背景色の一枚布。肩に固定され、裾ほど自由に靡く
+              (波は updateCape が毎フレーム頂点へ書く) */}
+          <mesh geometry={capeGeo} material={CAPE_MAT} position={[0, 0.93, -0.04]} />
+
+          {/* 頭(首振りのピボット): 頭サイズの尖ったフード=紋章の冠羽。
+              開口部の闇に両目が灯る */}
+          <group ref={head} position={[0, 0.98, 0]}>
+            <mesh geometry={HOOD_GEO} material={HOOD_MAT} position={[0, 0.03, 0]} rotation={[-0.04, 0, 0]} />
+            {/* 顔の闇。フードの開口部に収まる大きさで、少しだけ前に出す */}
+            <mesh
+              geometry={FACE_GEO}
+              material={FACE_MAT}
+              position={[0, 0.058, 0.055]}
+              scale={[1.02, 1.12, 0.62]}
+            />
+            {[1, -1].map((s) => (
+              <mesh
+                key={s}
+                geometry={EYE_GEO}
+                material={EYE_MAT}
+                position={[s * 0.03, 0.062, 0.094]}
+              />
+            ))}
+          </group>
+
+          {/* 左腕: 肩マントの裾の下から出る袖。手首でフレアし、手を添えて休める */}
+          <group ref={armL} position={[-0.163, 0.8, 0.035]} rotation={[0, 0, -0.14]}>
+            <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.1, 0]} />
+            <mesh geometry={SLEEVE_CUFF_GEO} material={RUST_MAT} position={[0, -0.22, 0]} />
+            <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
+          </group>
+
+          {/* 右腕+ランタン: 「今日の灯」を提げる */}
+          <group ref={armR} position={[0.163, 0.8, 0.035]} rotation={[0, 0, 0.14]}>
+            <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.1, 0]} />
+            <mesh geometry={SLEEVE_CUFF_GEO} material={RUST_MAT} position={[0, -0.22, 0]} />
+            <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
+            <group ref={lantern} position={[0, -0.33, 0]}>
+              <mesh geometry={LANTERN_HANDLE_GEO} material={RUST_MAT} position={[0, -0.03, 0]} />
+              <mesh geometry={LANTERN_CAP_GEO} material={RUST_MAT} position={[0, -0.075, 0]} />
+              <mesh geometry={LANTERN_GLOW_GEO} material={LANTERN_GLOW_MAT} position={[0, -0.14, 0]} />
+              <mesh geometry={LANTERN_BASE_GEO} material={RUST_MAT} position={[0, -0.19, 0]} />
+            </group>
           </group>
         </group>
       </group>

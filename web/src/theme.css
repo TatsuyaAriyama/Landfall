@@ -158,6 +158,9 @@ textarea {
   font-size: 14px;
   color: color-mix(in srgb, var(--ink) 55%, transparent);
   min-height: 44px;
+  /* 高さは44あったが幅が文字ぶん(28px)しか無く、狙って押しにくかった。 */
+  min-width: 44px;
+  padding: 0 8px;
 }
 
 /* ---- 見出し・ラベル ---- */
@@ -607,7 +610,8 @@ textarea {
 .chip {
   font-size: 15px;
   padding: 0 16px;
-  min-height: 40px;
+  /* 指で押す基準の44px。40pxだと下端が押しにくく、隣を触ってしまう。 */
+  min-height: 44px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
   font-variant-numeric: tabular-nums;
@@ -3362,4 +3366,18 @@ textarea {
   .timer-name {
     max-width: 52vw;
   }
+}
+
+/* 記録を消す「−」。見た目は30pxの小さな丸のままに、当たり判定だけ44pxへ広げる。
+   消す操作なのに指の基準より小さく、しかも記録の行の右端で他の要素と近い。
+   (確認ダイアログは出るが、そこへ辿り着く前の誤爆を減らす) */
+.minus-button {
+  position: relative;
+  touch-action: manipulation;
+}
+
+.minus-button::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
 }
