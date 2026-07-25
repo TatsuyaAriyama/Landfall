@@ -543,7 +543,11 @@ textarea {
 .dialog {
   width: 100%;
   max-width: 420px;
+  /* vh はキーボードで縮まないので、世界の中から出す削除確認がキーボードの下に
+     潜っていた。実際に見えている高さで縛る(vh→dvh→実測の順に上書き)。 */
   max-height: 85vh;
+  max-height: 85dvh;
+  max-height: calc(var(--vv-h, 85dvh) - 40px);
   overflow-y: auto;
   background: var(--paper);
   border-radius: var(--radius);
@@ -2409,6 +2413,19 @@ textarea {
   touch-action: none;
 }
 
+/* iOS Safari は body の overflow:hidden だけでは指スクロールを止めきれない。
+   世界の器でドラッグを飲み込み(下のページを引っ張らせない)、中で縦に
+   スクロールしたい下部パネルだけ pan-y に戻す。 */
+.voyage-world,
+.voyaging-world {
+  touch-action: none;
+}
+
+.voyage-world-panel,
+.voyaging-panel {
+  touch-action: pan-y;
+}
+
 /* 世界に浮かぶUI層。入場が終わってから現れ、退場で静かに消える。 */
 .voyage-world-ui {
   position: absolute;
@@ -3261,4 +3278,12 @@ textarea {
   -webkit-appearance: none;
   appearance: none;
   min-height: 48px;
+}
+
+/* 目的地カードのダブルタップ拡大を止める(押すと世界が開く部品なので、
+   拡大されると操作が二度手間になる)。viewport の user-scalable は
+   触らない — 拡大したい人の手段を奪わないため、ここだけで抑える。 */
+.voyage-scene,
+.dest-card {
+  touch-action: manipulation;
 }

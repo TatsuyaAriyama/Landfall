@@ -207,21 +207,86 @@ const LANTERN_GLOW_MAT = new THREE.MeshStandardMaterial({
 });
 
 /// キャラクターのポーズ。ゲーム側から切り替えると、減衰補間でなめらかに遷移する。
-///  - idle:  待機。呼吸と見渡し、ランタンの静かな振り子
-///  - walk:  歩行(その場)。移動そのものはゲーム側が position を動かす
-///  - raise: 灯を高く掲げる(記録の瞬間・お祝いに)
-///  - hail:  手を振って挨拶(港の仲間へ)
-export type PhoenixPose = "idle" | "walk" | "raise" | "hail";
+///  - idle:     待機。呼吸と見渡し、ランタンの静かな振り子
+///  - walk:     歩行(その場)。移動そのものはゲーム側が position を動かす
+///  - raise:    灯を高く掲げる(記録の瞬間・お祝いに)
+///  - hail:     手を振って挨拶(港の仲間へ)
+///  - point:    空いた手で水平線の先を指す(目的地が見えた)
+///  - stargaze: 灯を落として星を読む(進路を確かめる静かな夜)
+///  - rest:     灯を両手で囲んで一息つく(休んだ日も、航海のうち)
+export type PhoenixPose = "idle" | "walk" | "raise" | "hail" | "point" | "stargaze" | "rest";
 
-/// ポーズごとの基本角(振りの中心)。振動はこの上に足す。
-const POSE_BASE: Record<
-  PhoenixPose,
-  { armRx: number; armRz: number; armLx: number; armLz: number; lean: number; wind: number }
-> = {
-  idle: { armRx: 0, armRz: 0.14, armLx: 0, armLz: -0.14, lean: 0, wind: 1 },
-  walk: { armRx: 0, armRz: 0.12, armLx: 0, armLz: -0.12, lean: 0.09, wind: 1.7 },
-  raise: { armRx: -2.35, armRz: 0.06, armLx: 0, armLz: -0.16, lean: -0.04, wind: 1.15 },
-  hail: { armRx: 0, armRz: 0.14, armLx: 0, armLz: -2.55, lean: 0, wind: 1.1 },
+/// ポーズごとの基本値(振りの中心)。振動はこの上に足す。
+/// 全項目が減衰補間の対象なので、どのポーズからどのポーズへ切り替えても
+/// 姿勢・首・呼吸・風・灯が同時に、跳ねずに移り変わる。
+interface PoseBase {
+  /// 肩からの腕の角(R=ランタンを提げる右腕、L=空いた左手)。
+  /// x: 負ほど前へ振り上げる(-π/2 でほぼ水平) / z: 体から左右へ開く。
+  armRx: number;
+  armRz: number;
+  armLx: number;
+  armLz: number;
+  /// 上体の前傾(正=前、負=のけぞる)。
+  lean: number;
+  /// マントに当たる風の強さ(1=待機)。
+  wind: number;
+  /// 首の上下(負=見上げる、正=うつむく)。
+  headX: number;
+  /// 首の見渡し。振幅(rad)と速さ(rad/s)。何かを見つめるポーズでは小さくする。
+  scan: number;
+  scanSpeed: number;
+  /// 腕とランタンのゆらぎの強さ。止まって見せたいポーズほど小さく。
+  sway: number;
+  /// 呼吸の深さ(1=待機)と速さ(rad/s)。休むポーズほど深く、遅く。
+  breathAmp: number;
+  breathSpeed: number;
+  /// ランタンの灯の明るさ(1.5=通常)。
+  glow: number;
+}
+
+const POSE_BASE: Record<PhoenixPose, PoseBase> = {
+  idle: {
+    armRx: 0, armRz: 0.14, armLx: 0, armLz: -0.14,
+    lean: 0, wind: 1, headX: 0, scan: 0.14, scanSpeed: 0.3,
+    sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5,
+  },
+  walk: {
+    armRx: 0, armRz: 0.12, armLx: 0, armLz: -0.12,
+    lean: 0.09, wind: 1.7, headX: 0, scan: 0.05, scanSpeed: 0.3,
+    sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5,
+  },
+  raise: {
+    armRx: -2.35, armRz: 0.06, armLx: 0, armLz: -0.16,
+    lean: -0.04, wind: 1.15, headX: -0.14, scan: 0.14, scanSpeed: 0.3,
+    sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 2.3,
+  },
+  hail: {
+    armRx: 0, armRz: 0.14, armLx: 0, armLz: -2.55,
+    lean: 0, wind: 1.1, headX: 0, scan: 0.14, scanSpeed: 0.3,
+    sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5,
+  },
+  // 陸を指す: 左手をほぼ水平に伸ばして舳先の先を指し、上体は前へ。
+  // 首は振らない — 見つけたものから目を離さない姿が、この仕草の要。
+  // 灯を提げた右腕は前傾の釣り合いでわずかに後ろへ流れる。
+  point: {
+    armRx: 0.1, armRz: 0.12, armLx: -1.66, armLz: 0.06,
+    lean: 0.12, wind: 1.45, headX: -0.08, scan: 0.02, scanSpeed: 0.2,
+    sway: 0.25, breathAmp: 0.8, breathSpeed: 0.9, glow: 1.6,
+  },
+  // 星を読む: 空を仰ぎ、左手を額にかざす。灯は後ろへ下げて暗く落とす
+  // (手元が明るいと星は読めない)。首はゆっくり、星座をなぞる速さで巡る。
+  stargaze: {
+    armRx: 0.3, armRz: 0.2, armLx: -2.45, armLz: 0.1,
+    lean: -0.1, wind: 0.8, headX: -0.46, scan: 0.2, scanSpeed: 0.16,
+    sway: 0.5, breathAmp: 1.2, breathSpeed: 0.7, glow: 0.85,
+  },
+  // 一息つく: 両手を前で合わせて灯を囲み、うつむいてその光を見る。
+  // 呼吸は深くゆっくり、風は凪。進んでいない日の姿にも灯は消えていない。
+  rest: {
+    armRx: -0.8, armRz: -0.3, armLx: -0.86, armLz: 0.32,
+    lean: 0.07, wind: 0.75, headX: 0.32, scan: 0.05, scanSpeed: 0.22,
+    sway: 0.6, breathAmp: 1.75, breathSpeed: 0.58, glow: 2,
+  },
 };
 
 /// 小さな航海士。ローブの体積+燕尾のケープ+尖ったフード+提げたランタンで、
@@ -240,8 +305,11 @@ export default function PhoenixModel({
   const legR = useRef<THREE.Group>(null);
   const legL = useRef<THREE.Group>(null);
   const lantern = useRef<THREE.Group>(null);
-  // ポーズの基本角の現在値(減衰補間でPOSE_BASEへ寄せていく)。
-  const cur = useRef({ armRx: 0, armRz: 0.14, armLx: 0, armLz: -0.14, lean: 0, wind: 1 });
+  // ポーズの基本値の現在値(減衰補間でPOSE_BASEへ寄せていく)。
+  const cur = useRef<PoseBase>({ ...POSE_BASE.idle });
+  // 呼吸と見渡しは「速さ」もポーズごとに変わるので、時刻ではなく位相を積む
+  // (速さが変わった瞬間に sin の位相が飛んで、動きが跳ねるのを防ぐ)。
+  const phase = useRef({ breath: 0, scan: 0 });
 
   // マントの布。頂点を毎フレーム書くのでインスタンスごとに持ち、離れる時に破棄する。
   const capeGeo = useMemo(() => {
@@ -256,13 +324,29 @@ export default function PhoenixModel({
     const time = clock.elapsedTime;
     const target = POSE_BASE[pose];
     const c = cur.current;
-    // ポーズの基本角へなめらかに寄せる(切替の瞬間に跳ねない)。
-    c.armRx = THREE.MathUtils.damp(c.armRx, target.armRx, 6, delta);
-    c.armRz = THREE.MathUtils.damp(c.armRz, target.armRz, 6, delta);
-    c.armLx = THREE.MathUtils.damp(c.armLx, target.armLx, 6, delta);
-    c.armLz = THREE.MathUtils.damp(c.armLz, target.armLz, 6, delta);
-    c.lean = THREE.MathUtils.damp(c.lean, target.lean, 6, delta);
-    c.wind = THREE.MathUtils.damp(c.wind, target.wind, 4, delta);
+    // ポーズの基本値へなめらかに寄せる(切替の瞬間に跳ねない)。
+    // 姿勢は速く、風と灯はゆっくり — 体が動いたあとから世界が追いつく。
+    const to = (k: keyof PoseBase, lambda = 6) => {
+      c[k] = THREE.MathUtils.damp(c[k], target[k], lambda, delta);
+    };
+    to("armRx");
+    to("armRz");
+    to("armLx");
+    to("armLz");
+    to("lean");
+    to("headX");
+    to("scan");
+    to("scanSpeed");
+    to("sway");
+    to("breathAmp");
+    to("breathSpeed");
+    to("wind", 4);
+    to("glow", 3);
+
+    // 呼吸と見渡しの位相を、いまの速さで進める。
+    const ph = phase.current;
+    ph.breath += delta * c.breathSpeed;
+    ph.scan += delta * c.scanSpeed;
 
     // マント: 布の波。歩行中は向かい風で強く靡く。
     updateCape(capeGeo, time, c.wind);
@@ -275,15 +359,16 @@ export default function PhoenixModel({
     if (core.current) {
       core.current.position.y = walking
         ? Math.abs(Math.cos(time * stride)) * 0.035
-        : Math.sin(time * 0.85) * 0.018;
-      core.current.rotation.x = c.lean + Math.sin(time * 0.85 + 0.9) * 0.01;
+        : Math.sin(ph.breath) * 0.018 * c.breathAmp;
+      core.current.rotation.x = c.lean + Math.sin(ph.breath + 0.9) * 0.01 * c.breathAmp;
       core.current.rotation.z = walking ? step * 0.03 : 0;
     }
-    // 首: 見渡し。掲げ(raise)のときは灯を見上げる。
+    // 首: ポーズごとの上下と見渡し。何かを見つめるポーズでは振幅がほぼ0になり、
+    // 「目を離さない」ことそのものが仕草の意味になる。
     if (head.current) {
-      head.current.rotation.y = Math.sin(time * 0.3) * (walking ? 0.05 : 0.14);
-      head.current.rotation.x = pose === "raise" ? -0.14 : 0;
-      head.current.rotation.z = Math.sin(time * 0.85 + 2.1) * 0.02;
+      head.current.rotation.y = Math.sin(ph.scan) * c.scan;
+      head.current.rotation.x = c.headX;
+      head.current.rotation.z = Math.sin(ph.breath + 2.1) * 0.02 * c.breathAmp;
     }
     // 脚: 歩行は股関節から交互に振る。それ以外は接地に戻す。
     const legSwing = walking ? 0.55 : 0;
@@ -304,25 +389,29 @@ export default function PhoenixModel({
       );
     }
     // 腕: 基本角+ポーズごとの振動。歩行は脚と逆位相で振り、挨拶は手を振る。
-    const armSwing = walking ? -step * 0.32 : Math.sin(time * 0.85 + 0.4) * 0.03;
+    // sway が小さいポーズ(指さし等)では、伸ばした腕がほとんど止まって見える。
+    const armSwing = walking
+      ? -step * 0.32
+      : Math.sin(ph.breath + 0.4) * 0.03 * c.sway;
     if (armR.current) {
       armR.current.rotation.x = c.armRx + armSwing;
       armR.current.rotation.z = c.armRz;
     }
     if (armL.current) {
       const wave = pose === "hail" ? Math.sin(time * 7.2) * 0.3 : 0;
-      armL.current.rotation.x = c.armLx + (walking ? step * 0.32 : Math.sin(time * 0.85 + 1.1) * 0.025);
+      armL.current.rotation.x =
+        c.armLx + (walking ? step * 0.32 : Math.sin(ph.breath + 1.1) * 0.025 * c.sway);
       armL.current.rotation.z = c.armLz + wave;
     }
     // ランタン: 腕の傾きを打ち消して常にほぼ鉛直に垂れる振り子。
     if (lantern.current) {
       lantern.current.rotation.x =
-        -(c.armRx + armSwing) + Math.sin(time * 0.9) * (walking ? 0.2 : 0.1);
-      lantern.current.rotation.z = Math.sin(time * 0.7 + 0.6) * 0.12;
+        -(c.armRx + armSwing) + Math.sin(time * 0.9) * (walking ? 0.2 : 0.1 * c.sway);
+      lantern.current.rotation.z = Math.sin(time * 0.7 + 0.6) * 0.12 * c.sway;
     }
-    // 灯: 掲げたときはひときわ明るく。
-    const glowBase = pose === "raise" ? 2.3 : 1.5;
-    LANTERN_GLOW_MAT.emissiveIntensity = glowBase + Math.sin(time * 2.1) * 0.3;
+    // 灯: ポーズごとの明るさ。掲げれば燃え、星を読むときは落とす。
+    // ゆらぎは明るさに比例させる(暗く落とした灯がちらついて見えないように)。
+    LANTERN_GLOW_MAT.emissiveIntensity = c.glow + Math.sin(time * 2.1) * 0.2 * c.glow;
   });
 
   return (

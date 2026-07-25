@@ -3,6 +3,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -98,7 +99,12 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
   const [celebrating, setCelebrating] = useState<Destination | null>(null);
   const celebratedRef = useRef<Set<string>>(new Set());
 
-  const active = data.destinations.filter((d) => !d.achievedAt);
+  // 毎描画で新しい配列を作ると、下の到達検知 effect が毎描画で走り、
+  // 正しさが celebratedRef だけに依存してしまう。中身が変わったときだけ作り直す。
+  const active = useMemo(
+    () => data.destinations.filter((d) => !d.achievedAt),
+    [data.destinations],
+  );
 
   // 到達の検知。達成した瞬間に achievedAt を刻み、着岸の一枚を出す。
   useEffect(() => {

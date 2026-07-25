@@ -96,7 +96,7 @@ export function setBoatPart(part: BoatPart, id: string) {
 // 装いで選んだ姿は、目的地の船の上でも同じ仕草で立つ(船の色と同じくローカル保存)。
 
 const POSE_KEY = "navigator.pose";
-const POSES = ["idle", "walk", "raise", "hail"] as const;
+const POSES = ["idle", "walk", "raise", "hail", "point", "stargaze", "rest"] as const;
 export type NavigatorPose = (typeof POSES)[number];
 
 export function navigatorPose(): NavigatorPose {

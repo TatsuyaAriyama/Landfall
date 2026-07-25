@@ -2,9 +2,13 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./theme.css";
 import { THEME_KEY, applyTheme } from "./views/SettingsDialog.tsx";
+import { watchViewport } from "./viewport";
 
 // 外観設定(システム/ライト/ダーク)を描画前に反映する。
 applyTheme(localStorage.getItem(THEME_KEY));
+
+// キーボード/ピッカーで実際に見えている高さを :root に流す(全階層のCSSが参照する)。
+watchViewport();
 
 // PWA: 本番のみ Service Worker を登録(オフライン起動・ホーム画面からアプリとして開ける)。
 if (import.meta.env.PROD && "serviceWorker" in navigator) {

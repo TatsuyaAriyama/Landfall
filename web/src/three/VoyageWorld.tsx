@@ -636,7 +636,9 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     );
   };
   const addStep = () => {
-    if (steps.length >= MAX_STEPS) return;
+    // 上限は「名前の付いたステップ」で数える。空行まで数えると、保存時に落ちる
+    // 空行のせいで実際は20個未満なのに追加できなくなる。
+    if (namedSteps.length >= MAX_STEPS) return;
     setSteps((list) => [...list, { id: newUUID(), name: "" }]);
   };
   const removeStep = (index: number) => {
@@ -927,7 +929,7 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                     </div>
                   ))}
                 </div>
-                {steps.length < MAX_STEPS && (
+                {namedSteps.length < MAX_STEPS && (
                   <button type="button" className="step-add" onClick={addStep}>
                     + {t("addStep")}
                   </button>
