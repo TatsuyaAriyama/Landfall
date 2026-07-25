@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Stars } from "@react-three/drei";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { OrbitControls, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Sea } from "./SeaParts";
@@ -142,7 +142,7 @@ function ApproachingIsland({ startedAt, animate }: { startedAt: number; animate:
   );
 }
 
-/// 世界の中身。カメラは固定の斜め視点で、ごくわずかに揺れる。
+/// 世界の中身。カメラはドラッグで見渡せる(OrbitControls)。
 function VoyagingSea({
   animate,
   showIsland,
@@ -153,16 +153,9 @@ function VoyagingSea({
   startedAt: number;
 }) {
   const parts = useMemo(() => boatProps(), []);
-  const camera = useThree((s) => s.camera);
 
-  useFrame((state) => {
-    if (!animate) return;
-    const time = state.clock.elapsedTime;
-    // 酔わない振幅で、船に乗っている感じだけを添える。
-    camera.position.x = CAM_POS[0] + Math.sin(time * 0.22) * 0.08;
-    camera.position.y = CAM_POS[1] + Math.sin(time * 0.35 + 1.0) * 0.05;
-    camera.lookAt(CAM_TARGET);
-  });
+  // カメラは OrbitControls に任せる(見渡せるようにするため)。
+  // ここで camera.position / lookAt を書くと操作と取り合いになるので触らない。
 
   return (
     <>
@@ -201,6 +194,17 @@ function VoyagingSea({
           <PhoenixModel animate={animate} pose={navigatorPose()} />
         </group>
       </group>
+      {/* ドラッグで360度見渡せる。水平は制限なし、俯角は水面より下へ潜らせない
+          (海は円盤なので下から見ると裏側が見えてしまう)。 */}
+      <OrbitControls
+        target={[CAM_TARGET.x, CAM_TARGET.y, CAM_TARGET.z]}
+        enablePan={false}
+        enableDamping={animate}
+        minDistance={4}
+        maxDistance={16}
+        minPolarAngle={Math.PI * 0.12}
+        maxPolarAngle={Math.PI * 0.49}
+      />
     </>
   );
 }
@@ -242,6 +246,8 @@ export default function VoyagingWorld({
   const [now, setNow] = useState(() => Date.now());
   // 海をタップすると、UIを消して世界だけにする(もう一度タップで戻る)。
   const [uiHidden, setUiHidden] = useState(false);
+  // タップとドラッグ(見渡す操作)を見分けるための押した位置。
+  const pointerDown = useRef<{ x: number; y: number; onWorld: boolean } | null>(null);
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
@@ -299,12 +305,35 @@ export default function VoyagingWorld({
   }, [onMinimize]);
 
   return (
-    <div className="voyaging-world" role="dialog" aria-modal="true">
-      <Canvas
-        dpr={[1, 2]}
-        camera={{ position: CAM_POS, fov: CAM_FOV }}
-        onPointerMissed={() => setUiHidden((v) => !v)}
-      >
+    <div
+      className="voyaging-world"
+      role="dialog"
+      aria-modal="true"
+      // 世界を「タップ」したらUIを消して世界だけにする(もう一度で戻る)。
+      // R3Fの onPointerMissed は当たり判定が無いときだけ呼ばれ、海はメッシュなので
+      // ほとんど発火しない。だからここで受ける。見渡すドラッグでは消さないよう、
+      // 押してから離すまでに動いた距離で見分ける。
+      onPointerDown={(e) => {
+        // 3D側の判定は「canvasかどうか」では見ない。R3Fが canvas を包む div が
+        // 手前に来るので当たらない。UIの上でなければ世界とみなす。
+        pointerDown.current = {
+          x: e.clientX,
+          y: e.clientY,
+          onWorld: !(e.target as HTMLElement).closest(
+            ".voyaging-top, .voyaging-panel",
+          ),
+        };
+      }}
+      onPointerUp={(e) => {
+        const from = pointerDown.current;
+        pointerDown.current = null;
+        if (!from || !from.onWorld) return;
+        if (Math.hypot(e.clientX - from.x, e.clientY - from.y) < 6) {
+          setUiHidden((v) => !v);
+        }
+      }}
+    >
+      <Canvas dpr={[1, 2]} camera={{ position: CAM_POS, fov: CAM_FOV }}>
         <VoyagingSea
           animate={animate}
           showIsland={hasDestination}
@@ -338,6 +367,8 @@ export default function VoyagingWorld({
                 {soundLabel}
               </button>
             </div>
+            {/* 見渡せること・世界だけにできることを知らせる。 */}
+            <p className="voyaging-hint">{t("lookAroundHint")}</p>
           </div>
           <button className="voyage-world-close" onClick={onMinimize}>
             {t("close")}

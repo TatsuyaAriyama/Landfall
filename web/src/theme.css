@@ -1836,13 +1836,20 @@ textarea {
   border-radius: 999px;
   padding: 10px 12px 10px 20px;
   z-index: 5;
+  /* 中身の幅ぶんだけ伸ばす。position:fixed の自動幅だと狭く決まってしまい、
+     右端の✕がピルの外にはみ出す。 */
+  width: max-content;
   max-width: min(92vw, 420px);
 }
 
 .timer-name {
   font-size: 15px;
   font-weight: 500;
-  min-width: 0;
+  /* 縮まないようにする。min-width:0 で縮められると幅0になって名前が消える
+     (浮きピルは内容に合わせて縮む箱なので、縮小可能だと真っ先に潰される)。
+     長い名前は max-width で切って…にする。 */
+  flex: none;
+  max-width: 40vw;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2412,7 +2419,16 @@ textarea {
 
 .voyaging-world canvas {
   display: block;
+  /* ドラッグで世界を見渡す(ページのスクロールに取られないように) */
   touch-action: none;
+}
+
+/* 見渡せることの案内。控えめに、設定チップの下へ。 */
+.voyaging-hint {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--ink) 45%, transparent);
 }
 
 .voyaging-ui {
@@ -2559,9 +2575,9 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
-  /* 残り幅を受け取る。min-width:0 だけだと名前が潰れて消える。 */
-  flex: 1 1 auto;
-  min-width: 0;
+  /* 中身(名前+時間)より狭くは縮めない。min-width:0 を付けると幅0まで
+     潰されて名前が消える。 */
+  flex: 0 1 auto;
   padding: 0;
   border: 0;
   background: none;

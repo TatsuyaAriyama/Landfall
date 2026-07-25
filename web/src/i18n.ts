@@ -233,6 +233,7 @@ const ja = {
   finishVoyage: "ここまでを記録する",
   discardVoyage: "航海をやめる",
   backToVoyage: "航海に戻る",
+  lookAroundHint: "ドラッグで見渡せる。世界をタップすると、これだけになる。",
   switchVoyageConfirm: "いまの航海をやめて、別の項目を始めますか。いまの記録は残りません。",
 
   // 航海誌の追加
@@ -537,6 +538,7 @@ const en: Record<I18nKey, string> = {
   finishVoyage: "Log this far",
   discardVoyage: "Abandon the voyage",
   backToVoyage: "Back to the voyage",
+  lookAroundHint: "Drag to look around. Tap the world to see only it.",
   switchVoyageConfirm:
     "Abandon this voyage and start another item? Nothing will be recorded.",
 
