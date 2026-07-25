@@ -29,7 +29,7 @@ function initialTab(): Tab {
 }
 
 export default function App() {
-  const { user, loading } = useAuthUser();
+  const { user, loading, redirectError } = useAuthUser();
 
   if (window.location.hash.startsWith("#phoenix")) {
     return (
@@ -39,8 +39,10 @@ export default function App() {
     );
   }
   if (isDemo) return <Main uid="demo" />;
-  if (loading) return null;
-  if (!user) return <SignInView />;
+  // Google/Appleのリダイレクトから戻った直後もここを通る。以前は何も描かず
+  // 真っ黒に見えたため、世界観と同じ地色だけでも先に出しておく。
+  if (loading) return <div className="harbor-loading" />;
+  if (!user) return <SignInView redirectError={redirectError} />;
   return <Main uid={user.uid} />;
 }
 

@@ -30,19 +30,28 @@ import {
 // users/{uid}/items|sessions|days を購読し、iOS と同じ書式(updatedAt LWW)で書く。
 // Web はローカルストアを持たず Firestore が直接の真実(iOS 側へはリスナー経由で同期される)。
 
-export function useAuthUser(): { user: User | null; loading: boolean } {
+export function useAuthUser(): {
+  user: User | null;
+  loading: boolean;
+  redirectError: string | null;
+} {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [redirectError, setRedirectError] = useState<string | null>(null);
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setLoading(false);
     });
     // リダイレクト方式(モバイル Safari)で戻ってきた場合の認証情報を取り込む。
-    void completeRedirectSignIn();
+    // 失敗コードが返ってきたら、サインイン画面で案内できるように保持しておく
+    // (以前は握りつぶすだけで、押しても無反応に見える原因になっていた)。
+    void completeRedirectSignIn().then((code) => {
+      if (code) setRedirectError(code);
+    });
     return unsub;
   }, []);
-  return { user, loading };
+  return { user, loading, redirectError };
 }
 
 function asDate(value: unknown): Date {

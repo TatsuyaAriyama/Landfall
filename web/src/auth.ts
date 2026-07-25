@@ -1,5 +1,9 @@
 import {
+  browserLocalPersistence,
   getRedirectResult,
+  inMemoryPersistence,
+  indexedDBLocalPersistence,
+  setPersistence,
   signInWithPopup,
   signInWithRedirect,
   type AuthProvider,
@@ -20,13 +24,56 @@ function prefersRedirect(): boolean {
   return iPhoneOrPad || iPadOSAsMac;
 }
 
+/// Instagram/LINE/X などアプリ内の埋め込みブラウザ(WebView)か。
+/// Google は WebView からの OAuth を仕様でブロックしており(disallowed_useragent)、
+/// コード側でどう工夫してもサインインできない。検出して「Safariで開いて」と
+/// 案内するのが唯一の対処(iPhone/iPadで「サインインできない」の実例で多い原因)。
+export function isEmbeddedWebView(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  if (/FBAN|FBAV|Instagram|Line\/|MicroMessenger|TikTok/i.test(ua)) return true;
+  // X(Twitter)アプリの内蔵ブラウザ。
+  if (/Twitter/i.test(ua)) return true;
+  // Android の WebView 全般("; wv)" を名乗る)。iOS 版アプリ内ブラウザは上記個別UAで拾う。
+  if (/; wv\)/.test(ua)) return true;
+  return false;
+}
+
+/// この端末・状況で想定される、認証まわりの注意点(あれば)。
+/// サインインを試す前に案内できるよう、エラーではなく事前チェックとして提供する。
+export function authEnvironmentNotice(): "embedded-webview" | null {
+  return isEmbeddedWebView() ? "embedded-webview" : null;
+}
+
+/// Safari のプライベートブラウズ・ITP設定などで永続化(IndexedDB)が使えない場合に
+/// 備え、より緩い方式へ段階的にフォールバックする。ここが失敗して例外が漏れると
+/// サインインボタンを押しても何も起きない(=「反応しない」ように見える)原因になる。
+let persistenceReady: Promise<void> | null = null;
+function ensurePersistence(): Promise<void> {
+  persistenceReady ??= (async () => {
+    for (const mode of [indexedDBLocalPersistence, browserLocalPersistence, inMemoryPersistence]) {
+      try {
+        await setPersistence(auth, mode);
+        return;
+      } catch {
+        // 次のフォールバックへ。全滅しても致命的にはせず、既定の永続化のまま進める。
+      }
+    }
+  })();
+  return persistenceReady;
+}
+
 /// リダイレクトから戻ってきたときの認証情報を取り込む。アプリ起動時に一度呼ぶ。
 /// これを呼ばないと、リダイレクト方式のサインインが反映されない場合がある。
-export async function completeRedirectSignIn(): Promise<void> {
+/// 失敗した場合は診断用にエラーコードを返す(呼び出し側で文言化して見せられるように)。
+export async function completeRedirectSignIn(): Promise<string | null> {
   try {
+    await ensurePersistence();
     await getRedirectResult(auth);
-  } catch {
-    // 取り込み失敗は握りつぶす(未サインインのまま続行し、再度サインインできる)。
+    return null;
+  } catch (e) {
+    // 未サインインのまま続行し、再度サインインできるようにする(致命的にしない)。
+    return (e as { code?: string }).code ?? "unknown";
   }
 }
 
@@ -40,6 +87,7 @@ async function signInWith(provider: AuthProvider): Promise<void> {
   if (signInInFlight) return;
   signInInFlight = true;
   try {
+    await ensurePersistence();
     if (prefersRedirect()) {
       await signInWithRedirect(auth, provider);
       return; // ここでページが遷移するため戻らない

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { signInWithApple, signInWithGoogle } from "../auth";
+import { isEmbeddedWebView, signInWithApple, signInWithGoogle } from "../auth";
 import { BoatSvg, CoastSvg } from "../symbols";
 import { t } from "../i18n";
 
@@ -57,9 +57,26 @@ function GoogleGlyph() {
   );
 }
 
-export function SignInView() {
-  const [error, setError] = useState<string | null>(null);
+/// Firebase のエラーコード(サインイン試行時・リダイレクト復帰時 共通)を、
+/// この画面で見せる一言に変換する。ユーザーが取れる行動がある場合はそれを言う。
+function messageForCode(code: string): string | null {
+  if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+    return null; // 本人が閉じただけなので、エラーとしては見せない。
+  }
+  if (code === "auth/web-storage-unsupported" || code === "auth/operation-not-supported-in-this-environment") {
+    return t("signInStorageBlocked");
+  }
+  return t("signInFailed");
+}
+
+export function SignInView({ redirectError }: { redirectError?: string | null }) {
+  const [error, setError] = useState<string | null>(
+    redirectError ? messageForCode(redirectError) : null,
+  );
   const [working, setWorking] = useState<"google" | "apple" | null>(null);
+  // Instagram/LINEなどのアプリ内ブラウザは、Googleの仕様でサインインが必ず失敗する
+  // (disallowed_useragent)。押させる前に、対処法(ブラウザで開く)を案内する。
+  const [embedded] = useState(() => isEmbeddedWebView());
 
   const run = async (which: "google" | "apple") => {
     if (working) return;
@@ -71,9 +88,8 @@ export function SignInView() {
       await (which === "google" ? signInWithGoogle() : signInWithApple());
     } catch (e) {
       const code = (e as { code?: string }).code ?? "";
-      if (code !== "auth/popup-closed-by-user" && code !== "auth/cancelled-popup-request") {
-        setError(t("signInFailed"));
-      }
+      const message = messageForCode(code);
+      if (message) setError(message);
     } finally {
       setWorking(null);
     }
@@ -95,6 +111,7 @@ export function SignInView() {
       <div className="harbor-content">
         <h1 className="harbor-enter">{t("signInEnter")}</h1>
         <p className="harbor-sync">{t("signInSync")}</p>
+        {embedded && <p className="harbor-webview-warning">{t("signInWebviewWarning")}</p>}
         <div className="harbor-actions">
           <button
             className="harbor-signin-button harbor-apple"

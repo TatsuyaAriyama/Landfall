@@ -9,6 +9,10 @@ const ja = {
   signInWithGoogle: "Googleで続ける",
   signInWithApple: "Appleで続ける",
   signInNote: "アカウントは記録の同期にだけ使います。",
+  signInWebviewWarning:
+    "Instagram・LINEなどアプリ内のブラウザでは、Googleサインインができません。右上のメニューから「ブラウザで開く」を選んでください。",
+  signInStorageBlocked:
+    "この端末の設定(プライベートブラウズ等)でサインインがブロックされました。通常のブラウズモードでお試しください。",
   today: "ホーム",
   trace: "軌跡",
   harbor: "港",
@@ -299,6 +303,10 @@ const en: Record<I18nKey, string> = {
   signInWithGoogle: "Continue with Google",
   signInWithApple: "Continue with Apple",
   signInNote: "Your account is only used to sync your record.",
+  signInWebviewWarning:
+    "Google sign-in doesn't work inside Instagram, LINE, or similar in-app browsers. Please open this page in Safari or Chrome from the menu.",
+  signInStorageBlocked:
+    "Sign-in was blocked by this browser's settings (e.g. private browsing). Please try again in normal browsing mode.",
   today: "Home",
   trace: "Trace",
   harbor: "Harbor",

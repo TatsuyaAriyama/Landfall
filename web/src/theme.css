@@ -1948,6 +1948,14 @@ textarea {
    harborTeal 一色の地に harborSand のフラット塗りのみ。
    空(星・月)/ 中央の言葉とボタン / 海(全幅の水平線・帆船・海岸)の三層。 */
 
+/* 認証状態の確定待ち(起動時・OAuthリダイレクトからの復帰直後)。何も描かず
+   真っ黒に見えていた区間を、世界観と同じ地色で埋める。 */
+.harbor-loading {
+  position: fixed;
+  inset: 0;
+  background: var(--harbor-teal);
+}
+
 .harbor-signin {
   position: relative;
   min-height: 100vh;
@@ -2048,6 +2056,20 @@ textarea {
   font-size: 15px;
   color: color-mix(in srgb, var(--harbor-sand) 58%, transparent);
   margin: 14px 0 0;
+}
+
+/* Instagram/LINEなどアプリ内ブラウザの警告。Googleサインインが必ず失敗するため、
+   押す前に気づけるよう目立つ色調で置く(harborTeal地に映すコーラル)。 */
+.harbor-webview-warning {
+  max-width: min(360px, 88vw);
+  margin: 18px auto 0;
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--coral) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--coral) 40%, transparent);
+  color: var(--harbor-sand);
+  font-size: 13.5px;
+  line-height: 1.6;
 }
 
 .harbor-actions {
