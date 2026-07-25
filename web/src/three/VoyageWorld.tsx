@@ -68,33 +68,42 @@ const SHOOTING_GEO = new THREE.PlaneGeometry(1.8, 0.035);
 // 半径・高さ・大きさはこの構図(fov44・近景は注視点から6〜8の距離・見下ろし)に
 // 投影して決めた値:
 // ・全羽が水平線(縦長で sy≈209)より上の空の帯に入る。高さは、上端の名前欄に
-//   隠れない sy≈30〜112 に落ちるよう低めに寄せた(y=3.0以上は入力欄の裏に来る)
-// ・翼幅は縦長で21〜26px、横長で23〜30px(カードの9〜19pxより近いぶん大きい)
-// ・1羽以上が見えている時間は縦長で91%、横長で100%(同時に縦長2.2羽・横長6.1羽)
+//   隠れない sy≈20〜112 に落ちるよう低めに寄せた(y=3.0以上は入力欄の裏に来る)
+// ・翼幅は縦長で33〜37px、横長で36〜45px。カード(9〜19px)より大きいのは、
+//   全画面の夜空では「小さくて薄い」と居ることに気づけないため。塗りも既定の
+//   0.5から0.62へ上げてある(GULL_OPACITY)
+// ・1羽以上が見えている時間は縦長で97%、横長で100%(同時に縦長2.9羽・横長8.2羽)
 // 縦長は左右の視野が±10°しかなく、1羽あたり画面に入るのは1割ほどしかない。
-// だから羽数で埋める(カード5羽・航海中10羽に対して、ここは18羽)。
+// だから羽数で埋める(カード5羽・航海中10羽に対して、ここは24羽)。
 // 半径4.8より内側は詰めない。カメラの手前を横切るときに巨大に映る
 // (どうしても詰めるなら、高さを上げて画面の外を通す)。同じ理由で、半径が
 // 5.2以下の羽は高さを2.6以上に保つこと。
+const GULL_OPACITY = 0.62;
 const WORLD_GULLS: GullFlock = [
-  { r: 4.8, y: 2.6, omega: 0.045, scale: 0.13, flap: 1.5, phase: 0.0 },
-  { r: 5.4, y: 2.9, omega: -0.082, scale: 0.14, flap: 2.2, phase: 0.46 },
-  { r: 6.2, y: 2.5, omega: 0.059, scale: 0.16, flap: 1.8, phase: 0.92 },
-  { r: 6.4, y: 2.8, omega: -0.096, scale: 0.16, flap: 2.5, phase: 1.05 },
-  { r: 7.2, y: 2.4, omega: 0.073, scale: 0.17, flap: 2.1, phase: 1.51 },
-  { r: 8.0, y: 2.7, omega: -0.05, scale: 0.19, flap: 1.7, phase: 1.97 },
-  { r: 8.2, y: 2.9, omega: 0.087, scale: 0.19, flap: 2.4, phase: 2.09 },
-  { r: 5.0, y: 2.7, omega: -0.064, scale: 0.13, flap: 2.0, phase: 2.55 },
-  { r: 5.6, y: 2.4, omega: 0.101, scale: 0.15, flap: 1.6, phase: 3.01 },
-  { r: 5.8, y: 2.6, omega: -0.078, scale: 0.15, flap: 2.3, phase: 3.14 },
-  { r: 6.6, y: 2.9, omega: 0.055, scale: 0.16, flap: 1.9, phase: 3.6 },
-  { r: 7.4, y: 2.6, omega: -0.092, scale: 0.18, flap: 1.5, phase: 4.06 },
-  { r: 7.6, y: 2.4, omega: 0.069, scale: 0.18, flap: 2.2, phase: 4.19 },
-  { r: 8.4, y: 2.8, omega: -0.046, scale: 0.19, flap: 1.8, phase: 4.65 },
-  { r: 5.2, y: 2.8, omega: 0.083, scale: 0.14, flap: 2.5, phase: 5.11 },
-  { r: 6.0, y: 2.5, omega: -0.06, scale: 0.15, flap: 2.1, phase: 5.24 },
-  { r: 6.8, y: 2.4, omega: 0.097, scale: 0.17, flap: 1.7, phase: 5.7 },
-  { r: 7.0, y: 2.7, omega: -0.074, scale: 0.17, flap: 2.4, phase: 6.15 },
+  { r: 4.8, y: 2.6, omega: 0.045, scale: 0.2, flap: 1.5, phase: 0.0 },
+  { r: 5.4, y: 2.9, omega: -0.086, scale: 0.21, flap: 2.2, phase: 0.35 },
+  { r: 6.0, y: 2.5, omega: 0.065, scale: 0.23, flap: 1.8, phase: 0.7 },
+  { r: 6.6, y: 2.8, omega: -0.098, scale: 0.24, flap: 2.5, phase: 0.97 },
+  { r: 7.2, y: 2.4, omega: 0.079, scale: 0.25, flap: 2.1, phase: 1.31 },
+  { r: 7.8, y: 2.7, omega: -0.057, scale: 0.27, flap: 1.7, phase: 1.57 },
+  { r: 8.4, y: 2.6, omega: 0.09, scale: 0.28, flap: 2.4, phase: 1.83 },
+  { r: 5.0, y: 2.9, omega: -0.07, scale: 0.2, flap: 2.0, phase: 2.18 },
+  { r: 5.6, y: 2.5, omega: 0.048, scale: 0.22, flap: 1.6, phase: 2.53 },
+  { r: 6.2, y: 2.8, omega: -0.083, scale: 0.23, flap: 2.3, phase: 2.79 },
+  { r: 6.8, y: 2.4, omega: 0.062, scale: 0.24, flap: 1.9, phase: 3.05 },
+  { r: 7.4, y: 2.7, omega: -0.101, scale: 0.26, flap: 1.5, phase: 3.4 },
+  { r: 5.0, y: 2.6, omega: 0.075, scale: 0.2, flap: 2.2, phase: 3.75 },
+  { r: 5.6, y: 2.9, omega: -0.053, scale: 0.22, flap: 2.5, phase: 4.01 },
+  { r: 6.2, y: 2.5, omega: 0.093, scale: 0.23, flap: 1.7, phase: 4.27 },
+  { r: 6.8, y: 2.8, omega: -0.068, scale: 0.24, flap: 2.1, phase: 4.62 },
+  { r: 7.4, y: 2.4, omega: 0.046, scale: 0.26, flap: 2.4, phase: 4.97 },
+  { r: 8.0, y: 2.7, omega: -0.088, scale: 0.27, flap: 1.8, phase: 5.23 },
+  { r: 8.6, y: 2.6, omega: 0.06, scale: 0.28, flap: 1.5, phase: 5.49 },
+  { r: 5.2, y: 2.9, omega: -0.096, scale: 0.21, flap: 1.9, phase: 5.84 },
+  { r: 5.8, y: 2.5, omega: 0.072, scale: 0.22, flap: 2.3, phase: 6.19 },
+  { r: 6.4, y: 2.8, omega: -0.05, scale: 0.24, flap: 1.6, phase: 0.18 },
+  { r: 7.0, y: 2.4, omega: 0.085, scale: 0.25, flap: 2.0, phase: 2.36 },
+  { r: 7.6, y: 2.7, omega: -0.064, scale: 0.26, flap: 2.2, phase: 4.44 },
 ];
 
 function easeInOutCubic(v: number): number {
@@ -401,7 +410,12 @@ function WorldScene({
       <ShootingStar animate={animate} />
       <Sea moonX={-8} animate={animate} />
       <Horizon />
-      <Gulls flock={WORLD_GULLS} animate={animate} center={near.gullCenter} />
+      <Gulls
+        flock={WORLD_GULLS}
+        animate={animate}
+        center={near.gullCenter}
+        opacity={GULL_OPACITY}
+      />
       <Island />
       {/* ステップ目標なら、航路にブイを浮かべる。タップでその場で達成/取消。 */}
       {steps && steps.length > 0 && <StepBuoys steps={steps} onToggle={onToggleStep} />}

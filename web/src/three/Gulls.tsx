@@ -56,11 +56,13 @@ function Gull({
   flap,
   phase,
   animate,
+  opacity,
 }: {
   scale: number;
   flap: number;
   phase: number;
   animate: boolean;
+  opacity: number;
 }) {
   const wings = useRef<(THREE.Mesh | null)[]>([]);
 
@@ -93,7 +95,7 @@ function Gull({
             color={SAND}
             side={THREE.DoubleSide}
             transparent
-            opacity={0.5}
+            opacity={opacity}
             fog={false}
           />
         </mesh>
@@ -104,14 +106,18 @@ function Gull({
 
 /// 夜空をゆっくり旋回するカモメたち。
 /// center を渡すとその真上を回る(既定は原点)。
+/// opacity は塗りの濃さ。既定の0.5は小さなカードで効く薄さなので、全画面の世界で
+/// 「居ることが分かる」濃さにしたいときだけ上げる。
 export function Gulls({
   flock,
   animate,
   center = [0, 0, 0],
+  opacity = 0.5,
 }: {
   flock: GullFlock;
   animate: boolean;
   center?: [number, number, number];
+  opacity?: number;
 }) {
   const birds = useRef<(THREE.Group | null)[]>([]);
 
@@ -157,7 +163,13 @@ export function Gulls({
             birds.current[i] = node;
           }}
         >
-          <Gull scale={g.scale} flap={g.flap} phase={g.phase} animate={animate} />
+          <Gull
+            scale={g.scale}
+            flap={g.flap}
+            phase={g.phase}
+            animate={animate}
+            opacity={opacity}
+          />
         </group>
       ))}
     </>
