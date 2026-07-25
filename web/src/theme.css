@@ -455,8 +455,11 @@ textarea {
 }
 
 .day-cell {
-  width: 40px;
-  height: 40px;
+  /* 1列に46.7px確保されているのに40pxしか使っておらず、6.7px が死んでいた。
+     隣接グリッドなので当たり判定を外へ広げると隣を触ってしまうため、
+     セル自体を指の基準まで大きくする(列内に収まるので重ならない)。 */
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
   display: flex;
   align-items: center;

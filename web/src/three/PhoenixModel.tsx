@@ -574,7 +574,7 @@ export default function PhoenixModel({
         body.position.y = applied;
         // TEMP-VERIFY: 補正前の深さと、補正を当てたあとの最下点
         const w = window as unknown as { __contact?: string };
-        w.__contact = `rawMinY=${CONTACT_BOX.min.y.toFixed(3)} lift=${lift.current.toFixed(3)} appliedY=${applied.toFixed(3)} finalMinY=${(CONTACT_BOX.min.y + applied).toFixed(3)}`;
+        w.__contact = `tick=${tick.current} kids=${body.children.length} coreY=${core.current ? core.current.position.y.toFixed(3) : "?"} sit=${c.sit.toFixed(2)} rawMinY=${CONTACT_BOX.min.y.toFixed(3)} lift=${lift.current.toFixed(3)} appliedY=${applied.toFixed(3)}`;
       }
       // 測り直しは間引くので、その間は補間でつなぐ(段になって見えないように)。
       body.position.y = THREE.MathUtils.damp(body.position.y, lift.current, 12, delta);
