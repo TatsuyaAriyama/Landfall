@@ -1,0 +1,17 @@
+# Cloudflare Pages のキャッシュ指定。
+#
+# 既定では sw.js もアセットも max-age=14400(4時間)で配信されていた。
+# sw.js が4時間キャッシュされると、更新を出しても最大4時間はService Workerが
+# 差し替わらない = 反映が遅れる。ここを no-cache にして、毎回取りに行かせる。
+#
+# 逆に /assets/ の中身はファイル名にハッシュが入っていて中身が変われば名前も
+# 変わるので、長く持たせて良い(immutable)。
+
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
