@@ -743,10 +743,12 @@ enum VoyageSceneKit {
         let bob = SCNNode()
         bob.name = "boatBob"
         bob.addChildNode(makeBoatModel(BoatCustomization.currentParts))
-        // 自分の航海士を甲板に乗せる(港の「みんなの海」と同じ配置)。
+        // 自分の航海士を甲板に立たせる。航海士の原点は足元(y=0)なので、
+        // 船体に埋まらないよう舷縁の高さ(y≈0.5)より上のデッキ面に置く。
+        // 帆(z=0付近)に隠れないよう、手前(z=+0.28)の舷側に立たせる。
         let sailor = PhoenixNavigator.makeNavigatorNode()
-        sailor.position = SCNVector3(0.45, 0.5, 0)
-        sailor.scale = SCNVector3(1.15, 1.15, 1.15)
+        sailor.position = SCNVector3(0.15, 0.56, 0.28)
+        sailor.scale = SCNVector3(0.62, 0.62, 0.62)
         bob.addChildNode(sailor)
         travel.addChildNode(bob)
         if immersive {
@@ -1012,8 +1014,9 @@ final class VoyageAnimator: NSObject, SCNSceneRendererDelegate {
             node.childNode(withName: "step_flag", recursively: false)?
                 .eulerAngles.y = sin(t * 4.6 + Float(i) * 0.8) * 0.2
         }
-        // 甲板の航海士(呼吸・見渡し・ランタンの揺れ)。
+        // 甲板の航海士(呼吸・見渡し・ランタンの揺れ)。装いで選んだ仕草で立つ。
         sailor.bindIfNeeded(scene)
+        sailor.pose = PhoenixPose.selected
         sailor.step(t: t, dt: dt)
         // 波紋(Web Ripples: 周期7秒・位相ずらし3枚)
         for (i, node) in rippleNodes.enumerated() {

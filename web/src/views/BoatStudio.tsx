@@ -11,7 +11,9 @@ import {
   boatPartId,
   boatProps,
   isBoatOptionUnlocked,
+  navigatorPose,
   setBoatPart,
+  setNavigatorPose,
   totalMinutes,
   type BoatPart,
 } from "../boat";
@@ -115,7 +117,12 @@ const POSES: [PhoenixPose, I18nKey][] = [
 export default function BoatStudio({ data }: { data: UserData }) {
   const [, setTick] = useState(0);
   const [mode, setMode] = useState<"boat" | "sailor">("boat");
-  const [pose, setPose] = useState<PhoenixPose>("idle");
+  // 選んだ仕草は保存され、目的地の船の上でも同じ姿で立つ。
+  const [pose, setPoseState] = useState<PhoenixPose>(() => navigatorPose());
+  const setPose = (next: PhoenixPose) => {
+    setPoseState(next);
+    setNavigatorPose(next);
+  };
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );

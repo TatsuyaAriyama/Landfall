@@ -21,7 +21,7 @@ import {
   X_START,
   type VoyageStep,
 } from "./VoyageScene";
-import { boatProps } from "../boat";
+import { boatProps, navigatorPose } from "../boat";
 import { playPlink } from "../audio";
 import type { UserData } from "../data";
 import {
@@ -286,9 +286,9 @@ function PlayfulBoat({ boatX, animate }: { boatX: number; animate: boolean }) {
       </mesh>
       <group ref={hop}>
         <BoatModel parts={parts} animate={animate} />
-        {/* 甲板の自分の航海士(カード・港と同じ配置) */}
-        <group position={[0.45, 0.5, 0]} scale={1.15}>
-          <PhoenixModel animate={animate} pose="idle" />
+        {/* 甲板の自分の航海士(カードと同じ配置。姿は装いで選んだもの) */}
+        <group position={[0.15, 0.56, 0.28]} scale={0.62}>
+          <PhoenixModel animate={animate} pose={navigatorPose()} />
         </group>
       </group>
       {/* 透明な当たり判定(船体+帆を覆う) */}

@@ -8,13 +8,14 @@ struct DressView: View {
     /// 選ぶたびに +1 して、3Dの色と選択枠を更新する。
     @State private var version = 0
     @State private var mode: Mode = Self.initialMode
-    /// 航海士のポーズ(待機/歩く/掲げる/手を振る)。
+    /// 航海士のポーズ(待機/歩く/掲げる/手を振る)。選んだ姿は保存され、
+    /// 目的地の船の上でも同じ仕草で立つ。
     @State private var navPose: PhoenixPose = {
         #if DEBUG
         if let p = ProcessInfo.processInfo.environment["LANDFALL_NAV_POSE"],
            let pose = PhoenixPose(rawValue: p) { return pose }
         #endif
-        return .idle
+        return PhoenixPose.selected
     }()
 
     enum Mode { case boat, navigator }
@@ -124,6 +125,7 @@ struct DressView: View {
         let selected = navPose == pose
         return Button {
             navPose = pose
+            PhoenixPose.selected = pose   // 目的地の船上にも同じ姿で反映される
             Haptics.tap(.light)
         } label: {
             Text(pose.title)

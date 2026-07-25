@@ -92,6 +92,24 @@ export function setBoatPart(part: BoatPart, id: string) {
   localStorage.setItem(KEY(part), id);
 }
 
+// ---- 航海士の仕草 ----
+// 装いで選んだ姿は、目的地の船の上でも同じ仕草で立つ(船の色と同じくローカル保存)。
+
+const POSE_KEY = "navigator.pose";
+const POSES = ["idle", "walk", "raise", "hail"] as const;
+export type NavigatorPose = (typeof POSES)[number];
+
+export function navigatorPose(): NavigatorPose {
+  const saved = localStorage.getItem(POSE_KEY);
+  return (POSES as readonly string[]).includes(saved ?? "")
+    ? (saved as NavigatorPose)
+    : "idle";
+}
+
+export function setNavigatorPose(pose: NavigatorPose) {
+  localStorage.setItem(POSE_KEY, pose);
+}
+
 /// BoatSvg / BoatGroup にそのまま渡せる、いまの船の見た目一式。
 export function boatProps(): BoatParts {
   const color = (part: BoatPart) =>

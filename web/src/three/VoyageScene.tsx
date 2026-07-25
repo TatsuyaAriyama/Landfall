@@ -5,7 +5,7 @@ import { Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
-import { boatProps } from "../boat";
+import { boatProps, navigatorPose } from "../boat";
 import { shortDateLabel } from "../i18n";
 
 // 目的地の航海シーン。自分の船が、夜の海を島へ向かって走っている。
@@ -390,9 +390,10 @@ function VoyageSea({
         <Ripples animate={animate} />
         <Wake animate={animate} />
         <BoatModel parts={parts} animate={animate} />
-        {/* 甲板の自分の航海士(港の「みんなの海」と同じ配置) */}
-        <group position={[0.45, 0.5, 0]} scale={1.15}>
-          <PhoenixModel animate={animate} pose="idle" />
+        {/* 甲板の自分の航海士。原点が足元なので舷縁(y≈0.5)より上に立たせ、
+            船首の反りに脚が刺さらないよう船体中央寄りに置く。姿は装いで選んだもの。 */}
+        <group position={[0.15, 0.56, 0.28]} scale={0.62}>
+          <PhoenixModel animate={animate} pose={navigatorPose()} />
         </group>
       </group>
     </>

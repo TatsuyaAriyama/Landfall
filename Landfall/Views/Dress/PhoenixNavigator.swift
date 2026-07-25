@@ -41,6 +41,18 @@ enum PhoenixPose: String, CaseIterable, Identifiable {
         case .hail: "Wave"
         }
     }
+
+    /// 装いで選んだ航海士の仕草。船の上でもこの姿で立つ(船の色と同じくローカル保存)。
+    private static let storageKey = "navigator.pose"
+
+    static var selected: PhoenixPose {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: storageKey),
+                  let pose = PhoenixPose(rawValue: raw) else { return .idle }
+            return pose
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: storageKey) }
+    }
 }
 
 private struct PoseBase {
