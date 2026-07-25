@@ -21,6 +21,7 @@ import {
   X_START,
   type VoyageStep,
 } from "./VoyageScene";
+import { Gulls, type GullFlock } from "./Gulls";
 import { boatProps, navigatorPose } from "../boat";
 import { playPlink } from "../audio";
 import type { UserData } from "../data";
@@ -61,6 +62,40 @@ const MOON_GEO = new THREE.SphereGeometry(1.1, 20, 14);
 const BOAT_HIT_GEO = new THREE.BoxGeometry(3.0, 2.6, 1.6);
 const TAP_RING_GEO = new THREE.RingGeometry(0.9, 1.0, 48);
 const SHOOTING_GEO = new THREE.PlaneGeometry(1.8, 0.035);
+
+// この世界の空を旋回するカモメ。ホームの目的地カード(VoyageScene)で飛んでいる
+// カモメが、カードを押して入ったあとの世界にも居るようにする。
+// 半径・高さ・大きさはこの構図(fov44・近景は注視点から6〜8の距離・見下ろし)に
+// 投影して決めた値:
+// ・全羽が水平線(縦長で sy≈209)より上の空の帯に入る。高さは、上端の名前欄に
+//   隠れない sy≈30〜112 に落ちるよう低めに寄せた(y=3.0以上は入力欄の裏に来る)
+// ・翼幅は縦長で21〜26px、横長で23〜30px(カードの9〜19pxより近いぶん大きい)
+// ・1羽以上が見えている時間は縦長で91%、横長で100%(同時に縦長2.2羽・横長6.1羽)
+// 縦長は左右の視野が±10°しかなく、1羽あたり画面に入るのは1割ほどしかない。
+// だから羽数で埋める(カード5羽・航海中10羽に対して、ここは18羽)。
+// 半径4.8より内側は詰めない。カメラの手前を横切るときに巨大に映る
+// (どうしても詰めるなら、高さを上げて画面の外を通す)。同じ理由で、半径が
+// 5.2以下の羽は高さを2.6以上に保つこと。
+const WORLD_GULLS: GullFlock = [
+  { r: 4.8, y: 2.6, omega: 0.045, scale: 0.13, flap: 1.5, phase: 0.0 },
+  { r: 5.4, y: 2.9, omega: -0.082, scale: 0.14, flap: 2.2, phase: 0.46 },
+  { r: 6.2, y: 2.5, omega: 0.059, scale: 0.16, flap: 1.8, phase: 0.92 },
+  { r: 6.4, y: 2.8, omega: -0.096, scale: 0.16, flap: 2.5, phase: 1.05 },
+  { r: 7.2, y: 2.4, omega: 0.073, scale: 0.17, flap: 2.1, phase: 1.51 },
+  { r: 8.0, y: 2.7, omega: -0.05, scale: 0.19, flap: 1.7, phase: 1.97 },
+  { r: 8.2, y: 2.9, omega: 0.087, scale: 0.19, flap: 2.4, phase: 2.09 },
+  { r: 5.0, y: 2.7, omega: -0.064, scale: 0.13, flap: 2.0, phase: 2.55 },
+  { r: 5.6, y: 2.4, omega: 0.101, scale: 0.15, flap: 1.6, phase: 3.01 },
+  { r: 5.8, y: 2.6, omega: -0.078, scale: 0.15, flap: 2.3, phase: 3.14 },
+  { r: 6.6, y: 2.9, omega: 0.055, scale: 0.16, flap: 1.9, phase: 3.6 },
+  { r: 7.4, y: 2.6, omega: -0.092, scale: 0.18, flap: 1.5, phase: 4.06 },
+  { r: 7.6, y: 2.4, omega: 0.069, scale: 0.18, flap: 2.2, phase: 4.19 },
+  { r: 8.4, y: 2.8, omega: -0.046, scale: 0.19, flap: 1.8, phase: 4.65 },
+  { r: 5.2, y: 2.8, omega: 0.083, scale: 0.14, flap: 2.5, phase: 5.11 },
+  { r: 6.0, y: 2.5, omega: -0.06, scale: 0.15, flap: 2.1, phase: 5.24 },
+  { r: 6.8, y: 2.4, omega: 0.097, scale: 0.17, flap: 1.7, phase: 5.7 },
+  { r: 7.0, y: 2.7, omega: -0.074, scale: 0.17, flap: 2.4, phase: 6.15 },
+];
 
 function easeInOutCubic(v: number): number {
   return v < 0.5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2;
@@ -327,16 +362,21 @@ function WorldScene({
     const aspect = size.width / Math.max(size.height, 1);
     const wide = aspect >= 1.05;
     const tx = boatX + (ISLAND_POS[0] - boatX) * (wide ? 0.5 : 0.08);
+    // カモメは注視点の真上を回らせる。見渡す操作(OrbitControls)の中心も同じ点
+    // なので、どちらへ回しても空にカモメが残る。
+    const gullCenter: [number, number, number] = [tx, 0, -0.5];
     return wide
       ? {
           pos: new THREE.Vector3(tx - 1.2, 1.9, 5.4),
           target: new THREE.Vector3(tx, 0.5, -0.5),
           maxPolar: Math.PI * 0.52,
+          gullCenter,
         }
       : {
           pos: new THREE.Vector3(tx - 1.0, 1.9, 7.2),
           target: new THREE.Vector3(tx, -0.25, -0.5),
           maxPolar: Math.PI * 0.46,
+          gullCenter,
         };
   }, [boatX, size.width, size.height]);
 
@@ -361,6 +401,7 @@ function WorldScene({
       <ShootingStar animate={animate} />
       <Sea moonX={-8} animate={animate} />
       <Horizon />
+      <Gulls flock={WORLD_GULLS} animate={animate} center={near.gullCenter} />
       <Island />
       {/* ステップ目標なら、航路にブイを浮かべる。タップでその場で達成/取消。 */}
       {steps && steps.length > 0 && <StepBuoys steps={steps} onToggle={onToggleStep} />}
