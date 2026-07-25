@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
-import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
+import { Moon, NIGHT_BG, Sea } from "./SeaParts";
 import { Horizon, Island, Wake } from "./VoyageScene";
 import { boatProps, navigatorPose } from "../boat";
 import {
@@ -40,56 +40,118 @@ const ISLAND_POS: [number, number, number] = [6.5, 0, -5.5];
 const SAND = "#EADEBD";
 const SWELL_GEO = new THREE.PlaneGeometry(1.6, 0.05);
 // うねりが流れる範囲。端まで行ったら反対側へ回して継ぎ目なく続ける。
-const SWELL_SPAN = 30;
-const SWELL_MIN_X = -15;
+const SWELL_SPAN = 34;
+const SWELL_MIN_X = -17;
 
-/// 後ろへ流れていくうねり。船を動かさずに「進んでいる」ことを伝える。
+/// 後ろへ流れていく水の筋。船を世界の原点に置いたまま「進んでいる」ことを伝える
+/// 主役なので、はっきり見える濃さで流す(薄すぎると船が止まって見える)。
+/// 手前(カメラ寄り=zが大きい)を速く、奥を遅くして視差をつける。
+/// 速さは「ゆっくり進む帆船」に合わせる。船体は約1.3単位なので、手前の筋が
+/// 毎秒1.2単位 ≒ 船一隻ぶん/秒。これ以上速いとモーターボートに見える。
+const SWELL_LAYERS = [
+  { count: 14, zMin: -8, zSpread: 6, speed: 0.45, opacity: 0.1, len: 1.15 },
+  { count: 12, zMin: 0.8, zSpread: 4.6, speed: 1.2, opacity: 0.22, len: 0.8 },
+];
+
 function PassingSwells({ animate }: { animate: boolean }) {
-  const group = useRef<THREE.Group>(null);
+  const layers = useRef<(THREE.Group | null)[]>([]);
   // 毎フレーム乱数を引かない。決まった散らし方で並べる。
   const swells = useMemo(
     () =>
-      Array.from({ length: 20 }, (_, i) => ({
-        x: SWELL_MIN_X + (i / 20) * SWELL_SPAN,
-        z: -7 + ((i * 7) % 15) * 0.95,
-        scale: 0.55 + ((i * 5) % 8) / 8,
-        opacity: 0.05 + ((i * 3) % 5) * 0.018,
-      })),
+      SWELL_LAYERS.map((layer, li) =>
+        Array.from({ length: layer.count }, (_, i) => ({
+          x: SWELL_MIN_X + ((i * 2.4 + li * 1.3) % SWELL_SPAN),
+          z: layer.zMin + ((i * 5) % 7) * (layer.zSpread / 7),
+          scale: layer.len * (0.6 + ((i * 3) % 6) / 6),
+          opacity: layer.opacity * (0.7 + ((i * 7) % 4) / 6),
+        })),
+      ),
     [],
   );
 
   useFrame((_, delta) => {
-    if (!animate || !group.current) return;
-    for (const child of group.current.children) {
-      child.position.x -= delta * 1.5;
-      if (child.position.x < SWELL_MIN_X) child.position.x += SWELL_SPAN;
-    }
+    if (!animate) return;
+    SWELL_LAYERS.forEach((layer, li) => {
+      const group = layers.current[li];
+      if (!group) return;
+      for (const child of group.children) {
+        child.position.x -= delta * layer.speed;
+        if (child.position.x < SWELL_MIN_X) child.position.x += SWELL_SPAN;
+      }
+    });
   });
 
   return (
-    <group ref={group}>
-      {swells.map((s, i) => (
-        <mesh
-          key={i}
-          geometry={SWELL_GEO}
-          position={[s.x, 0.035, s.z]}
-          rotation={[-Math.PI / 2, 0, 0]}
-          scale={[s.scale, 1, 1]}
+    <>
+      {swells.map((list, li) => (
+        <group
+          key={li}
+          ref={(g) => {
+            layers.current[li] = g;
+          }}
         >
-          <meshBasicMaterial
-            color={SAND}
-            transparent
-            opacity={s.opacity}
-            depthWrite={false}
-          />
-        </mesh>
+          {list.map((s, i) => (
+            <mesh
+              key={i}
+              geometry={SWELL_GEO}
+              position={[s.x, 0.035 + li * 0.004, s.z]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              scale={[s.scale, 1, 1]}
+            >
+              <meshBasicMaterial
+                color={SAND}
+                transparent
+                opacity={s.opacity}
+                depthWrite={false}
+              />
+            </mesh>
+          ))}
+        </group>
       ))}
+    </>
+  );
+}
+
+/// 目的地の島。航海が続くほど、ゆっくり近づいてくる(進んでいる証)。
+/// 距離は漸近的に縮めるので、追い越して背後へ抜けてしまうことはない。
+const ISLAND_APPROACH = 1.2; // 開始時は最終距離の2.2倍だけ遠い
+const ISLAND_TAU = 1500; // 25分でおよそ半分まで詰まる
+function ApproachingIsland({ startedAt, animate }: { startedAt: number; animate: boolean }) {
+  const group = useRef<THREE.Group>(null);
+
+  const place = (g: THREE.Group) => {
+    const elapsed = Math.max(0, (Date.now() - startedAt) / 1000);
+    const k = 1 + ISLAND_APPROACH * Math.exp(-elapsed / ISLAND_TAU);
+    g.position.set(ISLAND_POS[0] * k, ISLAND_POS[1], ISLAND_POS[2] * k);
+  };
+
+  // 静止時(reduced-motion)でも、経過に見合った位置には置く。
+  useLayoutEffect(() => {
+    if (group.current) place(group.current);
+  });
+
+  useFrame(() => {
+    if (!animate || !group.current) return;
+    place(group.current);
+  });
+
+  return (
+    <group ref={group} scale={0.7}>
+      <Island />
     </group>
   );
 }
 
 /// 世界の中身。カメラは固定の斜め視点で、ごくわずかに揺れる。
-function VoyagingSea({ animate, showIsland }: { animate: boolean; showIsland: boolean }) {
+function VoyagingSea({
+  animate,
+  showIsland,
+  startedAt,
+}: {
+  animate: boolean;
+  showIsland: boolean;
+  startedAt: number;
+}) {
   const parts = useMemo(() => boatProps(), []);
   const camera = useThree((s) => s.camera);
 
@@ -128,14 +190,11 @@ function VoyagingSea({ animate, showIsland }: { animate: boolean; showIsland: bo
       <Horizon />
       <PassingSwells animate={animate} />
       {/* 目的地があるなら、その島を遠くの前方に置く。何へ向かっているかが見える。 */}
-      {showIsland && (
-        <group position={ISLAND_POS} scale={0.7}>
-          <Island />
-        </group>
-      )}
-      {/* 自分の船。配置は VoyageScene と同値(甲板の航海士も同じ位置・姿)。 */}
+      {showIsland && <ApproachingIsland startedAt={startedAt} animate={animate} />}
+      {/* 自分の船。配置は VoyageScene と同値(甲板の航海士も同じ位置・姿)。
+          同心円の波紋(Ripples)は「その場で揺れている」に見えるので、走っている
+          この画面では使わない。後ろへ引く航跡と、流れる水の筋で進みを見せる。 */}
       <group position={[0, 0, 0]} rotation={[0, 0.1, 0]} scale={0.55}>
-        <Ripples animate={animate} />
         <Wake animate={animate} />
         <BoatModel parts={parts} animate={animate} />
         <group position={[0.88, 0.57, 0.22]} scale={0.62}>
@@ -246,7 +305,11 @@ export default function VoyagingWorld({
         camera={{ position: CAM_POS, fov: CAM_FOV }}
         onPointerMissed={() => setUiHidden((v) => !v)}
       >
-        <VoyagingSea animate={animate} showIsland={hasDestination} />
+        <VoyagingSea
+          animate={animate}
+          showIsland={hasDestination}
+          startedAt={startedAt}
+        />
       </Canvas>
 
       <div className={`voyaging-ui${uiHidden ? " hidden" : ""}`}>
