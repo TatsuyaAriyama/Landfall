@@ -52,7 +52,7 @@ struct SessionEditSheet: View {
             }
             .padding(.top, 10)
 
-            TextField("A note (optional)", text: $note)
+            TextField("What you worked on (optional)", text: $note)
                 .font(LFFont.label(16))
                 .foregroundStyle(LFColor.ink)
                 .tint(LFColor.ink)

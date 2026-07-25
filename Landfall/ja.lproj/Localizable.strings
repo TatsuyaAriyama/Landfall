@@ -62,7 +62,7 @@
 "Or pick a voyage length" = "または、航海の長さを選んで刻む";
 "%lld min" = "%lld分";
 "0 min" = "0分";
-"A note (optional)" = "ひとこと(任意)";
+"What you worked on (optional)" = "作業内容のメモ(任意)";
 "Log this voyage" = "この航海を刻む";
 "Setting sail." = "出航。";
 "Made landfall." = "着岸。";
