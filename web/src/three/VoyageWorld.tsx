@@ -287,7 +287,7 @@ function PlayfulBoat({ boatX, animate }: { boatX: number; animate: boolean }) {
       <group ref={hop}>
         <BoatModel parts={parts} animate={animate} />
         {/* 甲板の自分の航海士(カードと同じ配置。姿は装いで選んだもの) */}
-        <group position={[0.15, 0.56, 0.28]} scale={0.62}>
+        <group position={[0.88, 0.57, 0.22]} scale={0.62}>
           <PhoenixModel animate={animate} pose={navigatorPose()} />
         </group>
       </group>

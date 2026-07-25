@@ -390,9 +390,11 @@ function VoyageSea({
         <Ripples animate={animate} />
         <Wake animate={animate} />
         <BoatModel parts={parts} animate={animate} />
-        {/* 甲板の自分の航海士。原点が足元なので舷縁(y≈0.5)より上に立たせ、
-            船首の反りに脚が刺さらないよう船体中央寄りに置く。姿は装いで選んだもの。 */}
-        <group position={[0.15, 0.56, 0.28]} scale={0.62}>
+        {/* 甲板の自分の航海士。舳先を見て進む姿にしたいので船首寄りに立たせる。
+            原点が足元なので舷縁(y≈0.5〜0.58)の上に置き、マストとメインセイルを
+            避けつつ舳先の反りに脚が入らない x=0.88、帆に隠れない手前の舷側 z=+0.22。
+            姿は装いで選んだもの。iOS VoyageSceneKit と同値。 */}
+        <group position={[0.88, 0.57, 0.22]} scale={0.62}>
           <PhoenixModel animate={animate} pose={navigatorPose()} />
         </group>
       </group>

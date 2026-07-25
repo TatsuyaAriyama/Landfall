@@ -743,11 +743,13 @@ enum VoyageSceneKit {
         let bob = SCNNode()
         bob.name = "boatBob"
         bob.addChildNode(makeBoatModel(BoatCustomization.currentParts))
-        // 自分の航海士を甲板に立たせる。航海士の原点は足元(y=0)なので、
-        // 船体に埋まらないよう舷縁の高さ(y≈0.5)より上のデッキ面に置く。
-        // 帆(z=0付近)に隠れないよう、手前(z=+0.28)の舷側に立たせる。
+        // 自分の航海士を船首寄りの甲板に立たせる(舳先を見て進む姿)。
+        // 船体は x=-1.02(船尾)〜1.32(舳先の先端)で、舷縁は y≈0.5〜0.58。
+        // 原点が足元なので舷縁の上(y=0.57)に置く。マスト(x=0.1)とメインセイルを
+        // 避けつつ、舳先の反りに脚が入らない x=0.88 に。帆に隠れないよう
+        // 手前の舷側(z=+0.22)へ寄せる。
         let sailor = PhoenixNavigator.makeNavigatorNode()
-        sailor.position = SCNVector3(0.15, 0.56, 0.28)
+        sailor.position = SCNVector3(0.88, 0.57, 0.22)
         sailor.scale = SCNVector3(0.62, 0.62, 0.62)
         bob.addChildNode(sailor)
         travel.addChildNode(bob)
