@@ -215,7 +215,7 @@ struct ProfileEditorSheet: View {
                     .padding(.top, 28)
                 // 打鍵ごとにresolveを書き戻すと、日本語入力の変換中文字(未確定文字列)が
                 // 毎回リセットされ、日本語が一切打てなくなる。上限は保存時にのみ適用する。
-                TextField("One line you sail by (optional)", text: $resolve, axis: .vertical)
+                TextField("Write your resolve", text: $resolve, axis: .vertical)
                     .font(LFFont.label(16))
                     .foregroundStyle(LFColor.ink)
                     .tint(LFColor.ink)

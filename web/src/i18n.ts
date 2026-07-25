@@ -60,7 +60,7 @@ const ja = {
   edit: "編集",
   playerName: "プレイヤー名",
   resolve: "決意",
-  resolvePlaceholder: "座右の一文(任意)",
+  resolvePlaceholder: "決意を入力しよう",
   saveCard: "このカードで保存",
 
   // 港
@@ -349,7 +349,7 @@ const en: Record<I18nKey, string> = {
   edit: "Edit",
   playerName: "Player name",
   resolve: "Resolve",
-  resolvePlaceholder: "One line you sail by (optional)",
+  resolvePlaceholder: "Write your resolve",
   saveCard: "Save this card",
 
   publicSection: "Public",
