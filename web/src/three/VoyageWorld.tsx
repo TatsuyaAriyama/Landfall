@@ -472,6 +472,8 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   const [phase, setPhase] = useState<Phase>(animate ? "enter" : "idle");
   // 海など「外側」をタップすると、編集UIをフェードして世界に入り込む(もう一度タップで戻る)。
   const [uiHidden, setUiHidden] = useState(false);
+  // タップと「見渡すドラッグ」を見分けるための、押した位置。
+  const pointerDown = useRef<{ x: number; y: number; onWorld: boolean } | null>(null);
 
   // ---- 編集状態 ----
   // 目標のかたちは2つだけ:「期日を決める」か「ステップで辿る」か。
@@ -554,6 +556,21 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   const handleEntered = useCallback(() => {
     setPhase((p) => (p === "enter" ? "idle" : p));
   }, []);
+
+  // 入場・退場の完了はフレームが回ることに依存している(useFrame内で判定している)。
+  // タブが裏に回る・WebGLの初回フレームが遅い・rAFが絞られる等で完了通知が来ないと、
+  // phaseが"enter"のまま編集UIが出ず、しかもUIの中にある「閉じる」も押せないので
+  // 何もできなくなる(iPhoneにはEscが無いため本当に出られない)。
+  // 時間で必ず先へ進める保険を置く。
+  useEffect(() => {
+    if (phase === "idle") return;
+    const grace = DOLLY_SECONDS * 1000 + 700;
+    const id = setTimeout(() => {
+      if (phase === "enter") setPhase((p) => (p === "enter" ? "idle" : p));
+      else onCloseRef.current();
+    }, grace);
+    return () => clearTimeout(id);
+  }, [phase]);
   const handleExited = useCallback(() => {
     onCloseRef.current();
   }, []);
@@ -611,17 +628,27 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   const save = async () => {
     if (!valid || working) return;
     setWorking(true);
-    await saveDestination(uid, {
-      id: dest?.id,
-      name: trimmed,
-      // 種類ごとに、その種類の値だけを書く(排他)。
-      targetDate: targetDateValue(),
-      targetHasTime: kind === "date" && withTime && timeStr.length === 5,
-      steps: kind === "steps" ? namedSteps : undefined,
-      createdAt: dest?.createdAt,
-    });
-    showToast(t("savedToast"));
-    requestClose();
+    try {
+      await saveDestination(uid, {
+        id: dest?.id,
+        name: trimmed,
+        // 種類ごとに、その種類の値だけを書く(排他)。
+        targetDate: targetDateValue(),
+        targetHasTime: kind === "date" && withTime && timeStr.length === 5,
+        steps: kind === "steps" ? namedSteps : undefined,
+        createdAt: dest?.createdAt,
+      });
+      showToast(t("savedToast"));
+      requestClose();
+    } catch {
+      // 失敗を黙って飲み込むと、working が立ったまま保存も削除も押せない
+      // 「何をしても反応しない編集画面」になってしまう。理由を出して操作を返す。
+      showToast(t("errGeneric"));
+      // 自動保存で失敗したときは、もう一度自動で試せるようにしておく。
+      autoSavedRef.current = false;
+    } finally {
+      setWorking(false);
+    }
   };
 
   // 期日を選び終えたら、そのまま保存してズームアウト(ホームへ戻る)。
@@ -633,14 +660,21 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     autoSavedRef.current = false;
   }, [kind]);
 
-  // 時刻も決めるときは日付を選んだ時点では閉じない(時刻を入れる間が要る)。
-  // そちらは「保存する」で確定させる。
-  useEffect(() => {
-    if (kind !== "date" || withTime || !dateTouched.current || autoSavedRef.current) return;
-    if (dateStr.length !== 10 || !trimmed || working) return;
+  /// 日付を「選び終えた」ときだけ自動保存する。合図は値の変化ではなく blur
+  /// (ピッカーが閉じたこと)。
+  ///
+  /// 値の変化で判定してはいけない: iOSのホイールは年・月・日を回すたびに
+  /// change を投げ、その途中の値も形式上は完全な日付なので「10文字になったか」
+  /// では区別できない。以前はそれで、ユーザーが日を選ぶ前に年だけ回した時点の
+  /// 日付で保存して画面を閉じてしまっていた。
+  /// 時刻も決めるときは自動保存しない(時刻を入れる間が要る)。
+  const autoSaveIfPicked = () => {
+    if (kind !== "date" || withTime) return;
+    if (!dateTouched.current || autoSavedRef.current) return;
+    if (!valid || working) return;
     autoSavedRef.current = true;
     void save();
-  }, [dateStr, kind, withTime, trimmed, working]);
+  };
 
   const remove = async () => {
     if (!dest || working) return;
@@ -654,8 +688,14 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     confirmingRef.current = false;
     if (!ok) return;
     setWorking(true);
-    await deleteDestination(uid, dest.id);
-    requestClose();
+    try {
+      await deleteDestination(uid, dest.id);
+      requestClose();
+    } catch {
+      showToast(t("errGeneric"));
+    } finally {
+      setWorking(false);
+    }
   };
 
   // iOS Safari はキーボードでレイアウトビューポートが縮まないため、
@@ -684,15 +724,33 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
       role="dialog"
       aria-modal="true"
       aria-label={t("destinationTitle")}
+      // 世界をタップで編集UIを隠す/戻す。R3Fの onPointerMissed では駄目だった:
+      // 当たり判定が無いときだけ呼ばれるので、海(メッシュ)を叩くと発火せず、
+      // 「空をタップして消したのに、海をタップしても戻らない」状態になっていた。
+      // UIが消えたままだと閉じるボタンも押せないので、ここで確実に受ける。
+      // 見渡すドラッグでは切り替えないよう、動いた距離で見分ける。
+      onPointerDown={(e) => {
+        pointerDown.current = {
+          x: e.clientX,
+          y: e.clientY,
+          onWorld: !(e.target as HTMLElement).closest(
+            ".voyage-world-top, .voyage-world-panel, .overlay",
+          ),
+        };
+      }}
+      onPointerUp={(e) => {
+        const from = pointerDown.current;
+        pointerDown.current = null;
+        if (!from || !from.onWorld || phase !== "idle") return;
+        if (Math.hypot(e.clientX - from.x, e.clientY - from.y) < 6) {
+          setUiHidden((h) => !h);
+        }
+      }}
     >
       <Canvas
         dpr={[1, 2]}
         frameloop={animate ? "always" : "demand"}
         camera={{ position: [FAR_POS.x, FAR_POS.y, FAR_POS.z], fov: 44 }}
-        // 海など「外側」(オブジェクト以外)をタップ = 編集UIをフェードして世界に入り込む/戻す。
-        onPointerMissed={() => {
-          if (phase === "idle") setUiHidden((h) => !h);
-        }}
       >
         <WorldScene
           phase={phase}
@@ -752,6 +810,9 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                     dateTouched.current = true;
                     setDateStr(e.target.value);
                   }}
+                  // 選び終えた(ピッカーを閉じた)ら確定する。回している途中では
+                  // 閉じない。
+                  onBlur={autoSaveIfPicked}
                 />
                 <label className="voyage-time-toggle">
                   <input
