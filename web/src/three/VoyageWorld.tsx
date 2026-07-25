@@ -399,6 +399,16 @@ function WorldScene({
   );
 }
 
+// 日付/時刻の入力欄は端末のローカル時刻で扱う。toISOString はUTCに寄るので、
+// JSTでは日付が一日ずれる(前日が入る)。
+const pad2 = (n: number) => String(n).padStart(2, "0");
+function dateInputValue(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+function timeInputValue(d: Date): string {
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
 /// 没入エディタ本体。全画面の夜の海+世界に馴染む半透明の編集UI。
 export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldProps) {
   const [animate] = useState(
@@ -418,7 +428,12 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   // ステップ目標の編集リスト(順序付き)。チェックの反転は即保存する。
   const [steps, setSteps] = useState<DestinationStep[]>(() => dest?.steps ?? []);
   const [dateStr, setDateStr] = useState(
-    dest?.targetDate ? dest.targetDate.toISOString().slice(0, 10) : "",
+    dest?.targetDate ? dateInputValue(dest.targetDate) : "",
+  );
+  // 時刻も決めるか。既定は日付だけ(=その日いっぱいが締切)。
+  const [withTime, setWithTime] = useState(Boolean(dest?.targetHasTime));
+  const [timeStr, setTimeStr] = useState(
+    dest?.targetDate && dest.targetHasTime ? timeInputValue(dest.targetDate) : "",
   );
   const [working, setWorking] = useState(false);
   const confirmingRef = useRef(false);
@@ -430,9 +445,26 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   const trimmed = name.replace(/^[\s　]+|[\s　]+$/g, "");
   // 名前のあるステップだけを有効とみなす(空行は保存時に落とす)。
   const namedSteps = steps.filter((s) => s.name.trim().length > 0);
+  // 締切。時刻を決めていなければ「その日いっぱい」(destinationDeadline と同じ解釈)。
+  const targetDateValue = (): Date | undefined => {
+    if (kind !== "date" || dateStr.length !== 10) return undefined;
+    if (withTime) {
+      if (timeStr.length !== 5) return undefined;
+      return new Date(`${dateStr}T${timeStr}:00`);
+    }
+    return new Date(`${dateStr}T00:00:00`);
+  };
+  // 時刻まで決めるときは、過ぎた時刻を締切にできないようにする
+  // (保存した瞬間に着岸してしまうため)。
+  const deadlinePassed = (() => {
+    if (!withTime) return false;
+    const target = targetDateValue();
+    return target ? target.getTime() <= Date.now() : false;
+  })();
+  const dateValid =
+    dateStr.length === 10 && (!withTime || timeStr.length === 5) && !deadlinePassed;
   const valid =
-    trimmed.length > 0 &&
-    (kind === "date" ? dateStr.length === 10 : namedSteps.length >= 1);
+    trimmed.length > 0 && (kind === "date" ? dateValid : namedSteps.length >= 1);
 
   // ---- 世界の配置(カードと同じ航路・島) ----
   // ステップ目標は「達成数/全数」で船が進む(編集中の局所stateを即反映)。
@@ -528,7 +560,8 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
       id: dest?.id,
       name: trimmed,
       // 種類ごとに、その種類の値だけを書く(排他)。
-      targetDate: kind === "date" && dateStr ? new Date(`${dateStr}T00:00:00`) : undefined,
+      targetDate: targetDateValue(),
+      targetHasTime: kind === "date" && withTime && timeStr.length === 5,
       steps: kind === "steps" ? namedSteps : undefined,
       createdAt: dest?.createdAt,
     });
@@ -545,12 +578,14 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     autoSavedRef.current = false;
   }, [kind]);
 
+  // 時刻も決めるときは日付を選んだ時点では閉じない(時刻を入れる間が要る)。
+  // そちらは「保存する」で確定させる。
   useEffect(() => {
-    if (kind !== "date" || !dateTouched.current || autoSavedRef.current) return;
+    if (kind !== "date" || withTime || !dateTouched.current || autoSavedRef.current) return;
     if (dateStr.length !== 10 || !trimmed || working) return;
     autoSavedRef.current = true;
     void save();
-  }, [dateStr, kind, trimmed, working]);
+  }, [dateStr, kind, withTime, trimmed, working]);
 
   const remove = async () => {
     if (!dest || working) return;
@@ -657,12 +692,40 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                   className="field"
                   type="date"
                   value={dateStr}
-                  min={new Date().toISOString().slice(0, 10)}
+                  min={dateInputValue(new Date())}
                   onChange={(e) => {
                     dateTouched.current = true;
                     setDateStr(e.target.value);
                   }}
                 />
+                <label className="voyage-time-toggle">
+                  <input
+                    type="checkbox"
+                    checked={withTime}
+                    onChange={(e) => {
+                      const on = e.target.checked;
+                      // 時刻を決めるあいだは自動保存で閉じない。
+                      if (on) autoSavedRef.current = true;
+                      setWithTime(on);
+                      if (!on) setTimeStr("");
+                    }}
+                  />
+                  {t("goalTimeToggle")}
+                </label>
+                {withTime && (
+                  <>
+                    <input
+                      className="field"
+                      type="time"
+                      value={timeStr}
+                      onChange={(e) => setTimeStr(e.target.value)}
+                      aria-label={t("goalTime")}
+                    />
+                    <p className="quest-intro">
+                      {deadlinePassed ? t("goalTimePast") : t("goalTimeDesc")}
+                    </p>
+                  </>
+                )}
               </>
             ) : (
               <>

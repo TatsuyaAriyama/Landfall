@@ -186,7 +186,11 @@ const ja = {
   goalQuestion: "この島へは、どう向かう?",
   goalDateOption: "期日を決める",
   goalStepsOption: "ステップで辿る",
-  goalDateDesc: "決めた日に向かって、船が進む。",
+  goalDateDesc: "決めた日に向かって、船が進む。時刻を決めなければ、その日いっぱいが締切。",
+  goalTimeToggle: "時刻も決める",
+  goalTime: "締切の時刻",
+  goalTimeDesc: "この時刻に着岸する。",
+  goalTimePast: "過ぎた時刻は選べない。先の時刻にしよう。",
   goalKind: "目標",
   goalHours: "累計時間",
   goalDate: "期日",
@@ -477,7 +481,12 @@ const en: Record<I18nKey, string> = {
   goalQuestion: "How will you reach this island?",
   goalDateOption: "Set a date",
   goalStepsOption: "Follow steps",
-  goalDateDesc: "The boat drifts toward the island as the day draws near.",
+  goalDateDesc:
+    "The boat drifts toward the island as the day draws near. Without a time, the whole day counts.",
+  goalTimeToggle: "Set a time too",
+  goalTime: "Deadline time",
+  goalTimeDesc: "You'll make landfall at this time.",
+  goalTimePast: "That time has passed. Pick a later one.",
   goalKind: "Goal",
   goalHours: "Total hours",
   goalDate: "Target date",
@@ -626,6 +635,18 @@ export function remainingHoursLabel(remainingMinutes: number): string {
 
 export function remainingDaysLabel(days: number): string {
   return lang === "ja" ? `あと${days}日` : `${days} days to go`;
+}
+
+/// 期日までの残り。1日以上あれば日で、切ったら時間・分で言う
+/// (時刻まで決められるので、締切当日は「あと3時間」と出したい)。
+export function deadlineRemainingLabel(remainingMs: number): string {
+  const minutes = Math.max(0, Math.ceil(remainingMs / 60000));
+  if (minutes >= 1440) return remainingDaysLabel(Math.round(minutes / 1440));
+  if (minutes >= 60) {
+    const h = Math.floor(minutes / 60);
+    return lang === "ja" ? `あと${h}時間` : `${h}h to go`;
+  }
+  return lang === "ja" ? `あと${minutes}分` : `${minutes}m to go`;
 }
 
 /// チャットの発言時刻。「14:32」。

@@ -2850,6 +2850,24 @@ textarea {
   color: color-mix(in srgb, var(--ink) 60%, transparent);
 }
 
+/* 期日に時刻も添えるかの切り替え。日付欄のすぐ下に小さく置く。 */
+.voyage-time-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  font-size: 13px;
+  color: color-mix(in srgb, var(--ink) 70%, transparent);
+  cursor: pointer;
+}
+
+.voyage-time-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--return-orange);
+  cursor: pointer;
+}
+
 .quest-hours-field {
   width: 92px;
   min-height: 36px;

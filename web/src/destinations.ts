@@ -27,6 +27,10 @@ export interface Destination {
   itemUUID?: string; // 紐づく項目。省略時はすべての記録が進捗に数えられる
   targetMinutes?: number; // 累計時間の目標(分)
   targetDate?: Date; // 期日の目標。manual=trueのときは任意の締切メモとして使う
+  // targetDate に時刻まで含まれるか。false/未設定なら「その日いっぱい」を意味し、
+  // 締切はその日の 23:59:59.999(destinationDeadline)。
+  // これが無かった頃は日付の 00:00 が締切扱いで、今日を期日にすると即着岸していた。
+  targetHasTime?: boolean;
   // 完了ゴール(課題など、時間や日数では測れないもの向け)。記録からの自動導出ではなく、
   // 本人が「完了にする」を押した時だけ達成になる — このアプリで唯一の手動ゴール。
   manual?: boolean;
@@ -75,6 +79,7 @@ export function listenDestinations(
               itemUUID: typeof v.itemUUID === "string" ? v.itemUUID : undefined,
               targetMinutes: typeof v.targetMinutes === "number" ? v.targetMinutes : undefined,
               targetDate: date("targetDate"),
+              targetHasTime: v.targetHasTime === true,
               manual: v.manual === true,
               manualDone: v.manualDone === true,
               steps: steps && steps.length > 0 ? steps : undefined,
@@ -98,6 +103,7 @@ export async function saveDestination(
     itemUUID?: string;
     targetMinutes?: number;
     targetDate?: Date;
+    targetHasTime?: boolean;
     manual?: boolean;
     manualDone?: boolean;
     steps?: DestinationStep[];
@@ -119,6 +125,7 @@ export async function saveDestination(
     ...(input.itemUUID ? { itemUUID: input.itemUUID } : {}),
     ...(input.targetMinutes ? { targetMinutes: Math.min(input.targetMinutes, 600000) } : {}),
     ...(input.targetDate ? { targetDate: input.targetDate } : {}),
+    ...(input.targetDate && input.targetHasTime ? { targetHasTime: true } : {}),
     ...(input.manual ? { manual: true } : {}),
     ...(input.manualDone ? { manualDone: true } : {}),
     ...(steps.length > 0 ? { steps } : {}),
@@ -160,10 +167,27 @@ export async function markDestinationDone(uid: string, dest: Destination): Promi
     name: dest.name,
     itemUUID: dest.itemUUID,
     targetDate: dest.targetDate,
+    targetHasTime: dest.targetHasTime,
     manual: true,
     manualDone: true,
     createdAt: dest.createdAt,
   });
+}
+
+// ---- 締切 ----
+
+/// 期日の実際の締切。時刻を決めていれば targetDate そのまま、
+/// 日付だけなら「その日いっぱい」= 23:59:59.999。
+///
+/// 日付だけの期日を 00:00 として扱うと、今日を期日にした瞬間に締切を過ぎたことに
+/// なり即着岸してしまう。「今日まで」は今日の終わりまでという意味なので、
+/// 締切の解釈はここに一本化する。
+export function destinationDeadline(dest: Destination): Date | undefined {
+  if (!dest.targetDate) return undefined;
+  if (dest.targetHasTime) return dest.targetDate;
+  const end = startOfDay(dest.targetDate);
+  end.setHours(23, 59, 59, 999);
+  return end;
 }
 
 // ---- 進捗 ----
@@ -172,7 +196,8 @@ export interface DestinationProgress {
   ratio: number; // 0..1(島までの近さ)
   minutes: number; // 数えた累計(分)
   remainingMinutes?: number; // 時間目標の残り
-  remainingDays?: number; // 期日目標の残り日数
+  remainingDays?: number; // 完了目標に添えた締切メモの残り日数
+  remainingMs?: number; // 期日目標の締切までの残り(時刻まで効かせるためミリ秒で持つ)
   stepsDone?: number; // ステップ目標の完了数
   stepsTotal?: number; // ステップ目標の全数
   reached: boolean;
@@ -206,12 +231,11 @@ export function destinationProgress(
 
   if (dest.manual) {
     // targetDate はここでは締切のメモ表示のみに使い、進捗や達成の判定には使わない。
-    const remainingDays = dest.targetDate
+    const deadline = destinationDeadline(dest);
+    const remainingDays = deadline
       ? Math.max(
           0,
-          Math.round(
-            (startOfDay(dest.targetDate).getTime() - startOfDay(now).getTime()) / 86400000,
-          ),
+          Math.round((startOfDay(deadline).getTime() - startOfDay(now).getTime()) / 86400000),
         )
       : undefined;
     return { ratio: dest.manualDone ? 1 : 0, minutes, remainingDays, reached: Boolean(dest.manualDone) };
@@ -228,13 +252,20 @@ export function destinationProgress(
   }
 
   if (dest.targetDate) {
-    const start = startOfDay(since).getTime();
-    const end = startOfDay(dest.targetDate).getTime();
-    const today = startOfDay(now).getTime();
+    // 日単位に丸めず実時刻で進める。丸めると同じ日のうちは船が動かず、
+    // 「今日が期日」だと開始と締切が同じ時刻になって即着岸してしまう。
+    const deadline = destinationDeadline(dest)!;
+    const start = since.getTime();
+    const end = deadline.getTime();
+    const nowMs = now.getTime();
     const total = Math.max(1, end - start);
-    const ratio = Math.min(1, Math.max(0, (today - start) / total));
-    const remainingDays = Math.max(0, Math.round((end - today) / 86400000));
-    return { ratio, minutes, remainingDays, reached: today >= end };
+    const ratio = Math.min(1, Math.max(0, (nowMs - start) / total));
+    return {
+      ratio,
+      minutes,
+      remainingMs: Math.max(0, end - nowMs),
+      reached: nowMs >= end,
+    };
   }
 
   return { ratio: 0, minutes, reached: false };

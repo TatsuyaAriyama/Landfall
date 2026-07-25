@@ -19,6 +19,7 @@ import { boatProps } from "../boat";
 import { BoatSvg, CoastSvg } from "../symbols";
 import { askConfirm } from "../overlays";
 import {
+  deadlineRemainingLabel,
   durationLabel,
   remainingDaysLabel,
   remainingHoursLabel,
@@ -73,11 +74,13 @@ class VoyageErrorBoundary extends Component<
 
 /// 残り表示(「あと3時間20分」「あと12日」)。2D/3Dカードで共通。
 function remainingLabel(progress: DestinationProgress): string {
-  return progress.remainingMinutes !== undefined
-    ? remainingHoursLabel(progress.remainingMinutes)
-    : progress.remainingDays !== undefined
-      ? remainingDaysLabel(progress.remainingDays)
-      : "";
+  if (progress.remainingMinutes !== undefined) {
+    return remainingHoursLabel(progress.remainingMinutes);
+  }
+  // 期日目標。締切当日は日ではなく時間・分で残りを言う。
+  if (progress.remainingMs !== undefined) return deadlineRemainingLabel(progress.remainingMs);
+  if (progress.remainingDays !== undefined) return remainingDaysLabel(progress.remainingDays);
+  return "";
 }
 
 /// カードの右上に出す一言。ステップ目標なら「次: 〈次のステップ〉」を、

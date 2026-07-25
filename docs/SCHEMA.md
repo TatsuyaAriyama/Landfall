@@ -62,6 +62,7 @@ docID = `yyyy-MM-dd`(端末ローカルのタイムゾーンでの startOfDay)�
 | `itemUUID` | string? | 紐づく項目。省略時は全記録が進捗に数えられる |
 | `targetMinutes` | number? | 累計時間の目標(分)。作成時刻以降の記録を数える |
 | `targetDate` | timestamp? | 期日の目標。経過時間で船が近づく。`manual=true` のときは締切のメモ表示のみ(進捗には影響しない) |
+| `targetHasTime` | boolean? | `targetDate` に時刻まで含まれるか。false/未設定なら「その日いっぱい」= 締切はその日の 23:59:59.999(`destinationDeadline`) |
 | `manual` | boolean? | 完了ゴール(3つ目の目標種類)。時間や日数で測れない課題向け |
 | `manualDone` | boolean? | 完了ゴールで本人が「完了にする」を押したか。**このアプリで唯一の手動達成** — 記録からは自動導出しない |
 | `steps` | array? | ステップ目標(4つ目の目標種類)。長期の大きな目標を小さな目印に分解。要素 `{ id: string, name: string(≤60), doneAt?: timestamp }`。最大20(`MAX_STEPS`)。非空なら他の目標種類とは排他 |
@@ -73,8 +74,14 @@ docID = `yyyy-MM-dd`(端末ローカルのタイムゾーンでの startOfDay)�
 完了ゴールは `manualDone`、ステップ目標は全 `steps` の `doneAt` が立った瞬間に `destinationProgress` が
 `reached: true` を返し、既存の「到達検知→`achievedAt`を刻んで着岸を祝う」処理(`DestinationsSection`)が
 そのまま働く。ステップ目標の進捗は「達成数/全数」で、航路にブイの目印が浮かぶ(点灯=達成)。
-**注意**: iOSアプリは同一Firestoreを共有するが、`steps` は未対応。未知フィールドとして無視するため
-データは壊れないが、iOS側の対応は別タスク。
+期日の締切は `destinationDeadline()` に一本化してある。**日付だけの期日は「その日の終わり」が締切**で、
+`targetHasTime` が立っているときだけ `targetDate` の時刻をそのまま締切に使う。日付を 00:00 として扱うと
+今日を期日にした瞬間に締切を過ぎたことになり即着岸してしまうため、この解釈を必ず通すこと。進捗の比率も
+日単位に丸めず実時刻で計算する(丸めると同じ日のうち船が動かない)。
+
+**注意**: iOSアプリは同一Firestoreを共有するが、`steps` と `targetHasTime` は未対応。未知フィールドとして
+無視するためデータは壊れないが、iOS側の対応は別タスク(iOSは日付だけの期日を 00:00 締切として扱うので、
+今日を期日にすると即着岸する挙動が残っている)。
 
 ---
 
