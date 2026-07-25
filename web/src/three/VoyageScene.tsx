@@ -32,6 +32,14 @@ export interface VoyageSceneProps {
   footnote?: string;
   /// 見出しに重ねる追加UI(完了ゴールのチェックボタンなど)。
   children?: ReactNode;
+  /// 上に全画面の世界が重なっているあいだ true。描画を止める。
+  /// IntersectionObserver は「画面内にあるか」しか見ないので、上に別の全画面が
+  /// 乗っていても「見えている」ままになり、iPhoneでは2つのWebGLが同時に回って
+  /// 発熱・コマ落ちの原因になっていた。
+  paused?: boolean;
+  /// WebGLのコンテキストが失われたとき(iOSは背面に回すと捨てることがある)。
+  /// 呼ばれたら2Dの表示へ落とす。放っておくと真っ白なまま戻らない。
+  onContextLost?: () => void;
 }
 
 const SAND = "#EADEBD";
@@ -430,6 +438,8 @@ export default function VoyageScene({
   steps,
   footnote,
   children,
+  paused = false,
+  onContextLost,
 }: VoyageSceneProps) {
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -437,6 +447,24 @@ export default function VoyageScene({
   const rootRef = useRef<HTMLDivElement>(null);
   // カードがスクロールで画面外に出たらrAFループを止める(電池・GPU対策)。
   // IntersectionObserverが無い環境では従来どおり常時描画にフォールバック。
+  // WebGLのコンテキスト喪失を拾う。iOSは背面に回すと捨てることがあり、
+  // 放っておくと真っ白なcanvasが残って戻らない。
+  // webglcontextlost はバブルしないが捕捉フェーズは通るので、ラッパーで構える
+  // (R3Fの onCreated 経由だと確実に着かなかった)。
+  const lostRef = useRef(onContextLost);
+  lostRef.current = onContextLost;
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const onLost = (e: Event) => {
+      // 既定の動作(=以後復帰しない)を止めてから知らせる。
+      e.preventDefault();
+      lostRef.current?.();
+    };
+    el.addEventListener("webglcontextlost", onLost, true);
+    return () => el.removeEventListener("webglcontextlost", onLost, true);
+  }, []);
+
   const [visible, setVisible] = useState(true);
   useEffect(() => {
     const el = rootRef.current;
@@ -472,10 +500,10 @@ export default function VoyageScene({
       {footnote && <span className="voyage-footnote">{footnote}</span>}
       <Canvas
         dpr={[1, 2]}
-        frameloop={animate && visible ? "always" : "demand"}
+        frameloop={animate && visible && !paused ? "always" : "demand"}
         camera={{ position: CAM_POS, fov: CAM_FOV }}
       >
-        <VoyageSea ratio={ratio} animate={animate} steps={steps} />
+        <VoyageSea ratio={ratio} animate={animate && !paused} steps={steps} />
       </Canvas>
     </div>
   );

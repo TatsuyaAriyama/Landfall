@@ -138,6 +138,7 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
             index === 0 && canUseWebGL() ? (
               <VoyageCard
                 key={dest.id}
+                paused={world !== null || celebrating !== null}
                 dest={dest}
                 data={data}
                 onClick={() => setWorld({ dest })}
@@ -240,11 +241,13 @@ function CompleteCheckButton({ onMarkDone }: { onMarkDone: () => void }) {
 
 /// 1件目の目的地の3D航海シーン。読込中と描画失敗時は2Dカードのまま。
 function VoyageCard({
+  paused,
   dest,
   data,
   onClick,
   onMarkDone,
 }: {
+  paused: boolean;
   dest: Destination;
   data: UserData;
   onClick: () => void;
@@ -261,6 +264,11 @@ function VoyageCard({
   useEffect(() => {
     void loadVoyageWorld();
   }, []);
+  // WebGLのコンテキストが失われたら2Dカードへ落とす(真っ白のまま残さない)。
+  const [glLost, setGlLost] = useState(false);
+  if (glLost) {
+    return <DestinationCard dest={dest} data={data} onClick={onClick} onMarkDone={onMarkDone} />;
+  }
   return (
     // 描画失敗時のみ2Dカードへ。読込中は3Dシーンと同じ器(夜の海色+見出し)を
     // 出しておき、2Dカードが一瞬挟まるチラつきをなくす。
@@ -288,6 +296,8 @@ function VoyageCard({
           footnote={
             latest ? `${latest.name} · ${shortDateLabel(latest.doneAt)}` : undefined
           }
+          paused={paused}
+          onContextLost={() => setGlLost(true)}
         >
           {onMarkDone && <CompleteCheckButton onMarkDone={onMarkDone} />}
         </VoyageScene>
@@ -373,8 +383,19 @@ function LandfallCelebration({
   minutes: number;
   onClose: () => void;
 }) {
+  // 出現から少しの間はタップを受けない(直前の指で消えるのを防ぐ)。
+  const readyAt = useRef(Date.now() + 700);
   return (
-    <div className="landfall-overlay" onClick={onClose}>
+    <div
+      className="landfall-overlay"
+      onClick={() => {
+        // 出た直後のタップでは閉じない。着岸はFirestoreの往復のあとに非同期で
+        // 現れるので、その直前に押した指(次のステップのチェックや保存)がそのまま
+        // ここに当たって、祝いを一瞬で消してしまっていた。
+        if (Date.now() < readyAt.current) return;
+        onClose();
+      }}
+    >
       <span className="harbor-star" style={{ top: "14%", left: "16%", width: 4, height: 4 }} />
       <span className="harbor-star" style={{ top: "8%", left: "42%", width: 3, height: 3 }} />
       <span className="harbor-star" style={{ top: "18%", left: "70%", width: 4, height: 4 }} />

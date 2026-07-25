@@ -18,6 +18,7 @@ import {
 } from "../audio";
 import { clockLabel, elapsedSec, pomoPhase, type TimerMode } from "../timer";
 import { t } from "../i18n";
+import { useBackToClose } from "../backClose";
 
 // 作業中の世界。自分の船が夜の海を走り、その上に経過時間が出る。
 // 「分数を入力する」のではなく、この航海そのものが記録になる。
@@ -308,6 +309,9 @@ export default function VoyagingWorld({
 
   const soundLabel =
     sound === "off" ? t("soundOff") : sound === "waves" ? t("soundWaves") : t("soundPiano");
+
+  // 端末の「戻る」は「閉じるだけ」(計測は続ける)。Androidでアプリが終了するのを防ぐ。
+  useBackToClose(true, onMinimize);
 
   // Escは「閉じるだけ」(計測は続ける)。取り消しと混同させない。
   useEffect(() => {

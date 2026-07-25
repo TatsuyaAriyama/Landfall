@@ -36,6 +36,7 @@ import {
 import { newUUID } from "../types";
 import { askConfirm, showToast } from "../overlays";
 import { t } from "../i18n";
+import { useBackToClose } from "../backClose";
 
 // 目的地の没入エディタ。3D航海カードをタップすると、この「世界」へズームインして
 // 入り、夜の海の中で島の名前・対象項目・目標を設定・変更できる。
@@ -517,10 +518,17 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   };
   // 時刻まで決めるときは、過ぎた時刻を締切にできないようにする
   // (保存した瞬間に着岸してしまうため)。
+  // 締切が既に過ぎていないか。時刻を決めていない場合も見る必要がある:
+  // 日付だけの締切は「その日いっぱい」なので、昨日以前を選ぶと保存した瞬間に
+  // 締切を過ぎていることになり、そのまま着岸の演出が出てしまっていた
+  // (min= はピッカーへの助言に過ぎず、既存の過去日もそのまま有効扱いだった)。
   const deadlinePassed = (() => {
-    if (!withTime) return false;
     const target = targetDateValue();
-    return target ? target.getTime() <= Date.now() : false;
+    if (!target) return false;
+    const deadline = withTime
+      ? target
+      : new Date(new Date(target).setHours(23, 59, 59, 999));
+    return deadline.getTime() <= Date.now();
   })();
   const dateValid =
     dateStr.length === 10 && (!withTime || timeStr.length === 5) && !deadlinePassed;
@@ -580,6 +588,9 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   }, []);
 
   // Escで閉じる+表示中は背景スクロールを固定(Modalと同じ作法)。
+  // 端末の「戻る」でも閉じられるように(Androidでアプリが終了してしまうのを防ぐ)。
+  useBackToClose(true, requestClose);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") requestClose();
@@ -819,6 +830,10 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                   min={dateInputValue(new Date())}
                   onChange={(e) => setDateStr(e.target.value)}
                 />
+                {/* 押せない理由は必ず出す(黙って無効だと壊れて見える)。 */}
+                {deadlinePassed && !withTime && (
+                  <p className="quest-intro">{t("goalDatePast")}</p>
+                )}
                 <label className="voyage-time-toggle">
                   <input
                     type="checkbox"

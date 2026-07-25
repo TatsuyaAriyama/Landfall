@@ -176,7 +176,9 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
     }
     while (cursor.getMonth() === monthStart.getMonth() && cursor.getTime() <= todayMs) {
       if (dayById.has(dayId(cursor))) studied++;
-      else rested++;
+      // 今日はまだ終わっていない。記録が無いだけで「休んだ日」にはしない
+      // (日付が変わった瞬間に休んだ日が1増えるのは事実に反する)。
+      else if (cursor.getTime() < todayMs) rested++;
       cursor.setDate(cursor.getDate() + 1);
     }
     const minutes = data.sessions.reduce(
@@ -262,6 +264,7 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
           if (!date) return <span key={i} />;
           const id = dayId(date);
           const isFuture = date > today;
+          const isToday = id === dayId(today);
           const studied = dayById.has(id);
           // まだ使っていなかった日。休んだ日と同じ色にはしない。
           const beforeStart = startMs !== null && date.getTime() < startMs;
@@ -269,8 +272,9 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
           if (isFuture) classes.push("future");
           else if (studied) classes.push("studied");
           else if (beforeStart) classes.push("before-start");
-          else classes.push("rested");
-          if (id === dayId(today)) classes.push("today");
+          // 今日はまだ途中。記録が無くても休んだ日(sunYellow)には塗らない。
+          else if (!isToday) classes.push("rested");
+          if (isToday) classes.push("today");
           if (id === dayId(selected)) classes.push("selected");
           return (
             <button
@@ -309,7 +313,9 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
         )}
       </p>
       {selectedSessions.length === 0 ? (
-        <p className="empty-note">{t("noDayRecords")}</p>
+        <p className="empty-note">
+          {dayId(selected) === dayId(today) ? t("noRecordsToday") : t("noDayRecords")}
+        </p>
       ) : (
         <>
           {/* この日のひとこと(学んだ日にだけ書ける。iOS の setComment と同じ) */}
