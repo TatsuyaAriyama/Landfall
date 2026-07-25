@@ -167,7 +167,7 @@ function makeHoodGeometry(): THREE.BufferGeometry {
 
 const HOOD_GEO = makeHoodGeometry();
 const FACE_GEO = new THREE.SphereGeometry(0.075, 14, 10);
-const EYE_GEO = new THREE.SphereGeometry(0.015, 8, 6);
+const EYE_GEO = new THREE.SphereGeometry(0.019, 10, 8);
 const SCARF_GEO = new THREE.TorusGeometry(0.105, 0.034, 9, 18);
 const ARM_GEO = new THREE.CylinderGeometry(0.036, 0.044, 0.22, 12);
 // 袖口: 手首へ向かって開くフレア。「棒」ではなく「袖」に見せる要。
@@ -177,6 +177,15 @@ const HAND_GEO = new THREE.SphereGeometry(0.048, 12, 9);
 const ANKLE_GEO = new THREE.CylinderGeometry(0.042, 0.048, 0.18, 12);
 const BOOT_GEO = new THREE.SphereGeometry(0.075, 14, 10);
 const BOOT_CUFF_GEO = new THREE.CylinderGeometry(0.062, 0.07, 0.06, 12);
+/// 靴底。ブーツ本体が一番暗い色なので、底に一段明るい面を入れないと
+/// 足が「暗い塊」になって、どこが床でどこが足か読み取れない。
+const SOLE_GEO = new THREE.BoxGeometry(0.115, 0.026, 0.2);
+/// かかと。底の後ろを一段落として、前後の向きを分かるようにする。
+const HEEL_GEO = new THREE.BoxGeometry(0.1, 0.03, 0.055);
+/// 腰のベルト。裾へ広がるだけの円錐に見えるのを、胴の位置を示して止める。
+const BELT_GEO = new THREE.TorusGeometry(0.176, 0.021, 8, 22);
+/// ベルトの留め具。正面に小さく置く。
+const BUCKLE_GEO = new THREE.BoxGeometry(0.05, 0.038, 0.016);
 const CLASP_RING_GEO = new THREE.TorusGeometry(0.036, 0.011, 8, 16);
 const CLASP_PIN_GEO = new THREE.CylinderGeometry(0.019, 0.019, 0.02, 12);
 // ランタンは開放型(上蓋+灯+底皿)。灯が枠に隠れず、どの角度からも見える。
@@ -254,6 +263,7 @@ const LANTERN_GLOW_MAT = new THREE.MeshStandardMaterial({
 ///  - stargaze: 灯を落として星を読む(進路を確かめる静かな夜)
 ///  - rest:     灯を両手で囲んで一息つく(休んだ日も、航海のうち)
 ///  - lookout:  体ごと向きを変えて辺りを見渡す(見張り)
+///  - sit:      甲板に腰を下ろす(休憩。立ち座りだけは遅く補間される)
 export type PhoenixPose =
   | "idle"
   | "walk"
@@ -262,7 +272,8 @@ export type PhoenixPose =
   | "hail"
   | "point"
   | "stargaze"
-  | "rest";
+  | "rest"
+  | "sit";
 
 /// ポーズごとの基本値(振りの中心)。振動はこの上に足す。
 /// 全項目が減衰補間の対象なので、どのポーズからどのポーズへ切り替えても
@@ -293,6 +304,8 @@ interface PoseBase {
   breathSpeed: number;
   /// ランタンの灯の明るさ(1.5=通常)。
   glow: number;
+  /// 腰を下ろしている度合い(0=立つ、1=座る)。腰の高さと脚の角度を同時に動かす。
+  sit: number;
 }
 
 const POSE_BASE: Record<PhoenixPose, PoseBase> = {
@@ -301,12 +314,14 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
     lean: 0, wind: 1, headX: 0, scan: 0.14, scanSpeed: 0.3,
     turn: 0,
     sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5,
+    sit: 0,
   },
   walk: {
     armRx: 0, armRz: 0.12, armLx: 0, armLz: -0.12,
     lean: 0.09, wind: 1.7, headX: 0, scan: 0.05, scanSpeed: 0.3,
     turn: 0,
     sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5,
+    sit: 0,
   },
   // 見渡す: 上体ごと左右へ向き直り、左手を額にかざして水平線を追う。
   // 首だけ動かす待機と違い、体まで回る — しかも体は首より遅れて追う。
@@ -316,18 +331,21 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
     lean: 0.02, wind: 1.2, headX: -0.02, scan: 0.46, scanSpeed: 0.55,
     turn: 0.4,
     sway: 0.7, breathAmp: 1, breathSpeed: 0.8, glow: 1.5,
+    sit: 0,
   },
   raise: {
     armRx: -2.35, armRz: 0.06, armLx: 0, armLz: -0.16,
     lean: -0.04, wind: 1.15, headX: -0.14, scan: 0.14, scanSpeed: 0.3,
     turn: 0,
     sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 2.3,
+    sit: 0,
   },
   hail: {
     armRx: 0, armRz: 0.14, armLx: 0, armLz: -2.55,
     lean: 0, wind: 1.1, headX: 0, scan: 0.14, scanSpeed: 0.3,
     turn: 0,
     sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5,
+    sit: 0,
   },
   // 陸を指す: 左手をほぼ水平に伸ばして舳先の先を指し、上体は前へ。
   // 首は振らない — 見つけたものから目を離さない姿が、この仕草の要。
@@ -337,6 +355,7 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
     lean: 0.14, wind: 1.45, headX: -0.08, scan: 0.02, scanSpeed: 0.2,
     turn: 0,
     sway: 0.25, breathAmp: 0.8, breathSpeed: 0.9, glow: 1.6,
+    sit: 0,
   },
   // 星を読む: 空を仰ぎ、左手を額にかざす。灯は後ろへ下げて暗く落とす
   // (手元が明るいと星は読めない)。首はゆっくり、星座をなぞる速さで巡る。
@@ -345,6 +364,7 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
     lean: -0.1, wind: 0.8, headX: -0.46, scan: 0.2, scanSpeed: 0.16,
     turn: 0,
     sway: 0.5, breathAmp: 1.2, breathSpeed: 0.7, glow: 0.85,
+    sit: 0,
   },
   // 一息つく: 両手を前で合わせて灯を囲み、うつむいてその光を見る。
   // 呼吸は深くゆっくり、風は凪。進んでいない日の姿にも灯は消えていない。
@@ -353,6 +373,17 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
     lean: 0.07, wind: 0.75, headX: 0.32, scan: 0.05, scanSpeed: 0.22,
     turn: 0,
     sway: 0.6, breathAmp: 1.75, breathSpeed: 0.58, glow: 2,
+    sit: 0,
+  },
+  // 腰を下ろす: 甲板に座り、脚を前へ投げ出して、両手を後ろの床につく。
+  // ランタンは提げたまま下がるので、自然と傍らの床へ置いた高さに来る。
+  // 顔は水平線へ — 休んでいるのであって、うなだれているのではない。
+  sit: {
+    armRx: 0.62, armRz: 0.3, armLx: 0.62, armLz: -0.3,
+    lean: -0.12, wind: 0.7, headX: -0.05, scan: 0.13, scanSpeed: 0.18,
+    turn: 0,
+    sway: 0.45, breathAmp: 1.6, breathSpeed: 0.6, glow: 1.8,
+    sit: 1,
   },
 };
 
@@ -504,11 +535,23 @@ export default function PhoenixModel({
             position={[0, -0.368, 0.09]}
             scale={[0.95, 0.68, 1.55]}
           />
+          {/* 靴底とかかと。一段明るい面で足の輪郭と前後の向きを出す */}
+          <mesh geometry={SOLE_GEO} material={RUST_MAT} position={[0, -0.404, 0.088]} />
+          <mesh geometry={HEEL_GEO} material={RUST_DEEP_MAT} position={[0, -0.418, 0.012]} />
         </group>
       ))}
 
       {/* 体(呼吸のまとまり) */}
       <group ref={core}>
+        {/* 腰のベルト。これが無いとコートが「裾へ広がる円錐」にしか見えない */}
+        <mesh
+          geometry={BELT_GEO}
+          material={RUST_DEEP_MAT}
+          position={[0, 0.585, 0]}
+          rotation={[Math.PI / 2, 0, 0]}
+        />
+        <mesh geometry={BUCKLE_GEO} material={SAND_MAT} position={[0, 0.585, 0.172]} />
+
         {/* コート: 裾へ広がる袍。裾の内側に深錆の縁で重さを出す */}
         <mesh geometry={COAT_GEO} material={CORAL_MAT} />
         <mesh geometry={COAT_GEO} material={RUST_MAT} position={[0, -0.02, 0]} scale={[0.97, 0.35, 0.97]} />

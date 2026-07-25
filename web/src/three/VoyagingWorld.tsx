@@ -7,6 +7,7 @@ import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Sea } from "./SeaParts";
 import { Horizon, Island, Wake } from "./VoyageScene";
 import { Gulls, type GullFlock } from "./Gulls";
+import PassingShip from "./PassingShip";
 import { boatProps } from "../boat";
 import { useNavigatorPose } from "./navigatorPose";
 import {
@@ -205,6 +206,8 @@ function VoyagingSea({
       <Horizon />
       <PassingSwells animate={animate} />
       <Gulls flock={VOYAGING_GULLS} animate={animate} />
+      {/* 数分に一度、水平線の手前を他人の船の灯が渡っていく。 */}
+      <PassingShip animate={animate} />
       {/* 目的地があるなら、その島を遠くの前方に置く。何へ向かっているかが見える。 */}
       {showIsland && <ApproachingIsland startedAt={startedAt} animate={animate} />}
       {/* 自分の船。配置は VoyageScene と同値(甲板の航海士も同じ位置・姿)。
