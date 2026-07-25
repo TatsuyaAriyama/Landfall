@@ -6,6 +6,7 @@ import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
 import { Gulls, type GullFlock } from "./Gulls";
+import { TAP_SLOP } from "./VoyageWorld";
 import { boatProps, navigatorPose } from "../boat";
 import { shortDateLabel } from "../i18n";
 
@@ -321,6 +322,8 @@ export function StepBuoys({
               position={[0, 0.3, 0]}
               onClick={(e) => {
                 e.stopPropagation();
+                // 回して眺めただけで達成/取消が書き込まれないように。
+                if (e.delta > TAP_SLOP) return;
                 onToggle(i);
               }}
             >

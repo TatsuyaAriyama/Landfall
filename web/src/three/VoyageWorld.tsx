@@ -55,6 +55,9 @@ type Phase = "enter" | "idle" | "exit";
 const FAR_POS = new THREE.Vector3(2.2, 8.2, 14.0);
 const FAR_TARGET = new THREE.Vector3(0.2, 0.5, 0.2);
 const DOLLY_SECONDS = 1.2;
+
+/// タップと「見渡すドラッグ」を分ける移動距離(px)。DOM側の判定と同じ値にする。
+export const TAP_SLOP = 6;
 const ISLAND_POS: [number, number, number] = [3.5, 0, -0.9];
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
@@ -197,6 +200,7 @@ function TappableMoon({ animate }: { animate: boolean }) {
       position={[-8, 3.2, -16]}
       onClick={(e: ThreeEvent<MouseEvent>) => {
         e.stopPropagation();
+        if (e.delta > TAP_SLOP) return;
         if (animate) glowAt.current = clock.elapsedTime;
       }}
     >
@@ -280,6 +284,10 @@ function PlayfulBoat({ boatX, animate }: { boatX: number; animate: boolean }) {
 
   const onTap = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
+    // 見渡すために回しただけならタップにしない。R3Fは当たり判定のある物体には
+    // 移動距離の判定をしてくれない(何も当たらなかった時だけ2pxで見ている)ので、
+    // ここで自前に見る。指では回すのが主操作なので、これが無いと回すたびに鳴る。
+    if (e.delta > TAP_SLOP) return;
     const now = performance.now();
     if (now - lastSound.current > 180) {
       lastSound.current = now;
@@ -494,10 +502,6 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   );
   const [working, setWorking] = useState(false);
   const confirmingRef = useRef(false);
-  // 期日を「触った」印。既存の値がすでに有効でも、開いた直後には
-  // 自動保存しない(ただ見ただけで閉じてしまうのを防ぐ)ためのガード。
-  const dateTouched = useRef(false);
-  const autoSavedRef = useRef(false);
 
   const trimmed = name.replace(/^[\s　]+|[\s　]+$/g, "");
   // 名前のあるステップだけを有効とみなす(空行は保存時に落とす)。
@@ -597,11 +601,16 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     setSteps(next);
     if (dest?.id && trimmed.length > 0 && next.some((s) => s.name.trim().length > 0)) {
       // fire-and-forget。オフラインや一時的な失敗は握りつぶす(局所stateは進む)。
+      // saveDestination は setDoc(マージ無し)なので、渡さなかった項目は
+      // ドキュメントから消える。チェックを1つ入れるたびに紐づく項目や達成日が
+      // 消えていた(項目指定の目的地が全記録を数え始め、船が飛ぶ)。必ず引き継ぐ。
       void saveDestination(uid, {
         id: dest.id,
         name: trimmed,
+        itemUUID: dest.itemUUID,
         steps: next,
         createdAt: dest.createdAt,
+        achievedAt: dest.achievedAt,
       }).catch(() => {});
     }
   };
@@ -632,11 +641,15 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
       await saveDestination(uid, {
         id: dest?.id,
         name: trimmed,
-        // 種類ごとに、その種類の値だけを書く(排他)。
+        // 目標の種類(期日/ステップ)は排他なので、選んだ種類の値だけを書く。
         targetDate: targetDateValue(),
         targetHasTime: kind === "date" && withTime && timeStr.length === 5,
         steps: kind === "steps" ? namedSteps : undefined,
+        // 種類に関係なく持ち続けるものは引き継ぐ(setDocなので渡さないと消える)。
+        // achievedAt を落とすと、着岸した目的地がまた未達に戻ってしまう。
+        itemUUID: dest?.itemUUID,
         createdAt: dest?.createdAt,
+        achievedAt: dest?.achievedAt,
       });
       showToast(t("savedToast"));
       requestClose();
@@ -644,37 +657,21 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
       // 失敗を黙って飲み込むと、working が立ったまま保存も削除も押せない
       // 「何をしても反応しない編集画面」になってしまう。理由を出して操作を返す。
       showToast(t("errGeneric"));
-      // 自動保存で失敗したときは、もう一度自動で試せるようにしておく。
-      autoSavedRef.current = false;
     } finally {
       setWorking(false);
     }
   };
 
-  // 期日を選び終えたら、そのまま保存してズームアウト(ホームへ戻る)。
-  // 「保存する」を別途押す一手間をなくす — 名前だけの変更は従来通り
-  // 保存ボタンで確定する(値を触っていなければここでは動かない)。
-  useEffect(() => {
-    // 目標の種類を切り替えたら、前の種類での「触った/自動保存済み」の印は捨てる。
-    dateTouched.current = false;
-    autoSavedRef.current = false;
-  }, [kind]);
-
-  /// 日付を「選び終えた」ときだけ自動保存する。合図は値の変化ではなく blur
-  /// (ピッカーが閉じたこと)。
-  ///
-  /// 値の変化で判定してはいけない: iOSのホイールは年・月・日を回すたびに
-  /// change を投げ、その途中の値も形式上は完全な日付なので「10文字になったか」
-  /// では区別できない。以前はそれで、ユーザーが日を選ぶ前に年だけ回した時点の
-  /// 日付で保存して画面を閉じてしまっていた。
-  /// 時刻も決めるときは自動保存しない(時刻を入れる間が要る)。
-  const autoSaveIfPicked = () => {
-    if (kind !== "date" || withTime) return;
-    if (!dateTouched.current || autoSavedRef.current) return;
-    if (!valid || working) return;
-    autoSavedRef.current = true;
-    void save();
-  };
+  // 期日の自動保存は置かない(以前はあったが、確実に動く合図が無いので外した)。
+  //
+  // ・値の変化で判定 → iOSのホイールは年・月・日を回すたびにchangeを投げ、
+  //   途中の値も形式上は完全な日付なので、選び終える前に間違った日付で保存して
+  //   画面を閉じてしまう。
+  // ・blurで判定 → iOS Safariはボタンを触っても入力からフォーカスが外れないが、
+  //   Android Chromeは外れる。同じ操作で 片方は保存して閉じ、もう片方は何も
+  //   起きない、という食い違いが出る。アプリ切り替えでも発火してしまう。
+  //
+  // どちらも「iPhoneとAndroidで全く同じ」を壊すので、確定は「保存する」に一本化する。
 
   const remove = async () => {
     if (!dest || working) return;
@@ -705,15 +702,29 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
     const vv = window.visualViewport;
     if (!vv) return;
     const apply = () => {
-      const lift = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      // 日付・時刻のピッカーも、キーボードと同じく visualViewport を縮める。
+      // だがピッカーは「その入力欄」に紐づいて出るので、ここでパネルを持ち上げると
+      // 入力欄がピッカーの下から逃げ、ピッカーが閉じてしまう(iPhoneで日付を
+      // 触ると挙動が変になる主因)。文字入力のときだけ持ち上げる。
+      const el = document.activeElement as HTMLInputElement | null;
+      const picker =
+        el?.tagName === "INPUT" && (el.type === "date" || el.type === "time");
+      const lift = picker
+        ? 0
+        : Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       rootRef.current?.style.setProperty("--vv-lift", `${lift}px`);
     };
     vv.addEventListener("resize", apply);
     vv.addEventListener("scroll", apply);
+    // フォーカスが移った瞬間にも見直す(ピッカーから文字入力へ移ったとき等)。
+    document.addEventListener("focusin", apply);
+    document.addEventListener("focusout", apply);
     apply();
     return () => {
       vv.removeEventListener("resize", apply);
       vv.removeEventListener("scroll", apply);
+      document.removeEventListener("focusin", apply);
+      document.removeEventListener("focusout", apply);
     };
   }, []);
 
@@ -806,13 +817,7 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                   type="date"
                   value={dateStr}
                   min={dateInputValue(new Date())}
-                  onChange={(e) => {
-                    dateTouched.current = true;
-                    setDateStr(e.target.value);
-                  }}
-                  // 選び終えた(ピッカーを閉じた)ら確定する。回している途中では
-                  // 閉じない。
-                  onBlur={autoSaveIfPicked}
+                  onChange={(e) => setDateStr(e.target.value)}
                 />
                 <label className="voyage-time-toggle">
                   <input
@@ -820,8 +825,6 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
                     checked={withTime}
                     onChange={(e) => {
                       const on = e.target.checked;
-                      // 時刻を決めるあいだは自動保存で閉じない。
-                      if (on) autoSavedRef.current = true;
                       setWithTime(on);
                       if (!on) setTimeStr("");
                     }}
@@ -897,7 +900,11 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
             )}
           </div>
 
-          <div style={{ height: 18 }} />
+          {/* 世界に入れること・戻し方を伝える。これが無いと、海をタップして
+              UIを消した人が戻し方に気づけない。 */}
+          <p className="voyage-world-hint">{t("lookAroundHint")}</p>
+
+          <div style={{ height: 10 }} />
           <button
             className="primary-button"
             onClick={save}
