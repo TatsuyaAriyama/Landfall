@@ -2,6 +2,7 @@ import {
   Component,
   Suspense,
   lazy,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -41,6 +42,7 @@ import {
   type TimerMode,
 } from "../timer";
 import { canUseWebGL } from "../webgl";
+import { useDragReorder } from "../dragReorder";
 
 // 航海の世界は three.js を含んで重いので、計測をはじめるときだけ読み込む。
 // タイルを押してすぐ入りたいので、Todayを開いた時点で先に取りに行っておく。
@@ -91,28 +93,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const [saving, setSaving] = useState(false);
   // 「時間を手で入れる」で開くときの初期値(測った分)。
   const [prefillMinutes, setPrefillMinutes] = useState<number | null>(null);
-  // タイルのドラッグ並び替え。ドロップした瞬間に sortOrder を書き直して反映する。
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
-
-  const dropOn = async (targetId: string) => {
-    const from = dragId;
-    setDragId(null);
-    setOverId(null);
-    if (!from || from === targetId) return;
-    const ids = data.items.map((i) => i.id);
-    const fromIdx = ids.indexOf(from);
-    const toIdx = ids.indexOf(targetId);
-    if (fromIdx < 0 || toIdx < 0) return;
-    ids.splice(toIdx, 0, ...ids.splice(fromIdx, 1));
-    await Promise.all(
-      ids.map((id, idx) => {
-        const item = data.items.find((i) => i.id === id);
-        if (!item || item.sortOrder === idx) return Promise.resolve();
-        return saveItem(uid, { ...item, id, sortOrder: idx });
-      }),
-    );
-  };
 
   useEffect(() => {
     if (!timer) return;
@@ -213,6 +193,27 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     () => new Map(data.items.map((i) => [i.id, i])),
     [data.items],
   );
+
+  // タイルのドラッグ並び替え(マウスでも指でも動く。web/src/dragReorder.ts)。
+  // 確定した並びを、そのまま sortOrder に振り直して保存する。
+  const itemIds = useMemo(() => data.items.map((i) => i.id), [data.items]);
+  const commitOrder = useCallback(
+    async (ordered: string[]) =>
+      void (await Promise.all(
+        ordered.map((id, idx) => {
+          const item = itemById.get(id);
+          if (!item || item.sortOrder === idx) return Promise.resolve();
+          return saveItem(uid, { ...item, id, sortOrder: idx });
+        }),
+      )),
+    [itemById, uid],
+  );
+  const reorder = useDragReorder(itemIds, commitOrder);
+  // 描画はドラッグ中の並びに従う(指を離すまで、手元で入れ替わって見える)。
+  const orderedItems = useMemo(
+    () => reorder.order.map((id) => itemById.get(id)).filter((i): i is StudyItem => !!i),
+    [reorder.order, itemById],
+  );
   // 今日の合計と項目ごとの分。見出しとタイルの小さなバッジに使う。
   const todayTotal = useMemo(
     () => todaySessions.reduce((sum, s) => sum + s.minutes, 0),
@@ -247,34 +248,17 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
       <p className="section-label">{t("items")}</p>
       {data.items.length === 0 && <p className="empty-note">{t("emptyToday")}</p>}
       <div className="tile-grid">
-        {data.items.map((item) => {
+        {orderedItems.map((item) => {
           const style = STYLE_COLORS[normalizeStyle(item.styleToken)];
-          const dragClass =
-            item.id === dragId ? " dragging" : item.id === overId ? " drag-over" : "";
+          const lifted = item.id === reorder.liftedId ? " lifted" : "";
           const timing = timer?.itemId === item.id;
           const totalMin = totalByItem.get(item.id) ?? 0;
           return (
             <button
               key={item.id}
-              className={`tile${dragClass}${timing ? " timing" : ""}`}
+              className={`tile${lifted}${timing ? " timing" : ""}`}
               onClick={() => void openOrStart(item)}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.effectAllowed = "move";
-                setDragId(item.id);
-              }}
-              onDragOver={(e) => {
-                e.preventDefault();
-                if (overId !== item.id) setOverId(item.id);
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                void dropOn(item.id);
-              }}
-              onDragEnd={() => {
-                setDragId(null);
-                setOverId(null);
-              }}
+              {...reorder.tileProps(item.id)}
             >
               <div className="tile-art" style={{ background: style.bg }}>
                 <TileSymbolSvg

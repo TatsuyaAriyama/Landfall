@@ -228,6 +228,12 @@ textarea {
   gap: 8px;
   text-align: left;
   transition: transform 0.12s ease-out, opacity 0.12s ease-out;
+  /* 長押しで並び替えるので、iOSの選択ハイライトとコンテキストメニューを止める
+     (出ると持ち上げが中断されて、指で並び替えられなくなる)。 */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
 }
 
 .tile:active {
@@ -1937,13 +1943,16 @@ textarea {
 
 /* タイルのドラッグ並び替え */
 
-.tile.dragging {
-  opacity: 0.35;
-}
-
-.tile.drag-over .tile-art {
+/* 並び替えで持ち上がっているタイル。指/カーソルに付いてくる分の transform は
+   インラインで当たる(dragReorder.ts)。ここでは「掴んでいる」ことだけを示す。 */
+.tile.lifted .tile-art {
   outline: 3px solid var(--return-orange);
   outline-offset: 3px;
+}
+
+/* 持ち上げ中は縮むプレス表現を出さない(掴んだ手応えと喧嘩する)。 */
+.tile.lifted:active {
+  opacity: 1;
 }
 
 /* ---- サインイン(夜の入港) ----
