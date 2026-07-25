@@ -21,8 +21,12 @@ Firebase 設定は `web/.env.local`(gitignore 済み)。雛形は `.env.example`
 `public/` のアイコンPNGは手で書き出さず、**必ず**次で再生成する:
 
 ```sh
-npm run icons
+npm i --no-save @resvg/resvg-js && npm run icons
 ```
+
+resvg(SVGのラスタライザ)はネイティブバイナリなので、本番ビルドの依存には
+入れていない(Cloudflare Pages の install に失敗要因を持ち込まないため)。
+アイコンを作り直すときだけ入れる。
 
 - ソースは `public/favicon.svg` ひとつ。図案を直すときはこのSVGだけを直す。
 - 出力は全面塗り・アルファなしのPNG。角丸は iOS/Android 側がマスクを掛けるので

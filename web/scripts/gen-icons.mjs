@@ -7,15 +7,32 @@
 //
 //   npm run icons
 //
+// resvg(SVGのラスタライザ)はネイティブバイナリなので、本番ビルドの依存には
+// 入れない(Cloudflare Pages の install を重くしない / 失敗要因を持ち込まない)。
+// 使うときだけ入れる:
+//
+//   npm i --no-save @resvg/resvg-js && npm run icons
+//
 // 出力はすべて不透明(アルファなし・color type 2)の全面塗りPNG。
 // iOS/Androidはアイコンの角丸マスクを自分で適用するので、こちら側では
 // 角を丸めない(丸めると透明部分が黒く出る)。
 
-import { Resvg } from '@resvg/resvg-js'
 import fs from 'node:fs'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { fileURLToPath } from 'node:url'
+
+// 入っていないときは、何をすればいいかが分かる形で止める。
+let Resvg
+try {
+  ({ Resvg } = await import('@resvg/resvg-js'))
+} catch {
+  console.error(
+    'アイコンの生成には @resvg/resvg-js が要ります(本番ビルドの依存には入れていません)。\n' +
+      '  npm i --no-save @resvg/resvg-js && npm run icons',
+  )
+  process.exit(1)
+}
 
 const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public')
 const SOURCE_SVG = path.join(PUBLIC_DIR, 'favicon.svg')
