@@ -56,6 +56,12 @@ VITE_FB_API_KEY, VITE_FB_AUTH_DOMAIN, VITE_FB_PROJECT_ID, VITE_FB_STORAGE_BUCKET
 
 カスタムドメイン: Pages プロジェクト → Custom domains → `landfall-studylog.com` を追加(同一 Cloudflare アカウントなので CNAME と SSL は自動)。
 
+> **メンバーカードに項目を足したときは、先に Firestore ルールを流す。**
+> `rooms|publicHarbors/{id}/members/{uid}` のルールは `keys().hasOnly([...])` で
+> フィールドを固定している。ルールを流す前に新しいフィールドを書くクライアントを公開すると、
+> 入港とプレイヤーカードの保存がまとめて拒否される。push(=Pages の自動デプロイ)より前に
+> `firebase deploy --only firestore:rules` を実行すること。
+
 ## 公開までの手順(ユーザー作業)
 
 1. **Firebase コンソールでウェブアプリを登録**

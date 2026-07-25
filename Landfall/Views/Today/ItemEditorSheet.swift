@@ -165,7 +165,7 @@ struct ItemEditorSheet: View {
 
     private var styleRow: some View {
         HStack(spacing: 12) {
-            ForEach(TileStyle.allCases) { candidate in
+            ForEach(TileStyle.itemCases) { candidate in
                 Button {
                     style = candidate
                 } label: {

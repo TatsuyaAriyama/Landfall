@@ -117,6 +117,8 @@
 "Resolve" = "決意";
 "Write your resolve" = "決意を入力しよう";
 "Save this card" = "このカードで行く";
+/* 使い始めた日。%@ = その日(「2025年3月14日」) */
+"Sailing since %@" = "%@から航海中";
 "Come sail with me in \"%@\" on Landfall. Harbor code: %@" = "Landfallの港「%@」で、一緒に学びませんか。招待コード: %@";
 
 /* 港 */

@@ -23,7 +23,7 @@ docID = 項目の UUID 文字列(大文字ハイフン形式。Web で新規作�
 | フィールド | 型 | 備考 |
 |---|---|---|
 | `name` | string | 項目名。表示上限60文字 |
-| `styleToken` | string | `midnight / coral / ink / seaGreen / violet / sunYellow` |
+| `styleToken` | string | `midnight / coral / ink / seaGreen / violet / sunYellow`(項目タイルはこの6色のみ) |
 | `symbolToken` | string | `anchor / compass / wheel / lighthouse / island / phoenix / book / pen`(旧: `wave→anchor, comet→compass, sun→lighthouse` に読み替え) |
 | `sortOrder` | number(int) | グリッドの並び順 |
 | `createdAt` | timestamp | |
@@ -106,6 +106,7 @@ docID = 6文字の招待コード(コードが合鍵)。定員4人・参加は3�
 | `styleToken` | string | 24 |
 | `symbolToken` | string | 24 |
 | `resolve` | string | 80 |
+| `sinceDay` | string? | 10 |
 | `joinedAt` | timestamp | |
 | `boatSail` | string? | 24 |
 | `boatJib` | string? | 24 |
@@ -117,6 +118,20 @@ docID = 6文字の招待コード(コードが合鍵)。定員4人・参加は3�
 港の「みんなの海」で各メンバーの船を再現するために使う。**任意**フィールド —
 書かない旧クライアント(iOS v1.x)の従来5フィールド書き込みもそのまま有効。
 未知・欠損の id は読み手が既定(砂色/なし)に落とす。
+
+`sinceDay` は**このサービスを使い始めた日**。書式は `yyyy-MM-dd`(書いた人の暦。
+`users/{uid}/days` の docID と同じ規約)で、ルールもこの書式だけを通す。**任意**フィールド —
+無い場合、読み手は何も表示しない(「不明」とは書かない)。
+
+値の決め方は Web の `web/src/since.ts`(`serviceStartDay`)が正典で、iOS もこれに合わせる:
+基準は**アカウントを作った日**(Firebase Auth の `creationTime`。サーバ由来なので端末を
+またいでも同じ)。ただし記録の方が古いこともありうる(手入力・端末の時計ずれ・他プラット
+フォームからの移行)ので、`days` / `sessions` の最古日がそれより前ならそちらを採る。
+2000-01-01 より前の値は、日付が欠けて 1970 に落ちた書類とみなして無視する。
+
+自分のカードでは毎回その場で計算するが、港のメンバーへはこの `sinceDay` として書き出す
+(相手は他人の `days` / `sessions` を全部は読めないため)。読み手は自分のカードと同じ
+「2025年3月14日から航海中」(`sailingSince`)の書式でカードに添える。
 
 ### `rooms/{code}/members/{uid}/months/{yyyy-MM}` — 月ごとの共有記録
 
@@ -183,7 +198,7 @@ slug は固定: `language / certification / student / reading / making`(ルー�
 
 ### `publicHarbors/{slug}/members/{uid}`
 
-`rooms/{code}/members/{uid}` と同じフィールド(displayName / styleToken / symbolToken / resolve / joinedAt + 任意の boatSail / boatJib / boatHull / boatStripe / boatFlag)。
+`rooms/{code}/members/{uid}` と同じフィールド(displayName / styleToken / symbolToken / resolve / joinedAt + 任意の sinceDay / boatSail / boatJib / boatHull / boatStripe / boatFlag)。
 
 ### `publicHarbors/{slug}/members/{uid}/months/{yyyy-MM}`
 
@@ -223,3 +238,10 @@ Web も iOS と同じパレット・原則(フラット塗りのみ・影/グラ
 
 タイル配色(背景/前景): midnight→coral、coral→deepRust、ink(tileInk)→sunYellow、
 seaGreen→midnight、violet→lavender、sunYellow→deepRust
+
+プレイヤーカードは上の6色に加えて、次の6色も選べる(既存のブランド色の組み替えのみ。
+新しい色は足さない)。項目タイルはグリッドの一覧性を保つため6色のままにする:
+harbor(harborTeal→harborSand)、sand(harborSand→deepRust)、ember(emberGold→deepRust)、
+rust(deepRust→emberGold)、lavender(lavender→violet)、sunrise(returnOrange→midnight)。
+`members/{uid}.styleToken` は自由文字列(≤24)なので、知らないトークンを受け取った
+読み手は midnight に落とす。古いクライアントには新しい6色が midnight として見える。

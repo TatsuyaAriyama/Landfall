@@ -36,6 +36,8 @@ struct HarborMember: Identifiable, Hashable {
     var styleToken: String = TileStyle.midnight.rawValue
     var symbolToken: String = TileSymbol.phoenix.rawValue
     var resolve: String = ""
+    /// 航海のはじまり(yyyy-MM-dd)。古いクライアントが書いたカードには無いので空。
+    var sinceDay: String = ""
 }
 
 @MainActor
@@ -178,6 +180,8 @@ final class RoomService: ObservableObject {
 
     /// 入港直後: プレイヤーカードを置き、当月の軌跡を公開する。
     private func joinedRoomSetup(roomId: String, uid: String, context: ModelContext) async throws {
+        // カードを置く前に「航海のはじまり」を取り直す(入港直後の1枚目から正しい日を載せる)。
+        PlayerProfile.rememberVoyageStart(context: context, accountCreatedAt: Auth.auth().currentUser?.metadata.creationDate)
         var data = profileData
         data["joinedAt"] = FieldValue.serverTimestamp()
         try await db.collection("rooms").document(roomId)
@@ -209,6 +213,10 @@ final class RoomService: ObservableObject {
 
         let entries = (try? context.fetch(FetchDescriptor<StudyDay>())) ?? []
         let days = MonthStats.studiedDaySet(year: year, month: month, entries: entries, calendar: calendar)
+
+        // 記録の全量に触れるのはここだけなので、ついでに「航海のはじまり」を取り直す
+        // (プレイヤーカードを押し出すときは、この控えを読むだけになる)。
+        PlayerProfile.rememberVoyageStart(context: context, accountCreatedAt: Auth.auth().currentUser?.metadata.creationDate)
 
         // 当月のセッションを項目情報ごと非正規化して共有する。
         let allSessions = (try? context.fetch(FetchDescriptor<StudySession>())) ?? []
@@ -265,7 +273,8 @@ final class RoomService: ObservableObject {
                 displayName: name,
                 styleToken: data["styleToken"] as? String ?? TileStyle.midnight.rawValue,
                 symbolToken: data["symbolToken"] as? String ?? TileSymbol.phoenix.rawValue,
-                resolve: data["resolve"] as? String ?? ""
+                resolve: data["resolve"] as? String ?? "",
+                sinceDay: data["sinceDay"] as? String ?? ""
             )
         }
         .sorted { $0.displayName < $1.displayName }

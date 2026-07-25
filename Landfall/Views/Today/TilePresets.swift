@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// タイルの配色プリセット。背景と前景の組みを固定し、デザイン言語から外れない。
+/// 配色プリセット。背景と前景の組みを固定し、デザイン言語から外れない。
+/// 前半6色は項目タイルとプレイヤーカードの共用、後半6色はプレイヤーカード専用
+/// (`itemCases` / `allCases` で出し分ける。Web の TILE_STYLES / PROFILE_STYLES と同じ並び)。
 enum TileStyle: String, CaseIterable, Identifiable {
     case midnight
     case coral
@@ -8,8 +10,17 @@ enum TileStyle: String, CaseIterable, Identifiable {
     case seaGreen
     case violet
     case sunYellow
+    case harbor
+    case sand
+    case ember
+    case rust
+    case lavender
+    case sunrise
 
     var id: String { rawValue }
+
+    /// 項目タイルで選べる配色。グリッドは一覧性が命なので、ここは意図的に増やさない。
+    static let itemCases: [TileStyle] = [.midnight, .coral, .ink, .seaGreen, .violet, .sunYellow]
 
     var background: Color {
         switch self {
@@ -19,6 +30,12 @@ enum TileStyle: String, CaseIterable, Identifiable {
         case .seaGreen: LFColor.seaGreen
         case .violet: LFColor.violet
         case .sunYellow: LFColor.sunYellow
+        case .harbor: LFColor.harborTeal
+        case .sand: LFColor.harborSand
+        case .ember: LFColor.emberGold
+        case .rust: LFColor.deepRust
+        case .lavender: LFColor.lavender
+        case .sunrise: LFColor.returnOrange
         }
     }
 
@@ -30,6 +47,12 @@ enum TileStyle: String, CaseIterable, Identifiable {
         case .seaGreen: LFColor.midnight
         case .violet: LFColor.lavender
         case .sunYellow: LFColor.deepRust
+        case .harbor: LFColor.harborSand
+        case .sand: LFColor.deepRust
+        case .ember: LFColor.deepRust
+        case .rust: LFColor.emberGold
+        case .lavender: LFColor.violet
+        case .sunrise: LFColor.midnight
         }
     }
 

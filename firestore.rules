@@ -86,12 +86,13 @@ service cloud.firestore {
 
         // 書けるのは、その港のメンバー本人だけ。フィールドは既知のものに限り、型と長さを検証する
         // (未参加の港へのドキュメント設置や、余計なフィールド・肥大データの注入を防ぐ)。
-        // boat* は船の見た目(部位id)。任意フィールド=hasOnly のサブセット規則により、
-        // これらを書かない旧クライアント(iOS)の従来5フィールド書き込みもそのまま通る。
+        // boat* は船の見た目(部位id)、sinceDay は航海のはじまり。いずれも任意フィールド=
+        // hasOnly のサブセット規則により、これらを書かない旧クライアント(iOS)の
+        // 従来5フィールド書き込みもそのまま通る。
         allow create, update: if request.auth != null
           && request.auth.uid == memberId
           && isMember()
-          && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'joinedAt', 'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag'])
+          && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'sinceDay', 'joinedAt', 'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag'])
           && request.resource.data.displayName is string
           && request.resource.data.displayName.size() <= 60
           && request.resource.data.styleToken is string
@@ -109,7 +110,12 @@ service cloud.firestore {
           && ( !('boatStripe' in request.resource.data)
             || (request.resource.data.boatStripe is string && request.resource.data.boatStripe.size() <= 24) )
           && ( !('boatFlag' in request.resource.data)
-            || (request.resource.data.boatFlag is string && request.resource.data.boatFlag.size() <= 24) );
+            || (request.resource.data.boatFlag is string && request.resource.data.boatFlag.size() <= 24) )
+          // 航海のはじまり(yyyy-MM-dd)。任意フィールド。書式を固定して、
+          // ここが自由文の置き場にならないようにする。
+          && ( !('sinceDay' in request.resource.data)
+            || (request.resource.data.sinceDay is string
+              && request.resource.data.sinceDay.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')) );
 
         // 退港時に自分のカードを消す。
         allow delete: if request.auth != null && request.auth.uid == memberId;
@@ -245,7 +251,7 @@ service cloud.firestore {
         allow create, update: if request.auth != null
           && request.auth.uid == memberId
           && validSlug()
-          && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'joinedAt', 'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag'])
+          && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'sinceDay', 'joinedAt', 'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag'])
           && request.resource.data.displayName is string
           && request.resource.data.displayName.size() <= 60
           && request.resource.data.styleToken is string
@@ -263,7 +269,12 @@ service cloud.firestore {
           && ( !('boatStripe' in request.resource.data)
             || (request.resource.data.boatStripe is string && request.resource.data.boatStripe.size() <= 24) )
           && ( !('boatFlag' in request.resource.data)
-            || (request.resource.data.boatFlag is string && request.resource.data.boatFlag.size() <= 24) );
+            || (request.resource.data.boatFlag is string && request.resource.data.boatFlag.size() <= 24) )
+          // 航海のはじまり(yyyy-MM-dd)。任意フィールド。書式を固定して、
+          // ここが自由文の置き場にならないようにする。
+          && ( !('sinceDay' in request.resource.data)
+            || (request.resource.data.sinceDay is string
+              && request.resource.data.sinceDay.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')) );
 
         // 退港・削除は本人のみ。
         allow delete: if request.auth != null && request.auth.uid == memberId;

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   fetchMonth,
+  sinceDayDate,
   type HarborMember,
   type SharedMonth,
 } from "../harbor";
 import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
-import { lang, t } from "../i18n";
+import { fullDateLabel, lang, t, tf } from "../i18n";
 
 /// 港のメンバーの月間の軌跡。学んだ日と、日ごとの記録(項目・分・ひとこと)。
 /// プライベート(rooms)とパブリック(publicHarbors)で同じ画面を使う。
@@ -30,6 +31,8 @@ export function MemberTrace({
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
   const ym = `${year}-${String(month + 1).padStart(2, "0")}`;
+  // 相手が書いた「使い始めた日」。古いクライアントのカードには無いので null。
+  const sinceStart = member.sinceDay ? sinceDayDate(member.sinceDay) : null;
 
   useEffect(() => {
     let alive = true;
@@ -77,6 +80,12 @@ export function MemberTrace({
         <div>
           <div className="row-title">{member.displayName}</div>
           {member.resolve && <div className="row-sub">{member.resolve}</div>}
+          {/* この人がいつからこのサービスを使っているか。自分のカードと同じ書式。 */}
+          {sinceStart && (
+            <div className="player-card-since">
+              {tf(t("sailingSince"), { date: fullDateLabel(sinceStart) })}
+            </div>
+          )}
         </div>
       </div>
 

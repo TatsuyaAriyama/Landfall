@@ -21,6 +21,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { PlayerProfile } from "./profile";
+import { serviceStartDay } from "./since";
 import { startOfDay, type StudyDay, type StudyItem, type StudySession } from "./types";
 import type { I18nKey } from "./i18n";
 
@@ -64,12 +65,29 @@ export interface HarborMember {
   styleToken: string;
   symbolToken: string;
   resolve: string;
+  // 航海のはじまり(yyyy-MM-dd)。古いクライアントが書いたカードには無い。
+  sinceDay?: string;
   // 船の見た目(部位id)。古いクライアントが書いたカードには無い。
   boatSail?: string;
   boatJib?: string;
   boatHull?: string;
   boatStripe?: string;
   boatFlag?: string;
+}
+
+/// 航海のはじまり(yyyy-MM-dd)の読み取り。書式が違うもの・実在しない日は捨てる。
+export function parseSinceDay(value: unknown): string | undefined {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  return sinceDayDate(value) ? value : undefined;
+}
+
+/// yyyy-MM-dd を端末ローカルの日付に戻す。実在しない日(2025-02-30 など)は null。
+/// 書いた人の暦での「日」なので、時差のある相手が見ても日付はずれない。
+export function sinceDayDate(sinceDay: string): Date | null {
+  const [y, m, d] = sinceDay.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) return null;
+  return date;
 }
 
 export interface SharedSession {
@@ -274,7 +292,7 @@ async function joinedSetup(
 ): Promise<void> {
   const u = uid();
   await setDoc(doc(db, root, id, "members", u), {
-    ...PlayerProfile.harborProfileData(),
+    ...PlayerProfile.harborProfileData(serviceStartDay(data.days, data.sessions)),
     joinedAt: serverTimestamp(),
   });
   const payload = buildMonthPayload(data);
@@ -287,20 +305,18 @@ async function joinedSetup(
 }
 
 /// プレイヤーカードの変更を、参加中の全ての港へ反映する。
-export async function pushProfileEverywhere(): Promise<void> {
+/// sinceDay(使い始めた日)は画面側で serviceStartDay から出したものを渡す。
+export async function pushProfileEverywhere(sinceDay?: Date | null): Promise<void> {
   const u = uid();
+  const data = PlayerProfile.harborProfileData(sinceDay);
   const rooms = await fetchRooms().catch(() => [] as HarborRoom[]);
   for (const room of rooms) {
-    await setDoc(doc(db, "rooms", room.id, "members", u), PlayerProfile.harborProfileData(), {
-      merge: true,
-    }).catch(() => {});
+    await setDoc(doc(db, "rooms", room.id, "members", u), data, { merge: true }).catch(() => {});
   }
   for (const slug of cachedPublicJoined()) {
-    await setDoc(
-      doc(db, "publicHarbors", slug, "members", u),
-      PlayerProfile.harborProfileData(),
-      { merge: true },
-    ).catch(() => {});
+    await setDoc(doc(db, "publicHarbors", slug, "members", u), data, { merge: true }).catch(
+      () => {},
+    );
   }
 }
 
@@ -323,6 +339,7 @@ export async function fetchMembers(
       styleToken: String(v.styleToken ?? "midnight"),
       symbolToken: String(v.symbolToken ?? "phoenix"),
       resolve: String(v.resolve ?? ""),
+      sinceDay: parseSinceDay(v.sinceDay),
       boatSail: str(v.boatSail),
       boatJib: str(v.boatJib),
       boatHull: str(v.boatHull),

@@ -46,7 +46,14 @@ import { generateRoutes } from "../voyageMap";
 import { demoHarborMembers, demoRoom, demoVoyage, demoVoyageProgressMinutes, isDemo } from "../demo";
 import { PlayerProfile } from "../profile";
 import { grantLoot, hasLoot } from "../boat";
-import { STYLE_COLORS, dayId, normalizeStyle, normalizeSymbol, trimAll } from "../types";
+import {
+  STYLE_COLORS,
+  dayId,
+  normalizeProfileStyle,
+  normalizeStyle,
+  normalizeSymbol,
+  trimAll,
+} from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { ProfileEditor } from "./ProfileEditor";
 import { MemberTrace } from "./MemberTrace";
@@ -277,7 +284,7 @@ function HarborRoot({
 }) {
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
-  const cardStyle = STYLE_COLORS[normalizeStyle(PlayerProfile.styleToken)];
+  const cardStyle = STYLE_COLORS[normalizeProfileStyle(PlayerProfile.styleToken)];
   // このサービスを使い始めた日(since.ts)。
   const sinceDay = serviceStartDay(data.days, data.sessions);
 

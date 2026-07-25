@@ -19,6 +19,13 @@ export function demoRoom(): HarborRoom {
   };
 }
 
+/// デモの「航海のはじまり」。今日から遡った日にして、日数表示が生きて見えるようにする。
+function demoSinceDay(daysAgo: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return dayId(d);
+}
+
 export function demoHarborMembers(): HarborMember[] {
   return [
     {
@@ -27,6 +34,7 @@ export function demoHarborMembers(): HarborMember[] {
       styleToken: "seaGreen",
       symbolToken: "compass",
       resolve: "毎日は無理でも、また戻る。",
+      sinceDay: demoSinceDay(412),
       boatSail: "coral",
       boatJib: "sand",
       boatHull: "sand",
@@ -36,9 +44,10 @@ export function demoHarborMembers(): HarborMember[] {
     {
       id: "D-2",
       displayName: "ミナト",
-      styleToken: "midnight",
+      styleToken: "harbor",
       symbolToken: "lighthouse",
       resolve: "",
+      sinceDay: demoSinceDay(96),
       boatSail: "sunYellow",
       boatJib: "seaGreen",
       boatHull: "coral",
@@ -48,9 +57,10 @@ export function demoHarborMembers(): HarborMember[] {
     {
       id: "D-3",
       displayName: "ヨル",
-      styleToken: "violet",
+      styleToken: "lavender",
       symbolToken: "book",
       resolve: "",
+      sinceDay: demoSinceDay(31),
       boatSail: "lavender",
       boatJib: "coral",
       boatHull: "deepRust",
@@ -60,9 +70,10 @@ export function demoHarborMembers(): HarborMember[] {
     {
       id: "D-4",
       displayName: "アオイ",
-      styleToken: "sunYellow",
+      styleToken: "ember",
       symbolToken: "pen",
       resolve: "",
+      sinceDay: demoSinceDay(3),
       boatSail: "seaGreen",
       boatJib: "sunYellow",
       boatHull: "sand",

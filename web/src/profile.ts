@@ -1,6 +1,6 @@
 import { boatShareData } from "./boat";
 import { t } from "./i18n";
-import { trimAll } from "./types";
+import { dayId, trimAll } from "./types";
 
 // プレイヤープロフィール。iOS と同じくローカル先行(localStorage)。
 // 港に入っているときだけメンバー情報として共有される。
@@ -39,7 +39,9 @@ export const PlayerProfile = {
   /// 港(プライベート/パブリック共通)のメンバードキュメントに書くプロフィール一式。
   /// 長さは Firestore ルールの上限に合わせて切り詰める(iOS の harborProfileData と同じ)。
   /// 船の見た目(部位id)も一緒に載せ、港の「みんなの海」に自分の船で並ぶ。
-  harborProfileData(): Record<string, string> {
+  /// sinceDay は「このサービスを使い始めた日」(since.ts の serviceStartDay)。
+  /// 港のメンバーにも見えるので、相手のカードに「◯年◯月◯日から航海中」と出せる。
+  harborProfileData(sinceDay?: Date | null): Record<string, string> {
     const boat = Object.fromEntries(
       Object.entries(boatShareData()).map(([key, id]) => [key, id.slice(0, 24)]),
     );
@@ -48,6 +50,7 @@ export const PlayerProfile = {
       styleToken: this.styleToken.slice(0, 24),
       symbolToken: this.symbolToken.slice(0, 24),
       resolve: this.resolve.slice(0, 80),
+      ...(sinceDay ? { sinceDay: dayId(sinceDay) } : {}),
       ...boat,
     };
   },

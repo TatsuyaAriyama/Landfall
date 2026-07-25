@@ -47,7 +47,8 @@ struct HarborView: View {
                                 ? String(localized: "Sailor") : playerName,
                             styleToken: playerStyle,
                             symbolToken: playerSymbol,
-                            resolve: playerResolve
+                            resolve: playerResolve,
+                            sinceDay: PlayerProfile.sinceDay
                         )
                         .overlay(alignment: .topTrailing) {
                             Image(systemName: "pencil")
@@ -421,7 +422,8 @@ struct MemberTraceView: View {
                         name: member.displayName,
                         styleToken: member.styleToken,
                         symbolToken: member.symbolToken,
-                        resolve: member.resolve
+                        resolve: member.resolve,
+                        sinceDay: member.sinceDay
                     )
 
                     CardKicker(

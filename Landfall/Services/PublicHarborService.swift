@@ -45,6 +45,8 @@ final class PublicHarborService: ObservableObject {
     /// 参加: プレイヤーカードを置き、当月の記録をすぐ公開する。
     func join(_ slug: String, context: ModelContext) async throws {
         guard let uid else { throw RoomError.notSignedIn }
+        // カードを置く前に「航海のはじまり」を取り直す(入港直後の1枚目から正しい日を載せる)。
+        PlayerProfile.rememberVoyageStart(context: context, accountCreatedAt: Auth.auth().currentUser?.metadata.creationDate)
         var data = PlayerProfile.harborProfileData()
         data["joinedAt"] = FieldValue.serverTimestamp()
         try await memberRef(slug: slug, uid: uid).setData(data)
@@ -120,7 +122,8 @@ final class PublicHarborService: ObservableObject {
                 displayName: name,
                 styleToken: data["styleToken"] as? String ?? TileStyle.midnight.rawValue,
                 symbolToken: data["symbolToken"] as? String ?? TileSymbol.phoenix.rawValue,
-                resolve: data["resolve"] as? String ?? ""
+                resolve: data["resolve"] as? String ?? "",
+                sinceDay: data["sinceDay"] as? String ?? ""
             )
         }
     }

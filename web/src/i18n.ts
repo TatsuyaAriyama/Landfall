@@ -757,3 +757,4 @@ export function chatReturnLine(name: string, gapDays: number): string {
     ? `${name}が帰還 — ${gapDays}日ぶりの航海。`
     : `${name} returned — first sail in ${gapDays} days.`;
 }
+

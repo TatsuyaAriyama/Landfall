@@ -49,6 +49,11 @@ enum LF {
         return templated("MMMM").string(from: date)
     }
 
+    /// 「2025年3月14日」/ "March 14, 2025" — 使い始めた日のような、年まで含む日付。
+    static func fullDate(_ date: Date) -> String {
+        templated("yMMMMd").string(from: date)
+    }
+
     // MARK: - 内部
 
     private static func date(year: Int, month: Int, day: Int = 1) -> Date? {

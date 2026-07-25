@@ -1,7 +1,13 @@
 import { useState } from "react";
 import { PlayerProfile } from "../profile";
 import { pushProfileEverywhere } from "../harbor";
-import { STYLE_COLORS, TILE_STYLES, TILE_SYMBOLS, normalizeStyle, normalizeSymbol } from "../types";
+import {
+  PROFILE_STYLES,
+  STYLE_COLORS,
+  TILE_SYMBOLS,
+  normalizeProfileStyle,
+  normalizeSymbol,
+} from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { Modal, showToast } from "../overlays";
 import { fullDateLabel, t, tf } from "../i18n";
@@ -16,7 +22,7 @@ export function ProfileEditor({
   sinceDay?: Date | null;
 }) {
   const [name, setName] = useState(PlayerProfile.name);
-  const [styleToken, setStyleToken] = useState(normalizeStyle(PlayerProfile.styleToken));
+  const [styleToken, setStyleToken] = useState(normalizeProfileStyle(PlayerProfile.styleToken));
   const [symbolToken, setSymbolToken] = useState(normalizeSymbol(PlayerProfile.symbolToken));
   const [resolve, setResolve] = useState(PlayerProfile.resolve);
   const [working, setWorking] = useState(false);
@@ -25,7 +31,8 @@ export function ProfileEditor({
     if (working) return;
     setWorking(true);
     PlayerProfile.save({ name, styleToken, symbolToken, resolve });
-    await pushProfileEverywhere().catch(() => {});
+    // 港のメンバーにも、使い始めた日を含めたカードを配り直す。
+    await pushProfileEverywhere(sinceDay).catch(() => {});
     showToast(t("savedToast"));
     onClose();
   };
@@ -65,7 +72,7 @@ export function ProfileEditor({
 
         <p className="section-label">{t("color")}</p>
         <div className="chip-row">
-          {TILE_STYLES.map((token) => (
+          {PROFILE_STYLES.map((token) => (
             <button
               key={token}
               className={`swatch${styleToken === token ? " selected" : ""}`}

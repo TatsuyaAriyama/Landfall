@@ -1,4 +1,9 @@
-import { STYLE_COLORS, normalizeStyle, normalizeSymbol, type TileSymbolToken } from "./types";
+import {
+  STYLE_COLORS,
+  normalizeProfileStyle,
+  normalizeSymbol,
+  type TileSymbolToken,
+} from "./types";
 
 // iOS の TileSymbolView(200x200 設計座標)を SVG に移植。フラット塗りのみ。
 // fg/bg を注入してどの配色でも成立させる。
@@ -326,7 +331,8 @@ export function PlayerAvatar({
   symbolToken: string;
   size: number;
 }) {
-  const style = STYLE_COLORS[normalizeStyle(styleToken)];
+  // プレイヤーアイコンなので、カード専用の配色まで含めて解決する。
+  const style = STYLE_COLORS[normalizeProfileStyle(styleToken)];
   return (
     <span
       aria-hidden="true"

@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 /// プレイヤープロフィール。名前・アイコン(配色×シンボル)・決意のひとこと。
@@ -7,6 +8,17 @@ enum PlayerProfile {
     static let styleKey = "player.style"
     static let symbolKey = "player.symbol"
     static let resolveKey = "player.resolve"
+    static let sinceDayKey = "player.sinceDay"
+
+    /// 使い始めた日(yyyy-MM-dd)の書式。days の docID と同じ規約(端末ローカルの暦)。
+    static let sinceDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
 
     static var name: String {
         UserDefaults.standard.string(forKey: nameKey)?
@@ -26,6 +38,31 @@ enum PlayerProfile {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
+    /// このサービスを使い始めた日(yyyy-MM-dd)。まだ分からなければ空。
+    static var sinceDay: String {
+        let stored = UserDefaults.standard.string(forKey: sinceDayKey) ?? ""
+        return sinceDayFormatter.date(from: stored) == nil ? "" : stored
+    }
+
+    /// 「このサービスを使い始めた日」を取り直す。Web の since.ts(serviceStartDay)と同じ決め方:
+    /// 基準はアカウントを作った日(サーバ由来なので端末をまたいでも同じ)。ただし記録の方が
+    /// 古いこともありうる(手入力・時計ずれ・他プラットフォームからの移行)ので、記録の最古日が
+    /// それより前ならそちらを採る。記録が範囲の外に落ちないことを優先する。
+    /// 記録の全量を数えるので、呼ぶのは全量が手元にある場所だけ(RoomService.monthPayload ほか)。
+    static func rememberVoyageStart(context: ModelContext, accountCreatedAt: Date?) {
+        // 日付が欠けた書類は 1970 に落ちる。1970年は「はじまり」ではないので無視する
+        // (Web の EPOCH_GUARD と同じ考え)。
+        let guardDate = DateComponents(calendar: Calendar(identifier: .gregorian),
+                                       timeZone: TimeZone(secondsFromGMT: 0),
+                                       year: 2000, month: 1, day: 1).date ?? .distantPast
+        var candidates: [Date] = []
+        if let accountCreatedAt { candidates.append(accountCreatedAt) }
+        candidates += ((try? context.fetch(FetchDescriptor<StudyDay>())) ?? []).map(\.date)
+        candidates += ((try? context.fetch(FetchDescriptor<StudySession>())) ?? []).map(\.date)
+        guard let earliest = candidates.filter({ $0 > guardDate }).min() else { return }
+        UserDefaults.standard.set(sinceDayFormatter.string(from: earliest), forKey: sinceDayKey)
+    }
+
     /// 表示名。未設定なら「船乗り」。
     static var displayName: String {
         name.isEmpty ? String(localized: "Sailor") : name
@@ -40,6 +77,9 @@ enum PlayerProfile {
             "symbolToken": symbolToken,
             "resolve": String(resolve.prefix(80)),
         ]
+        // 使い始めた日。分からないうちは書かない(読み手は何も出さない)。
+        let since = sinceDay
+        if !since.isEmpty { data["sinceDay"] = since }
         // 「みんなの海」で各自の船を出すための部位id(色ではなくid)。Web boatShareData 準拠。
         for (key, value) in BoatCustomization.shareData { data[key] = value }
         return data
@@ -77,6 +117,8 @@ struct PlayerCardView: View {
     let styleToken: String
     let symbolToken: String
     let resolve: String
+    /// 使い始めた日(yyyy-MM-dd)。空・書式違い(古いクライアントのカード)なら出さない。
+    var sinceDay: String = ""
 
     var body: some View {
         let style = TileStyle.from(styleToken)
@@ -98,6 +140,13 @@ struct PlayerCardView: View {
                         .foregroundStyle(style.foreground.opacity(0.8))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+                }
+                // このサービスを初めて使った日。決意より小さく、控えめに。
+                if let start = PlayerProfile.sinceDayFormatter.date(from: sinceDay) {
+                    Text("Sailing since \(LF.fullDate(start))")
+                        .font(LFFont.label(12))
+                        .foregroundStyle(style.foreground.opacity(0.65))
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
@@ -138,7 +187,8 @@ struct ProfileEditorSheet: View {
                         ? String(localized: "Sailor") : name,
                     styleToken: styleToken,
                     symbolToken: symbolToken,
-                    resolve: resolve
+                    resolve: resolve,
+                    sinceDay: PlayerProfile.sinceDay
                 )
                 .padding(.top, 24)
 
@@ -158,24 +208,28 @@ struct ProfileEditorSheet: View {
 
                 sectionLabel("Color")
                     .padding(.top, 28)
-                HStack(spacing: 14) {
-                    ForEach(TileStyle.allCases) { style in
-                        Button {
-                            styleToken = style.rawValue
-                        } label: {
-                            Circle()
-                                .fill(style.background)
-                                .frame(width: 40, height: 40)
-                                .overlay(
-                                    Circle().stroke(
-                                        styleToken == style.rawValue
-                                            ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
-                                        lineWidth: styleToken == style.rawValue ? 3 : 1
+                // カードの配色は項目タイルより数が多いので、シンボルと同じく横スクロール。
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(TileStyle.allCases) { style in
+                            Button {
+                                styleToken = style.rawValue
+                            } label: {
+                                Circle()
+                                    .fill(style.background)
+                                    .frame(width: 40, height: 40)
+                                    .overlay(
+                                        Circle().stroke(
+                                            styleToken == style.rawValue
+                                                ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
+                                            lineWidth: styleToken == style.rawValue ? 3 : 1
+                                        )
                                     )
-                                )
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.vertical, 4)   // 選択枠が切れないように
                 }
                 .padding(.top, 12)
 
