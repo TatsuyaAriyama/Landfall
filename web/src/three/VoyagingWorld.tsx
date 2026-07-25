@@ -173,7 +173,7 @@ function VoyagingSea({
   startedAt: number;
 }) {
   const parts = useMemo(() => boatProps(), []);
-  // 甲板の航海士。選んだ姿のまま、ときどき辺りを見渡す。
+  // 甲板の航海士。待機を基本に、ときどき辺りを見渡す(navigatorPose.ts)。
   const pose = useNavigatorPose(animate);
 
   // カメラは OrbitControls に任せる(見渡せるようにするため)。

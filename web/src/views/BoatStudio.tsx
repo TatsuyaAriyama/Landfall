@@ -121,7 +121,9 @@ const POSES: [PhoenixPose, I18nKey][] = [
 export default function BoatStudio({ data }: { data: UserData }) {
   const [, setTick] = useState(0);
   const [mode, setMode] = useState<"boat" | "sailor">("boat");
-  // 選んだ仕草は保存され、目的地の船の上でも同じ姿で立つ。
+  // 選んだ仕草はローカルに保存され、次にこのタブを開いたときも続きから眺められる。
+  // 甲板の航海士(目的地・航海中)はここの選択を使わない — あちらは見張りなので
+  // 待機+たまに見渡す(three/navigatorPose.ts)。
   const [pose, setPoseState] = useState<PhoenixPose>(() => navigatorPose());
   const setPose = (next: PhoenixPose) => {
     setPoseState(next);

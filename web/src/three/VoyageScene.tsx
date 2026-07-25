@@ -357,7 +357,7 @@ function VoyageSea({
   steps?: VoyageStep[];
 }) {
   const parts = useMemo(() => boatProps(), []);
-  // 甲板の航海士。選んだ姿のまま、ときどき辺りを見渡す。
+  // 甲板の航海士。待機を基本に、ときどき辺りを見渡す(navigatorPose.ts)。
   const pose = useNavigatorPose(animate);
   const travel = useRef<THREE.Group>(null);
   const targetX = X_START + Math.min(Math.max(ratio, 0), 1) * (X_END - X_START);
@@ -423,7 +423,8 @@ function VoyageSea({
         {/* 甲板の自分の航海士。舳先を見て進む姿にしたいので船首寄りに立たせる。
             原点が足元なので舷縁(y≈0.5〜0.58)の上に置き、マストとメインセイルを
             避けつつ舳先の反りに脚が入らない x=0.88、帆に隠れない手前の舷側 z=+0.22。
-            姿は装いで選んだもの。iOS VoyageSceneKit と同値。 */}
+            姿は待機+たまに見渡す(装いの選択はここでは使わない)。
+            配置は iOS VoyageSceneKit と同値。 */}
         <group position={[0.88, 0.57, 0.22]} scale={0.62}>
           <PhoenixModel animate={animate} pose={pose} />
         </group>

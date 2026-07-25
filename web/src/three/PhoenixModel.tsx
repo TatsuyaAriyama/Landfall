@@ -47,8 +47,10 @@ function capePoint(
   wind: number,
   out: { x: number; y: number; z: number },
 ) {
-  const width = 0.16 + 0.21 * Math.pow(v, 1.15); // 裾へ向かって広がる
-  const length = 0.38 + 0.19 * Math.pow(Math.abs(u), 1.4); // 端が長い=燕尾の裾
+  const width = 0.17 + 0.25 * Math.pow(v, 1.1); // 裾へ向かって広がる
+  // 端を長くして燕尾にするが、伸ばしすぎると布ではなく刃物に見える。
+  // 指数を上げて「ごく端だけ少し長い」に留め、伸びる量も抑える。
+  const length = 0.40 + 0.10 * Math.pow(Math.abs(u), 2.4);
   const flutter = Math.pow(v, 1.5) * wind; // 肩は固定、裾ほど自由に
   const t = time * (0.7 + 0.3 * wind); // 風が強いほど波も速い
   out.x = u * width + flutter * Math.sin(t * 1.3 + v * 2.0) * 0.02;
@@ -133,7 +135,37 @@ function makeCoatGeometry(): THREE.BufferGeometry {
 // 材質はスムースシェーディング(世界の低ポリとの対比で「生きもの」感を作る)。
 const COAT_GEO = makeCoatGeometry();
 const MANTLE_GEO = makeMantleGeometry();
-const HOOD_GEO = new THREE.ConeGeometry(0.125, 0.3, 18);
+/// フード。円錐だと頭ではなく三角コーンに見えるので、頭を包む布として作る:
+/// 肩の上で広く、頭のまわりで丸く張り、上へ行くほど細って柔らかい先になる。
+/// さらに上ほど後ろへ倒して、頭巾の先が背中へ垂れている形にする
+/// (まっすぐ尖らせると、それだけで作り物に見える)。
+function makeHoodGeometry(): THREE.BufferGeometry {
+  const profile: THREE.Vector2[] = [
+    [0.132, -0.035],
+    [0.148, 0.02],
+    [0.146, 0.075],
+    [0.128, 0.132],
+    [0.096, 0.185],
+    [0.058, 0.232],
+    [0.024, 0.268],
+    [0.0, 0.288],
+  ].map(([r, y]) => new THREE.Vector2(r, y));
+  // 前面を開けたまま回す。閉じた回転体だと顔が布に埋まってしまうので、
+  // 開口部ぶん(約92度)を残して肩から後頭部までを一枚の布として張る。
+  const gap = 1.6;
+  const geo = new THREE.LatheGeometry(profile, 20, gap / 2, Math.PI * 2 - gap);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i += 1) {
+    // 高さに対して二次で効かせる = 根元は動かさず、先だけ後ろへ流す。
+    const k = Math.max(0, (pos.getY(i) + 0.035) / 0.323);
+    pos.setZ(i, pos.getZ(i) - k * k * 0.105);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const HOOD_GEO = makeHoodGeometry();
 const FACE_GEO = new THREE.SphereGeometry(0.075, 14, 10);
 const EYE_GEO = new THREE.SphereGeometry(0.015, 8, 6);
 const SCARF_GEO = new THREE.TorusGeometry(0.105, 0.034, 9, 18);
@@ -158,6 +190,13 @@ const CORAL_MAT = new THREE.MeshStandardMaterial({
   color: CORAL,
   flatShading: false,
   roughness: 0.8,
+});
+/// フードは前面を開けた一枚布なので、内側も見える。両面で描く。
+const HOOD_MAT = new THREE.MeshStandardMaterial({
+  color: CORAL,
+  flatShading: false,
+  roughness: 0.85,
+  side: THREE.DoubleSide,
 });
 const RUST_MAT = new THREE.MeshStandardMaterial({
   color: RUST,
@@ -491,14 +530,20 @@ export default function PhoenixModel({
         {/* 頭(首振りのピボット): 頭サイズの尖ったフード=紋章の冠羽。
             開口部の闇に両目が灯る */}
         <group ref={head} position={[0, 0.98, 0]}>
-          <mesh geometry={HOOD_GEO} material={CORAL_MAT} position={[0, 0.12, 0]} rotation={[-0.05, 0, 0]} />
-          <mesh geometry={FACE_GEO} material={FACE_MAT} position={[0, 0.045, 0.062]} scale={[1, 1.1, 0.55]} />
+          <mesh geometry={HOOD_GEO} material={HOOD_MAT} position={[0, 0.03, 0]} rotation={[-0.04, 0, 0]} />
+          {/* 顔の闇。フードの開口部に収まる大きさで、少しだけ前に出す */}
+          <mesh
+            geometry={FACE_GEO}
+            material={FACE_MAT}
+            position={[0, 0.058, 0.055]}
+            scale={[1.02, 1.12, 0.62]}
+          />
           {[1, -1].map((s) => (
             <mesh
               key={s}
               geometry={EYE_GEO}
               material={EYE_MAT}
-              position={[s * 0.028, 0.052, 0.099]}
+              position={[s * 0.03, 0.062, 0.094]}
             />
           ))}
         </group>

@@ -277,7 +277,7 @@ function ShootingStar({ animate }: { animate: boolean }) {
 /// 連打はタイムラインを巻き直すだけなので壊れない。
 function PlayfulBoat({ boatX, animate }: { boatX: number; animate: boolean }) {
   const parts = useMemo(() => boatProps(), []);
-  // 甲板の航海士。選んだ姿のまま、ときどき辺りを見渡す。
+  // 甲板の航海士。待機を基本に、ときどき辺りを見渡す(navigatorPose.ts)。
   const pose = useNavigatorPose(animate);
   const hop = useRef<THREE.Group>(null);
   const ringMesh = useRef<THREE.Mesh>(null);
@@ -342,7 +342,7 @@ function PlayfulBoat({ boatX, animate }: { boatX: number; animate: boolean }) {
       </mesh>
       <group ref={hop}>
         <BoatModel parts={parts} animate={animate} />
-        {/* 甲板の自分の航海士(カードと同じ配置。姿は装いで選んだもの) */}
+        {/* 甲板の自分の航海士(カードと同じ配置・同じふるまい) */}
         <group position={[0.88, 0.57, 0.22]} scale={0.62}>
           <PhoenixModel animate={animate} pose={pose} />
         </group>

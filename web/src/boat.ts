@@ -93,7 +93,9 @@ export function setBoatPart(part: BoatPart, id: string) {
 }
 
 // ---- 航海士の仕草 ----
-// 装いで選んだ姿は、目的地の船の上でも同じ仕草で立つ(船の色と同じくローカル保存)。
+// 装いタブで眺めている姿の記憶(船の色と同じくローカル保存)。次に開いたときに
+// 続きから見られるようにするためのもので、甲板の航海士の姿は決めない
+// (甲板は見張りなので待機+たまに見渡す。three/navigatorPose.ts)。
 
 const POSE_KEY = "navigator.pose";
 const POSES = [
