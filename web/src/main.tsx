@@ -19,7 +19,23 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
     window.location.reload();
   });
   window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("/sw.js");
+    // updateViaCache: "none" が要る。これが無いと sw.js 自体がHTTPキャッシュから
+    // 返されるため、新しいSWの存在に気づけない(Cloudflare側で sw.js は
+    // max-age=14400 に固定されており、_headers からは下げられなかった)。
+    // これを付けると更新確認だけは必ずネットワークへ行く。
+    void navigator.serviceWorker
+      .register("/sw.js", { updateViaCache: "none" })
+      .then((reg) => {
+        // 更新の確認。ホーム画面から開くPWAはナビゲーションが起きないまま
+        // 復帰することがあり、放っておくと古いまま動き続ける。
+        // 起動時と、前面に戻ってくるたびに確認する。
+        const check = () => void reg.update().catch(() => {});
+        check();
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") check();
+        });
+      })
+      .catch(() => {});
   });
 }
 
