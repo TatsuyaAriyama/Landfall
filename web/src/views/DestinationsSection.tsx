@@ -18,6 +18,7 @@ import type { UserData } from "../data";
 import { boatProps } from "../boat";
 import { BoatSvg, CoastSvg } from "../symbols";
 import { askConfirm } from "../overlays";
+import { canUseWebGL } from "../webgl";
 import {
   deadlineRemainingLabel,
   durationLabel,
@@ -42,21 +43,6 @@ function loadVoyageWorld() {
   return voyageWorldPromise;
 }
 const VoyageWorld = lazy(loadVoyageWorld);
-
-/// WebGLが使えるか(一度だけ判定)。使えない環境では2Dカードのまま。
-let webglCache: boolean | null = null;
-function canUseWebGL(): boolean {
-  if (webglCache !== null) return webglCache;
-  try {
-    const c = document.createElement("canvas");
-    webglCache = Boolean(
-      window.WebGLRenderingContext && (c.getContext("webgl2") || c.getContext("webgl")),
-    );
-  } catch {
-    webglCache = false;
-  }
-  return webglCache;
-}
 
 /// 3Dの描画に失敗したら、白画面にせずフォールバックへ静かに戻る。
 class VoyageErrorBoundary extends Component<

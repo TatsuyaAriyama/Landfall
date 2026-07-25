@@ -218,8 +218,6 @@ const ja = {
   close: "閉じる",
 
   // タイマー
-  startTimer: "計測をはじめる",
-  startPomodoro: "ポモドーロ(25分+5分)",
   focusLabel: "集中",
   breakLabel: "休憩",
   soundOff: "音: オフ",
@@ -227,6 +225,15 @@ const ja = {
   soundPiano: "音: ピアノ",
   timerFinish: "終了",
   timerDiscardConfirm: "計測をやめますか。記録は残りません。",
+
+  // 航海中(ストップウォッチの世界)
+  voyagingNow: "航海中",
+  pomodoroChip: "ポモドーロ",
+  enterByHand: "手で入れる",
+  finishVoyage: "ここまでを記録する",
+  discardVoyage: "航海をやめる",
+  backToVoyage: "航海に戻る",
+  switchVoyageConfirm: "いまの航海をやめて、別の項目を始めますか。いまの記録は残りません。",
 
   // 航海誌の追加
   monthCards: "月のカード",
@@ -515,8 +522,6 @@ const en: Record<I18nKey, string> = {
   deleteDestinationConfirm: "Delete this destination? Your records stay.",
   close: "Close",
 
-  startTimer: "Start the clock",
-  startPomodoro: "Pomodoro (25 + 5 min)",
   focusLabel: "Focus",
   breakLabel: "Break",
   soundOff: "Sound: off",
@@ -524,6 +529,16 @@ const en: Record<I18nKey, string> = {
   soundPiano: "Sound: piano",
   timerFinish: "Finish",
   timerDiscardConfirm: "Stop timing? Nothing will be recorded.",
+
+  // 航海中(ストップウォッチの世界)
+  voyagingNow: "Under way",
+  pomodoroChip: "Pomodoro",
+  enterByHand: "By hand",
+  finishVoyage: "Log this far",
+  discardVoyage: "Abandon the voyage",
+  backToVoyage: "Back to the voyage",
+  switchVoyageConfirm:
+    "Abandon this voyage and start another item? Nothing will be recorded.",
 
   monthCards: "Monthly cards",
   yearChart: "Year chart",

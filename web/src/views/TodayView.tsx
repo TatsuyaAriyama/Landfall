@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Component,
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   playChime,
   setSoundPref,
@@ -21,6 +30,43 @@ import { ItemEditor } from "./ItemEditor";
 import { DestinationsSection } from "./DestinationsSection";
 import { Modal, askConfirm, showToast } from "../overlays";
 import { durationLabel, lang, t } from "../i18n";
+import {
+  clockLabel,
+  creditedMinutes,
+  eraseTimer,
+  pomoPhase,
+  readTimer,
+  writeTimer,
+  type RunningTimer,
+  type TimerMode,
+} from "../timer";
+import { canUseWebGL } from "../webgl";
+
+// 航海の世界は three.js を含んで重いので、計測をはじめるときだけ読み込む。
+// タイルを押してすぐ入りたいので、Todayを開いた時点で先に取りに行っておく。
+let voyagingWorldPromise: Promise<typeof import("../three/VoyagingWorld")> | null = null;
+function loadVoyagingWorld() {
+  voyagingWorldPromise ??= import("../three/VoyagingWorld");
+  return voyagingWorldPromise;
+}
+const VoyagingWorld = lazy(loadVoyagingWorld);
+
+/// 3Dの描画に失敗しても計測は続けたい。世界だけ畳んでチップに戻す。
+class VoyagingErrorBoundary extends Component<
+  { onFail: () => void; children?: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onFail();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 const MINUTE_PRESETS = [15, 30, 45, 60, 90];
 
@@ -32,43 +78,19 @@ function lastUsedMinutes(): number | null {
   return Number.isFinite(n) && n >= 1 && n <= 6000 ? n : null;
 }
 
-// タイマー(iOS の FloatingTimerChip 相当)。再読込しても続くよう localStorage に控える。
-const TIMER_ITEM_KEY = "timer.itemId";
-const TIMER_START_KEY = "timer.startedAt";
-const TIMER_MODE_KEY = "timer.mode";
-
-type TimerMode = "free" | "pomo";
-
-// ポモドーロ: 25分の集中+5分の休憩を繰り返す。数えるのは集中の分だけ。
-const POMO_WORK = 25 * 60;
-const POMO_CYCLE = 30 * 60;
-
-interface RunningTimer {
-  itemId: string;
-  startedAt: number; // epoch ms
-  mode: TimerMode;
-}
-
-function readTimer(): RunningTimer | null {
-  const itemId = localStorage.getItem(TIMER_ITEM_KEY);
-  const startedAt = Number(localStorage.getItem(TIMER_START_KEY) ?? 0);
-  const mode: TimerMode = localStorage.getItem(TIMER_MODE_KEY) === "pomo" ? "pomo" : "free";
-  return itemId && startedAt > 0 ? { itemId, startedAt, mode } : null;
-}
-
-/// ポモドーロで実際に集中していた秒数。
-function pomoWorkedSec(elapsedSec: number): number {
-  const cycles = Math.floor(elapsedSec / POMO_CYCLE);
-  return cycles * POMO_WORK + Math.min(elapsedSec % POMO_CYCLE, POMO_WORK);
-}
+// 計測の状態は timer.ts に集約(航海中の世界と共有する)。
 
 export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const [recording, setRecording] = useState<StudyItem | null>(null);
-  const [prefillMinutes, setPrefillMinutes] = useState<number | null>(null);
   const [editing, setEditing] = useState<StudyItem | null>(null);
   const [creating, setCreating] = useState(false);
   const [timer, setTimer] = useState<RunningTimer | null>(() => readTimer());
   const [now, setNow] = useState(Date.now());
+  // 航海の世界を開いているか。閉じても計測は続く(チップから戻れる)。
+  const [voyaging, setVoyaging] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // 「時間を手で入れる」で開くときの初期値(測った分)。
+  const [prefillMinutes, setPrefillMinutes] = useState<number | null>(null);
   // タイルのドラッグ並び替え。ドロップした瞬間に sortOrder を書き直して反映する。
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
@@ -98,31 +120,81 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     return () => clearInterval(id);
   }, [timer]);
 
-  const startTimer = (item: StudyItem, mode: TimerMode) => {
-    const t: RunningTimer = { itemId: item.id, startedAt: Date.now(), mode };
-    localStorage.setItem(TIMER_ITEM_KEY, t.itemId);
-    localStorage.setItem(TIMER_START_KEY, String(t.startedAt));
-    localStorage.setItem(TIMER_MODE_KEY, mode);
-    setTimer(t);
+  // タイルを押した瞬間に世界へ入れるよう、先に読み込んでおく。
+  useEffect(() => {
+    if (canUseWebGL()) void loadVoyagingWorld();
+  }, []);
+
+  // 項目をタップしたら、その場で計測をはじめて航海の世界へ入る。
+  // 分数を手で入れる画面は出さない(記録=航海そのもの)。
+  const startTimer = (item: StudyItem, mode: TimerMode = "free") => {
+    const next: RunningTimer = { itemId: item.id, startedAt: Date.now(), mode };
+    writeTimer(next);
+    setTimer(next);
     setRecording(null);
+    setVoyaging(true);
+  };
+
+  /// タイルを押したとき。同じ項目なら航海へ戻り、別の項目なら確認してから乗り換える
+  /// (黙って始めると、走っていた航海の時間が消えてしまう)。
+  const openOrStart = async (item: StudyItem) => {
+    if (timer?.itemId === item.id) {
+      setVoyaging(true);
+      return;
+    }
+    if (timer) {
+      const ok = await askConfirm({ title: t("switchVoyageConfirm"), danger: true });
+      if (!ok) return;
+    }
+    startTimer(item);
   };
 
   const clearTimer = () => {
-    localStorage.removeItem(TIMER_ITEM_KEY);
-    localStorage.removeItem(TIMER_START_KEY);
-    localStorage.removeItem(TIMER_MODE_KEY);
+    eraseTimer();
     setTimer(null);
+    setVoyaging(false);
   };
 
-  const finishTimer = () => {
+  /// 計測の途中で自由計測とポモドーロを切り替える。はじめた時刻は動かさない
+  /// (ポモドーロにすると、この航海ぶん全体が集中/休憩の周期で数え直される)。
+  const toggleMode = () => {
+    if (!timer) return;
+    const next: RunningTimer = { ...timer, mode: timer.mode === "pomo" ? "free" : "pomo" };
+    writeTimer(next);
+    setTimer(next);
+  };
+
+  /// 航海を終えてそのまま記録する。ダイアログは挟まない。
+  /// 書き込みが済んでから計測を捨てる(先に捨てると失敗時に時間が消える)。
+  const finishTimer = async (note: string) => {
+    if (!timer || saving) return;
+    const item = data.items.find((i) => i.id === timer.itemId);
+    if (!item) {
+      clearTimer(); // 途中で項目が消えたときは静かに畳む
+      return;
+    }
+    setSaving(true);
+    try {
+      const minutes = creditedMinutes(timer);
+      await recordSession(uid, { item, minutes, note: note.trim() || undefined }, data);
+      clearTimer();
+      showToast(t("recordedToast"));
+    } catch {
+      // 失敗しても航海は続いている扱いにする。もう一度押せば記録できる。
+      showToast(t("errGeneric"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /// 計測を始め忘れたとき用。測った分を初期値にして、手で直せる画面へ。
+  const switchToManual = () => {
     if (!timer) return;
     const item = data.items.find((i) => i.id === timer.itemId);
-    const elapsedSec = Math.floor((Date.now() - timer.startedAt) / 1000);
-    const workedSec = timer.mode === "pomo" ? pomoWorkedSec(elapsedSec) : elapsedSec;
-    const minutes = Math.max(1, Math.round(workedSec / 60));
+    const minutes = creditedMinutes(timer);
     clearTimer();
     if (item) {
-      setPrefillMinutes(Math.min(minutes, 6000));
+      setPrefillMinutes(minutes);
       setRecording(item);
     }
   };
@@ -184,7 +256,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
             <button
               key={item.id}
               className={`tile${dragClass}${timing ? " timing" : ""}`}
-              onClick={() => setRecording(item)}
+              onClick={() => void openOrStart(item)}
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = "move";
@@ -271,14 +343,39 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         </>
       )}
 
-      {/* 計測中のフローティングチップ */}
-      {timer && (
+      {/* 航海中の世界。項目をタップした直後はこれが開く。 */}
+      {timer && voyaging && canUseWebGL() && (
+        <VoyagingErrorBoundary onFail={() => setVoyaging(false)}>
+          <Suspense fallback={<div className="voyaging-world" />}>
+            <VoyagingWorld
+              itemName={data.items.find((i) => i.id === timer.itemId)?.name ?? ""}
+              startedAt={timer.startedAt}
+              mode={timer.mode}
+              hasDestination={data.destinations.some((d) => !d.achievedAt)}
+              saving={saving}
+              onFinish={(note) => void finishTimer(note)}
+              onMinimize={() => setVoyaging(false)}
+              onToggleMode={toggleMode}
+              onManual={switchToManual}
+              onDiscard={async () => {
+                if (await askConfirm({ title: t("timerDiscardConfirm"), danger: true })) {
+                  clearTimer();
+                }
+              }}
+            />
+          </Suspense>
+        </VoyagingErrorBoundary>
+      )}
+
+      {/* 世界を閉じているあいだのフローティングチップ。押すと航海に戻る。 */}
+      {timer && !voyaging && (
         <TimerChip
           item={data.items.find((i) => i.id === timer.itemId)}
           startedAt={timer.startedAt}
           mode={timer.mode}
           now={now}
-          onFinish={finishTimer}
+          onOpen={() => setVoyaging(true)}
+          onFinish={() => void finishTimer("")}
           onDiscard={async () => {
             if (
               await askConfirm({ title: t("timerDiscardConfirm"), danger: true })
@@ -295,9 +392,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           item={recording}
           data={data}
           initialMinutes={prefillMinutes}
-          onStartTimer={
-            prefillMinutes === null ? (mode) => startTimer(recording, mode) : undefined
-          }
           onClose={() => {
             setRecording(null);
             setPrefillMinutes(null);
@@ -371,6 +465,7 @@ function TimerChip({
   startedAt,
   mode,
   now,
+  onOpen,
   onFinish,
   onDiscard,
 }: {
@@ -378,25 +473,17 @@ function TimerChip({
   startedAt: number;
   mode: TimerMode;
   now: number;
+  onOpen: () => void;
   onFinish: () => void;
   onDiscard: () => void;
 }) {
   const [sound, setSound] = useState<SoundMode>(() => soundPref());
   const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
 
-  let display: string;
-  let phaseLabel = "";
-  let phaseKey = "";
-  if (mode === "pomo") {
-    const rem = elapsed % POMO_CYCLE;
-    const inFocus = rem < POMO_WORK;
-    const left = inFocus ? POMO_WORK - rem : POMO_CYCLE - rem;
-    phaseLabel = inFocus ? t("focusLabel") : t("breakLabel");
-    phaseKey = `${Math.floor(elapsed / POMO_CYCLE)}-${inFocus ? "f" : "b"}`;
-    display = `${String(Math.floor(left / 60)).padStart(2, "0")}:${String(left % 60).padStart(2, "0")}`;
-  } else {
-    display = `${String(Math.floor(elapsed / 60)).padStart(2, "0")}:${String(elapsed % 60).padStart(2, "0")}`;
-  }
+  const phase = mode === "pomo" ? pomoPhase(elapsed) : null;
+  const phaseLabel = phase ? (phase.inFocus ? t("focusLabel") : t("breakLabel")) : "";
+  const phaseKey = phase?.key ?? "";
+  const display = clockLabel(phase ? phase.left : elapsed);
 
   // 区切り(集中⇄休憩)の合図。開始直後には鳴らさない。
   const prevPhase = useRef(phaseKey);
@@ -432,11 +519,14 @@ function TimerChip({
 
   return (
     <div className="timer-chip">
-      <span className="timer-name">
-        {phaseLabel && <span className="timer-phase">{phaseLabel} </span>}
-        {item?.name ?? "—"}
-      </span>
-      <span className="timer-elapsed">{display}</span>
+      {/* 名前と時間を押すと、航海の世界へ戻る。 */}
+      <button className="timer-back" onClick={onOpen} aria-label={t("backToVoyage")}>
+        <span className="timer-name">
+          {phaseLabel && <span className="timer-phase">{phaseLabel} </span>}
+          {item?.name ?? "—"}
+        </span>
+        <span className="timer-elapsed">{display}</span>
+      </button>
       <button className="timer-sound" onClick={cycleSound}>
         {soundLabel}
       </button>
@@ -455,14 +545,12 @@ function RecordDialog({
   item,
   data,
   initialMinutes,
-  onStartTimer,
   onClose,
 }: {
   uid: string;
   item: StudyItem;
   data: UserData;
   initialMinutes?: number | null;
-  onStartTimer?: (mode: TimerMode) => void;
   onClose: () => void;
 }) {
   const [minutes, setMinutes] = useState(() => initialMinutes ?? lastUsedMinutes() ?? 30);
@@ -562,16 +650,6 @@ function RecordDialog({
         <button className="primary-button" onClick={save} disabled={working || minutes <= 0}>
           {t("record")}
         </button>
-        {onStartTimer && (
-          <>
-            <button className="timer-start-outline" onClick={() => onStartTimer("free")}>
-              {t("startTimer")}
-            </button>
-            <button className="timer-start-outline" onClick={() => onStartTimer("pomo")}>
-              {t("startPomodoro")}
-            </button>
-          </>
-        )}
       </>
     </Modal>
   );
