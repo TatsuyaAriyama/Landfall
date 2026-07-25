@@ -261,12 +261,27 @@ export default function VoyagingWorld({
                   : t("breakLabel")
                 : t("voyagingNow")}
             </p>
+            {/* 航海の「進み方」の設定。下の行動(記録する/やめる)とは別ものなので、
+                時計のそばに小さく置いて混ぜない。 */}
+            <div className="voyaging-modes">
+              <button
+                className={`voyaging-mode${mode === "pomo" ? " on" : ""}`}
+                onClick={onToggleMode}
+                aria-pressed={mode === "pomo"}
+              >
+                {t("pomodoroChip")}
+              </button>
+              <button className="voyaging-mode" onClick={cycleSound}>
+                {soundLabel}
+              </button>
+            </div>
           </div>
           <button className="voyage-world-close" onClick={onMinimize}>
             {t("close")}
           </button>
         </div>
 
+        {/* 下のパネルは「この航海をどうするか」だけ。 */}
         <div className="voyaging-panel">
           <input
             className="field"
@@ -276,30 +291,21 @@ export default function VoyagingWorld({
             maxLength={120}
             aria-label={t("noteOptional")}
           />
-          <div className="chip-row">
-            <button
-              className={`chip${mode === "pomo" ? " selected" : ""}`}
-              onClick={onToggleMode}
-            >
-              {t("pomodoroChip")}
-            </button>
-            <button className="chip" onClick={cycleSound}>
-              {soundLabel}
-            </button>
-            <button className="chip" onClick={onManual}>
-              {t("enterByHand")}
-            </button>
-          </div>
           <button
-            className="primary-button"
+            className="primary-button voyaging-record"
             onClick={() => onFinish(note)}
             disabled={saving}
           >
             {t("finishVoyage")}
           </button>
-          <button className="danger-button" onClick={onDiscard}>
-            {t("discardVoyage")}
-          </button>
+          <div className="voyaging-alt">
+            <button className="voyaging-link" onClick={onManual}>
+              {t("enterByHand")}
+            </button>
+            <button className="voyaging-link danger" onClick={onDiscard}>
+              {t("discardVoyage")}
+            </button>
+          </div>
         </div>
       </div>
     </div>

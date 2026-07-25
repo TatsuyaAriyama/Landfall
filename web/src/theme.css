@@ -2500,25 +2500,58 @@ textarea {
   -webkit-backdrop-filter: blur(10px);
 }
 
-/* 3つのチップを一行に収める。折り返すとパネルが伸びて船を隠してしまう。
-   狭い端末では横スクロールに逃がす(縦に伸ばさない)。 */
-.voyaging-panel .chip-row {
-  margin-top: 12px;
-  flex-wrap: nowrap;
+/* 航海の進み方(ポモドーロ・音)。時計の下に小さく添える控えめな切り替え。
+   下の行動ボタンとは見た目から別ものにする。 */
+.voyaging-modes {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  margin-top: 10px;
 }
 
-.voyaging-panel .chip-row::-webkit-scrollbar {
-  display: none;
+.voyaging-mode {
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--ink) 62%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  background: color-mix(in srgb, #0d2a24 55%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
-.voyaging-panel .chip {
-  flex: none;
+.voyaging-mode.on {
+  color: var(--paper);
+  background: var(--ink);
+  border-color: transparent;
+}
+
+/* 主の行動。ひとことの下に、はっきり間を空けて置く。 */
+.voyaging-record {
+  margin-top: 16px;
+}
+
+/* 副の行動(作業時間を入力する / 航海をやめる)。主と取り違えないよう文字のみ。 */
+.voyaging-alt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.voyaging-link {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
   font-size: 13px;
-  padding: 0 13px;
-  min-height: 36px;
+  color: color-mix(in srgb, var(--ink) 65%, transparent);
+}
+
+.voyaging-link.danger {
+  color: var(--coral);
 }
 
 /* 浮きピルの「航海に戻る」部分(名前と時間そのものが入口)。 */

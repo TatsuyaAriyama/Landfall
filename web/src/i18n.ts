@@ -228,8 +228,8 @@ const ja = {
 
   // 航海中(ストップウォッチの世界)
   voyagingNow: "航海中",
-  pomodoroChip: "ポモドーロ",
-  enterByHand: "手で入れる",
+  pomodoroChip: "ポモドーロ 25分+5分",
+  enterByHand: "作業時間を入力する",
   finishVoyage: "ここまでを記録する",
   discardVoyage: "航海をやめる",
   backToVoyage: "航海に戻る",
@@ -532,8 +532,8 @@ const en: Record<I18nKey, string> = {
 
   // 航海中(ストップウォッチの世界)
   voyagingNow: "Under way",
-  pomodoroChip: "Pomodoro",
-  enterByHand: "By hand",
+  pomodoroChip: "Pomodoro 25 + 5 min",
+  enterByHand: "Enter the time instead",
   finishVoyage: "Log this far",
   discardVoyage: "Abandon the voyage",
   backToVoyage: "Back to the voyage",
