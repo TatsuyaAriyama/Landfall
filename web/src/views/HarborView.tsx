@@ -851,10 +851,17 @@ function RoomDetail({
   };
 
   const copyCode = async () => {
-    await navigator.clipboard.writeText(room.id).catch(() => {});
-    setCopied(true);
-    showToast(t("copied"));
-    setTimeout(() => setCopied(false), 1600);
+    // 失敗を握りつぶして「コピーしました」と出していた。iOSは安全なコンテキスト
+    // でない場合や操作の文脈が切れた場合に失敗するので、コピーできていないのに
+    // 成功と伝えると、古いクリップボードの中身を友人に送ってしまう。
+    try {
+      await navigator.clipboard.writeText(room.id);
+      setCopied(true);
+      showToast(t("copied"));
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      showToast(t("copyFailed"));
+    }
   };
 
   // 招待をOSの共有シートで送る(対応ブラウザのみ表示)。

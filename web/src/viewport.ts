@@ -16,6 +16,13 @@ export function watchViewport(): void {
     const top = vv ? vv.offsetTop : 0;
     root.style.setProperty("--vv-h", `${Math.round(h)}px`);
     root.style.setProperty("--vv-top", `${Math.round(top)}px`);
+    // キーボードで隠れた高さ。下端に貼り付いたパネルをこのぶん持ち上げる。
+    // 目的地の世界は自前の --vv-lift を持つ(日付ピッカーのときは持ち上げない
+    // 特別扱いが要るため)。そちらはローカルの値が優先されるので干渉しない。
+    root.style.setProperty(
+      "--vv-lift",
+      `${Math.max(0, Math.round(window.innerHeight - h - top))}px`,
+    );
   };
   apply();
   if (!vv) return;

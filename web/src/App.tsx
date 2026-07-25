@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { Component, lazy, Suspense, useState } from "react";
 import { useAuthUser, useUserData } from "./data";
 import { SignInView } from "./views/SignInView";
 import { TodayView } from "./views/TodayView";
@@ -18,6 +18,25 @@ const TABS: Tab[] = ["today", "trace", "logbook", "boat", "harbor"];
 
 // three.js を含む船スタジオは重いので、タブを開いたときだけ読み込む。
 const BoatStudio = lazy(() => import("./views/BoatStudio"));
+
+/// タブ1枚ぶんの安全網。3Dの初期化に失敗しても、アプリ全体を落とさない。
+/// (WebGLはiOSが背面で捨てることがあり、装いタブは Canvas を無条件に作っていた)
+class TabErrorBoundary extends Component<
+  { children?: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? (
+      <p className="empty-note">{t("render3dFailed")}</p>
+    ) : (
+      this.props.children
+    );
+  }
+}
 
 // 不死鳥(航海士)の360度ビューア。#phoenix で直接開ける(サインイン不要)。
 const PhoenixViewer = lazy(() => import("./three/PhoenixViewer"));
@@ -104,9 +123,13 @@ function Main({ uid }: { uid: string }) {
       ) : tab === "logbook" ? (
         <LogbookView uid={uid} data={data} />
       ) : tab === "boat" ? (
-        <Suspense fallback={<p className="empty-note">{t("loading")}</p>}>
-          <BoatStudio data={data} />
-        </Suspense>
+        /* 装いは3Dが主役だが、失敗したときにアプリ全体を白紙にしてはいけない。
+           他のタブ(ホーム・港)と同じく、描画不能なら案内へ落とす。 */
+        <TabErrorBoundary>
+          <Suspense fallback={<p className="empty-note">{t("loading")}</p>}>
+            <BoatStudio data={data} />
+          </Suspense>
+        </TabErrorBoundary>
       ) : (
         <HarborView uid={uid} data={data} />
       )}
