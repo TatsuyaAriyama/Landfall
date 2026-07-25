@@ -2530,7 +2530,12 @@ textarea {
   bottom: calc(12px + env(safe-area-inset-bottom) + var(--vv-lift, 0px));
   max-width: 460px;
   margin: 0 auto;
+  /* dvh はキーボードで縮まないので、それだけだと上端(選択チップや期日欄)が
+     画面外に切れる。実際に見えている高さ(--vv-h)から余白を引いて上限にする。
+     vh を先に置き、dvh 未対応のブラウザでも宣言が丸ごと落ちないようにする。 */
+  max-height: min(48vh, 400px);
   max-height: min(48dvh, 400px);
+  max-height: min(calc(var(--vv-h, 48dvh) - 150px), 400px);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -2613,7 +2618,9 @@ textarea {
 
 .voyage-world-top {
   position: absolute;
-  top: calc(14px + env(safe-area-inset-top));
+  /* --vv-top: iOSが入力を見せるためにページごとスクロールした量。足さないと
+     島の名前と唯一の出口(閉じる)が画面の上へ消える。 */
+  top: calc(14px + env(safe-area-inset-top) + var(--vv-top, 0px));
   left: 16px;
   right: 16px;
   display: flex;
@@ -2658,7 +2665,12 @@ textarea {
   bottom: calc(12px + env(safe-area-inset-bottom) + var(--vv-lift, 0px));
   max-width: 460px;
   margin: 0 auto;
+  /* dvh はキーボードで縮まないので、それだけだと上端(選択チップや期日欄)が
+     画面外に切れる。実際に見えている高さ(--vv-h)から余白を引いて上限にする。
+     vh を先に置き、dvh 未対応のブラウザでも宣言が丸ごと落ちないようにする。 */
+  max-height: min(48vh, 400px);
   max-height: min(48dvh, 400px);
+  max-height: min(calc(var(--vv-h, 48dvh) - 150px), 400px);
   overflow-y: auto;
   /* パネルの端まで来ても背面ページへスクロールが連鎖しないように(iOS)。 */
   overscroll-behavior: contain;
@@ -3225,4 +3237,28 @@ textarea {
 
 .dest-complete::after {
   inset: -9px;
+}
+
+/* ---- backdrop-filter が使えない/切られている環境の備え ---- */
+/* パネルの地は68%しか不透明でないので、ぼかしが効かないと13pxの淡い説明文が
+   動く星空の上に乗って読めなくなる。その場合は地を濃くする。 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .voyage-world-panel,
+  .voyaging-panel,
+  .voyage-world-name,
+  .voyage-world-close,
+  .voyaging-mode {
+    background: #0d2a24;
+  }
+}
+
+/* 日付・時刻の入力。iOSは -webkit-appearance の既定が独自で、高さも
+   ネイティブ部品の実寸に引っ張られるため、Androidと見た目が揃わない。
+   見た目を .field と同じ器に正規化し、高さも揃える。 */
+.voyage-date-field,
+.voyaging-panel input[type="time"],
+.voyage-world-panel input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 48px;
 }

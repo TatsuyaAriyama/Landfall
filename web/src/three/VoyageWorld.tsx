@@ -503,6 +503,8 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
   );
   const [working, setWorking] = useState(false);
   const confirmingRef = useRef(false);
+  // 保存の二重実行を同期的に防ぐ(state では間に合わない)。
+  const savingRef = useRef(false);
 
   const trimmed = name.replace(/^[\s　]+|[\s　]+$/g, "");
   // 名前のあるステップだけを有効とみなす(空行は保存時に落とす)。
@@ -646,7 +648,12 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
 
   // ---- 保存/削除(DestinationDialogと同等) ----
   const save = async () => {
-    if (!valid || working) return;
+    // working は state なので、React が再描画するまで前の値のまま読める。
+    // 続けて2回走ると、新規作成では saveDestination が毎回新しいUUIDを作るため
+    // 目的地が2つできてしまう(1件しか持てない前提が崩れ、3Dカードと2Dカードが
+    // 並ぶ)。同期的に締められる ref で入口を1つにする。
+    if (!valid || savingRef.current) return;
+    savingRef.current = true;
     setWorking(true);
     try {
       await saveDestination(uid, {
@@ -669,6 +676,7 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
       // 「何をしても反応しない編集画面」になってしまう。理由を出して操作を返す。
       showToast(t("errGeneric"));
     } finally {
+      savingRef.current = false;
       setWorking(false);
     }
   };
@@ -723,7 +731,17 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
       const lift = picker
         ? 0
         : Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      rootRef.current?.style.setProperty("--vv-lift", `${lift}px`);
+      const root = rootRef.current;
+      if (!root) return;
+      root.style.setProperty("--vv-lift", `${lift}px`);
+      // 実際に見えている高さ。パネルの上限をこれで縛る。dvh はキーボードでは
+      // 縮まないので、48dvh のままだとキーボードを出したときにパネルの上端
+      // (「どう向かう?」や期日欄そのもの)が画面の外へはみ出して切れる。
+      root.style.setProperty("--vv-h", `${Math.round(vv.height)}px`);
+      // iOSはフォーカスした入力を見せるためにレイアウトビューポートごと
+      // スクロールする(vv.offsetTop>0)。そのぶん上端の行を下げないと、
+      // 島の名前と唯一の出口である「閉じる」が画面の上へ消える。
+      root.style.setProperty("--vv-top", `${Math.round(vv.offsetTop)}px`);
     };
     vv.addEventListener("resize", apply);
     vv.addEventListener("scroll", apply);
@@ -823,8 +841,11 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
             {kind === "date" ? (
               <>
                 <p className="quest-intro">{t("goalDateDesc")}</p>
+                {/* iOS Safari は空の日付入力に 年/月/日 もカレンダーの絵も出さない
+                    ため、何の欄か分からない箱になる。見出しを添えて明示する。 */}
+                <p className="section-label">{t("goalDate")}</p>
                 <input
-                  className="field"
+                  className="field voyage-date-field"
                   type="date"
                   value={dateStr}
                   min={dateInputValue(new Date())}
