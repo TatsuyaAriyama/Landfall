@@ -5,6 +5,7 @@ import { Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
+import { Gulls, type GullFlock } from "./Gulls";
 import { boatProps, navigatorPose } from "../boat";
 import { shortDateLabel } from "../i18n";
 
@@ -44,6 +45,20 @@ const CAM_TARGET = new THREE.Vector3(-2.2, 0.5, 0.2);
 const CAM_FOV = 42;
 // ステップの島は「そう簡単には届かない目標」なので、航路を長くとって一つ一つを
 // 遠くに置く(島の間に開けた海を残す)。iOS VoyageSceneKit と同値。
+// カードの空を旋回するカモメ。半径・高さ・大きさはこの構図(横長327x200・fov42・
+// 見下ろし)に投影して決めた: カメラのtargetの真上を回らせ、水平線(sy≈29)より下、
+// 船の航路(sy≈87〜111)より上の水面帯に収まる組み合わせ。5羽とも常に画面内で、
+// 翼幅は9〜19px(中央値12px)。カードは小さいので、ここは控えめな数に留める。
+const CARD_GULLS: GullFlock = [
+  { r: 3.0, y: 3.0, omega: 0.09, scale: 0.3, flap: 2.1, phase: 0.0 },
+  { r: 4.0, y: 3.6, omega: -0.07, scale: 0.28, flap: 1.8, phase: 1.3 },
+  { r: 3.0, y: 3.6, omega: 0.12, scale: 0.28, flap: 2.4, phase: 2.6 },
+  { r: 5.0, y: 3.0, omega: -0.055, scale: 0.32, flap: 1.6, phase: 3.9 },
+  { r: 4.0, y: 2.4, omega: 0.1, scale: 0.34, flap: 2.2, phase: 5.2 },
+];
+/// カモメが旋回する中心。カメラが見ている先(CAM_TARGET)の真上。
+const CARD_GULL_CENTER: [number, number, number] = [-2.2, 0, 0.2];
+
 export const X_START = -9.0;
 export const X_END = 4.2;
 
@@ -382,6 +397,7 @@ function VoyageSea({
       <Moon position={[1.8, 1.25, -14]} />
       <Sea moonX={1.8} animate={animate} />
       <Horizon />
+      <Gulls flock={CARD_GULLS} animate={animate} center={CARD_GULL_CENTER} />
       <Island />
       {/* ステップ目標なら、航路に目印のブイを浮かべる(達成で点灯)。 */}
       {steps && steps.length > 0 && <StepBuoys steps={steps} />}

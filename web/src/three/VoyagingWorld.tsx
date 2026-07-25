@@ -6,6 +6,7 @@ import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Sea } from "./SeaParts";
 import { Horizon, Island, Wake } from "./VoyageScene";
+import { Gulls, type GullFlock } from "./Gulls";
 import { boatProps, navigatorPose } from "../boat";
 import {
   playChime,
@@ -112,30 +113,11 @@ function PassingSwells({ animate }: { animate: boolean }) {
   );
 }
 
-// カモメ。片翼ぶんの三角形を作り、左右に生やして羽ばたかせる。
-// 低ポリ+フラットの言語に合わせて、翼は板一枚。
-const GULL_WING_GEO = (() => {
-  const g = new THREE.BufferGeometry();
-  // 付け根(0,0,0) → 翼端(1, 0.06, -0.12) → 後縁(0.34, 0, 0.24)
-  g.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute([0, 0, 0, 1, 0.06, -0.12, 0.34, 0, 0.24], 3),
-  );
-  g.computeVertexNormals();
-  return g;
-})();
-
-/// 小さなカモメたち。船の上をゆっくり旋回する(船に付いてくるカモメ)。
-///
-/// 直線に流して端で折り返す方式は使わない。縦長画面の視野は狭いので、
-/// 横切るのは一瞬で、あとは長い空白になってしまう。旋回なら常にどれかが
-/// 空にいて、360度見渡してもどこかに見つかる。
-/// 半径・高さ・速さ・向きを散らして、群れが同じ動きにならないようにする。
-/// 半径・高さ・大きさは、この構図に投影して決めた値:
-/// 空の空き帯(見出しの下〜水平線の上)に入る割合が高く、翼幅が画面上で
-/// 20〜30px程度に収まる組み合わせを選んである。半径を広げるとカメラの
-/// すぐ横を通って巨大に映るので、6.6より外へは出さない。
-const GULLS = [
+// 航海中の空を旋回するカモメ。半径・高さ・大きさは、この構図(縦長・fov38)に
+// 投影して決めた値: 空の空き帯(見出しの下〜水平線の上)に入る割合が高く、
+// 翼幅が画面上で20〜30px程度に収まる組み合わせ。1羽以上見えている時間は約89%。
+// 半径を6.6より外へ出すとカメラのすぐ横を通って巨大に映るので広げない。
+const VOYAGING_GULLS: GullFlock = [
   { r: 4.2, y: 2.3, omega: 0.085, scale: 0.15, flap: 2.1, phase: 0.0 },
   { r: 5.0, y: 2.8, omega: -0.065, scale: 0.14, flap: 1.7, phase: 0.8 },
   { r: 4.6, y: 2.0, omega: 0.11, scale: 0.16, flap: 2.5, phase: 1.6 },
@@ -147,111 +129,6 @@ const GULLS = [
   { r: 6.6, y: 2.5, omega: -0.045, scale: 0.12, flap: 1.8, phase: 6.1 },
   { r: 3.6, y: 3.3, omega: 0.125, scale: 0.18, flap: 2.6, phase: 2.0 },
 ];
-
-function Gull({ scale, flap, phase, animate }: {
-  scale: number;
-  flap: number;
-  phase: number;
-  animate: boolean;
-}) {
-  const wings = useRef<(THREE.Mesh | null)[]>([]);
-
-  // 静止時(reduced-motion)でも翼はV字で止めておく。
-  useLayoutEffect(() => {
-    const rest = -0.22;
-    if (wings.current[0]) wings.current[0].rotation.z = rest;
-    if (wings.current[1]) wings.current[1].rotation.z = -rest;
-  });
-
-  useFrame((state) => {
-    if (!animate) return;
-    // 羽ばたき。負の値で翼が上がる(左右のメッシュはx反転で対になっている)。
-    // 平均を上げ気味にして浅いV字を保つ。平たいままだと紙飛行機に見える。
-    const t = state.clock.elapsedTime * flap + phase;
-    const beat = -0.22 + Math.sin(t) * 0.34;
-    const left = wings.current[0];
-    const right = wings.current[1];
-    if (left) left.rotation.z = beat;
-    if (right) right.rotation.z = -beat;
-  });
-
-  return (
-    <group scale={scale}>
-      {[0, 1].map((i) => (
-        <mesh
-          key={i}
-          ref={(m) => {
-            wings.current[i] = m;
-          }}
-          geometry={GULL_WING_GEO}
-          scale={[i === 0 ? -1 : 1, 1, 1]}
-        >
-          <meshBasicMaterial
-            color={SAND}
-            side={THREE.DoubleSide}
-            transparent
-            opacity={0.5}
-            // 霧に沈めると夜空で見えなくなるので切る。遠さは大きさで表す。
-            fog={false}
-          />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-/// 夜空をゆっくり旋回するカモメたち。
-function Gulls({ animate }: { animate: boolean }) {
-  const birds = useRef<(THREE.Group | null)[]>([]);
-
-  const place = (node: THREE.Group, g: (typeof GULLS)[number], time: number) => {
-    const a = g.phase + time * g.omega;
-    node.position.set(
-      Math.cos(a) * g.r,
-      // ゆるやかな上下。羽ばたきとは別の周期にする。
-      g.y + Math.sin(time * 0.4 + g.phase) * 0.22,
-      Math.sin(a) * g.r,
-    );
-    // 進む向きへ機首を向ける。翼の形は -z を前として作ってある。
-    const vx = -Math.sin(a) * g.omega;
-    const vz = Math.cos(a) * g.omega;
-    node.rotation.y = Math.atan2(-vx, -vz);
-    // 旋回の内側へわずかに傾ける。
-    node.rotation.z = g.omega > 0 ? -0.18 : 0.18;
-  };
-
-  // 静止時(reduced-motion)でも、ちゃんと空にいる位置に置く。
-  useLayoutEffect(() => {
-    GULLS.forEach((g, i) => {
-      const node = birds.current[i];
-      if (node) place(node, g, 0);
-    });
-  });
-
-  useFrame((state) => {
-    if (!animate) return;
-    const time = state.clock.elapsedTime;
-    GULLS.forEach((g, i) => {
-      const node = birds.current[i];
-      if (node) place(node, g, time);
-    });
-  });
-
-  return (
-    <>
-      {GULLS.map((g, i) => (
-        <group
-          key={i}
-          ref={(node) => {
-            birds.current[i] = node;
-          }}
-        >
-          <Gull scale={g.scale} flap={g.flap} phase={g.phase} animate={animate} />
-        </group>
-      ))}
-    </>
-  );
-}
 
 /// 目的地の島。航海が続くほど、ゆっくり近づいてくる(進んでいる証)。
 /// 距離は漸近的に縮めるので、追い越して背後へ抜けてしまうことはない。
@@ -323,7 +200,7 @@ function VoyagingSea({
       <Sea moonX={MOON_POS[0]} animate={animate} />
       <Horizon />
       <PassingSwells animate={animate} />
-      <Gulls animate={animate} />
+      <Gulls flock={VOYAGING_GULLS} animate={animate} />
       {/* 目的地があるなら、その島を遠くの前方に置く。何へ向かっているかが見える。 */}
       {showIsland && <ApproachingIsland startedAt={startedAt} animate={animate} />}
       {/* 自分の船。配置は VoyageScene と同値(甲板の航海士も同じ位置・姿)。
