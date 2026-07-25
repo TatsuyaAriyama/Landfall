@@ -4,10 +4,17 @@ import { pushProfileEverywhere } from "../harbor";
 import { STYLE_COLORS, TILE_STYLES, TILE_SYMBOLS, normalizeStyle, normalizeSymbol } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { Modal, showToast } from "../overlays";
-import { t } from "../i18n";
+import { fullDateLabel, t, tf } from "../i18n";
 
 /// プレイヤーカードの編集。保存でローカルに書き、参加中の全ての港へも反映する。
-export function ProfileEditor({ onClose }: { onClose: () => void }) {
+export function ProfileEditor({
+  onClose,
+  sinceDay,
+}: {
+  onClose: () => void;
+  /// このサービスを使い始めた日。カードのプレビューを実物と揃えるために受け取る。
+  sinceDay?: Date | null;
+}) {
   const [name, setName] = useState(PlayerProfile.name);
   const [styleToken, setStyleToken] = useState(normalizeStyle(PlayerProfile.styleToken));
   const [symbolToken, setSymbolToken] = useState(normalizeSymbol(PlayerProfile.symbolToken));
@@ -39,6 +46,11 @@ export function ProfileEditor({ onClose }: { onClose: () => void }) {
           <div className="player-card-texts">
             <div className="player-card-name">{name.trim() || t("sailor")}</div>
             {resolve.trim() && <div className="player-card-resolve">{resolve}</div>}
+            {sinceDay && (
+              <div className="player-card-since">
+                {tf(t("sailingSince"), { date: fullDateLabel(sinceDay) })}
+              </div>
+            )}
           </div>
         </div>
 

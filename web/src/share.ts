@@ -78,7 +78,7 @@ export function drawCard(
     ctx.font = `400 30px ${FONT}`;
     ctx.fillText(title, PAD, PAD + 30);
     stat(ctx, 340, String(month.studiedDays.size), texts.studied, "#141414");
-    stat(ctx, 580, String(month.daysInMonth - month.studiedDays.size), texts.rested, "#141414");
+    stat(ctx, 580, String(month.restedDays), texts.rested, "#141414");
     stat(ctx, 820, "0", texts.quit, "#141414");
     if (texts.total) {
       ctx.fillStyle = "#4A1B0C";

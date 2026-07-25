@@ -57,10 +57,13 @@ import {
   chatLandfallLine,
   chatReturnLine,
   chatTimeLabel,
+  fullDateLabel,
   inviteShareLine,
   t,
+  tf,
   type I18nKey,
 } from "../i18n";
+import { serviceStartDay } from "../since";
 
 // three.js を含む「みんなの海」は重いので、プライベートの港を開いたときだけ読み込む。
 const HarborWorld = lazy(() => import("../three/HarborWorld"));
@@ -275,6 +278,8 @@ function HarborRoot({
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
   const cardStyle = STYLE_COLORS[normalizeStyle(PlayerProfile.styleToken)];
+  // このサービスを使い始めた日(since.ts)。
+  const sinceDay = serviceStartDay(data.days, data.sessions);
 
   return (
     <div>
@@ -293,6 +298,12 @@ function HarborRoot({
           <div className="player-card-name">{PlayerProfile.displayName}</div>
           {PlayerProfile.resolve && (
             <div className="player-card-resolve">{PlayerProfile.resolve}</div>
+          )}
+          {/* このサービスを初めて使った日。小さく添える。 */}
+          {sinceDay && (
+            <div className="player-card-since">
+              {tf(t("sailingSince"), { date: fullDateLabel(sinceDay) })}
+            </div>
           )}
         </div>
         <span className="player-card-edit">{t("edit")}</span>
@@ -369,7 +380,9 @@ function HarborRoot({
           }}
         />
       )}
-      {editingProfile && <ProfileEditor onClose={onCloseProfile} />}
+      {editingProfile && (
+        <ProfileEditor onClose={onCloseProfile} sinceDay={sinceDay} />
+      )}
     </div>
   );
 }
@@ -645,7 +658,12 @@ function PublicDetail({
         </div>
       )}
 
-      {editingProfile && <ProfileEditor onClose={() => setEditingProfile(false)} />}
+      {editingProfile && (
+        <ProfileEditor
+          onClose={() => setEditingProfile(false)}
+          sinceDay={serviceStartDay(data.days, data.sessions)}
+        />
+      )}
     </div>
   );
 }

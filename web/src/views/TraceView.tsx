@@ -5,6 +5,7 @@ import { deleteSession, setDayNote } from "../data";
 import { SessionRow } from "./TodayView";
 import { askConfirm } from "../overlays";
 import { durationLabel, lang, noteCountLabel, t } from "../i18n";
+import { serviceStartDay } from "../since";
 
 // 軌跡: 月カレンダー。学んだ日(sunYellow)と休んだ日(seaGreen)を同格に描く。
 // やめた回数はいつも0。
@@ -146,12 +147,33 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
 
   const weeks = useMemo(() => buildWeeks(monthStart), [monthStart]);
 
+  // 使い始めた日。これより前は「まだ使っていなかった日」で、休んだ日ではない。
+  const startDay = useMemo(
+    () => serviceStartDay(data.days, data.sessions),
+    [data.days, data.sessions],
+  );
+  const startMs = startDay ? startDay.getTime() : null;
+
   // 表示月の統計(当月なら今日まで)。合計時間もその月の今日までの記録に揃える
   // (未来日付の記録=時計ずれ等が合計にだけ紛れ込まないように、日数と同じ境界)。
   const stats = useMemo(() => {
     let studied = 0;
     let rested = 0;
     const cursor = new Date(monthStart);
+    // 使い始めた日より前からは数え始めない(初めて来た人がその月のはじめから
+    // 休んでいたことにならないように)。
+    if (startMs !== null && cursor.getTime() < startMs) {
+      const start = new Date(startMs);
+      if (
+        start.getFullYear() === monthStart.getFullYear() &&
+        start.getMonth() === monthStart.getMonth()
+      ) {
+        cursor.setDate(start.getDate());
+      } else {
+        // 使い始めた月より前の月は、数える日が一日も無い。
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    }
     while (cursor.getMonth() === monthStart.getMonth() && cursor.getTime() <= todayMs) {
       if (dayById.has(dayId(cursor))) studied++;
       else rested++;
@@ -167,7 +189,7 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
       0,
     );
     return { studied, rested, minutes };
-  }, [monthStart, dayById, todayMs, data.sessions]);
+  }, [monthStart, dayById, todayMs, startMs, data.sessions]);
 
   const selectedSessions = data.sessions
     .filter((s) => dayId(s.date) === dayId(selected))
@@ -241,9 +263,12 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
           const id = dayId(date);
           const isFuture = date > today;
           const studied = dayById.has(id);
+          // まだ使っていなかった日。休んだ日と同じ色にはしない。
+          const beforeStart = startMs !== null && date.getTime() < startMs;
           const classes = ["day-cell"];
           if (isFuture) classes.push("future");
           else if (studied) classes.push("studied");
+          else if (beforeStart) classes.push("before-start");
           else classes.push("rested");
           if (id === dayId(today)) classes.push("today");
           if (id === dayId(selected)) classes.push("selected");

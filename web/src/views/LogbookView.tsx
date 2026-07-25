@@ -12,6 +12,7 @@ import { drawCard, saveCanvas, type CardKind } from "../share";
 import { lang, t, yearChartTitle, type I18nKey } from "../i18n";
 import { deleteDestination } from "../destinations";
 import { askConfirm } from "../overlays";
+import { serviceStartDay } from "../since";
 
 // 航海誌。月末に生まれる、その月のまとめカード(iOS の Wrapped と同じ内容)。
 // カードは絵はがき(iOS: 390x693、固定デザインのため常にライトの配色で描く)。
@@ -60,7 +61,9 @@ function MonthCards({ data }: { data: UserData }) {
   }
 
   const ym = months[Math.min(selected, months.length - 1)];
-  const month = wrappedMonth(ym.year, ym.month, data.days, data.sessions);
+  // 休んだ日は「使い始めた日から」数える(それより前はまだ使っていない日)。
+  const startDay = serviceStartDay(data.days, data.sessions);
+  const month = wrappedMonth(ym.year, ym.month, data.days, data.sessions, startDay);
   const monthTitle = (y: number, m: number) =>
     new Intl.DateTimeFormat(lang, { year: "numeric", month: "long" }).format(
       new Date(y, m - 1, 1),
@@ -313,7 +316,7 @@ function DaysCard({ month, title }: { month: WrappedMonth; title: string }) {
           <span className="wrapped-label">{t("studiedDays")}</span>
         </div>
         <div className="wrapped-stat">
-          <span className="wrapped-number">{month.daysInMonth - month.studiedDays.size}</span>
+          <span className="wrapped-number">{month.restedDays}</span>
           <span className="wrapped-label">{t("restedDays")}</span>
         </div>
         <div className="wrapped-stat">

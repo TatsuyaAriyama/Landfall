@@ -68,6 +68,7 @@ const ja = {
   resolve: "決意",
   resolvePlaceholder: "決意を入力しよう",
   saveCard: "このカードで保存",
+  sailingSince: "{date}から航海中",
 
   // 港
   publicSection: "パブリック",
@@ -375,6 +376,7 @@ const en: Record<I18nKey, string> = {
   resolve: "Resolve",
   resolvePlaceholder: "Write your resolve",
   saveCard: "Save this card",
+  sailingSince: "Sailing since {date}",
 
   publicSection: "Public",
   privateSection: "Private",
@@ -687,6 +689,16 @@ export function chatDateLabel(date: Date, now: Date = new Date()): string {
 export function shortDateLabel(date: Date): string {
   return new Intl.DateTimeFormat(lang, { month: lang === "ja" ? "long" : "short", day: "numeric" })
     .format(date);
+}
+
+/// 年まで入れた日付。「2026年7月25日」/ "Jul 25, 2026"。
+/// いつから使っているかのように、年が要る場面で使う。
+export function fullDateLabel(date: Date): string {
+  return new Intl.DateTimeFormat(lang, {
+    year: "numeric",
+    month: lang === "ja" ? "long" : "short",
+    day: "numeric",
+  }).format(date);
 }
 
 /// 時間量の表示。「1時間15分」「45分」「2時間」/ "1h 15m"。0分は「0分」。

@@ -472,6 +472,12 @@ textarea {
   color: color-mix(in srgb, var(--ink) 30%, transparent);
 }
 
+/* まだこのサービスを使っていなかった日。休んだ日(sunYellow)とは区別して、
+   これから来る日と同じ静けさにする。 */
+.day-cell.before-start {
+  color: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
 .day-cell.today {
   border-color: var(--return-orange);
 }
@@ -706,6 +712,14 @@ textarea {
   font-size: 14px;
   opacity: 0.8;
   margin-top: 4px;
+}
+
+/* このサービスを初めて使った日。決意より小さく、控えめに。 */
+.player-card-since {
+  font-size: 12px;
+  opacity: 0.6;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
 }
 
 .player-card-edit {

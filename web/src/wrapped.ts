@@ -14,6 +14,11 @@ export interface WrappedMonth {
   year: number;
   month: number; // 1-based
   daysInMonth: number;
+  /// 数えた日数。使い始めた日より前の日は含めない。
+  countedDays: number;
+  /// 休んだ日。countedDays から学んだ日を引いたもの。使い始める前の日は
+  /// 「休んだ」ではないので、daysInMonth から引いてはいけない。
+  restedDays: number;
   studiedDays: Set<number>;
   archetype: Archetype;
   totalMinutes: number;
@@ -26,6 +31,22 @@ export interface WrappedMonth {
 
 function daysInMonth(year: number, month: number): number {
   return new Date(year, month, 0).getDate();
+}
+
+/// その月のうち「数えてよい」日数。使い始めた日より前は、まだこのサービスを
+/// 使っていなかった日なので休んだ日に数えない。startDay 未指定なら全日。
+function countedDaysInMonth(
+  year: number,
+  month: number,
+  dayCount: number,
+  startDay?: Date | null,
+): number {
+  if (!startDay) return dayCount;
+  const sy = startDay.getFullYear();
+  const sm = startDay.getMonth() + 1;
+  if (sy > year || (sy === year && sm > month)) return 0; // 使い始める前の月
+  if (sy < year || sm < month) return dayCount; // 使い始めたあとの月
+  return dayCount - startDay.getDate() + 1; // 使い始めた当月
 }
 
 export function studiedDaySet(year: number, month: number, entries: StudyDay[]): Set<number> {
@@ -118,9 +139,12 @@ export function wrappedMonth(
   month: number,
   entries: StudyDay[],
   sessions: StudySession[],
+  /// このサービスを使い始めた日。休んだ日を数える起点(since.ts)。
+  startDay?: Date | null,
 ): WrappedMonth {
   const studied = studiedDaySet(year, month, entries);
   const dayCount = daysInMonth(year, month);
+  const countedDays = countedDaysInMonth(year, month, dayCount, startDay);
   const gaps = computeGaps(studied);
   const significantGaps = gaps.filter((g) => g.length >= 2);
   const last = studied.size > 0 ? Math.max(...studied) : 0;
@@ -137,6 +161,8 @@ export function wrappedMonth(
     year,
     month,
     daysInMonth: dayCount,
+    countedDays,
+    restedDays: Math.max(0, countedDays - studied.size),
     studiedDays: studied,
     archetype: diagnose(year, month, studied),
     totalMinutes,
