@@ -622,16 +622,16 @@ export default function PhoenixModel({
         </group>
 
         {/* 左腕: 肩マントの裾の下から出る袖。手首でフレアし、手を添えて休める */}
-        <group ref={armL} position={[-0.14, 0.8, 0.01]} rotation={[0, 0, -0.14]}>
+        <group ref={armL} position={[-0.163, 0.8, 0.035]} rotation={[0, 0, -0.14]}>
           <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.1, 0]} />
-          <mesh geometry={SLEEVE_CUFF_GEO} material={CORAL_MAT} position={[0, -0.22, 0]} />
+          <mesh geometry={SLEEVE_CUFF_GEO} material={RUST_MAT} position={[0, -0.22, 0]} />
           <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
         </group>
 
         {/* 右腕+ランタン: 「今日の灯」を提げる */}
-        <group ref={armR} position={[0.14, 0.8, 0.01]} rotation={[0, 0, 0.14]}>
+        <group ref={armR} position={[0.163, 0.8, 0.035]} rotation={[0, 0, 0.14]}>
           <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.1, 0]} />
-          <mesh geometry={SLEEVE_CUFF_GEO} material={CORAL_MAT} position={[0, -0.22, 0]} />
+          <mesh geometry={SLEEVE_CUFF_GEO} material={RUST_MAT} position={[0, -0.22, 0]} />
           <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
           <group ref={lantern} position={[0, -0.33, 0]}>
             <mesh geometry={LANTERN_HANDLE_GEO} material={RUST_MAT} position={[0, -0.03, 0]} />
