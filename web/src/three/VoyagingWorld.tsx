@@ -4,7 +4,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
-import { Moon, NIGHT_BG, PassingSwells, Sea } from "./SeaParts";
+import { Moon, PassingSwells, Sea, Sun } from "./SeaParts";
 import { Horizon, Island, Wake } from "./VoyageScene";
 import { Gulls, type GullFlock } from "./Gulls";
 import PassingShip from "./PassingShip";
@@ -21,12 +21,13 @@ import {
 import { clockLabel, elapsedSec, isOnBreak, pomoPhase, type RunningTimer } from "../timer";
 import { t } from "../i18n";
 import { useBackToClose } from "../backClose";
+import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 
-// 作業中の世界。自分の船が夜の海を走り、その上に経過時間が出る。
+// 作業中の世界。自分の船が現在の時間帯の海を走り、その上に経過時間が出る。
 // 「分数を入力する」のではなく、この航海そのものが記録になる。
 //
 // 構図・素材は目的地の航海シーン(VoyageScene)と同じ言語に揃える
-// (低ポリ+flatShading、夜の海、星、月、波紋、甲板の航海士)。違いは
+// (低ポリ+flatShading、時間に沿う空と海、天体、波紋、甲板の航海士)。違いは
 // 島へ近づくのではなく、いま進んでいる最中を見せること。
 
 // 船は原点に置いたまま、海と波を後ろへ流して前進を感じさせる。
@@ -45,6 +46,12 @@ const VIEW_YAW = Math.atan2(-(CAM_TARGET.x - CAM_POS[0]), -(CAM_TARGET.z - CAM_P
 // 月と目的地の島の位置。縦長画面での見え方を実機で合わせた値。
 const MOON_POS: [number, number, number] = [5.1, 3.3, -5.5];
 const ISLAND_POS: [number, number, number] = [6.5, 0, -5.5];
+const VOYAGING_LIGHT_POS: Record<TimeOfDay, [number, number, number]> = {
+  morning: [-5.2, 1.7, -5.5],
+  day: [0.8, 5.1, -5.5],
+  evening: [5.4, 1.25, -5.5],
+  night: MOON_POS,
+};
 
 /// 休憩中の流れの速さ(通常=1)。錨を下ろしたら止まりきらずに漂う程度まで落ちる。
 const RESTING_FLOW = 0.12;
@@ -103,13 +110,17 @@ function VoyagingSea({
   showIsland,
   timer,
   resting,
+  timeOfDay,
 }: {
   animate: boolean;
   showIsland: boolean;
   timer: RunningTimer;
   resting: boolean;
+  timeOfDay: TimeOfDay;
 }) {
   const parts = useMemo(() => boatProps(), []);
+  const light = SEA_LIGHT[timeOfDay];
+  const lightPosition = VOYAGING_LIGHT_POS[timeOfDay];
   // 甲板の航海士。待機を基本にときどき辺りを見渡し、休憩中は腰を下ろす
   // (立ち座りだけは PhoenixModel がゆっくり補間する)。
   const pose = useNavigatorPose(animate, resting ? "sit" : null);
@@ -119,30 +130,46 @@ function VoyagingSea({
 
   return (
     <>
-      <color attach="background" args={[NIGHT_BG]} />
-      <fog attach="fog" args={[NIGHT_BG, 12, 34]} />
-      <ambientLight color="#ffe9c8" intensity={0.45} />
-      <directionalLight color="#EADEBD" intensity={1.15} position={[-6, 8, -5]} />
-      <directionalLight color="#5DCAA5" intensity={0.2} position={[5, 3, 6]} />
-      <Stars
-        radius={42}
-        depth={18}
-        count={380}
-        factor={2.0}
-        saturation={0}
-        fade
-        speed={animate ? 0.5 : 0}
+      <color attach="background" args={[light.sky]} />
+      <fog attach="fog" args={[light.fog, 12, 34]} />
+      <ambientLight color={light.ambient} intensity={timeOfDay === "day" ? 0.85 : 0.48} />
+      <directionalLight
+        color={light.keyLight}
+        intensity={timeOfDay === "day" ? 1.45 : 1.08}
+        position={[-6, 8, -5]}
       />
-      {/* 月。縦長の画面は左右の視野が狭いので、置く場所と大きさを分けて決める:
-          位置はgroupで、見かけの大きさはscaleで(近くに置くと巨大になり時計に被る)。 */}
-      <group position={MOON_POS} scale={0.4}>
-        <Moon position={[0, 0, 0]} />
+      <directionalLight color={light.fillLight} intensity={0.24} position={[5, 3, 6]} />
+      {light.stars > 0 && (
+        <Stars
+          radius={42}
+          depth={18}
+          count={light.stars}
+          factor={2.0}
+          saturation={0}
+          fade
+          speed={animate ? 0.5 : 0}
+        />
+      )}
+      {/* 天体。縦長画面では位置と見かけの大きさを分けて調整する。 */}
+      <group position={lightPosition} scale={light.celestial === "moon" ? 0.4 : 0.72}>
+        {light.celestial === "moon" ? (
+          <Moon position={[0, 0, 0]} />
+        ) : (
+          <Sun position={[0, 0, 0]} color={light.reflection} />
+        )}
       </group>
-      {/* 水面の月光の筋は月の真下に立てる。 */}
-      <Sea moonX={MOON_POS[0]} animate={animate} />
+      {/* 水面の反射は、その時間の太陽/月の真下に立てる。 */}
+      <Sea
+        moonX={lightPosition[0]}
+        animate={animate}
+        seaColor={light.sea}
+        deepColor={light.seaDeep}
+        lightColor={light.reflection}
+        reflection={timeOfDay === "day" ? 0.34 : 0.5}
+      />
       <Horizon />
       <PassingSwells animate={animate} flow={resting ? RESTING_FLOW : 1} />
-      <Gulls flock={VOYAGING_GULLS} animate={animate} />
+      {timeOfDay !== "night" && <Gulls flock={VOYAGING_GULLS} animate={animate} />}
       {/* 数分に一度、水平線の手前を他人の船の灯が渡っていく。
           既定の視線を横切る向きに置く(VIEW_YAW)。 */}
       <group rotation={[0, VIEW_YAW, 0]}>
@@ -211,6 +238,7 @@ export default function VoyagingWorld({
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
+  const timeOfDay = useTimeOfDay();
   const [note, setNote] = useState("");
   const [sound, setSound] = useState<SoundMode>(() => soundPref());
   const [now, setNow] = useState(() => Date.now());
@@ -279,7 +307,8 @@ export default function VoyagingWorld({
 
   return (
     <div
-      className="voyaging-world"
+      className={`voyaging-world time-${timeOfDay}`}
+      data-time-of-day={timeOfDay}
       role="dialog"
       aria-modal="true"
       // 世界を「タップ」したらUIを消して世界だけにする(もう一度で戻る)。
@@ -312,6 +341,7 @@ export default function VoyagingWorld({
           showIsland={hasDestination}
           timer={timer}
           resting={resting}
+          timeOfDay={timeOfDay}
         />
       </Canvas>
 
