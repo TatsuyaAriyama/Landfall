@@ -308,18 +308,11 @@ struct TodayView: View {
     /// 記録の1行(Web SessionRow): 小アイコン・項目名・時刻&ひとこと・分・削除。
     private func logRow(_ session: StudySession) -> some View {
         HStack(spacing: 14) {
-            Group {
-                if let item = session.item {
-                    ItemTileArt(item: item)
-                } else {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(LFColor.ink.opacity(0.1))
-                }
-            }
-            .frame(width: 34, height: 34)
+            SessionTileArt(session: session)
+                .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(session.item?.name ?? "—")
+                Text(session.displayItemName ?? "—")
                     .font(LFFont.copy(16))
                     .foregroundStyle(LFColor.ink)
                     .lineLimit(1)

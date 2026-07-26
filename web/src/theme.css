@@ -1724,6 +1724,16 @@ textarea {
   font-size: 14px;
 }
 
+.voyage-journal-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.voyage-journal-delete {
+  color: var(--coral);
+}
+
 .voyage-journal-recent-label {
   margin-top: 32px;
 }
@@ -1731,6 +1741,16 @@ textarea {
 .voyage-journal-entries {
   display: flex;
   flex-direction: column;
+}
+
+.voyage-journal-years {
+  margin: -2px 0 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.voyage-journal-years::-webkit-scrollbar {
+  display: none;
 }
 
 .voyage-journal-entry {
@@ -1741,6 +1761,8 @@ textarea {
   padding: 15px 0;
   text-align: left;
   border-top: 1px solid color-mix(in srgb, var(--ink) 11%, transparent);
+  content-visibility: auto;
+  contain-intrinsic-size: 64px;
 }
 
 .voyage-journal-entry time {

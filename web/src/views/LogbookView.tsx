@@ -55,12 +55,23 @@ function formatMinutes(total: number): string {
 
 function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
   const [selectedId, setSelectedId] = useState(() => dayId(new Date()));
+  const [archiveYear, setArchiveYear] = useState(() => new Date().getFullYear());
   const selectedDate = dateFromId(selectedId);
   const entry = data.voyageLogs.find((log) => log.id === selectedId);
   const [draft, setDraft] = useState(entry?.body ?? "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
+
+  const archiveYears = useMemo(() => {
+    const years = new Set(data.voyageLogs.map((log) => log.date.getFullYear()));
+    years.add(selectedDate.getFullYear());
+    return [...years].sort((a, b) => b - a);
+  }, [data.voyageLogs, selectedDate]);
+  const archiveLogs = useMemo(
+    () => data.voyageLogs.filter((log) => log.date.getFullYear() === archiveYear),
+    [archiveYear, data.voyageLogs],
+  );
 
   useEffect(() => {
     setDraft(entry?.body ?? "");
@@ -73,7 +84,11 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
   const itemNames = [
     ...new Set(
       sessions
-        .map((session) => data.items.find((item) => item.id === session.itemUUID)?.name)
+        .map(
+          (session) =>
+            data.items.find((item) => item.id === session.itemUUID)?.name ??
+            session.itemName,
+        )
         .filter((name): name is string => Boolean(name)),
     ),
   ];
@@ -98,6 +113,35 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
     }
   };
 
+  const selectDate = (id: string) => {
+    setSelectedId(id);
+    setArchiveYear(dateFromId(id).getFullYear());
+  };
+
+  const remove = async () => {
+    if (!entry || saving) return;
+    if (
+      !(await askConfirm({
+        title: t("deleteVoyageJournalConfirm"),
+        confirmLabel: t("delete"),
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+    setSaving(true);
+    setSaveFailed(false);
+    try {
+      await saveVoyageLog(uid, selectedDate, "");
+      setDraft("");
+      setSaved(true);
+    } catch {
+      setSaveFailed(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <section className="voyage-journal">
       <header className="voyage-journal-heading">
@@ -111,7 +155,7 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
           type="date"
           value={selectedId}
           max={dayId(new Date())}
-          onChange={(event) => setSelectedId(event.target.value)}
+          onChange={(event) => selectDate(event.target.value)}
           aria-label={t("voyageJournal")}
         />
       </header>
@@ -141,36 +185,66 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
               ? t("voyageJournalSaved")
               : `${draft.length} / 260`}
         </span>
-        <button
-          className="primary-button"
-          disabled={saving || !draft.trim()}
-          onClick={() => void save()}
-        >
-          {t("voyageJournalSave")}
-        </button>
+        <div className="voyage-journal-action-buttons">
+          {entry && (
+            <button
+              className="chip voyage-journal-delete"
+              disabled={saving}
+              onClick={() => void remove()}
+            >
+              {t("delete")}
+            </button>
+          )}
+          <button
+            className="primary-button"
+            disabled={saving || (!draft.trim() && !entry)}
+            onClick={() => void save()}
+          >
+            {t("voyageJournalSave")}
+          </button>
+        </div>
       </div>
 
       <p className="section-label voyage-journal-recent-label">{t("voyageJournalRecent")}</p>
       {data.voyageLogs.length === 0 ? (
         <p className="empty-note">{t("voyageJournalEmpty")}</p>
       ) : (
-        <div className="voyage-journal-entries">
-          {data.voyageLogs.slice(0, 30).map((log) => (
-            <button
-              key={log.id}
-              className={`voyage-journal-entry${log.id === selectedId ? " selected" : ""}`}
-              onClick={() => setSelectedId(log.id)}
-            >
-              <time>
-                {new Intl.DateTimeFormat(lang, {
-                  month: "short",
-                  day: "numeric",
-                }).format(log.date)}
-              </time>
-              <span>{log.body}</span>
-            </button>
-          ))}
-        </div>
+        <>
+          {archiveYears.length > 1 && (
+            <div className="chip-row voyage-journal-years" aria-label={t("voyageJournalRecent")}>
+              {archiveYears.map((year) => (
+                <button
+                  key={year}
+                  className={`chip${archiveYear === year ? " selected" : ""}`}
+                  onClick={() => setArchiveYear(year)}
+                >
+                  {year}
+                </button>
+              ))}
+            </div>
+          )}
+          {archiveLogs.length === 0 ? (
+            <p className="empty-note">{t("voyageJournalEmptyYear")}</p>
+          ) : (
+            <div className="voyage-journal-entries">
+              {archiveLogs.map((log) => (
+                <button
+                  key={log.id}
+                  className={`voyage-journal-entry${log.id === selectedId ? " selected" : ""}`}
+                  onClick={() => selectDate(log.id)}
+                >
+                  <time>
+                    {new Intl.DateTimeFormat(lang, {
+                      month: "short",
+                      day: "numeric",
+                    }).format(log.date)}
+                  </time>
+                  <span>{log.body}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </section>
   );

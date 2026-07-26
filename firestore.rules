@@ -18,9 +18,169 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ---- 私的バックアップ: 本人のみ ----
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // ---- 私的バックアップ: 本人のみ + コレクションごとのスキーマ検証 ----
+    // 認証だけの再帰ワイルドカードは、本人なら巨大文字列・未知フィールド・不正型も
+    // 保存できてしまう。読み取り権限は本人に保ちつつ、書き込みは既知の契約だけを通す。
+    match /users/{userId} {
+      function isOwner() {
+        return request.auth != null && request.auth.uid == userId;
+      }
+
+      function validUUID(value) {
+        return value is string
+          && value.matches('^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$');
+      }
+
+      function validDayID(value) {
+        return value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+      }
+
+      function validItem() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['name', 'styleToken', 'symbolToken', 'sortOrder', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['name', 'styleToken', 'symbolToken', 'sortOrder', 'createdAt', 'updatedAt'])
+          && data.name is string && data.name.size() >= 1 && data.name.size() <= 60
+          && data.styleToken in ['midnight', 'coral', 'ink', 'seaGreen', 'violet', 'sunYellow']
+          && data.symbolToken in ['anchor', 'compass', 'wheel', 'lighthouse', 'island', 'phoenix', 'book', 'pen', 'sailboat', 'attire']
+          && data.sortOrder is int
+          && data.sortOrder >= -100000 && data.sortOrder <= 100000
+          && data.createdAt is timestamp
+          && data.updatedAt is timestamp;
+      }
+
+      function validSession() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['date', 'minutes', 'updatedAt'])
+          && data.keys().hasOnly(['date', 'minutes', 'note', 'itemUUID', 'itemName', 'itemStyle', 'itemSymbol', 'updatedAt'])
+          && data.date is timestamp
+          && data.minutes is int && data.minutes >= 0 && data.minutes <= 6000
+          && (!('note' in data) || (data.note is string && data.note.size() <= 120))
+          && (!('itemUUID' in data) || validUUID(data.itemUUID))
+          && (!('itemName' in data) || (data.itemName is string && data.itemName.size() >= 1 && data.itemName.size() <= 60))
+          && (!('itemStyle' in data) || (data.itemStyle is string && data.itemStyle.size() <= 24))
+          && (!('itemSymbol' in data) || (data.itemSymbol is string && data.itemSymbol.size() <= 24))
+          && data.updatedAt is timestamp;
+      }
+
+      function validDay() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['date', 'updatedAt'])
+          && data.keys().hasOnly(['date', 'note', 'updatedAt'])
+          && data.date is timestamp
+          && (!('note' in data) || (data.note is string && data.note.size() <= 120))
+          && data.updatedAt is timestamp;
+      }
+
+      function validVoyageLog() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['date', 'body', 'updatedAt'])
+          && data.keys().hasOnly(['date', 'body', 'updatedAt'])
+          && data.date is timestamp
+          && data.body is string && data.body.size() >= 1 && data.body.size() <= 260
+          && data.updatedAt is timestamp;
+      }
+
+      function validDestinationStep(step) {
+        return step is map
+          && step.keys().hasAll(['id', 'name'])
+          && step.keys().hasOnly(['id', 'name', 'scheduledAt', 'doneAt'])
+          && validUUID(step.id)
+          && step.name is string && step.name.size() >= 1 && step.name.size() <= 60
+          && (!('scheduledAt' in step) || step.scheduledAt is timestamp)
+          && (!('doneAt' in step) || step.doneAt is timestamp);
+      }
+
+      // Firestore Rules には list の汎用ループがないため、上限20件を個別に検証する。
+      // 件数だけでなく各要素の型・キー・文字数も固定し、steps 内へ巨大な自由データを
+      // 入れられないようにする。
+      function validDestinationSteps(steps) {
+        return steps is list && steps.size() >= 1 && steps.size() <= 20
+          && (steps.size() < 1 || validDestinationStep(steps[0]))
+          && (steps.size() < 2 || validDestinationStep(steps[1]))
+          && (steps.size() < 3 || validDestinationStep(steps[2]))
+          && (steps.size() < 4 || validDestinationStep(steps[3]))
+          && (steps.size() < 5 || validDestinationStep(steps[4]))
+          && (steps.size() < 6 || validDestinationStep(steps[5]))
+          && (steps.size() < 7 || validDestinationStep(steps[6]))
+          && (steps.size() < 8 || validDestinationStep(steps[7]))
+          && (steps.size() < 9 || validDestinationStep(steps[8]))
+          && (steps.size() < 10 || validDestinationStep(steps[9]))
+          && (steps.size() < 11 || validDestinationStep(steps[10]))
+          && (steps.size() < 12 || validDestinationStep(steps[11]))
+          && (steps.size() < 13 || validDestinationStep(steps[12]))
+          && (steps.size() < 14 || validDestinationStep(steps[13]))
+          && (steps.size() < 15 || validDestinationStep(steps[14]))
+          && (steps.size() < 16 || validDestinationStep(steps[15]))
+          && (steps.size() < 17 || validDestinationStep(steps[16]))
+          && (steps.size() < 18 || validDestinationStep(steps[17]))
+          && (steps.size() < 19 || validDestinationStep(steps[18]))
+          && (steps.size() < 20 || validDestinationStep(steps[19]));
+      }
+
+      function validDestination() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['name', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly([
+            'name', 'itemUUID', 'targetMinutes', 'targetDate', 'targetHasTime',
+            'manual', 'manualDone', 'steps', 'createdAt', 'achievedAt', 'updatedAt'
+          ])
+          && data.name is string && data.name.size() >= 1 && data.name.size() <= 60
+          && (!('itemUUID' in data) || validUUID(data.itemUUID))
+          && (!('targetMinutes' in data) || (data.targetMinutes is int && data.targetMinutes >= 1 && data.targetMinutes <= 600000))
+          && (!('targetDate' in data) || data.targetDate is timestamp)
+          && (!('targetHasTime' in data) || data.targetHasTime is bool)
+          && (!('manual' in data) || data.manual is bool)
+          && (!('manualDone' in data) || data.manualDone is bool)
+          && (!('steps' in data) || validDestinationSteps(data.steps))
+          && data.createdAt is timestamp
+          && (!('achievedAt' in data) || data.achievedAt is timestamp)
+          && data.updatedAt is timestamp;
+      }
+
+      match /items/{itemId} {
+        allow read: if isOwner();
+        allow create, update: if isOwner() && validUUID(itemId) && validItem();
+        allow delete: if isOwner();
+      }
+
+      match /sessions/{sessionId} {
+        allow read: if isOwner();
+        allow create, update: if isOwner() && validUUID(sessionId) && validSession();
+        allow delete: if isOwner();
+      }
+
+      match /days/{dayId} {
+        allow read: if isOwner();
+        allow create, update: if isOwner() && validDayID(dayId) && validDay();
+        allow delete: if isOwner();
+      }
+
+      match /voyageLogs/{dayId} {
+        allow read: if isOwner();
+        allow create, update: if isOwner() && validDayID(dayId) && validVoyageLog();
+        allow delete: if isOwner();
+      }
+
+      match /destinations/{destinationId} {
+        allow read: if isOwner();
+        allow create, update: if isOwner() && validUUID(destinationId) && validDestination();
+        allow delete: if isOwner();
+      }
+
+      match /blocks/{blockedUserId} {
+        allow read: if isOwner();
+        allow create, update: if isOwner()
+          && blockedUserId.size() >= 1 && blockedUserId.size() <= 128
+          && request.resource.data.keys().hasAll(['createdAt'])
+          && request.resource.data.keys().hasOnly(['createdAt'])
+          && request.resource.data.createdAt is timestamp;
+        allow delete: if isOwner();
+      }
+
+      // 新しい個人コレクションは、ルールとスキーマを同時に追加するまで閉じる。
+      match /{document=**} {
+        allow read, write: if false;
+      }
     }
 
     // ---- 港(ルーム) ----
@@ -101,6 +261,7 @@ service cloud.firestore {
           && request.resource.data.symbolToken.size() <= 24
           && request.resource.data.resolve is string
           && request.resource.data.resolve.size() <= 80
+          && request.resource.data.joinedAt is timestamp
           && ( !('boatSail' in request.resource.data)
             || (request.resource.data.boatSail is string && request.resource.data.boatSail.size() <= 24) )
           && ( !('boatJib' in request.resource.data)
@@ -131,7 +292,9 @@ service cloud.firestore {
             && request.resource.data.days is list
             && request.resource.data.days.size() <= 31
             && request.resource.data.sessions is list
-            && request.resource.data.sessions.size() <= 1000;
+            && request.resource.data.sessions.size() <= 1000
+            && request.resource.data.updatedAt is timestamp
+            && monthId.matches('^[0-9]{4}-[0-9]{2}$');
 
           allow delete: if request.auth != null && request.auth.uid == memberId;
         }
@@ -206,6 +369,7 @@ service cloud.firestore {
           && request.resource.data.kind in ['text', 'landfall', 'return']
           && request.resource.data.reactions is map
           && request.resource.data.reactions.size() == 0
+          && request.resource.data.createdAt is timestamp
           && (
             ( request.resource.data.kind == 'text'
               && request.resource.data.keys().hasOnly(['uid', 'kind', 'text', 'createdAt', 'reactions'])
@@ -217,8 +381,15 @@ service cloud.firestore {
               && request.resource.data.keys().hasOnly(['uid', 'kind', 'itemName', 'itemStyle', 'itemSymbol', 'minutes', 'gapDays', 'createdAt', 'reactions'])
               && request.resource.data.itemName is string
               && request.resource.data.itemName.size() <= 60
+              && request.resource.data.itemStyle is string
+              && request.resource.data.itemStyle.size() <= 24
+              && request.resource.data.itemSymbol is string
+              && request.resource.data.itemSymbol.size() <= 24
               && request.resource.data.minutes is int
-              && request.resource.data.minutes <= 6000 )
+              && request.resource.data.minutes >= 0
+              && request.resource.data.minutes <= 6000
+              && request.resource.data.gapDays is int
+              && request.resource.data.gapDays >= 0 )
           );
 
         // 更新はリアクションのみ。自分の枠(reactions[自分のuid])だけを、許可された印で。
@@ -260,6 +431,7 @@ service cloud.firestore {
           && request.resource.data.symbolToken.size() <= 24
           && request.resource.data.resolve is string
           && request.resource.data.resolve.size() <= 80
+          && request.resource.data.joinedAt is timestamp
           && ( !('boatSail' in request.resource.data)
             || (request.resource.data.boatSail is string && request.resource.data.boatSail.size() <= 24) )
           && ( !('boatJib' in request.resource.data)
@@ -290,7 +462,9 @@ service cloud.firestore {
             && request.resource.data.days is list
             && request.resource.data.days.size() <= 31
             && request.resource.data.sessions is list
-            && request.resource.data.sessions.size() <= 1000;
+            && request.resource.data.sessions.size() <= 1000
+            && request.resource.data.updatedAt is timestamp
+            && monthId.matches('^[0-9]{4}-[0-9]{2}$');
 
           allow delete: if request.auth != null && request.auth.uid == memberId;
         }
@@ -302,8 +476,17 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.reporterUid == request.auth.uid
         && request.resource.data.keys().hasOnly(['reporterUid', 'roomId', 'targetUid', 'messageId', 'text', 'createdAt'])
+        && request.resource.data.roomId is string
+        && request.resource.data.roomId.size() >= 1
+        && request.resource.data.roomId.size() <= 128
         && request.resource.data.targetUid is string
-        && ( !('text' in request.resource.data) || request.resource.data.text.size() <= 500 );
+        && request.resource.data.targetUid.size() >= 1
+        && request.resource.data.targetUid.size() <= 128
+        && (!('messageId' in request.resource.data)
+          || (request.resource.data.messageId is string && request.resource.data.messageId.size() <= 128))
+        && (!('text' in request.resource.data)
+          || (request.resource.data.text is string && request.resource.data.text.size() <= 500))
+        && request.resource.data.createdAt is timestamp;
       allow read, update, delete: if false;
     }
   }

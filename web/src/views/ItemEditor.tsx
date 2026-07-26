@@ -8,7 +8,7 @@ import {
   trimAll,
   type StudyItem,
 } from "../types";
-import { deleteItemDeep, saveItem, type UserData } from "../data";
+import { deleteItemPreservingHistory, saveItem, type UserData } from "../data";
 import { publishCurrentMonth } from "../harbor";
 import { TileSymbolSvg } from "../symbols";
 import { Modal, askConfirm, showToast } from "../overlays";
@@ -82,7 +82,7 @@ export function ItemEditor({
       return;
     }
     setWorking(true);
-    await deleteItemDeep(uid, item.id, data);
+    await deleteItemPreservingHistory(uid, item.id, data);
     onClose();
   };
 

@@ -7,6 +7,17 @@
 # 逆に /assets/ の中身はファイル名にハッシュが入っていて中身が変われば名前も
 # 変わるので、長く持たせて良い(immutable)。
 
+# 全画面共通のブラウザー側防御。Google/Appleの認証ポップアップを保ったまま、
+# 埋め込み・MIME誤認・不要な端末権限・参照元の漏出を閉じる。
+/*
+  Content-Security-Policy: object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+
 # アプリの入口は必ず最新を取得する。HTMLだけ古い状態で新しいハッシュ付きJSが
 # 消えていると起動不能になるため、ブラウザにもCDNにも保存させない。
 /

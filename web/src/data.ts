@@ -7,6 +7,7 @@ import {
   onSnapshot,
   setDoc,
   Timestamp,
+  writeBatch,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { completeRedirectSignIn } from "./auth";
@@ -167,6 +168,9 @@ export function useUserData(uid: string, enabled = true): UserData {
               minutes: Number(v.minutes ?? 0),
               note: typeof v.note === "string" ? v.note : undefined,
               itemUUID: typeof v.itemUUID === "string" ? v.itemUUID : undefined,
+              itemName: typeof v.itemName === "string" ? v.itemName : undefined,
+              itemStyle: typeof v.itemStyle === "string" ? v.itemStyle : undefined,
+              itemSymbol: typeof v.itemSymbol === "string" ? v.itemSymbol : undefined,
               updatedAt: asDate(v.updatedAt),
             };
           })
@@ -290,34 +294,51 @@ export async function saveItem(
   });
 }
 
-/// 項目の削除。iOS はローカルの cascade で記録も消えるので、Web も紐づく記録を消し、
-/// 空になった日の刻印(days)も外して整合を保つ。
-export async function deleteItemDeep(
+/// 項目の削除。過去の作業記録は航海の履歴なので消さない。
+/// 古い記録には表示用スナップショットが無いため、削除直前の項目名・配色・印を
+/// セッションへ補ってから項目だけを削除する。400件ずつに分け、Firestoreの
+/// 1バッチ上限にも余裕を持たせる。
+export async function deleteItemPreservingHistory(
   uid: string,
   itemId: string,
   source: PublishSource,
 ): Promise<void> {
-  const allSessions = source.sessions;
-  const mine = allSessions.filter((s) => s.itemUUID === itemId);
-  for (const s of mine) {
-    await deleteDoc(doc(db, "users", uid, "sessions", s.id));
-  }
-  await deleteDoc(doc(db, "users", uid, "items", itemId));
-  // 空になった日の刻印を外す。
-  const remaining = allSessions.filter((s) => s.itemUUID !== itemId);
-  const remainingDayIds = new Set(remaining.map((s) => dayId(s.date)));
-  const touchedDayIds = new Set(mine.map((s) => dayId(s.date)));
-  for (const dId of touchedDayIds) {
-    if (!remainingDayIds.has(dId)) {
-      await deleteDoc(doc(db, "users", uid, "days", dId));
+  const item = source.items.find((candidate) => candidate.id === itemId);
+  const mine = source.sessions.filter((session) => session.itemUUID === itemId);
+  if (item) {
+    for (let offset = 0; offset < mine.length; offset += 400) {
+      const batch = writeBatch(db);
+      for (const session of mine.slice(offset, offset + 400)) {
+        batch.set(
+          doc(db, "users", uid, "sessions", session.id),
+          {
+            itemName: session.itemName ?? item.name.slice(0, 60),
+            itemStyle: session.itemStyle ?? item.styleToken,
+            itemSymbol: session.itemSymbol ?? item.symbolToken,
+            updatedAt: new Date(),
+          },
+          { merge: true },
+        );
+      }
+      await batch.commit();
     }
   }
+  await deleteDoc(doc(db, "users", uid, "items", itemId));
+
+  const archivedSessions = source.sessions.map((session) =>
+    session.itemUUID === itemId && item
+      ? {
+          ...session,
+          itemName: session.itemName ?? item.name,
+          itemStyle: session.itemStyle ?? item.styleToken,
+          itemSymbol: session.itemSymbol ?? item.symbolToken,
+        }
+      : session,
+  );
   await publishCurrentMonth({
     items: source.items.filter((i) => i.id !== itemId),
-    sessions: remaining,
-    days: source.days.filter(
-      (d) => remainingDayIds.has(d.id) || !touchedDayIds.has(d.id),
-    ),
+    sessions: archivedSessions,
+    days: source.days,
   });
 }
 
@@ -331,10 +352,15 @@ export async function recordSession(
   const date = input.date ?? new Date();
   const note = input.note?.trim();
   const sessionId = newUUID();
-  await setDoc(doc(db, "users", uid, "sessions", sessionId), {
+  const sessionRef = doc(db, "users", uid, "sessions", sessionId);
+  const batch = writeBatch(db);
+  batch.set(sessionRef, {
     date,
     minutes: input.minutes,
     itemUUID: input.item.id,
+    itemName: input.item.name.slice(0, 60),
+    itemStyle: input.item.styleToken,
+    itemSymbol: input.item.symbolToken,
     updatedAt: new Date(),
     ...(note ? { note: note.slice(0, 120) } : {}),
   });
@@ -342,11 +368,13 @@ export async function recordSession(
   const existingDayIds = new Set(source.days.map((d) => d.id));
   const isNewDay = !existingDayIds.has(dId);
   if (isNewDay) {
-    await setDoc(doc(db, "users", uid, "days", dId), {
+    batch.set(doc(db, "users", uid, "days", dId), {
       date: startOfDay(date),
       updatedAt: new Date(),
     });
   }
+  // セッションと日の刻印は一つの原子的な書き込みにし、片方だけ残る状態を作らない。
+  await batch.commit();
 
   // 空白日数は「今日の刻印を打つ前」の状態から数える(何日ぶりの航海か)。
   const gapDays = gapDaysBeforeToday(source.days);
@@ -358,6 +386,9 @@ export async function recordSession(
     minutes: input.minutes,
     note: note ? note.slice(0, 120) : undefined,
     itemUUID: input.item.id,
+    itemName: input.item.name.slice(0, 60),
+    itemStyle: input.item.styleToken,
+    itemSymbol: input.item.symbolToken,
     updatedAt: new Date(),
   };
   const nextDays = isNewDay
@@ -379,13 +410,15 @@ export async function deleteSession(
   session: StudySession,
   source: PublishSource,
 ): Promise<void> {
-  await deleteDoc(doc(db, "users", uid, "sessions", session.id));
   const dId = dayId(session.date);
   const remainingSessions = source.sessions.filter((s) => s.id !== session.id);
   const remains = remainingSessions.some((s) => dayId(s.date) === dId);
+  const batch = writeBatch(db);
+  batch.delete(doc(db, "users", uid, "sessions", session.id));
   if (!remains) {
-    await deleteDoc(doc(db, "users", uid, "days", dId));
+    batch.delete(doc(db, "users", uid, "days", dId));
   }
+  await batch.commit();
   await publishCurrentMonth({
     items: source.items,
     sessions: remainingSessions,

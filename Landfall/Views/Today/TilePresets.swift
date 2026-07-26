@@ -439,3 +439,31 @@ struct ItemTileArt: View {
         .aspectRatio(1, contentMode: .fit)
     }
 }
+
+/// 項目が削除された後も、記録時点の控えから同じ小さなタイルを再現する。
+struct SessionTileArt: View {
+    let session: StudySession
+
+    var body: some View {
+        if let item = session.item {
+            ItemTileArt(item: item)
+        } else {
+            GeometryReader { geo in
+                let size = min(geo.size.width, geo.size.height)
+                let style = TileStyle.from(session.displayItemStyle)
+                ZStack {
+                    style.background
+                    TileSymbolView(
+                        symbol: TileSymbol.from(session.displayItemSymbol),
+                        fg: style.foreground,
+                        bg: style.background
+                    )
+                    .frame(width: size * 0.62, height: size * 0.62)
+                }
+                .frame(width: size, height: size)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .aspectRatio(1, contentMode: .fit)
+        }
+    }
+}

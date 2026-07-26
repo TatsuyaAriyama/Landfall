@@ -31,9 +31,12 @@ export function SettingsDialog({
     download(
       JSON.stringify(
         {
+          schemaVersion: 2,
+          exportedAt: new Date().toISOString(),
           items: data.items,
           sessions: data.sessions,
           days: data.days,
+          voyageLogs: data.voyageLogs,
           destinations: data.destinations,
         },
         null,
@@ -52,7 +55,7 @@ export function SettingsDialog({
       .map((s) =>
         [
           s.date.toISOString(),
-          esc(s.itemUUID ? (itemById.get(s.itemUUID) ?? "") : ""),
+          esc(s.itemUUID ? (itemById.get(s.itemUUID) ?? s.itemName ?? "") : (s.itemName ?? "")),
           String(s.minutes),
           esc(s.note ?? ""),
         ].join(","),
@@ -60,6 +63,18 @@ export function SettingsDialog({
     download(
       ["date,item,minutes,note", ...rows].join("\n"),
       "landfall-sessions.csv",
+      "text/csv",
+    );
+  };
+
+  const exportVoyageLogsCSV = () => {
+    const esc = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const rows = [...data.voyageLogs]
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .map((log) => [log.id, esc(log.body), log.updatedAt.toISOString()].join(","));
+    download(
+      ["date,body,updatedAt", ...rows].join("\n"),
+      "landfall-voyage-logs.csv",
       "text/csv",
     );
   };
@@ -118,6 +133,9 @@ export function SettingsDialog({
           </button>
           <button className="chip" onClick={exportCSV}>
             {t("exportCSV")}
+          </button>
+          <button className="chip" onClick={exportVoyageLogsCSV}>
+            {t("exportVoyageLogsCSV")}
           </button>
         </div>
 

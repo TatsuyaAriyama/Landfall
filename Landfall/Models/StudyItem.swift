@@ -19,7 +19,8 @@ final class StudyItem {
     /// 端末間の競合解決(Last-Write-Wins)に使う最終更新時刻。既定値で軽量マイグレーション可。
     var updatedAt: Date = Date.distantPast
 
-    @Relationship(deleteRule: .cascade, inverse: \StudySession.item)
+    // 項目を片づけても、その項目で積み上げた過去の作業記録は航海の履歴として残す。
+    @Relationship(deleteRule: .nullify, inverse: \StudySession.item)
     var sessions: [StudySession] = []
 
     init(
@@ -53,6 +54,12 @@ final class StudySession {
     var minutes: Int
     var note: String?
     var item: StudyItem?
+    /// 関係が未解決・削除済みでも、同期先の項目IDを失わないための控え。
+    var itemUUID: String?
+    /// 記録時点の項目表示。項目が削除された後も履歴を読めるようにする。
+    var itemName: String?
+    var itemStyle: String?
+    var itemSymbol: String?
     /// 端末間の競合解決(Last-Write-Wins)に使う最終更新時刻。
     var updatedAt: Date = Date.distantPast
 
@@ -62,7 +69,19 @@ final class StudySession {
         self.minutes = minutes
         self.note = note
         self.item = item
+        self.itemUUID = item?.uuid.uuidString
+        self.itemName = item?.name
+        self.itemStyle = item?.styleToken
+        self.itemSymbol = item?.symbolToken
         self.updatedAt = Date()
+    }
+
+    var displayItemName: String? { item?.name ?? itemName }
+    var displayItemStyle: String { item?.styleToken ?? itemStyle ?? "ink" }
+    var displayItemSymbol: String { item?.symbolToken ?? itemSymbol ?? "compass" }
+    var itemUUIDForArchiveKey: String {
+        item?.uuid.uuidString ?? itemUUID
+            ?? "archived:\(itemName ?? "none"):\(itemStyle ?? ""):\(itemSymbol ?? "")"
     }
 }
 

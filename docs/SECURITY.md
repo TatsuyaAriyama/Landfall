@@ -5,7 +5,7 @@ Landfall の防御は3層です。**それぞれ「有効化」の手順が違�
 | 層 | どこ | 何を守る | 有効化 |
 |----|------|---------|--------|
 | Firestore セキュリティルール | `firestore.rules` | 本当の権限境界。誰が何を読み書きできるか | **デプロイが必要**(下記) |
-| App Check | アプリ内 `AppCheckProvider.swift` + Firebase コンソール | 本物のアプリからのアクセスか(濫用・なりすまし防止) | コンソールで **enforcement を ON** にして初めて遮断が効く |
+| App Check | iOS `AppCheckProvider.swift` / Web `firebase.ts` + Firebase コンソール | 本物のアプリからのアクセスか(濫用・なりすまし防止) | コンソールで **enforcement を ON** にして初めて遮断が効く |
 | クライアント側の入力上限 | `RoomService.swift` ほか | 肥大データを送らない(多重防御・UX) | ビルドに含まれる(自動) |
 
 ## 1. Firestore ルール(最重要)
@@ -14,6 +14,8 @@ Landfall の防御は3層です。**それぞれ「有効化」の手順が違�
 
 ### 保証している不変条件
 - `users/{uid}/**` … 本人だけが読み書き。他人のバックアップには一切触れない。
+  `items / sessions / days / voyageLogs / destinations / blocks` ごとに許可フィールド・型・
+  文字数・件数を検証し、未知の個人コレクションは既定で拒否する。
 - 港(`rooms/{code}`)
   - **乗っ取り防止**: 港名・作成日時・他メンバーは誰も改変できない。
   - 更新は「自分ひとりを加える/外す」だけに限定(在港者による追い出し・強制追加を拒否)。
@@ -44,6 +46,11 @@ firebase deploy --only firestore:rules
 3. 正規トラフィックがすべて通ることを監視で確認してから、Firestore と Authentication の **enforcement を ON**。
 
 > enforcement が OFF の間は未登録でも通常通信は妨げられません(安全に先行導入できます)。順序を守らないと正規ユーザーを締め出す恐れがあるため、**必ず監視 → 確認 → 有効化**の順で。
+
+Web版は reCAPTCHA Enterprise の公開サイトキーをCloudflare Pagesの
+`VITE_FB_APP_CHECK_SITE_KEY` に設定すると、本番ビルドがApp Checkトークンを自動更新します。
+正規トラフィックをメトリクスで確認する前に enforcement を有効化しないでください。
+また `_headers` でフレーム埋め込み、不要な端末権限、MIME誤認もブラウザー側で拒否します。
 
 ## 3. 秘密情報の扱い
 - `GoogleService-Info.plist`(Firebase クライアント設定)は `.gitignore` 済み。リポジトリには含めません。

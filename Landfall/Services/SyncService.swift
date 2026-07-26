@@ -41,7 +41,11 @@ final class SyncService {
         guard let uid else { return }
         let dto = SessionDTO(
             date: session.date, minutes: session.minutes, note: session.note,
-            itemUUID: session.item?.uuid.uuidString, updatedAt: Date()
+            itemUUID: session.item?.uuid.uuidString ?? session.itemUUID,
+            itemName: session.item?.name ?? session.itemName,
+            itemStyle: session.item?.styleToken ?? session.itemStyle,
+            itemSymbol: session.item?.symbolToken ?? session.itemSymbol,
+            updatedAt: Date()
         )
         try? sessionsCollection(uid).document(session.uuid.uuidString).setData(from: dto)
     }
@@ -158,12 +162,19 @@ final class SyncService {
                         existing.createdAt = dto.createdAt; existing.updatedAt = remoteAt
                         changed = true
                     }
+                    if relinkSessions(itemID: id, item: existing, context: context) {
+                        changed = true
+                    }
                 } else {
                     let item = StudyItem(name: dto.name, styleToken: dto.styleToken,
                                          symbolToken: dto.symbolToken, sortOrder: dto.sortOrder, createdAt: dto.createdAt)
                     if let u = UUID(uuidString: id) { item.uuid = u }
                     item.updatedAt = remoteAt
-                    context.insert(item); changed = true
+                    context.insert(item)
+                    if relinkSessions(itemID: id, item: item, context: context) {
+                        changed = true
+                    }
+                    changed = true
                 }
             case .removed:
                 // 別端末から項目が削除された場合も、その項目を指す端末ローカルの
@@ -187,12 +198,21 @@ final class SyncService {
                 if let existing = fetchSession(id, context) {
                     if remoteAt > existing.updatedAt {
                         existing.date = dto.date; existing.minutes = dto.minutes
-                        existing.note = dto.note; existing.item = item; existing.updatedAt = remoteAt
+                        existing.note = dto.note; existing.item = item
+                        existing.itemUUID = dto.itemUUID
+                        existing.itemName = dto.itemName ?? item?.name
+                        existing.itemStyle = dto.itemStyle ?? item?.styleToken
+                        existing.itemSymbol = dto.itemSymbol ?? item?.symbolToken
+                        existing.updatedAt = remoteAt
                         changed = true
                     }
                 } else {
                     let session = StudySession(date: dto.date, minutes: dto.minutes, note: dto.note, item: item)
                     if let u = UUID(uuidString: id) { session.uuid = u }
+                    session.itemUUID = dto.itemUUID
+                    session.itemName = dto.itemName ?? item?.name
+                    session.itemStyle = dto.itemStyle ?? item?.styleToken
+                    session.itemSymbol = dto.itemSymbol ?? item?.symbolToken
                     session.updatedAt = remoteAt
                     context.insert(session); changed = true
                 }
@@ -275,6 +295,23 @@ final class SyncService {
         var d = FetchDescriptor<StudySession>(predicate: #Predicate { $0.uuid == u }); d.fetchLimit = 1
         return (try? context.fetch(d))?.first
     }
+    /// コレクションの初回通知順は保証されない。セッションが項目より先に届いても、
+    /// itemUUID の控えから項目到着時に関係を結び直す。
+    private func relinkSessions(
+        itemID: String,
+        item: StudyItem,
+        context: ModelContext
+    ) -> Bool {
+        let descriptor = FetchDescriptor<StudySession>(
+            predicate: #Predicate { $0.itemUUID == itemID }
+        )
+        var changed = false
+        for session in (try? context.fetch(descriptor)) ?? [] where session.item == nil {
+            session.item = item
+            changed = true
+        }
+        return changed
+    }
     private func fetchDay(_ date: Date, _ context: ModelContext) -> StudyDay? {
         let dayStart = Calendar.current.startOfDay(for: date)
         var d = FetchDescriptor<StudyDay>(predicate: #Predicate { $0.date == dayStart }); d.fetchLimit = 1
@@ -290,7 +327,10 @@ final class SyncService {
 
     func deleteAllRemoteData() async throws {
         guard let uid else { return }
-        for collection in [itemsCollection(uid), sessionsCollection(uid), daysCollection(uid), destinationsCollection(uid)] {
+        for collection in [
+            itemsCollection(uid), sessionsCollection(uid), daysCollection(uid),
+            voyageLogsCollection(uid), destinationsCollection(uid)
+        ] {
             let snapshot = try await collection.getDocuments()
             for doc in snapshot.documents { try await doc.reference.delete() }
         }
@@ -306,6 +346,9 @@ final class SyncService {
     }
     private func daysCollection(_ uid: String) -> CollectionReference {
         db.collection("users").document(uid).collection("days")
+    }
+    private func voyageLogsCollection(_ uid: String) -> CollectionReference {
+        db.collection("users").document(uid).collection("voyageLogs")
     }
     private func destinationsCollection(_ uid: String) -> CollectionReference {
         db.collection("users").document(uid).collection("destinations")
@@ -340,6 +383,9 @@ private struct SessionDTO: Codable {
     var minutes: Int
     var note: String?
     var itemUUID: String?
+    var itemName: String?
+    var itemStyle: String?
+    var itemSymbol: String?
     var updatedAt: Date?
 }
 

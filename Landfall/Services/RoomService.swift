@@ -225,10 +225,10 @@ final class RoomService: ObservableObject {
             guard c.year == year, c.month == month, let day = c.day else { return nil }
             var dict: [String: Any] = ["day": day, "minutes": session.minutes, "date": session.date]
             if let note = session.note, !note.isEmpty { dict["note"] = String(note.prefix(Limit.note)) }
-            if let item = session.item {
-                dict["itemName"] = String(item.name.prefix(Limit.itemName))
-                dict["styleToken"] = item.styleToken
-                dict["symbolToken"] = item.symbolToken
+            if let itemName = session.displayItemName {
+                dict["itemName"] = String(itemName.prefix(Limit.itemName))
+                dict["styleToken"] = session.displayItemStyle
+                dict["symbolToken"] = session.displayItemSymbol
             }
             return dict
         }

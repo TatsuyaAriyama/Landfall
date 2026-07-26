@@ -201,6 +201,12 @@ export function demoData(): UserData {
       body: "朝は静かな海。英語を30分進め、夜は読書の続きを開いた。",
       updatedAt: now,
     },
+    {
+      id: dayId(new Date(now.getFullYear() - 1, 10, 3)),
+      date: startOfDay(new Date(now.getFullYear() - 1, 10, 3)),
+      body: "遠くまで進めた日。迷いながらも、昨日より少し先の景色が見えた。",
+      updatedAt: new Date(now.getFullYear() - 1, 10, 3, 21),
+    },
   ];
   return {
     items,

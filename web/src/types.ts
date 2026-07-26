@@ -102,6 +102,10 @@ export interface StudySession {
   minutes: number;
   note?: string;
   itemUUID?: string;
+  /// 記録時点の項目表示。項目そのものを削除しても過去の航海を読めるように残す。
+  itemName?: string;
+  itemStyle?: string;
+  itemSymbol?: string;
   updatedAt: Date;
 }
 

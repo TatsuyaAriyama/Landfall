@@ -55,7 +55,8 @@ resvg(SVGのラスタライザ)はネイティブバイナリなので、本番�
 **環境変数(Pages の Settings → Environment variables に設定)** — Vite はビルド時に埋め込むので、Pages 側に置く。`web/.env.local` と同じ値:
 
 ```
-VITE_FB_API_KEY, VITE_FB_AUTH_DOMAIN, VITE_FB_PROJECT_ID, VITE_FB_STORAGE_BUCKET, VITE_FB_APP_ID
+VITE_FB_API_KEY, VITE_FB_AUTH_DOMAIN, VITE_FB_PROJECT_ID, VITE_FB_STORAGE_BUCKET, VITE_FB_APP_ID,
+VITE_FB_APP_CHECK_SITE_KEY
 ```
 
 カスタムドメイン: Pages プロジェクト → Custom domains → `landfall-studylog.com` を追加(同一 Cloudflare アカウントなので CNAME と SSL は自動)。
@@ -75,8 +76,10 @@ VITE_FB_API_KEY, VITE_FB_AUTH_DOMAIN, VITE_FB_PROJECT_ID, VITE_FB_STORAGE_BUCKET
    iPad/iPhone の Safari はリダイレクト方式でサインインするため、**このドメインが無いとモバイルでログインできない**。必ず追加すること。
 3. **Firestore ルールのデプロイ**(未実施なら)
    `firebase deploy --only firestore:rules`
-4. **App Check の enforcement を有効にする場合**
-   Web 用に reCAPTCHA プロバイダの登録が必要(iOS の App Attest とは別)。未登録のまま enforcement を ON にすると Web 版が締め出されるので注意。
+4. **App Check のWeb登録**
+   Webアプリを reCAPTCHA Enterprise に登録し、公開サイトキーをCloudflare Pagesの
+   `VITE_FB_APP_CHECK_SITE_KEY` に設定する。正規通信がメトリクスに出ることを確認してから
+   enforcement を有効にする。未登録のままONにするとWeb版が締め出されるので注意。
 
 ## スコープ(v1)
 

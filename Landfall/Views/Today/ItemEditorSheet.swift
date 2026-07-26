@@ -308,6 +308,14 @@ struct ItemEditorSheet: View {
         guard let existing else { return }
         // 計測中の項目を消すならタイマーも捨てる。
         StudyTimer.clear(ifMatching: existing.uuid.uuidString)
+        // 軽量マイグレーション前の古い記録にも表示情報を補い、項目との関係だけを外す。
+        for session in existing.sessions {
+            session.itemName = session.itemName ?? existing.name
+            session.itemStyle = session.itemStyle ?? existing.styleToken
+            session.itemSymbol = session.itemSymbol ?? existing.symbolToken
+            session.updatedAt = Date()
+            SyncService.shared.push(session)
+        }
         SyncService.shared.delete(existing)
         modelContext.delete(existing)
         try? modelContext.save()

@@ -408,11 +408,11 @@ export function buildMonthPayload(
         minutes: s.minutes,
         date: s.date,
         ...(s.note ? { note: s.note.slice(0, 120) } : {}),
-        ...(item
+        ...(item || s.itemName
           ? {
-              itemName: item.name.slice(0, 60),
-              styleToken: item.styleToken,
-              symbolToken: item.symbolToken,
+              itemName: (item?.name ?? s.itemName ?? "").slice(0, 60),
+              styleToken: item?.styleToken ?? s.itemStyle ?? "midnight",
+              symbolToken: item?.symbolToken ?? s.itemSymbol ?? "compass",
             }
           : {}),
       };
@@ -719,7 +719,7 @@ export async function deleteEverything(): Promise<void> {
   const rooms = await fetchRooms().catch(() => [] as HarborRoom[]);
   for (const room of rooms) await leaveRoom(room.id);
   await leaveAllPublic().catch(() => {});
-  for (const sub of ["items", "sessions", "days", "destinations", "blocks"]) {
+  for (const sub of ["items", "sessions", "days", "voyageLogs", "destinations", "blocks"]) {
     const snap = await getDocs(collection(db, "users", u, sub)).catch(() => null);
     for (const d of snap?.docs ?? []) await deleteDoc(d.ref).catch(() => {});
   }

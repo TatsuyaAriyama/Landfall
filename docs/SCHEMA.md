@@ -39,7 +39,14 @@ docID = 項目の UUID 文字列(大文字ハイフン形式。Web で新規作�
 | `minutes` | number(int) | 分。0〜6000 |
 | `note` | string? | ひとこと。上限120文字 |
 | `itemUUID` | string? | 紐づく項目の docID |
+| `itemName` | string? | 記録時点の項目名。項目削除後の履歴表示に使う。上限60文字 |
+| `itemStyle` | string? | 記録時点の配色トークン |
+| `itemSymbol` | string? | 記録時点のシンボルトークン |
 | `updatedAt` | timestamp? | LWW |
+
+作業項目を削除してもセッションは削除しない。削除前に上記3つの表示用スナップショットを
+補い、関係だけを外す。旧セッションにスナップショットが無い間は、存在する `itemUUID`
+の項目表示へフォールバックする。
 
 ### `users/{uid}/days/{yyyy-MM-dd}` — 「学んだ日」の刻印
 

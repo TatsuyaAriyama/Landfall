@@ -18,13 +18,11 @@ struct SessionEditSheet: View {
             header
 
             HStack(spacing: 12) {
-                if let item = session.item {
-                    ItemTileArt(item: item)
-                        .frame(width: 40, height: 40)
-                    Text(item.name)
-                        .font(LFFont.copy(17))
-                        .foregroundStyle(LFColor.ink)
-                }
+                SessionTileArt(session: session)
+                    .frame(width: 40, height: 40)
+                Text(session.displayItemName ?? "—")
+                    .font(LFFont.copy(17))
+                    .foregroundStyle(LFColor.ink)
                 Spacer()
                 Text(LF.dayWithWeekday(session.date))
                     .font(LFFont.label(14))

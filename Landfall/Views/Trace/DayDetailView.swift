@@ -115,15 +115,13 @@ struct DayDetailView: View {
             editingSession = session
         } label: {
             HStack(spacing: 14) {
-                if let item = session.item {
-                    ItemTileArt(item: item)
-                        .frame(width: 44, height: 44)
-                }
+                SessionTileArt(session: session)
+                    .frame(width: 44, height: 44)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
                         // 項目名はユーザーデータ(verbatim)、無い場合のみ言語追従の代替語。
                         Group {
-                            if let name = session.item?.name {
+                            if let name = session.displayItemName {
                                 Text(verbatim: name)
                             } else {
                                 Text("No item")

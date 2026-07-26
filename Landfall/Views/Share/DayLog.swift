@@ -48,7 +48,7 @@ struct DayLog {
         var byKey: [String: Entry] = [:]
         for session in ofDay {
             let item = session.item
-            let key = item?.uuid.uuidString ?? "__none__"
+            let key = item?.uuid.uuidString ?? session.itemUUIDForArchiveKey
             if let existing = byKey[key] {
                 byKey[key] = Entry(
                     id: existing.id, name: existing.name,
@@ -60,9 +60,9 @@ struct DayLog {
                 order.append(key)
                 byKey[key] = Entry(
                     id: key,
-                    name: item?.name ?? String(localized: "No item"),
-                    styleToken: item?.styleToken ?? TileStyle.ink.rawValue,
-                    symbolToken: item?.symbolToken ?? TileSymbol.compass.rawValue,
+                    name: session.displayItemName ?? String(localized: "No item"),
+                    styleToken: session.displayItemStyle,
+                    symbolToken: session.displayItemSymbol,
                     photoData: item?.photoData,
                     minutes: session.minutes
                 )
