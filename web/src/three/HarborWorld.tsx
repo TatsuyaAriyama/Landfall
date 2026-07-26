@@ -15,7 +15,7 @@ import {
   useThree,
   type RootState,
 } from "@react-three/fiber";
-import { Html, Stars } from "@react-three/drei";
+import { Html, Stars, useGLTF } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
 import { Moon, Ripples, Sea, Sun } from "./SeaParts";
@@ -78,6 +78,7 @@ type WorldPhase = "enter" | "idle" | "exit";
 const HARBOR_FAR_POS = new THREE.Vector3(CAM_POS[0], CAM_POS[1], CAM_POS[2]);
 const HARBOR_FAR_TARGET = new THREE.Vector3(CAM_TARGET[0], CAM_TARGET[1], CAM_TARGET[2]);
 const HARBOR_DOLLY_SECONDS = 1.2;
+const HARBOR_PIER_URL = "/models/harbor_pier.glb";
 function easeInOutCubic(v: number): number {
   return v < 0.5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2;
 }
@@ -88,6 +89,21 @@ const MOORINGS = [
   { x: 0.9, z: 1.35, rot: -0.02 },
   { x: 2.58, z: 1.68, rot: 0.04 },
 ] as const;
+
+/// 砂の拠点から海へ伸びる桟橋。Blender原本から書き出した共通GLBを、
+/// 4隻の舫い場所を挟む3本の桟橋として配置する。モデルのローカル-Zが沖側なので
+/// 半回転し、根元は砂へ少し沈める。灯はGLB内のemissive材質で見せる。
+function HarborPier({ x }: { x: number }) {
+  const { scene } = useGLTF(HARBOR_PIER_URL);
+  const model = useMemo(() => scene.clone(true), [scene]);
+  return (
+    <group position={[x, -0.15, -1.05]} rotation={[0, Math.PI, 0]} scale={0.62}>
+      <primitive object={model} />
+    </group>
+  );
+}
+
+useGLTF.preload(HARBOR_PIER_URL);
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
 const LANTERN_GEO = new THREE.SphereGeometry(0.16, 10, 8);
@@ -247,29 +263,8 @@ function HarborTown({
         <meshStandardMaterial color="#B9A474" flatShading roughness={1} />
       </mesh>
 
-      {/* 水面へ伸びる三本の木桟橋。船同士の間に置き、甲板を隠さない。 */}
-      {HARBOR_PIER_X.map((x) => (
-        <group key={x} position={[x, 0, 0]}>
-          <mesh position={[0, 0.16, 0.1]}>
-            <boxGeometry args={[0.46, 0.18, 2.3]} />
-            <meshStandardMaterial color="#76523A" flatShading roughness={0.96} />
-          </mesh>
-          {[-0.82, -0.18, 0.46, 1.1].map((z) => (
-            <mesh key={z} position={[0, 0.27, z]}>
-              <boxGeometry args={[0.64, 0.06, 0.08]} />
-              <meshStandardMaterial color="#A27650" flatShading roughness={0.94} />
-            </mesh>
-          ))}
-          <mesh position={[-0.2, 0.02, 1.05]}>
-            <cylinderGeometry args={[0.045, 0.055, 0.5, 7]} />
-            <meshStandardMaterial color="#4A3428" flatShading roughness={1} />
-          </mesh>
-          <mesh position={[0.2, 0.02, 1.05]}>
-            <cylinderGeometry args={[0.045, 0.055, 0.5, 7]} />
-            <meshStandardMaterial color="#4A3428" flatShading roughness={1} />
-          </mesh>
-        </group>
-      ))}
+      {/* 船4隻の舫い場所を挟む、Blender制作の三本の木桟橋。 */}
+      {HARBOR_PIER_X.map((x) => <HarborPier key={x} x={x} />)}
 
       <HarborRopeAndAnchor />
       <HarborLighthouse lightsOn={lightsOn} />
