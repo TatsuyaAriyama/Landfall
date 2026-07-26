@@ -14,7 +14,7 @@ import {
   type RootState,
   type ThreeEvent,
 } from "@react-three/fiber";
-import { Html, OrbitControls, Stars } from "@react-three/drei";
+import { Html, OrbitControls, Stars, useGLTF } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
@@ -74,6 +74,7 @@ type WorldPhase = "enter" | "idle" | "exit";
 const HARBOR_FAR_POS = new THREE.Vector3(CAM_POS[0], CAM_POS[1], CAM_POS[2]);
 const HARBOR_FAR_TARGET = new THREE.Vector3(CAM_TARGET[0], CAM_TARGET[1], CAM_TARGET[2]);
 const HARBOR_DOLLY_SECONDS = 1.2;
+const HARBOR_PIER_URL = "/models/harbor_pier.glb";
 function easeInOutCubic(v: number): number {
   return v < 0.5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2;
 }
@@ -88,6 +89,21 @@ const ISLAND_TOP: [number, number, number] = [
 // 互い違いにして、ハッシュの揺らぎが重なっても船同士がぶつからないようにする。
 const LANES_Z = [2.05, 0.65, -0.75, -2.15];
 const LANES_X = [0.15, -2.05, 0.75, -1.35];
+
+/// 港島から船団側へ伸びる桟橋。Blender原本から書き出した共通GLBを読み込み、
+/// 島の手前の浜へ根元を沈める。モデルのローカル-Zが沖側なので、半回転して
+/// 画面手前へ向ける。灯はGLB内のemissive材質だけで見せ、動的lightは増やさない。
+function HarborPier() {
+  const { scene } = useGLTF(HARBOR_PIER_URL);
+  const model = useMemo(() => scene.clone(true), [scene]);
+  return (
+    <group position={[3.35, 0, -1.65]} rotation={[0, Math.PI, 0]} scale={0.72}>
+      <primitive object={model} />
+    </group>
+  );
+}
+
+useGLTF.preload(HARBOR_PIER_URL);
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
 const LANTERN_GEO = new THREE.SphereGeometry(0.16, 10, 8);
@@ -905,6 +921,7 @@ function HarborSea({
       <group position={ISLAND_SHIFT}>
         <Island />
       </group>
+      <HarborPier />
       <Html
         position={ISLAND_TOP}
         center
