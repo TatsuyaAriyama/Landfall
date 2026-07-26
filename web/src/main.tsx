@@ -1,11 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./theme.css";
-import { THEME_KEY, applyTheme } from "./views/SettingsDialog.tsx";
 import { watchViewport } from "./viewport";
 
-// 外観設定(システム/ライト/ダーク)を描画前に反映する。
-applyTheme(localStorage.getItem(THEME_KEY));
+// 海の時間帯が外観を決めるため、旧版のライト/ダーク選択は廃止した。
+// 保存済みのライト設定で文字色だけ古いままになるのを防ぎ、単一テーマへ移行する。
+localStorage.removeItem("appTheme");
+document.documentElement.removeAttribute("data-theme");
 
 // キーボード/ピッカーで実際に見えている高さを :root に流す(全階層のCSSが参照する)。
 watchViewport();
