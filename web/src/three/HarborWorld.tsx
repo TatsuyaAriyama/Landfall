@@ -1130,6 +1130,9 @@ interface HarborLookRef {
 
 const WALK_START = new THREE.Vector3(0, 0.31, 0.18);
 const WALK_SPEED = 1.45;
+// PhoenixModel は内部で正面(+Z)を船首方向(+X)へ90度回している。
+// 移動ベクトルから求めた一般的なY回転へ、このモデル固有の補正を必ず加える。
+const WALKER_FRONT_YAW = -Math.PI / 2;
 
 function canStandInHarbor(x: number, z: number): boolean {
   const onQuay = x >= -3.35 && x <= 3.35 && z >= -2.55 && z <= -0.68;
@@ -1164,7 +1167,8 @@ function HarborWalker({
 }) {
   const root = useRef<THREE.Group>(null);
   const position = useRef(WALK_START.clone());
-  const facing = useRef(Math.PI);
+  // 初期視点の「前」は世界の-Z方向。
+  const facing = useRef(Math.PI + WALKER_FRONT_YAW);
   const pressed = useRef(new Set<string>());
   const walkingRef = useRef(false);
   const [walking, setWalking] = useState(false);
@@ -1248,7 +1252,7 @@ function HarborWalker({
       // 入力ではなく実移動へ即座に正対させる。これで方向転換時の横滑りと、
       // 衝突時に片軸だけ進んだ際の体のずれを残さない。
       if (Math.hypot(movedX, movedZ) > 0.00001) {
-        facing.current = Math.atan2(movedX, movedZ);
+        facing.current = Math.atan2(movedX, movedZ) + WALKER_FRONT_YAW;
       }
     }
     const moving = Math.hypot(movedX, movedZ) > 0.00001;
