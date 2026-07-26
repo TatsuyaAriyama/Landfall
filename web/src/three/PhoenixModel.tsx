@@ -272,8 +272,17 @@ const HEEL_GEO = new THREE.BoxGeometry(0.1, 0.03, 0.055);
 const BELT_GEO = new THREE.TorusGeometry(0.176, 0.021, 8, 22);
 /// ベルトの留め具。正面に小さく置く。
 const BUCKLE_GEO = new THREE.BoxGeometry(0.05, 0.038, 0.016);
-const CLASP_RING_GEO = new THREE.TorusGeometry(0.036, 0.011, 8, 16);
-const CLASP_PIN_GEO = new THREE.CylinderGeometry(0.019, 0.019, 0.02, 12);
+/// 胸の羅針図。以前は「目」の紋章だったが、目的地へ向かうアプリの中心概念は
+/// 羅針盤なので、八方位の星に置き換える。
+/// 真鍮の環・夜色の盤・砂色の星の三層。環の内側に星が収まる寸法で組む
+/// (はみ出すと環が「縁」ではなく「別の輪」に見える)。
+const ROSE_RIM_GEO = new THREE.TorusGeometry(0.044, 0.0095, 8, 20);
+const ROSE_FACE_GEO = new THREE.CylinderGeometry(0.038, 0.038, 0.007, 20);
+/// 方位の針。四角錐を薄く潰して刃にする。長さは scale で四方位/間方位を分ける。
+const ROSE_POINT_GEO = new THREE.ConeGeometry(0.0085, 0.032, 4);
+const ROSE_HUB_GEO = new THREE.SphereGeometry(0.0075, 10, 8);
+/// 八方位。偶数が四方位(長い)、奇数が間方位(短い)。
+const ROSE_DIRS = [0, 1, 2, 3, 4, 5, 6, 7];
 // ランタンは開放型(上蓋+灯+底皿)。灯が枠に隠れず、どの角度からも見える。
 // 六角のシルエットは職人の道具らしさとして残す(面の陰影は滑らかに)。
 const LANTERN_CAP_GEO = new THREE.ConeGeometry(0.058, 0.05, 6);
@@ -741,8 +750,24 @@ export default function PhoenixModel({
           <mesh geometry={MANTLE_GEO} material={CORAL_MAT} position={[0, 0.78, 0]} />
           {/* 留め具: 紋章の丸い目穴(sandの環+midnightの芯)。肩マントの前面に */}
           <group position={[0, 0.868, 0.178]} rotation={[-0.34, 0, 0]}>
-            <mesh geometry={CLASP_RING_GEO} material={SAND_MAT} />
-            <mesh geometry={CLASP_PIN_GEO} material={FACE_MAT} rotation={[Math.PI / 2, 0, 0]} />
+            <mesh geometry={ROSE_RIM_GEO} material={SAND_MAT} />
+            <mesh geometry={ROSE_FACE_GEO} material={FACE_MAT} rotation={[Math.PI / 2, 0, 0]} />
+            {ROSE_DIRS.map((k) => {
+              const a = (k * Math.PI) / 4;
+              const cardinal = k % 2 === 0;
+              const len = cardinal ? 0.032 : 0.019;
+              return (
+                <mesh
+                  key={k}
+                  geometry={ROSE_POINT_GEO}
+                  material={SAND_MAT}
+                  position={[Math.cos(a) * (len / 2), Math.sin(a) * (len / 2), 0.006]}
+                  rotation={[0, 0, a - Math.PI / 2]}
+                  scale={[cardinal ? 1 : 0.66, len / 0.032, 0.28]}
+                />
+              );
+            })}
+            <mesh geometry={ROSE_HUB_GEO} material={SAND_MAT} position={[0, 0, 0.008]} />
           </group>
 
           {/* 襟巻き: sandの環+背に垂れる端 */}
