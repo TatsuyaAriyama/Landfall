@@ -12,9 +12,20 @@ try {
   // テーマ値が残っても、直後にDOM属性を外すため表示は継続できる。
 }
 document.documentElement.removeAttribute("data-theme");
+
+// デザイン確認用の #demo は開発環境だけで使う。本番端末に以前の確認URLが
+// 残っていても、認証状態を待たず本物の港へ戻し、実データが消えたように見せない。
+if (!import.meta.env.DEV && window.location.hash === "#demo") {
+  history.replaceState(
+    null,
+    "",
+    `${window.location.pathname}${window.location.search}#harbor`,
+  );
+}
+
 // Service Worker廃止前に失敗したメインJSのHTTPキャッシュとURLを分離する。
 // 今後の障害調査でも、表示中の配信世代をDOMから確認できる。
-const APP_BUILD = "2026-07-26-chat-v1";
+const APP_BUILD = "2026-07-26-demo-guard-v1";
 document.documentElement.dataset.appBuild = APP_BUILD;
 
 // キーボード/ピッカーで実際に見えている高さを :root に流す(全階層のCSSが参照する)。
