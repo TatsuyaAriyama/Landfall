@@ -48,13 +48,17 @@ import {
 import { canUseWebGL } from "../webgl";
 import { useDragReorder } from "../dragReorder";
 import { useFloatingDrag } from "../floatingDrag";
+import { whenIdle } from "../idle";
 
-// 航海の世界は three.js を含んで重いので、計測をはじめるときだけ読み込む。
-// タイルを押してすぐ入りたいので、Todayを開いた時点で先に取りに行っておく。
+// 航海の世界は three.js を含んで重いので、初期描画と競合させない。
+// 空き時間か、タイルへ指を置いた瞬間から読み込み、押した後の待ちを短くする。
 let voyagingWorldPromise: Promise<typeof import("../three/VoyagingWorld")> | null = null;
 function loadVoyagingWorld() {
   voyagingWorldPromise ??= import("../three/VoyagingWorld");
   return voyagingWorldPromise;
+}
+function preloadVoyagingWorld() {
+  if (canUseWebGL()) void loadVoyagingWorld();
 }
 const VoyagingWorld = lazy(loadVoyagingWorld);
 
@@ -92,18 +96,11 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const [editing, setEditing] = useState<StudyItem | null>(null);
   const [creating, setCreating] = useState(false);
   const [timer, setTimer] = useState<RunningTimer | null>(() => readTimer());
-  const [now, setNow] = useState(Date.now());
   // 航海の世界を開いているか。閉じても計測は続く(チップから戻れる)。
   const [voyaging, setVoyaging] = useState(false);
   const [saving, setSaving] = useState(false);
   // 「時間を手で入れる」で開くときの初期値(測った分)。
   const [prefillMinutes, setPrefillMinutes] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!timer) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [timer]);
 
   // 読み込み済みの項目一覧から大元が消えたら、別端末からの削除を含めて
   // その項目を指す端末ローカルのタイマーも同時に畳む。
@@ -114,9 +111,11 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     setVoyaging(false);
   }, [data.items, timer]);
 
-  // タイルを押した瞬間に世界へ入れるよう、先に読み込んでおく。
+  // 初期描画が終わって端末が空いたときだけ先読みする。Safariは idle API が
+  // ないため idle.ts の短いタイマーへ落ちる。画面を離れたら予約も解除する。
   useEffect(() => {
-    if (canUseWebGL()) void loadVoyagingWorld();
+    if (!canUseWebGL()) return;
+    return whenIdle(preloadVoyagingWorld, { delay: 3000, timeout: 3500 });
   }, []);
 
   // 項目をタップしたら、その場で計測をはじめて航海の世界へ入る。
@@ -173,7 +172,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     const next = isOnBreak(timer) ? endBreak(timer, at) : startBreak(timer, at);
     writeTimer(next);
     setTimer(next);
-    setNow(at);
   };
 
   /// 航海を終えてそのまま記録する。ダイアログは挟まない。
@@ -289,6 +287,9 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
             <button
               key={item.id}
               className={`tile${lifted}${timing ? " timing" : ""}`}
+              onPointerEnter={preloadVoyagingWorld}
+              onFocus={preloadVoyagingWorld}
+              onTouchStart={preloadVoyagingWorld}
               onClick={() => void openOrStart(item)}
               {...reorder.tileProps(item.id)}
             >
@@ -363,7 +364,13 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
       {/* 航海中の世界。項目をタップした直後はこれが開く。 */}
       {timer && voyaging && canUseWebGL() && (
         <VoyagingErrorBoundary onFail={() => setVoyaging(false)}>
-          <Suspense fallback={<div className="voyaging-world" />}>
+          <Suspense
+            fallback={
+              <div className="voyaging-world voyage-loading" role="status" aria-label={t("loading")}>
+                <span />
+              </div>
+            }
+          >
             <VoyagingWorld
               itemName={data.items.find((i) => i.id === timer.itemId)?.name ?? ""}
               timer={timer}
@@ -389,7 +396,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         <TimerChip
           item={data.items.find((i) => i.id === timer.itemId)}
           timer={timer}
-          now={now}
           onOpen={() => setVoyaging(true)}
           onToggleBreak={toggleBreak}
           onFinish={() => void finishTimer("")}
@@ -480,7 +486,6 @@ export function SessionRow({
 function TimerChip({
   item,
   timer,
-  now,
   onOpen,
   onToggleBreak,
   onFinish,
@@ -488,7 +493,6 @@ function TimerChip({
 }: {
   item?: StudyItem;
   timer: RunningTimer;
-  now: number;
   onOpen: () => void;
   onToggleBreak: () => void;
   onFinish: () => void;
@@ -496,6 +500,9 @@ function TimerChip({
 }) {
   const floating = useFloatingDrag("landfall.timer-chip-position.v1");
   const [sound, setSound] = useState<SoundMode>(() => soundPref());
+  // 1秒更新をチップの中だけに閉じ込める。親のTodayViewで持つと、時計の数字を
+  // 変えるたびに目的地・全タイル・今日の記録まで再描画されてしまう。
+  const [now, setNow] = useState(Date.now);
   // 休憩中は時計が止まる(elapsedSecが休憩ぶんを引く)。止まった数字だけでは
   // 事故に見えるので、局面の代わりに「錨を下ろしている」と出す。
   const resting = isOnBreak(timer);
@@ -511,6 +518,13 @@ function TimerChip({
       : "";
   const phaseKey = phase?.key ?? "";
   const display = clockLabel(phase ? phase.left : elapsed);
+
+  useEffect(() => {
+    setNow(Date.now());
+    if (resting) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [resting]);
 
   // 区切り(集中⇄休憩)の合図。開始直後には鳴らさない。
   const prevPhase = useRef(phaseKey);

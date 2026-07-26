@@ -178,7 +178,9 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
 
 /// 年間海図。1年の海に12ヶ月の航路を描き、到達した島が浮かぶ。
 function YearChart({ data }: { data: UserData }) {
-  const now = new Date();
+  // タブ内の操作で再描画されても基準時刻オブジェクトを作り直さず、
+  // 年一覧の集計を不要にやり直さない。
+  const [now] = useState(() => new Date());
   const [year, setYear] = useState(now.getFullYear());
 
   const years = useMemo(() => {
