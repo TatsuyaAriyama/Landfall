@@ -236,7 +236,7 @@ const ja = {
   breakLabel: "休憩",
   soundOff: "音: オフ",
   soundWaves: "音: 波",
-  soundPiano: "音: ピアノ",
+  soundPiano: "音: クラシック",
   timerFinish: "終了",
   timerDiscardConfirm: "計測をやめますか。記録は残りません。",
 
@@ -581,7 +581,7 @@ const en: Record<I18nKey, string> = {
   breakLabel: "Break",
   soundOff: "Sound: off",
   soundWaves: "Sound: waves",
-  soundPiano: "Sound: piano",
+  soundPiano: "Sound: classical",
   timerFinish: "Finish",
   timerDiscardConfirm: "Stop timing? Nothing will be recorded.",
 
