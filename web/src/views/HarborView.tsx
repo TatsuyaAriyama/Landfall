@@ -769,6 +769,7 @@ function RoomDetail({
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const compactInputRef = useRef<HTMLInputElement>(null);
+  const compactMessagesRef = useRef<HTMLDivElement>(null);
   const knownMemberIds = useRef<Set<string> | null>(null);
   const arrivalTimers = useRef<number[]>([]);
 
@@ -903,12 +904,32 @@ function RoomDetail({
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
+    const compact = compactMessagesRef.current;
+    if (!compact) return;
+    // 最新付近を読んでいる間だけ新着へ追従する。過去ログを読んで上へ
+    // スクロールしている最中は、勝手に最下部へ戻さない。
+    const distanceFromBottom =
+      compact.scrollHeight - compact.scrollTop - compact.clientHeight;
+    if (distanceFromBottom < 80) {
+      requestAnimationFrame(() => {
+        compact.scrollTop = compact.scrollHeight;
+      });
+    }
   }, [messages.length]);
+
+  const attachCompactMessages = useCallback((node: HTMLDivElement | null) => {
+    compactMessagesRef.current = node;
+    if (!node) return;
+    // 世界へ入ってチャットが初めてマウントされたときは、最新の発言を見せる。
+    requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+  }, []);
 
   const memberById = new Map(members.map((m) => [m.id, m]));
   const nameOf = (id: string) => memberById.get(id)?.displayName ?? t("sailor");
   const visibleMessages = messages.filter((m) => !blocked.has(m.uid));
-  const compactMessages = visibleMessages.slice(-3);
+  const compactMessages = visibleMessages;
   const compactMessageLine = (message: ChatMessage): string => {
     const name = nameOf(message.uid);
     if (message.kind === "text") return `${name}: ${message.text ?? ""}`;
@@ -1045,7 +1066,11 @@ function RoomDetail({
                   aria-label={t("chatTitle")}
                   onPointerDown={(event) => event.stopPropagation()}
                 >
-                  <div className="harbor-world-chat-mini-messages" aria-live="polite">
+                  <div
+                    ref={attachCompactMessages}
+                    className="harbor-world-chat-mini-messages"
+                    aria-live="polite"
+                  >
                     {compactMessages.length === 0 ? (
                       <span className="harbor-world-chat-mini-empty">{t("chatEmpty")}</span>
                     ) : (

@@ -3557,6 +3557,20 @@ textarea {
   gap: 5px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--harbor-sand) 34%, transparent) transparent;
+  padding-right: 3px;
+}
+
+.harbor-world-chat-mini-messages::-webkit-scrollbar {
+  width: 4px;
+}
+
+.harbor-world-chat-mini-messages::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--harbor-sand) 34%, transparent);
 }
 
 .harbor-world-chat-mini-line {
