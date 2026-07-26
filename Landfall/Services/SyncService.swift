@@ -329,8 +329,7 @@ final class SyncService {
         guard let uid else { return }
         for collection in [
             itemsCollection(uid), sessionsCollection(uid), daysCollection(uid),
-            voyageLogsCollection(uid), destinationsCollection(uid),
-            db.collection("users").document(uid).collection("state")
+            voyageLogsCollection(uid), destinationsCollection(uid)
         ] {
             let snapshot = try await collection.getDocuments()
             for doc in snapshot.documents { try await doc.reference.delete() }

@@ -179,47 +179,43 @@ export function VoyageChartPanel({ roomId }: { roomId: string }) {
   return (
     <div className="quest-panel">
       <p className="section-label">{t("voyageTitle")}</p>
+      <p className="quest-intro">{t("voyageIntro")}</p>
+      <p className="row-sub" style={{ margin: "12px 0 6px" }}>
+        {t("voyageTargetLabel")}
+      </p>
+      <div className="chip-row">
+        {[20, 50, 100].map((h) => (
+          <button
+            key={h}
+            className={`chip${!customHours.trim() && presetHours === h ? " selected" : ""}`}
+            onClick={() => {
+              setPresetHours(h);
+              setCustomHours("");
+            }}
+          >
+            {hoursShortLabel(h)}
+          </button>
+        ))}
+        <input
+          className="field quest-hours-field"
+          inputMode="numeric"
+          value={customHours}
+          onChange={(e) => setCustomHours(e.target.value.replace(/[^0-9]/g, "").slice(0, 5))}
+          placeholder={t("voyageCustomHours")}
+          aria-label={t("voyageTargetLabel")}
+        />
+        <span className="row-sub">{t("hoursUnit")}</span>
+      </div>
       {routes === null ? (
-        <>
-          <p className="quest-intro">{t("voyageIntro")}</p>
-          <p className="row-sub" style={{ margin: "12px 0 6px" }}>
-            {t("voyageTargetLabel")}
-          </p>
-          <div className="chip-row">
-            {[20, 50, 100].map((h) => (
-              <button
-                key={h}
-                className={`chip${!customHours.trim() && presetHours === h ? " selected" : ""}`}
-                onClick={() => {
-                  setPresetHours(h);
-                  setCustomHours("");
-                }}
-              >
-                {hoursShortLabel(h)}
-              </button>
-            ))}
-            <input
-              className="field quest-hours-field"
-              inputMode="numeric"
-              value={customHours}
-              onChange={(e) =>
-                setCustomHours(e.target.value.replace(/[^0-9]/g, "").slice(0, 5))
-              }
-              placeholder={t("voyageCustomHours")}
-              aria-label={t("voyageTargetLabel")}
-            />
-            <span className="row-sub">{t("hoursUnit")}</span>
-          </div>
-          <div style={{ marginTop: 14 }}>
-            <button
-              className="primary-button"
-              onClick={() => setSeed(newVoyageSeed())}
-              disabled={!valid}
-            >
-              {t("openChart")}
-            </button>
-          </div>
-        </>
+        <div style={{ marginTop: 14 }}>
+          <button
+            className="primary-button"
+            onClick={() => setSeed(newVoyageSeed())}
+            disabled={!valid}
+          >
+            {t("openChart")}
+          </button>
+        </div>
       ) : (
         <>
           <ChartSvg routes={routes} selected={routeIndex} onSelect={setRouteIndex} />

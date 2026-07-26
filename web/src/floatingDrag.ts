@@ -28,11 +28,6 @@ interface DragStart extends Position {
 const EDGE_GAP = 8;
 const MOVE_THRESHOLD = 5;
 
-interface FloatingDragOptions {
-  /// 下部タブバーがある狭い画面で、そのぶんだけカードの可動域を持ち上げる。
-  mobileBottomInset?: number;
-}
-
 function readSaved(key: string): SavedPosition | null {
   try {
     const value = JSON.parse(localStorage.getItem(key) ?? "null") as Partial<SavedPosition> | null;
@@ -54,10 +49,7 @@ function readSaved(key: string): SavedPosition | null {
 
 /// fixed 要素を画面内で自由に動かし、中心位置を画面比率で保存する。
 /// 比率保存なので、スマホの回転や別サイズの画面でも画面外へ消えない。
-export function useFloatingDrag(
-  storageKey: string,
-  options: FloatingDragOptions = {},
-) {
+export function useFloatingDrag(storageKey: string) {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const startRef = useRef<DragStart | null>(null);
   const latestRef = useRef<Position | null>(null);
@@ -69,10 +61,6 @@ export function useFloatingDrag(
     const rect = elementRef.current?.getBoundingClientRect();
     const width = rect?.width ?? 0;
     const height = rect?.height ?? 0;
-    const bottomGap =
-      window.matchMedia("(max-width: 600px)").matches
-        ? Math.max(EDGE_GAP, options.mobileBottomInset ?? EDGE_GAP)
-        : EDGE_GAP;
     return {
       left: Math.min(
         Math.max(EDGE_GAP, left),
@@ -80,10 +68,10 @@ export function useFloatingDrag(
       ),
       top: Math.min(
         Math.max(EDGE_GAP, top),
-        Math.max(EDGE_GAP, window.innerHeight - height - bottomGap),
+        Math.max(EDGE_GAP, window.innerHeight - height - EDGE_GAP),
       ),
     };
-  }, [options.mobileBottomInset]);
+  }, []);
 
   const applyPosition = useCallback(
     (next: Position) => {
