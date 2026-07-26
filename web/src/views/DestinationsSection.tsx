@@ -18,7 +18,7 @@ import {
 import type { UserData } from "../data";
 import { boatProps } from "../boat";
 import { BoatSvg, CoastSvg } from "../symbols";
-import { askConfirm } from "../overlays";
+import { askConfirm, showToast } from "../overlays";
 import { canUseWebGL } from "../webgl";
 import {
   deadlineRemainingLabel,
@@ -76,6 +76,8 @@ function remainingLabel(progress: DestinationProgress): string {
 /// カードの右上に出す一言。ステップ目標なら「次: 〈次のステップ〉」を、
 /// なければ従来の残り表示を返す(近い目標を提示して手を動かしやすくする)。
 function destSubLabel(dest: Destination, progress: DestinationProgress): string {
+  // 着いたら残り(「あと0分」)ではなく、着いたことを言う。
+  if (progress.reached) return t("landReady");
   if (progress.stepsTotal !== undefined) {
     const next = dest.steps?.find((s) => !s.doneAt);
     return next
@@ -100,7 +102,8 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
   // world: 開いている世界。dest=null は「新規作成」を世界の中で行う。
   const [world, setWorld] = useState<{ dest: Destination | null } | null>(null);
   const [celebrating, setCelebrating] = useState<Destination | null>(null);
-  const celebratedRef = useRef<Set<string>>(new Set());
+  // 二重に押させない。保存の往復のあいだにもう一度押されると、着岸が二回走る。
+  const landingRef = useRef<Set<string>>(new Set());
 
   // 毎描画で新しい配列を作ると、下の到達検知 effect が毎描画で走り、
   // 正しさが celebratedRef だけに依存してしまう。中身が変わったときだけ作り直す。
@@ -109,18 +112,38 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
     [data.destinations],
   );
 
-  // 到達の検知。達成した瞬間に achievedAt を刻み、着岸の一枚を出す。
-  useEffect(() => {
-    for (const dest of active) {
-      const progress = destinationProgress(dest, data.sessions);
-      if (progress.reached && !celebratedRef.current.has(dest.id)) {
-        celebratedRef.current.add(dest.id);
-        void saveDestination(uid, { ...dest, achievedAt: new Date() });
-        setCelebrating(dest);
-        break;
-      }
+  // 上陸は本人が決める。条件を満たしても自動では祝わない。
+  //
+  // 以前は達成を検知した瞬間に achievedAt を刻み、そのまま着岸の一幕を流していた。
+  // だが期日目標の達成条件は「締切時刻を過ぎたこと」なので、何もしなくても
+  // 時間が経てば着岸し、達成ではなく期限切れを祝うことになっていた。
+  // 「辿り着いた」と決めるのは本人の仕事にする。
+  const land = async (dest: Destination, early: boolean): Promise<boolean> => {
+    if (early) {
+      const ok = await askConfirm({
+        title: t("landHere"),
+        message: t("landHereConfirm"),
+        confirmLabel: t("landHere"),
+      });
+      if (!ok) return false;
     }
-  }, [active, data.sessions, uid]);
+    if (landingRef.current.has(dest.id)) return false;
+    landingRef.current.add(dest.id);
+    const achieved = { ...dest, achievedAt: new Date() };
+    try {
+      // 祝うのは書き込めたあと。先に一幕を流すと、保存に失敗したときに
+      // 「着岸したのに記録が残っていない」状態を祝ってしまう。
+      await saveDestination(uid, achieved);
+    } catch {
+      showToast(t("errGeneric"));
+      return false;
+    } finally {
+      landingRef.current.delete(dest.id);
+    }
+    // 島の名前と航海した時間は保存の往復を待たずに手元の値で足りる。
+    setCelebrating(achieved);
+    return true;
+  };
 
   // 完了ゴールのその場チェック。世界を開かず、カード上で直接完了にする
   // (記録と同じくらい軽い操作にするため — 到達の検知は上のeffectがそのまま拾う)。
@@ -152,6 +175,7 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
                 data={data}
                 onClick={() => setWorld({ dest })}
                 onMarkDone={dest.manual ? () => void markDone(dest) : undefined}
+                onLand={() => void land(dest, false)}
               />
             ) : (
               <DestinationCard
@@ -160,6 +184,7 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
                 data={data}
                 onClick={() => setWorld({ dest })}
                 onMarkDone={dest.manual ? () => void markDone(dest) : undefined}
+                onLand={() => void land(dest, false)}
               />
             ),
           )
@@ -180,6 +205,18 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
               data={data}
               uid={uid}
               onClose={() => setWorld(null)}
+              // まだ届いていなくても、本人の意思でこの航海を締められる。
+              // 届いているときは出さない — カードに「上陸する」が既に出ているし、
+              // 確認の文(まだ届いていない)がその場合は嘘になる。
+              // 取り消したときは世界を閉じない(確認で戻ってきた人を放り出さない)。
+              onLand={
+                world.dest && !destinationProgress(world.dest, data.sessions).reached
+                  ? async () => {
+                      const target = world.dest!;
+                      if (await land(target, true)) setWorld(null);
+                    }
+                  : undefined
+              }
             />
           </Suspense>
         </VoyageErrorBoundary>
@@ -262,6 +299,22 @@ function CompleteCheckButton({ onMarkDone }: { onMarkDone: () => void }) {
   );
 }
 
+/// 上陸のボタン。島に着いた(条件を満たした)ときだけ、カードの下端に出す。
+/// 丸い小さなチェックにはしない。ここは航海の締めなので、はっきり読める言葉で置く。
+function LandButton({ onLand }: { onLand: () => void }) {
+  return (
+    <button
+      className="dest-land"
+      onClick={(e) => {
+        e.stopPropagation();
+        onLand();
+      }}
+    >
+      {t("landNow")}
+    </button>
+  );
+}
+
 /// 1件目の目的地の3D航海シーン。読込中と描画失敗時は2Dカードのまま。
 function VoyageCard({
   paused,
@@ -269,12 +322,14 @@ function VoyageCard({
   data,
   onClick,
   onMarkDone,
+  onLand,
 }: {
   paused: boolean;
   dest: Destination;
   data: UserData;
   onClick: () => void;
   onMarkDone?: () => void;
+  onLand: () => void;
 }) {
   const progress = destinationProgress(dest, data.sessions);
   const item = dest.itemUUID ? data.items.find((i) => i.id === dest.itemUUID) : undefined;
@@ -290,14 +345,28 @@ function VoyageCard({
   // WebGLのコンテキストが失われたら2Dカードへ落とす(真っ白のまま残さない)。
   const [glLost, setGlLost] = useState(false);
   if (glLost) {
-    return <DestinationCard dest={dest} data={data} onClick={onClick} onMarkDone={onMarkDone} />;
+    return (
+      <DestinationCard
+        dest={dest}
+        data={data}
+        onClick={onClick}
+        onMarkDone={onMarkDone}
+        onLand={onLand}
+      />
+    );
   }
   return (
     // 描画失敗時のみ2Dカードへ。読込中は3Dシーンと同じ器(夜の海色+見出し)を
     // 出しておき、2Dカードが一瞬挟まるチラつきをなくす。
     <VoyageErrorBoundary
       fallback={
-        <DestinationCard dest={dest} data={data} onClick={onClick} onMarkDone={onMarkDone} />
+        <DestinationCard
+          dest={dest}
+          data={data}
+          onClick={onClick}
+          onMarkDone={onMarkDone}
+          onLand={onLand}
+        />
       }
     >
       <Suspense
@@ -321,6 +390,7 @@ function VoyageCard({
           }
           paused={paused}
           onContextLost={() => setGlLost(true)}
+          action={progress.reached ? <LandButton onLand={onLand} /> : undefined}
         >
           {onMarkDone && <CompleteCheckButton onMarkDone={onMarkDone} />}
         </VoyageScene>
@@ -335,11 +405,13 @@ function DestinationCard({
   data,
   onClick,
   onMarkDone,
+  onLand,
 }: {
   dest: Destination;
   data: UserData;
   onClick: () => void;
   onMarkDone?: () => void;
+  onLand: () => void;
 }) {
   const progress = destinationProgress(dest, data.sessions);
   const label = destSubLabel(dest, progress);
@@ -371,6 +443,7 @@ function DestinationCard({
         <span className="dest-remaining">{label}</span>
         {onMarkDone && <CompleteCheckButton onMarkDone={onMarkDone} />}
       </div>
+      {progress.reached && <LandButton onLand={onLand} />}
       <div className="dest-horizon" />
       {/* ステップ目標: 航路の目印を小さな pips(●達成/○未達)で示す。 */}
       {dest.steps && dest.steps.length > 0 && (

@@ -48,6 +48,10 @@ export interface VoyageWorldProps {
   data: UserData;
   uid: string;
   onClose: () => void;
+  /// この航海を「上陸した」として締める。まだ条件を満たしていなくても押せる
+  /// (期日目標のように、届いたかどうかを本人しか決められない目標があるため)。
+  /// 新規作成中は渡らない。
+  onLand?: () => void;
 }
 
 type Phase = "enter" | "idle" | "exit";
@@ -477,7 +481,7 @@ function timeInputValue(d: Date): string {
 }
 
 /// 没入エディタ本体。全画面の夜の海+世界に馴染む半透明の編集UI。
-export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldProps) {
+export default function VoyageWorld({ dest, data, uid, onClose, onLand }: VoyageWorldProps) {
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
@@ -953,6 +957,12 @@ export default function VoyageWorld({ dest, data, uid, onClose }: VoyageWorldPro
           >
             {t("save")}
           </button>
+          {/* 上陸。保存や削除とは別の行動なので、間に静かな一行として置く。 */}
+          {dest && onLand && (
+            <button className="voyage-world-link" onClick={onLand} disabled={working}>
+              {t("landHere")}
+            </button>
+          )}
           {dest && (
             <button className="danger-button" onClick={remove} disabled={working}>
               {t("deleteDestination")}

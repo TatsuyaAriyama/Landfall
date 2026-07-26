@@ -1811,6 +1811,42 @@ textarea {
   font-weight: 500;
 }
 
+/* 上陸のボタン。海図カードの下端に置く、砂色の小さな錠。
+   丸いチェックにはしない — ここは航海の締めなので、言葉で読ませる。 */
+.dest-land {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 2;
+  min-height: 36px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--harbor-sand);
+  color: var(--harbor-teal);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dest-land:active {
+  transform: translateX(-50%) scale(0.97);
+}
+
+/* 目的地の世界の中の、静かな一行(保存でも削除でもない行動)。 */
+.voyage-world-link {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  color: color-mix(in srgb, var(--harbor-sand) 70%, transparent);
+}
+
+.voyage-world-link:disabled {
+  opacity: 0.5;
+}
+
 /* 到達した島の印(航海誌) */
 
 .island-mark {

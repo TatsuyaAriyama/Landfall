@@ -33,6 +33,9 @@ export interface VoyageSceneProps {
   footnote?: string;
   /// 見出しに重ねる追加UI(完了ゴールのチェックボタンなど)。
   children?: ReactNode;
+  /// カードの面に重ねる行動(上陸のボタンなど)。children は見出しの中に入るので、
+  /// 下端に置きたいものはこちらに渡す(見出しを基準に bottom を測ってしまう)。
+  action?: ReactNode;
   /// 上に全画面の世界が重なっているあいだ true。描画を止める。
   /// IntersectionObserver は「画面内にあるか」しか見ないので、上に別の全画面が
   /// 乗っていても「見えている」ままになり、iPhoneでは2つのWebGLが同時に回って
@@ -442,6 +445,7 @@ export default function VoyageScene({
   steps,
   footnote,
   children,
+  action,
   paused = false,
   onContextLost,
 }: VoyageSceneProps) {
@@ -502,6 +506,7 @@ export default function VoyageScene({
       </div>
       {/* 直近に辿り着いた小島と、その日付(小さなオレンジ文字) */}
       {footnote && <span className="voyage-footnote">{footnote}</span>}
+      {action}
       <Canvas
         dpr={[1, 2]}
         frameloop={animate && visible && !paused ? "always" : "demand"}
