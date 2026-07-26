@@ -3463,11 +3463,12 @@ textarea {
 .harbor-world,
 .harbor-world-fallback {
   position: relative;
-  height: 260px;
+  height: 320px;
   margin-top: 14px;
   border-radius: var(--radius);
   overflow: hidden;
   background: #123830;
+  box-shadow: 0 18px 42px color-mix(in srgb, #071713 18%, transparent);
 }
 
 .harbor-world canvas {
@@ -3528,7 +3529,7 @@ textarea {
 }
 
 /* 世界の中でも会話を見失わない、小さな半透明チャット。
-   最新3件と入力だけに絞り、海と船を覆い尽くさない。 */
+   過去ログと入力を一つの器に収め、港町を覆い尽くさない。 */
 .harbor-world-chat-mini {
   position: absolute;
   left: 14px;
@@ -3667,17 +3668,44 @@ textarea {
   pointer-events: none;
 }
 
-/* 島の上の港名。名前ピルよりさらに控えめに。 */
+/* 港町の上の港名。家々より前へ出しつつ、景色を隠さない小さな銘板に。 */
 .harbor-world-island {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  color: color-mix(in srgb, var(--harbor-sand) 80%, transparent);
-  background: color-mix(in srgb, #123830 55%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  color: color-mix(in srgb, var(--harbor-sand) 90%, transparent);
+  background: color-mix(in srgb, #123830 62%, transparent);
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 16%, transparent);
   border-radius: 999px;
-  padding: 3px 10px;
+  padding: 4px 12px;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* 朝昼も航海画面と同じ空になる。文字UIだけは濃い海色へ寄せ、
+   明るい空の上でも港名と入場の誘いを見失わない。 */
+.harbor-world.time-morning .harbor-world-enter-hint,
+.harbor-world.time-day .harbor-world-enter-hint,
+.harbor-world.time-morning .harbor-world-name,
+.harbor-world.time-day .harbor-world-name,
+.harbor-world.time-morning .harbor-world-island,
+.harbor-world.time-day .harbor-world-island {
+  color: #123830;
+  background: color-mix(in srgb, #eadebd 78%, transparent);
+  border-color: color-mix(in srgb, #123830 14%, transparent);
+}
+
+@media (max-width: 600px) {
+  .harbor-world,
+  .harbor-world-fallback {
+    height: 286px;
+    margin-inline: -4px;
+  }
+
+  .harbor-world-enter-hint {
+    top: 8px;
+    font-size: 10px;
+  }
 }
 
 /* 写真ボタン。シーン右下に小さく。 */

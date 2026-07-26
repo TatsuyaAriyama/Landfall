@@ -17,8 +17,8 @@ import {
 import { Html, OrbitControls, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
-import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
-import { Horizon, Island } from "./VoyageScene";
+import { Moon, Ripples, Sea, Sun } from "./SeaParts";
+import { Horizon } from "./VoyageScene";
 import { boatPartsFromIds } from "../boat";
 import {
   ROOM_MAX_MEMBERS,
@@ -37,13 +37,14 @@ import { saveCanvas } from "../share";
 import { demoLitMemberIds, isDemo } from "../demo";
 import { playStrike } from "../audio";
 import { lang, t, voyageRemainingLabel } from "../i18n";
+import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 
-// 港の「みんなの海」。参加メンバー全員の船が同じ夜の海に浮かび、
-// 同じ島(港の名前を持つ島)へ向かって並走している世界。
-// VoyageScene/BoatStudioと同じ品質言語(低ポリ+flatShading、夜の海、星、月、波紋)。
+// 港の「みんなの海」。参加メンバー全員の船が同じ桟橋へ帰り、
+// 灯台と家々の灯が迎える、小さなホームタウン。
+// VoyageScene/BoatStudioと同じ品質言語(低ポリ+flatShading、時間帯の海、波紋)。
 //
 // 反ストリークの約束: 船の位置は進捗・量・順位では決めない。
-// uidのハッシュだけで決まる固定レーン+有機的な前後オフセット。誰も先頭ではない。
+// uidのハッシュだけで決まる固定の舫い場所。誰も先頭ではない。
 
 /// マウント後に届いた着岸/帰還を、船からの一撃として世界に流すイベント。
 export interface StrikeEvent {
@@ -67,10 +68,10 @@ export interface HarborWorldProps {
   immersiveChat?: ReactNode;
 }
 
-const CAM_POS: [number, number, number] = [0.2, 2.6, 8.4];
-const CAM_TARGET: [number, number, number] = [0.5, 0.35, 0];
+const CAM_POS: [number, number, number] = [0.2, 3.1, 9.4];
+const CAM_TARGET: [number, number, number] = [0.45, 0.7, -1.25];
 
-// 没入(みんなの海に入る)ときの遠景→近景ドリー。遠景はコンパクトの構図そのまま。
+// 没入(港町に入る)ときの遠景→近景ドリー。遠景はコンパクトの構図そのまま。
 type WorldPhase = "enter" | "idle" | "exit";
 const HARBOR_FAR_POS = new THREE.Vector3(CAM_POS[0], CAM_POS[1], CAM_POS[2]);
 const HARBOR_FAR_TARGET = new THREE.Vector3(CAM_TARGET[0], CAM_TARGET[1], CAM_TARGET[2]);
@@ -78,17 +79,13 @@ const HARBOR_DOLLY_SECONDS = 1.2;
 function easeInOutCubic(v: number): number {
   return v < 0.5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2;
 }
-// 島(VoyageSceneのIslandは[3.5,0,-0.9]基準)を右奥へ寄せる分。
-const ISLAND_SHIFT: [number, number, number] = [0.9, 0, -1.9];
-const ISLAND_TOP: [number, number, number] = [
-  3.5 + ISLAND_SHIFT[0],
-  1.6,
-  -0.9 + ISLAND_SHIFT[2],
-];
-// 並走のレーン(手前→奥)。中央寄せで使う。前後の基準位置はレーンごとに
-// 互い違いにして、ハッシュの揺らぎが重なっても船同士がぶつからないようにする。
-const LANES_Z = [2.05, 0.65, -0.75, -2.15];
-const LANES_X = [0.15, -2.05, 0.75, -1.35];
+// 桟橋前の停泊位置。最大4隻を互い違いに舫い、進捗や順位では位置を変えない。
+const MOORINGS = [
+  { x: -2.55, z: 1.42, rot: -0.04 },
+  { x: -0.86, z: 1.75, rot: 0.025 },
+  { x: 0.9, z: 1.35, rot: -0.02 },
+  { x: 2.58, z: 1.68, rot: 0.04 },
+] as const;
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
 const LANTERN_GEO = new THREE.SphereGeometry(0.16, 10, 8);
@@ -109,30 +106,276 @@ interface Berth {
   phase: number;
 }
 
-/// メンバー(最大4人)を固定レーンへ。ハッシュ順に並べ、前後は有機的にばらす。
+/// メンバー(最大4人)を港の固定桟橋へ。ハッシュ順で決まり、量や順位には連動しない。
 function makeBerths(members: HarborMember[]): Berth[] {
   const fleet = members
     .slice(0, ROOM_MAX_MEMBERS)
     .map((member) => ({ member, hash: hashUid(member.id) }))
     .sort((a, b) => a.hash - b.hash || (a.member.id < b.member.id ? -1 : 1));
-  const start = Math.floor((LANES_Z.length - fleet.length) / 2);
+  const start = Math.floor((MOORINGS.length - fleet.length) / 2);
   return fleet.map(({ member, hash }, i) => {
-    const lane = Math.min(start + i, LANES_Z.length - 1);
+    const mooring = MOORINGS[Math.min(start + i, MOORINGS.length - 1)];
     return {
       member,
-      x: LANES_X[lane] + ((((hash >> 3) % 100) / 100) * 0.7 - 0.35),
-      z: LANES_Z[lane],
-      rot: 0.04 + (((hash >> 9) % 100) / 100) * 0.12,
+      x: mooring.x + ((((hash >> 3) % 100) / 100) * 0.16 - 0.08),
+      z: mooring.z + ((((hash >> 11) % 100) / 100) * 0.1 - 0.05),
+      rot: mooring.rot,
       phase: ((hash >> 5) % 628) / 100,
     };
   });
+}
+
+// ---- 帰る場所としての港町 ----
+
+const HARBOR_ROOF_COLORS = ["#A75539", "#D07A4A", "#87614D", "#B66A43"] as const;
+const HARBOR_HOUSES = [
+  { x: -2.78, z: -3.02, scale: 0.88, turn: -0.05 },
+  { x: -1.62, z: -3.58, scale: 1.02, turn: 0.04 },
+  { x: -0.34, z: -3.15, scale: 0.8, turn: -0.03 },
+  { x: 0.82, z: -3.72, scale: 1.12, turn: 0.035 },
+  { x: 2.2, z: -3.18, scale: 0.9, turn: -0.04 },
+] as const;
+const HARBOR_PIER_X = [-1.72, 0, 1.72] as const;
+
+function HarborHouse({
+  index,
+  roomSeed,
+  lightsOn,
+}: {
+  index: number;
+  roomSeed: number;
+  lightsOn: boolean;
+}) {
+  const house = HARBOR_HOUSES[index];
+  const roof = HARBOR_ROOF_COLORS[(roomSeed + index * 3) % HARBOR_ROOF_COLORS.length];
+  const wall = index % 2 === 0 ? "#D8C99E" : "#C7B784";
+  const windowGlow = lightsOn ? "#F5B85B" : "#6E8C7D";
+  return (
+    <group
+      position={[house.x, 0, house.z]}
+      rotation={[0, house.turn, 0]}
+      scale={house.scale}
+    >
+      <mesh position={[0, 0.52, 0]}>
+        <boxGeometry args={[0.92, 0.88, 0.78]} />
+        <meshStandardMaterial color={wall} flatShading roughness={0.9} />
+      </mesh>
+      <mesh position={[0, 1.12, 0]} rotation={[0, Math.PI / 4, 0]}>
+        <coneGeometry args={[0.72, 0.56, 4]} />
+        <meshStandardMaterial color={roof} flatShading roughness={0.88} />
+      </mesh>
+      <mesh position={[-0.24, 0.56, 0.397]}>
+        <planeGeometry args={[0.19, 0.24]} />
+        <meshStandardMaterial
+          color={windowGlow}
+          emissive={windowGlow}
+          emissiveIntensity={lightsOn ? 1.35 : 0.04}
+          fog={!lightsOn}
+        />
+      </mesh>
+      <mesh position={[0.24, 0.56, 0.397]}>
+        <planeGeometry args={[0.19, 0.24]} />
+        <meshStandardMaterial
+          color={windowGlow}
+          emissive={windowGlow}
+          emissiveIntensity={lightsOn ? 1.1 : 0.04}
+          fog={!lightsOn}
+        />
+      </mesh>
+      <mesh position={[0, 0.31, 0.403]}>
+        <planeGeometry args={[0.22, 0.47]} />
+        <meshStandardMaterial color="#604331" flatShading roughness={0.95} />
+      </mesh>
+      <mesh position={[0.28, 1.35, -0.12]}>
+        <boxGeometry args={[0.14, 0.52, 0.16]} />
+        <meshStandardMaterial color="#70503A" flatShading roughness={0.92} />
+      </mesh>
+    </group>
+  );
+}
+
+function HarborBeacon({
+  animate,
+  lightsOn,
+}: {
+  animate: boolean;
+  lightsOn: boolean;
+}) {
+  const flame = useRef<THREE.Mesh>(null);
+  useFrame(({ clock }) => {
+    if (!animate) return;
+    if (flame.current) {
+      const pulse = 0.92 + Math.sin(clock.elapsedTime * 3.1) * 0.08;
+      flame.current.scale.set(pulse, 0.9 + pulse * 0.16, pulse);
+    }
+  });
+
+  return (
+    <>
+      {/* 灯台。港へ帰る船から最初に見える、細い白塔と橙の灯。 */}
+      <group position={[3.72, 0, -3.72]}>
+        <mesh position={[0, 0.72, 0]}>
+          <cylinderGeometry args={[0.3, 0.46, 1.42, 10]} />
+          <meshStandardMaterial color="#E4D8B9" flatShading roughness={0.82} />
+        </mesh>
+        <mesh position={[0, 1.45, 0]}>
+          <cylinderGeometry args={[0.42, 0.42, 0.15, 10]} />
+          <meshStandardMaterial color="#88452F" flatShading roughness={0.82} />
+        </mesh>
+        <mesh position={[0, 1.7, 0]}>
+          <cylinderGeometry args={[0.27, 0.27, 0.4, 10]} />
+          <meshStandardMaterial
+            color={lightsOn ? "#FFD27B" : "#B9D5C9"}
+            emissive={lightsOn ? "#FF9F43" : "#B9D5C9"}
+            emissiveIntensity={lightsOn ? 2.4 : 0.08}
+            transparent
+            opacity={0.92}
+            fog={!lightsOn}
+          />
+        </mesh>
+        <mesh position={[0, 2.02, 0]} rotation={[0, Math.PI / 4, 0]}>
+          <coneGeometry args={[0.5, 0.4, 4]} />
+          <meshStandardMaterial color="#A95035" flatShading roughness={0.85} />
+        </mesh>
+        {lightsOn && (
+          <pointLight
+            position={[0, 1.7, 0]}
+            color="#FFD27B"
+            intensity={0.7}
+            distance={4.8}
+            decay={2}
+          />
+        )}
+      </group>
+
+      {/* 中央広場の帰港灯。時間帯にかかわらず小さく燃え、夜は周囲を照らす。 */}
+      <group position={[1.15, 0.24, -1.92]}>
+        <mesh position={[0, 0.12, 0]}>
+          <cylinderGeometry args={[0.34, 0.42, 0.24, 8]} />
+          <meshStandardMaterial color="#5D4033" flatShading roughness={0.92} />
+        </mesh>
+        <mesh ref={flame} position={[0, 0.48, 0]}>
+          <coneGeometry args={[0.22, 0.62, 7]} />
+          <meshStandardMaterial
+            color="#FFB14A"
+            emissive="#F5822A"
+            emissiveIntensity={2.2}
+            fog={false}
+          />
+        </mesh>
+        {lightsOn && (
+          <pointLight color="#FF9A43" intensity={1.25} distance={4.2} decay={2} />
+        )}
+      </group>
+    </>
+  );
+}
+
+function HarborTown({
+  roomSeed,
+  timeOfDay,
+  animate,
+}: {
+  roomSeed: number;
+  timeOfDay: TimeOfDay;
+  animate: boolean;
+}) {
+  const lightsOn = timeOfDay === "evening" || timeOfDay === "night";
+  return (
+    <group>
+      {/* 丸い港島と石造りの岸壁。海側を大きく切り欠いて船溜まりにする。 */}
+      <mesh position={[0.55, -0.14, -3.42]} scale={[1.42, 0.28, 0.82]}>
+        <cylinderGeometry args={[4.15, 4.7, 0.72, 18]} />
+        <meshStandardMaterial color="#8F805B" flatShading roughness={1} />
+      </mesh>
+      <mesh position={[0.25, 0.14, -1.15]}>
+        <boxGeometry args={[7.65, 0.3, 0.5]} />
+        <meshStandardMaterial color="#81785F" flatShading roughness={0.95} />
+      </mesh>
+      <mesh position={[0.25, 0.31, -1.01]}>
+        <boxGeometry args={[7.7, 0.08, 0.28]} />
+        <meshStandardMaterial color="#C8B98F" flatShading roughness={0.92} />
+      </mesh>
+
+      {/* 水面へ伸びる三本の木桟橋。船同士の間に置き、甲板を隠さない。 */}
+      {HARBOR_PIER_X.map((x) => (
+        <group key={x} position={[x, 0, 0]}>
+          <mesh position={[0, 0.16, 0.1]}>
+            <boxGeometry args={[0.28, 0.18, 2.3]} />
+            <meshStandardMaterial color="#76523A" flatShading roughness={0.96} />
+          </mesh>
+          {[-0.82, -0.18, 0.46, 1.1].map((z) => (
+            <mesh key={z} position={[0, 0.27, z]}>
+              <boxGeometry args={[0.5, 0.06, 0.08]} />
+              <meshStandardMaterial color="#A27650" flatShading roughness={0.94} />
+            </mesh>
+          ))}
+          <mesh position={[-0.12, 0.02, 1.05]}>
+            <cylinderGeometry args={[0.045, 0.055, 0.5, 7]} />
+            <meshStandardMaterial color="#4A3428" flatShading roughness={1} />
+          </mesh>
+          <mesh position={[0.12, 0.02, 1.05]}>
+            <cylinderGeometry args={[0.045, 0.055, 0.5, 7]} />
+            <meshStandardMaterial color="#4A3428" flatShading roughness={1} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* 防波堤。港内の静かな水面と、航海の外海を視覚的に分ける。 */}
+      <mesh position={[-3.55, 0.08, -0.05]} rotation={[0, 0.34, 0]}>
+        <boxGeometry args={[2.25, 0.32, 0.42]} />
+        <meshStandardMaterial color="#6E6B5E" flatShading roughness={1} />
+      </mesh>
+      <mesh position={[3.63, 0.08, 0.02]} rotation={[0, -0.32, 0]}>
+        <boxGeometry args={[2.1, 0.32, 0.42]} />
+        <meshStandardMaterial color="#6E6B5E" flatShading roughness={1} />
+      </mesh>
+
+      {HARBOR_HOUSES.map((_, index) => (
+        <HarborHouse
+          key={index}
+          index={index}
+          roomSeed={roomSeed}
+          lightsOn={lightsOn}
+        />
+      ))}
+
+      {/* 集会所。少し大きい屋根と正面の円窓を、町の中心の目印にする。 */}
+      <group position={[1.18, 0, -2.42]}>
+        <mesh position={[0, 0.62, 0]}>
+          <boxGeometry args={[1.42, 1.05, 0.94]} />
+          <meshStandardMaterial color="#D1C294" flatShading roughness={0.9} />
+        </mesh>
+        <mesh position={[0, 1.38, 0]} rotation={[0, Math.PI / 4, 0]}>
+          <coneGeometry args={[1.02, 0.78, 4]} />
+          <meshStandardMaterial color="#8F4E38" flatShading roughness={0.88} />
+        </mesh>
+        <mesh position={[0, 0.75, 0.477]}>
+          <circleGeometry args={[0.22, 12]} />
+          <meshStandardMaterial
+            color={lightsOn ? "#F5C36D" : "#779B8B"}
+            emissive={lightsOn ? "#F5822A" : "#779B8B"}
+            emissiveIntensity={lightsOn ? 1.3 : 0.04}
+            fog={!lightsOn}
+          />
+        </mesh>
+        <mesh position={[0, 0.33, 0.48]}>
+          <planeGeometry args={[0.32, 0.56]} />
+          <meshStandardMaterial color="#614231" flatShading roughness={0.95} />
+        </mesh>
+      </group>
+
+      <HarborBeacon animate={animate} lightsOn={lightsOn} />
+    </group>
+  );
 }
 
 // ---- 航路の海域(嵐/海獣) ----
 // 進捗が海域の区間に入ると船団と島の間に現れる。海域内の潮目3段階で縮み・薄れ、
 // 抜けると海へ帰る/晴れる。品質言語は世界と同じ(低ポリ+flatShading・フラット)。
 
-const ENCOUNTER_POS: [number, number, number] = [2.45, 0, -1.35];
+// 港町は安全な前景に置き、航海中の海域は防波堤の外・左奥に遠く見せる。
+const ENCOUNTER_POS: [number, number, number] = [-4.2, 0, -3.8];
 const BEAST_BODY_COLOR = "#342A5C"; // midnight系(夜の海に沈まない程度に持ち上げ)
 const BEAST_DARK_COLOR = "#241A44"; // midnight寄りの陰
 const EYE_ORANGE = "#F5822A"; // returnOrange
@@ -648,16 +891,16 @@ function ImmersiveCamera({
   const near = useMemo(() => {
     const aspect = size.width / Math.max(size.height, 1);
     const wide = aspect >= 1.05;
-    // 横長は少し引いて船団と島を広く、縦長はさらに引いて狭い視野を補う。
+    // 横長は町と船団を広く、縦長は中央広場を主役にして周囲を回って眺められる距離へ。
     return wide
       ? {
-          pos: new THREE.Vector3(0.2, 1.75, 6.2),
-          target: new THREE.Vector3(0.4, 0.5, -0.4),
+          pos: new THREE.Vector3(0.2, 2.55, 8.6),
+          target: new THREE.Vector3(0.4, 0.72, -1.5),
           maxPolar: Math.PI * 0.54,
         }
       : {
-          pos: new THREE.Vector3(0.2, 1.85, 7.4),
-          target: new THREE.Vector3(0.4, 0.35, -0.4),
+          pos: new THREE.Vector3(0.25, 2.95, 9.9),
+          target: new THREE.Vector3(0.35, 0.72, -1.72),
           maxPolar: Math.PI * 0.5,
         };
   }, [size.width, size.height]);
@@ -798,9 +1041,11 @@ function MemberBoat({
   );
 }
 
-/// シーン本体。夜の海+右奥の島(港名)+並走する船団+航路の海域(海獣/嵐)。
+/// シーン本体。時間帯の海+港町+停泊する船団+沖の航路の海域(海獣/嵐)。
 function HarborSea({
   roomName,
+  roomSeed,
+  timeOfDay,
   berths,
   litIds,
   arrivingMemberIds,
@@ -818,6 +1063,8 @@ function HarborSea({
   onWorldExited,
 }: {
   roomName: string;
+  roomSeed: number;
+  timeOfDay: TimeOfDay;
   berths: Berth[];
   litIds: ReadonlySet<string>;
   arrivingMemberIds: ReadonlySet<string>;
@@ -847,6 +1094,7 @@ function HarborSea({
   const advance = useRef(advanceOn ? 1 : 0);
   const dim = useRef(1);
   const arriveClock = useRef<number | null>(null);
+  const light = SEA_LIGHT[timeOfDay];
 
   // 海域の中では海がわずかに暗く、潮目が進むごとに明るさが戻る。
   const dimTarget =
@@ -854,11 +1102,16 @@ function HarborSea({
   const advanceTarget = advanceOn ? 1 : 0;
 
   const applyVoyageLook = () => {
-    if (keyLight.current) keyLight.current.intensity = 1.15 * dim.current;
-    if (fillLight.current) fillLight.current.intensity = 0.2 * dim.current;
-    if (ambient.current) ambient.current.intensity = 0.45 * (0.6 + 0.4 * dim.current);
-    // 到着後、船団は島へ向けて滑走する(島の方向へ平行移動)。
-    fleet.current?.position.set(advance.current * 1.5, 0, advance.current * -0.7);
+    if (keyLight.current) {
+      keyLight.current.intensity = (timeOfDay === "day" ? 1.45 : 1.08) * dim.current;
+    }
+    if (fillLight.current) fillLight.current.intensity = 0.25 * dim.current;
+    if (ambient.current) {
+      ambient.current.intensity =
+        (timeOfDay === "day" ? 0.85 : 0.48) * (0.6 + 0.4 * dim.current);
+    }
+    // 到着後は船団が岸壁へほんの少し寄り、港へ戻った余韻だけを残す。
+    fleet.current?.position.set(0, 0, advance.current * -0.22);
   };
 
   // 固定の斜め視点(VoyageSceneと同じ作法)。スクロール中の帯なので
@@ -895,38 +1148,63 @@ function HarborSea({
 
   return (
     <>
-      <color attach="background" args={[NIGHT_BG]} />
-      <fog attach="fog" args={[NIGHT_BG, 12, 30]} />
-      {/* 月光: VoyageSceneと同じトーン。影は使わない。 */}
-      <ambientLight ref={ambient} color="#ffe9c8" intensity={0.45} />
-      <directionalLight ref={keyLight} color="#EADEBD" intensity={1.15} position={[-6, 8, -5]} />
-      <directionalLight ref={fillLight} color="#5DCAA5" intensity={0.2} position={[5, 3, 6]} />
+      <color attach="background" args={[light.sky]} />
+      <fog attach="fog" args={[light.fog, 12, 31]} />
+      {/* 航海中の海と同じ時刻・同じ光。港だけ別の夜にはしない。 */}
+      <ambientLight
+        ref={ambient}
+        color={light.ambient}
+        intensity={timeOfDay === "day" ? 0.85 : 0.48}
+      />
+      <directionalLight
+        ref={keyLight}
+        color={light.keyLight}
+        intensity={timeOfDay === "day" ? 1.45 : 1.08}
+        position={timeOfDay === "morning" ? [-7, 5, -8] : [-6, 8, -5]}
+      />
+      <directionalLight
+        ref={fillLight}
+        color={light.fillLight}
+        intensity={0.25}
+        position={[5, 3, 6]}
+      />
       <Stars
         radius={42}
         depth={18}
-        count={380}
+        count={light.stars}
         factor={2.0}
         saturation={0}
         fade
         speed={animate ? 0.5 : 0}
       />
-      <Moon position={[-8, 2.8, -16]} />
-      <Sea moonX={-8} animate={animate} />
+      {light.celestial === "moon" ? (
+        <Moon position={[-8, 2.8, -16]} />
+      ) : (
+        <Sun
+          position={timeOfDay === "evening" ? [-7, 2.4, -16] : [-7, 5.2, -16]}
+          color={light.reflection}
+        />
+      )}
+      <Sea
+        moonX={-7}
+        animate={animate}
+        seaColor={light.sea}
+        deepColor={light.seaDeep}
+        lightColor={light.reflection}
+        reflection={timeOfDay === "day" ? 0.34 : 0.5}
+      />
       <Horizon />
-      {/* 右奥の島。上に港の名前が小さく浮かぶ。 */}
-      <group position={ISLAND_SHIFT}>
-        <Island />
-      </group>
+      <HarborTown roomSeed={roomSeed} timeOfDay={timeOfDay} animate={animate} />
       <Html
-        position={ISLAND_TOP}
+        position={[0.75, 2.35, -3.25]}
         center
-        distanceFactor={8}
+        distanceFactor={9}
         zIndexRange={[1, 0]}
         style={{ pointerEvents: "none" }}
       >
         <div className="harbor-world-island">{roomName}</div>
       </Html>
-      {/* 海域: 船団と島の間のハリケーン/海獣。抜けるアニメの間は残して見送る/沈める。 */}
+      {/* 海域: 防波堤の外に見えるハリケーン/海獣。港内へは入れない。 */}
       {encounter &&
         (encounter.kind === "storm" ? (
           <Hurricane
@@ -951,7 +1229,7 @@ function HarborSea({
           onDone={() => onBoltDone(bolt.id)}
         />
       ))}
-      {/* 船団。到着後はグループごと島へ滑走する。 */}
+      {/* 船団。町の前へ固定し、帰港時だけ岸壁へわずかに寄せる。 */}
       <group ref={fleet}>
         {berths.map((berth) => (
           <MemberBoat
@@ -989,7 +1267,7 @@ function HarborSea({
   );
 }
 
-/// みんなの海。260pxの横長Canvas+写真ボタン+灯の一行+共同航海の海域。
+/// 帰港する3Dのホームタウン。桟橋・町・写真・チャット・共同航海を一つにする。
 export default function HarborWorld({
   room,
   members,
@@ -1000,6 +1278,8 @@ export default function HarborWorld({
   arrivingMemberIds = new Set<string>(),
   immersiveChat,
 }: HarborWorldProps) {
+  const timeOfDay = useTimeOfDay();
+  const harborLight = SEA_LIGHT[timeOfDay];
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
@@ -1271,7 +1551,7 @@ export default function HarborWorld({
     out.height = h + footer;
     const ctx = out.getContext("2d");
     if (!ctx) return;
-    ctx.fillStyle = NIGHT_BG;
+    ctx.fillStyle = harborLight.sky;
     ctx.fillRect(0, 0, out.width, out.height);
     // preserveDrawingBufferなしで確実に写すため、直前に同期レンダリングする。
     state.gl.render(state.scene, state.camera);
@@ -1300,7 +1580,8 @@ export default function HarborWorld({
     <>
       <div
         ref={rootRef}
-        className={`harbor-world${immersive ? " immersive" : ""}`}
+        className={`harbor-world time-${timeOfDay}${immersive ? " immersive" : ""}`}
+        data-time-of-day={timeOfDay}
       >
         <Canvas
           dpr={[1, 2]}
@@ -1312,6 +1593,8 @@ export default function HarborWorld({
         >
           <HarborSea
             roomName={room.name}
+            roomSeed={hashUid(room.id)}
+            timeOfDay={timeOfDay}
             berths={berths}
             litIds={litIds}
             arrivingMemberIds={arrivingMemberIds}

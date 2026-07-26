@@ -127,10 +127,10 @@ const ja = {
   errGeneric: "うまくいきませんでした。もう一度お試しください。",
   back: "戻る",
 
-  // みんなの海(港の3D)
+  // 帰る場所(港の3Dホームタウン)
   takePhoto: "写真を撮る",
-  lanternHint: "今日走った船には、灯がともる。",
-  enterWorldHint: "海をタップして、世界に入る",
+  lanternHint: "今日、海へ出た船には灯がともる。",
+  enterWorldHint: "港町をタップして、帰る場所へ",
 
   // 共同航海(海図と航路)
   voyageTitle: "共同航海",
@@ -477,7 +477,7 @@ const en: Record<I18nKey, string> = {
 
   takePhoto: "Take a photo",
   lanternHint: "Boats that sailed today carry a light.",
-  enterWorldHint: "Tap the sea to enter the world",
+  enterWorldHint: "Tap the harbor to return home",
 
   voyageTitle: "Voyage together",
   voyageIntro:
