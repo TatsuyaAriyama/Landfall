@@ -2,14 +2,14 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 
-// 夜の海の共有部品。BoatStudio(船スタジオ)とVoyageScene(目的地の航海)で使う。
-// 配色は2Dの夜の入港(harborTeal地+sand塗り)と同じ世界。
+// 海の共有部品。既定は従来の夜色だが、航海シーンから時間帯の配色も受け取れる。
 
 export const NIGHT_BG = "#123830";
 export const SEA_COLOR = "#1E5348";
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
 const MOON_GEO = new THREE.SphereGeometry(1.1, 20, 14);
+const SUN_GEO = new THREE.SphereGeometry(0.72, 20, 14);
 const SEA_GEO = new THREE.CircleGeometry(30, 48);
 const RIPPLE_GEO = new THREE.RingGeometry(0.9, 1.0, 48);
 
@@ -23,6 +23,21 @@ export function Moon({ position }: { position: [number, number, number] }) {
         emissiveIntensity={0.95}
         fog={false}
       />
+    </mesh>
+  );
+}
+
+/// 朝昼夕の太陽。時間帯ごとの色を受け、空の低さだけは呼び出し側で決める。
+export function Sun({
+  position,
+  color,
+}: {
+  position: [number, number, number];
+  color: string;
+}) {
+  return (
+    <mesh geometry={SUN_GEO} position={position}>
+      <meshBasicMaterial color={color} fog={false} />
     </mesh>
   );
 }
@@ -47,6 +62,7 @@ const SEA_FRAG = /* glsl */ `
   uniform vec3 uMoon;
   uniform float uMoonX;
   uniform float uTime;
+  uniform float uReflection;
   varying vec2 vPos;
   void main() {
     float r = length(vPos) / 30.0;
@@ -63,29 +79,44 @@ const SEA_FRAG = /* glsl */ `
     // さざ波で反射を分断する、ゆっくりした揺らぎ。
     float shimmer = 0.55 + 0.45 * sin(vPos.y * 1.1 - uTime * 1.4)
                                 * sin(vPos.x * 0.9 + uTime * 0.7);
-    float streak = clamp(band * along * shimmer, 0.0, 1.0) * 0.5;
+    float streak = clamp(band * along * shimmer, 0.0, 1.0) * uReflection;
     col = mix(col, uMoon, streak);
     gl_FragColor = vec4(col, 1.0);
   }
 `;
 
-/// 海。大きな円盤に、放射グラデーションと月光の筋(月の真下に立つ揺らぐ光)。
-/// moonX にそのシーンの月のX座標を渡すと、反射がその真下に立つ。
-export function Sea({ moonX = 0, animate = true }: { moonX?: number; animate?: boolean }) {
+/// 海。大きな円盤に、放射グラデーションと太陽/月の反射の筋。
+/// moonX にそのシーンの天体のX座標を渡すと、反射がその真下に立つ。
+export function Sea({
+  moonX = 0,
+  animate = true,
+  seaColor = SEA_COLOR,
+  deepColor = SEA_DEEP,
+  lightColor = SEA_MOON,
+  reflection = 0.5,
+}: {
+  moonX?: number;
+  animate?: boolean;
+  seaColor?: string;
+  deepColor?: string;
+  lightColor?: string;
+  reflection?: number;
+}) {
   const mat = useMemo(
     () =>
       new THREE.ShaderMaterial({
         vertexShader: SEA_VERT,
         fragmentShader: SEA_FRAG,
         uniforms: {
-          uSea: { value: new THREE.Color(SEA_COLOR) },
-          uDeep: { value: new THREE.Color(SEA_DEEP) },
-          uMoon: { value: new THREE.Color(SEA_MOON) },
+          uSea: { value: new THREE.Color(seaColor) },
+          uDeep: { value: new THREE.Color(deepColor) },
+          uMoon: { value: new THREE.Color(lightColor) },
           uMoonX: { value: moonX },
           uTime: { value: 0 },
+          uReflection: { value: reflection },
         },
       }),
-    [moonX],
+    [moonX, seaColor, deepColor, lightColor, reflection],
   );
   useEffect(() => () => mat.dispose(), [mat]);
 

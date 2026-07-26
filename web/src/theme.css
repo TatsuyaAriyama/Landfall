@@ -82,6 +82,145 @@ textarea {
   padding: 0 24px 96px;
 }
 
+/* ホームは、現地時刻の海を一枚の背景として持つ。
+   時刻を文字で説明せず、空の色・水平線・水面の光だけで朝昼晩を伝える。 */
+.shell.home-ocean {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  color: var(--ink);
+  transition: color 1.2s ease;
+}
+
+.home-ocean.time-morning {
+  --ink: #173f3c;
+  --home-sky-a: #f7d4b5;
+  --home-sky-b: #d9e8dd;
+  --home-sea-a: #a7d2c8;
+  --home-sea-b: #73aaa7;
+  --home-glow: #fff1c9;
+  --home-glass: #f6eee1;
+  --home-wave: rgba(255, 245, 220, 0.28);
+  --home-light-x: 20%;
+  --home-stars: transparent;
+}
+
+.home-ocean.time-day {
+  --ink: #123b40;
+  --home-sky-a: #a9deeb;
+  --home-sky-b: #d7eeea;
+  --home-sea-a: #8cc9cd;
+  --home-sea-b: #4f969c;
+  --home-glow: #fff5c8;
+  --home-glass: #e7f4ef;
+  --home-wave: rgba(255, 255, 235, 0.25);
+  --home-light-x: 62%;
+  --home-stars: transparent;
+}
+
+.home-ocean.time-evening {
+  --ink: #fff0da;
+  --home-sky-a: #a85552;
+  --home-sky-b: #df9476;
+  --home-sea-a: #527e7b;
+  --home-sea-b: #284f58;
+  --home-glow: #ffc27e;
+  --home-glass: #173f43;
+  --home-wave: rgba(255, 204, 142, 0.2);
+  --home-light-x: 78%;
+  --home-stars: rgba(255, 239, 204, 0.32);
+}
+
+.home-ocean.time-night {
+  --ink: #f4f1ec;
+  --home-sky-a: #0b2927;
+  --home-sky-b: #123a35;
+  --home-sea-a: #194b43;
+  --home-sea-b: #0b2928;
+  --home-glow: #d8e0c8;
+  --home-glass: #102f2c;
+  --home-wave: rgba(205, 226, 211, 0.15);
+  --home-light-x: 74%;
+  --home-stars: rgba(238, 232, 201, 0.6);
+}
+
+.home-ocean::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at var(--home-light-x) 15%, var(--home-glow) 0 1.1%, transparent 8%),
+    radial-gradient(circle at 14% 8%, var(--home-stars) 0 1px, transparent 1.4px),
+    radial-gradient(circle at 83% 24%, var(--home-stars) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 52% 13%, var(--home-stars) 0 0.8px, transparent 1.3px),
+    linear-gradient(
+      to bottom,
+      var(--home-sky-a) 0%,
+      var(--home-sky-b) 35%,
+      var(--home-sea-a) 35.4%,
+      var(--home-sea-b) 100%
+    );
+  transition: background 1.2s ease;
+}
+
+.home-ocean::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  left: -18vw;
+  right: -18vw;
+  top: 35%;
+  bottom: 0;
+  pointer-events: none;
+  opacity: 0.9;
+  background:
+    radial-gradient(ellipse at var(--home-light-x) 0%, var(--home-wave), transparent 28%),
+    repeating-linear-gradient(
+      176deg,
+      transparent 0 18px,
+      var(--home-wave) 19px 20px,
+      transparent 21px 38px
+    );
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.4), #000 38%, transparent 100%);
+  animation: home-tide 18s ease-in-out infinite alternate;
+}
+
+@keyframes home-tide {
+  from {
+    transform: translate3d(-1.2%, 0, 0);
+  }
+  to {
+    transform: translate3d(1.2%, 8px, 0);
+  }
+}
+
+/* 記録は海を隠さない薄い一枚に載せ、明るい昼も暗い夜も読みやすくする。 */
+.home-ocean .rows {
+  margin-inline: -10px;
+  padding-inline: 10px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--home-glass) 42%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.home-ocean .voyage-scene,
+.home-ocean .dest-card {
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.home-ocean .today-date {
+  border-bottom-color: color-mix(in srgb, var(--return-orange) 48%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-ocean::after {
+    animation: none;
+  }
+}
+
 .topbar {
   display: flex;
   align-items: center;
@@ -1334,6 +1473,13 @@ textarea {
     z-index: 4;
   }
 
+  .home-ocean .tabs {
+    background: color-mix(in srgb, var(--home-glass) 82%, transparent);
+    border-top-color: color-mix(in srgb, var(--ink) 14%, transparent);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+
   /* 親指圏のタブバー: アイコンの上下積み+小ラベル。 */
   .tab {
     flex: 1;
@@ -1594,6 +1740,33 @@ textarea {
   overflow: hidden;
   text-align: left;
   transition: transform 0.12s ease-out;
+}
+
+.home-ocean.time-morning .dest-card,
+.home-ocean.time-morning .voyage-scene {
+  background: #e8b789;
+}
+
+.home-ocean.time-day .dest-card,
+.home-ocean.time-day .voyage-scene {
+  background: #77c6d7;
+}
+
+.home-ocean.time-evening .dest-card,
+.home-ocean.time-evening .voyage-scene {
+  background: #b85f58;
+}
+
+.home-ocean.time-night .dest-card,
+.home-ocean.time-night .voyage-scene {
+  background: #123830;
+}
+
+.home-ocean.time-morning .dest-name,
+.home-ocean.time-morning .dest-remaining,
+.home-ocean.time-day .dest-name,
+.home-ocean.time-day .dest-remaining {
+  color: #123b40;
 }
 
 .dest-card:active {
@@ -2425,6 +2598,32 @@ textarea {
   transition: transform 0.12s ease-out;
 }
 
+.voyage-scene.time-morning {
+  background: #e8b789;
+}
+
+.voyage-scene.time-day {
+  background: #77c6d7;
+}
+
+.voyage-scene.time-evening {
+  background: #b85f58;
+}
+
+.voyage-scene.time-night {
+  background: #123830;
+}
+
+.voyage-scene.time-morning .voyage-name,
+.voyage-scene.time-day .voyage-name {
+  color: #123b40;
+}
+
+.voyage-scene.time-morning .voyage-remaining,
+.voyage-scene.time-day .voyage-remaining {
+  color: color-mix(in srgb, #123b40 68%, transparent);
+}
+
 .voyage-scene:active {
   transform: scale(0.99);
 }
@@ -2538,7 +2737,7 @@ textarea {
 }
 
 /* ---- 航海中の世界(ストップウォッチ) ---- */
-/* 目的地の世界(.voyage-world)と同じ作法。夜に固定し、タブバーより上に置く。 */
+/* 目的地の世界(.voyage-world)と同じ作法。時間帯の海としてタブバーより上に置く。 */
 .voyaging-world {
   position: fixed;
   inset: 0;
@@ -2548,6 +2747,45 @@ textarea {
   --paper: #123830;
   color: var(--ink);
   color-scheme: dark;
+}
+
+.voyaging-world.time-morning {
+  background: #e8b789;
+}
+
+.voyaging-world.time-day {
+  background: #77c6d7;
+}
+
+.voyaging-world.time-evening {
+  background: #b85f58;
+}
+
+.voyaging-world.time-night {
+  background: #123830;
+}
+
+/* 明るい海ではUIも墨色へ切り替える。夜用の白い文字をそのまま置くと、
+   朝霧や昼空に溶けて操作が見えなくなる。 */
+.voyaging-world.time-morning,
+.voyaging-world.time-day {
+  --ink: #123b40;
+  --paper: #edf7f2;
+  color-scheme: light;
+}
+
+.voyaging-world.time-morning .voyaging-panel,
+.voyaging-world.time-day .voyaging-panel {
+  background: color-mix(in srgb, #edf7f2 76%, transparent);
+}
+
+.voyaging-world.time-morning .voyaging-break,
+.voyaging-world.time-day .voyaging-break,
+.voyaging-world.time-morning .voyaging-mode,
+.voyaging-world.time-day .voyaging-mode,
+.voyaging-world.time-morning .voyage-world-close,
+.voyaging-world.time-day .voyage-world-close {
+  background: color-mix(in srgb, #edf7f2 62%, transparent);
 }
 
 .voyaging-world canvas {

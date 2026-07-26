@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { OfflineWatcher, OverlayHost } from "./overlays";
 import { t } from "./i18n";
 import { demoData, isDemo } from "./demo";
+import { useTimeOfDay } from "./timeOfDay";
 
 type Tab = "today" | "trace" | "logbook" | "boat" | "harbor";
 
@@ -68,6 +69,7 @@ export default function App() {
 function Main({ uid }: { uid: string }) {
   const [tab, setTabState] = useState<Tab>(() => initialTab());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const timeOfDay = useTimeOfDay();
   const live = useUserData(uid, !isDemo);
   const data = isDemo ? demoData() : live;
 
@@ -77,7 +79,10 @@ function Main({ uid }: { uid: string }) {
   };
 
   return (
-    <div className="shell">
+    <div
+      className={`shell${tab === "today" ? ` home-ocean time-${timeOfDay}` : ""}`}
+      data-time-of-day={tab === "today" ? timeOfDay : undefined}
+    >
       <header className="topbar">
         <span className="brand">
           <BrandMark size={28} />
