@@ -15,6 +15,9 @@
 /index.html
   Cache-Control: no-store
 
+/404.html
+  Cache-Control: no-store
+
 # no-cache は Cloudflare 側で max-age=14400 に正規化されてしまったので、
 # トップページと同じ「max-age=0 + 毎回検証」の形で書く(こちらは通る)。
 /sw.js
