@@ -2698,6 +2698,42 @@ textarea {
   color-scheme: dark;
 }
 
+.voyage-world.time-morning {
+  background: #e8b789;
+}
+
+.voyage-world.time-day {
+  background: #77c6d7;
+}
+
+.voyage-world.time-evening {
+  background: #b85f58;
+}
+
+.voyage-world.time-night {
+  background: #123830;
+}
+
+/* タイマー航海と同じ世界なので、明るい海では目的地の編集UIも同じ墨色へ切り替える。 */
+.voyage-world.time-morning,
+.voyage-world.time-day {
+  --ink: #123b40;
+  --paper: #edf7f2;
+  color-scheme: light;
+}
+
+.voyage-world.time-morning .voyage-world-panel,
+.voyage-world.time-day .voyage-world-panel {
+  background: color-mix(in srgb, #edf7f2 76%, transparent);
+}
+
+.voyage-world.time-morning .voyage-world-name,
+.voyage-world.time-day .voyage-world-name,
+.voyage-world.time-morning .voyage-world-close,
+.voyage-world.time-day .voyage-world-close {
+  background: color-mix(in srgb, #edf7f2 62%, transparent);
+}
+
 .voyage-world canvas {
   display: block;
   /* ドラッグで世界を回す(ページは背後で固定済み) */

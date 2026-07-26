@@ -11,7 +11,7 @@ import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber"
 import { Html, OrbitControls, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
-import { NIGHT_BG, Ripples, Sea } from "./SeaParts";
+import { NIGHT_BG, Ripples, Sea, Sun } from "./SeaParts";
 import {
   Horizon,
   Island,
@@ -39,10 +39,11 @@ import { askConfirm, showToast } from "../overlays";
 import { t } from "../i18n";
 import { useBackToClose } from "../backClose";
 import { TAP_SLOP } from "./voyageConstants";
+import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 
 // 目的地の没入エディタ。3D航海カードをタップすると、この「世界」へズームインして
-// 入り、夜の海の中で島の名前・対象項目・目標を設定・変更できる。
-// 保存/削除/検証はDestinationDialogと同等。世界観はVoyageScene/BoatStudioと同じ。
+// 入り、現在時刻と連動する海の中で島の名前・対象項目・目標を設定・変更できる。
+// 保存/削除/検証はDestinationDialogと同等。世界観はVoyageScene/航海タイマーと同じ。
 
 export interface VoyageWorldProps {
   dest: Destination | null; // null = 新規作成(世界の中でそのまま設定する)
@@ -71,6 +72,12 @@ const MOON_GEO = new THREE.SphereGeometry(1.1, 20, 14);
 const BOAT_HIT_GEO = new THREE.BoxGeometry(3.0, 2.6, 1.6);
 const TAP_RING_GEO = new THREE.RingGeometry(0.9, 1.0, 48);
 const SHOOTING_GEO = new THREE.PlaneGeometry(1.8, 0.035);
+const DESTINATION_LIGHT_OFFSET: Record<TimeOfDay, [number, number, number]> = {
+  morning: [-1.8, 2.4, -14],
+  day: [2.2, 3.8, -14],
+  evening: [3.2, 2.2, -14],
+  night: [3.2, 2.7, -14],
+};
 
 // この世界の空を旋回するカモメ。ホームの目的地カード(VoyageScene)で飛んでいる
 // カモメが、カードを押して入ったあとの世界にも居るようにする。
@@ -188,7 +195,13 @@ function CameraRig({
 }
 
 /// 月。タップするとふわっと一瞬明るくなる(emissiveをease)。
-function TappableMoon({ animate }: { animate: boolean }) {
+function TappableMoon({
+  animate,
+  position,
+}: {
+  animate: boolean;
+  position: [number, number, number];
+}) {
   const mat = useRef<THREE.MeshStandardMaterial>(null);
   const glowAt = useRef(-Infinity);
   const clock = useThree((s) => s.clock);
@@ -203,7 +216,7 @@ function TappableMoon({ animate }: { animate: boolean }) {
   return (
     <mesh
       geometry={MOON_GEO}
-      position={[-8, 3.2, -16]}
+      position={position}
       onClick={(e: ThreeEvent<MouseEvent>) => {
         e.stopPropagation();
         if (e.delta > TAP_SLOP) return;
@@ -359,10 +372,11 @@ function PlayfulBoat({ boatX, animate }: { boatX: number; animate: boolean }) {
   );
 }
 
-/// 世界そのもの。VoyageScene/BoatStudioと同じ夜の海+星・月・霧・島・船。
+/// 世界そのもの。VoyageScene/航海タイマーと同じ時間帯の空・海・天体・島・船。
 function WorldScene({
   phase,
   animate,
+  timeOfDay,
   boatX,
   islandLabel,
   steps,
@@ -372,6 +386,7 @@ function WorldScene({
 }: {
   phase: Phase;
   animate: boolean;
+  timeOfDay: TimeOfDay;
   boatX: number;
   islandLabel: string;
   steps?: VoyageStep[];
@@ -379,6 +394,9 @@ function WorldScene({
   onEntered: () => void;
   onExited: () => void;
 }) {
+  const light = SEA_LIGHT[timeOfDay];
+  // 夜は従来の密度(620個)を保ち、夕方は共有パレットの薄い星空へ比例させる。
+  const starCount = Math.round(light.stars * (620 / SEA_LIGHT.night.stars));
   // 近景の構図は画面の縦横比で決める。横長なら船と島の中間を見る。縦長は
   // 視野が狭いので船寄り+少し引き、下部パネルに隠れないよう視線をやや
   // 沈めて船を画面上寄りに置く(島は回して見つける楽しみに残す)。
@@ -404,34 +422,62 @@ function WorldScene({
           gullCenter,
         };
   }, [boatX, size.width, size.height]);
+  // 船は進捗によって航路を移動する。時間帯ごとの方角は保ったまま注視点を基準にし、
+  // どの進捗から世界へ入っても太陽/月が初期視野に入るようにする。
+  const lightOffset = DESTINATION_LIGHT_OFFSET[timeOfDay];
+  const lightPosition: [number, number, number] = [
+    near.target.x + lightOffset[0],
+    lightOffset[1],
+    lightOffset[2],
+  ];
 
   return (
     <>
-      <color attach="background" args={[NIGHT_BG]} />
-      <fog attach="fog" args={[NIGHT_BG, 12, 30]} />
-      {/* 月光: VoyageSceneと同じトーン。影は使わない。 */}
-      <ambientLight color="#ffe9c8" intensity={0.45} />
-      <directionalLight color="#EADEBD" intensity={1.15} position={[-6, 8, -5]} />
-      <directionalLight color="#5DCAA5" intensity={0.2} position={[5, 3, 6]} />
-      <Stars
-        radius={42}
-        depth={18}
-        count={620}
-        factor={2.1}
-        saturation={0}
-        fade
-        speed={animate ? 0.5 : 0}
+      <color attach="background" args={[light.sky]} />
+      <fog attach="fog" args={[light.fog, 12, 30]} />
+      <ambientLight color={light.ambient} intensity={timeOfDay === "day" ? 0.85 : 0.48} />
+      <directionalLight
+        color={light.keyLight}
+        intensity={timeOfDay === "day" ? 1.45 : 1.08}
+        position={[-6, 8, -5]}
       />
-      <TappableMoon animate={animate} />
-      <ShootingStar animate={animate} />
-      <Sea moonX={-8} animate={animate} />
-      <Horizon />
-      <Gulls
-        flock={WORLD_GULLS}
+      <directionalLight color={light.fillLight} intensity={0.24} position={[5, 3, 6]} />
+      {starCount > 0 && (
+        <Stars
+          radius={42}
+          depth={18}
+          count={starCount}
+          factor={2.1}
+          saturation={0}
+          fade
+          speed={animate ? 0.5 : 0}
+        />
+      )}
+      {timeOfDay === "night" ? (
+        <>
+          <TappableMoon animate={animate} position={lightPosition} />
+          <ShootingStar animate={animate} />
+        </>
+      ) : (
+        <Sun position={lightPosition} color={light.reflection} />
+      )}
+      <Sea
+        moonX={lightPosition[0]}
         animate={animate}
-        center={near.gullCenter}
-        opacity={GULL_OPACITY}
+        seaColor={light.sea}
+        deepColor={light.seaDeep}
+        lightColor={light.reflection}
+        reflection={timeOfDay === "day" ? 0.34 : 0.5}
       />
+      <Horizon />
+      {timeOfDay !== "night" && (
+        <Gulls
+          flock={WORLD_GULLS}
+          animate={animate}
+          center={near.gullCenter}
+          opacity={GULL_OPACITY}
+        />
+      )}
       <Island />
       {/* ステップ目標なら、航路にブイを浮かべる。タップでその場で達成/取消。 */}
       {steps && steps.length > 0 && <StepBuoys steps={steps} onToggle={onToggleStep} />}
@@ -483,11 +529,12 @@ function dateTimeInputValue(d: Date): string {
   return `${dateInputValue(d)}T${timeInputValue(d)}`;
 }
 
-/// 没入エディタ本体。全画面の夜の海+世界に馴染む半透明の編集UI。
+/// 没入エディタ本体。全画面の時間帯の海+世界に馴染む半透明の編集UI。
 export default function VoyageWorld({ dest, data, uid, onClose, onLand }: VoyageWorldProps) {
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
+  const timeOfDay = useTimeOfDay();
   const [phase, setPhase] = useState<Phase>(animate ? "enter" : "idle");
   // 海など「外側」をタップすると、編集UIをフェードして世界に入り込む(もう一度タップで戻る)。
   const [uiHidden, setUiHidden] = useState(false);
@@ -804,7 +851,8 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
   return (
     <div
       ref={rootRef}
-      className="voyage-world"
+      className={`voyage-world time-${timeOfDay}`}
+      data-time-of-day={timeOfDay}
       role="dialog"
       aria-modal="true"
       aria-label={t("destinationTitle")}
@@ -839,6 +887,7 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
         <WorldScene
           phase={phase}
           animate={animate}
+          timeOfDay={timeOfDay}
           boatX={boatX}
           islandLabel={trimmed}
           steps={kind === "steps" ? stepDoneFlags : undefined}
