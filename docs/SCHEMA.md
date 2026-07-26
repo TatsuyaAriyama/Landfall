@@ -52,6 +52,17 @@ docID = `yyyy-MM-dd`(端末ローカルのタイムゾーンでの startOfDay)�
 | `note` | string? | その日のひとこと(セッションのメモとは別)。上限120文字 |
 | `updatedAt` | timestamp? | LWW |
 
+### `users/{uid}/voyageLogs/{yyyy-MM-dd}` — 航海日録
+
+航海誌に残す一日一件の自由記録。作業記録がない日にも書けるため、`days` の
+「学んだ日」刻印とは独立している。docID は端末ローカル日付の `yyyy-MM-dd`。
+
+| フィールド | 型 | 備考 |
+|---|---|---|
+| `date` | timestamp | その日の startOfDay |
+| `body` | string | 本文。1〜2000文字 |
+| `updatedAt` | timestamp | LWW |
+
 ### `users/{uid}/destinations/{uuid}` — 目的地(島)
 
 学習の目標を「島」として置く。到達した日が Landfall(着岸)。アクティブは1つまで(クライアント制約、`MAX_ACTIVE_DESTINATIONS`)。

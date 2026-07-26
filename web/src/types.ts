@@ -112,6 +112,14 @@ export interface StudyDay {
   updatedAt: Date;
 }
 
+/// 航海誌に残す一日ぶんの自由記録。作業記録の有無とは独立して保存する。
+export interface VoyageLogEntry {
+  id: string; // yyyy-MM-dd
+  date: Date;
+  body: string;
+  updatedAt: Date;
+}
+
 /// 日の docID(yyyy-MM-dd、端末ローカルのタイムゾーン)。iOS の dayDocID と同じ。
 export function dayId(date: Date): string {
   const y = date.getFullYear();

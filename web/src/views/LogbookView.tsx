@@ -1,40 +1,25 @@
-import { useMemo, useState } from "react";
-import type { UserData } from "../data";
-import {
-  completedWrappedMonths,
-  wrappedMonth,
-  type Archetype,
-  type WrappedMonth,
-} from "../wrapped";
-import { ArchetypeSymbolSvg, BoatGroup } from "../symbols";
+import { useEffect, useMemo, useState } from "react";
+import { saveVoyageLog, type UserData } from "../data";
+import { BoatGroup } from "../symbols";
 import { boatProps } from "../boat";
-import { drawCard, saveCanvas, type CardKind } from "../share";
-import { lang, t, yearChartTitle, type I18nKey } from "../i18n";
+import { lang, t, yearChartTitle } from "../i18n";
 import { deleteDestination } from "../destinations";
 import { askConfirm } from "../overlays";
-import { serviceStartDay } from "../since";
+import { dayId } from "../types";
 
-// 航海誌。月末に生まれる、その月のまとめカード(iOS の Wrapped と同じ内容)。
-// カードは絵はがき(iOS: 390x693、固定デザインのため常にライトの配色で描く)。
-
-const ARCHETYPE_KEYS: Record<Archetype, { name: I18nKey; tag: I18nKey; sub: I18nKey }> = {
-  phoenix: { name: "typePhoenix", tag: "tagPhoenix", sub: "subPhoenix" },
-  stoneBridge: { name: "typeStoneBridge", tag: "tagStoneBridge", sub: "subStoneBridge" },
-  waveRider: { name: "typeWaveRider", tag: "tagWaveRider", sub: "subWaveRider" },
-  comet: { name: "typeComet", tag: "tagComet", sub: "subComet" },
-  morningCalm: { name: "typeMorningCalm", tag: "tagMorningCalm", sub: "subMorningCalm" },
-};
+// 航海誌。月ごとの共有カードではなく、一日ごとに自由な言葉を残す「航海日録」。
+// 作業記録がない日も書けるため、StudyDay とは独立した voyageLogs に保存する。
 
 export function LogbookView({ uid, data }: { uid: string; data: UserData }) {
-  const [view, setView] = useState<"cards" | "year">("cards");
+  const [view, setView] = useState<"journal" | "year">("journal");
   return (
     <div>
       <div className="chip-row" style={{ marginBottom: 24 }}>
         <button
-          className={`chip${view === "cards" ? " selected" : ""}`}
-          onClick={() => setView("cards")}
+          className={`chip${view === "journal" ? " selected" : ""}`}
+          onClick={() => setView("journal")}
         >
-          {t("monthCards")}
+          {t("voyageJournal")}
         </button>
         <button
           className={`chip${view === "year" ? " selected" : ""}`}
@@ -43,92 +28,145 @@ export function LogbookView({ uid, data }: { uid: string; data: UserData }) {
           {t("yearChart")}
         </button>
       </div>
-      {view === "cards" ? <MonthCards data={data} /> : <YearChart data={data} />}
+      {view === "journal" ? <VoyageJournal uid={uid} data={data} /> : <YearChart data={data} />}
       <ReachedIslands uid={uid} data={data} />
     </div>
   );
 }
 
-function MonthCards({ data }: { data: UserData }) {
-  const months = useMemo(
-    () => completedWrappedMonths(data.days, new Date()),
-    [data.days],
-  );
-  const [selected, setSelected] = useState(0);
+function dateFromId(id: string): Date {
+  return new Date(`${id}T12:00:00`);
+}
 
-  if (months.length === 0) {
-    return <p className="empty-note">{t("firstLogbook")}</p>;
+function formatMinutes(total: number): string {
+  const hours = Math.floor(total / 60);
+  const minutes = total % 60;
+  if (lang === "ja") {
+    return `${hours > 0 ? `${hours}時間` : ""}${minutes}分`;
   }
+  return `${hours > 0 ? `${hours}h ` : ""}${minutes}m`;
+}
 
-  const ym = months[Math.min(selected, months.length - 1)];
-  // 休んだ日は「使い始めた日から」数える(それより前はまだ使っていない日)。
-  const startDay = serviceStartDay(data.days, data.sessions);
-  const month = wrappedMonth(ym.year, ym.month, data.days, data.sessions, startDay);
-  const monthTitle = (y: number, m: number) =>
-    new Intl.DateTimeFormat(lang, { year: "numeric", month: "long" }).format(
-      new Date(y, m - 1, 1),
-    );
+function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
+  const [selectedId, setSelectedId] = useState(() => dayId(new Date()));
+  const selectedDate = dateFromId(selectedId);
+  const entry = data.voyageLogs.find((log) => log.id === selectedId);
+  const [draft, setDraft] = useState(entry?.body ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
+
+  useEffect(() => {
+    setDraft(entry?.body ?? "");
+    setSaved(false);
+    setSaveFailed(false);
+  }, [entry?.body, selectedId]);
+
+  const sessions = data.sessions.filter((session) => dayId(session.date) === selectedId);
+  const totalMinutes = sessions.reduce((sum, session) => sum + session.minutes, 0);
+  const itemNames = [
+    ...new Set(
+      sessions
+        .map((session) => data.items.find((item) => item.id === session.itemUUID)?.name)
+        .filter((name): name is string => Boolean(name)),
+    ),
+  ];
+  const fullDate = new Intl.DateTimeFormat(lang, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(selectedDate);
+
+  const save = async () => {
+    setSaving(true);
+    setSaved(false);
+    setSaveFailed(false);
+    try {
+      await saveVoyageLog(uid, selectedDate, draft);
+      setSaved(true);
+    } catch {
+      setSaveFailed(true);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <div>
-      <div className="chip-row" style={{ marginBottom: 24 }}>
-        {months.map((m, i) => (
-          <button
-            key={`${m.year}-${m.month}`}
-            className={`chip${i === selected ? " selected" : ""}`}
-            onClick={() => setSelected(i)}
-          >
-            {monthTitle(m.year, m.month)}
-          </button>
-        ))}
+    <section className="voyage-journal">
+      <header className="voyage-journal-heading">
+        <div>
+          <p className="section-label">{t("voyageJournal")}</p>
+          <h2>{fullDate}</h2>
+          <p>{t("voyageJournalIntro")}</p>
+        </div>
+        <input
+          className="voyage-journal-date"
+          type="date"
+          value={selectedId}
+          max={dayId(new Date())}
+          onChange={(event) => setSelectedId(event.target.value)}
+          aria-label={t("voyageJournal")}
+        />
+      </header>
+
+      <div className="voyage-journal-weather">
+        <span>{t("voyageJournalTime")}</span>
+        <strong>{formatMinutes(totalMinutes)}</strong>
+        {itemNames.length > 0 && <small>{itemNames.join(" · ")}</small>}
       </div>
 
-      <div className="wrapped-stack">
-        <DaysCard month={month} title={monthTitle(ym.year, ym.month)} />
-        <VoyageCard month={month} />
-        <ArchetypeCard month={month} />
+      <textarea
+        className="voyage-journal-field"
+        value={draft}
+        maxLength={2000}
+        placeholder={t("voyageJournalPrompt")}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setSaved(false);
+          setSaveFailed(false);
+        }}
+      />
+      <div className="voyage-journal-actions">
+        <span>
+          {saveFailed
+            ? t("voyageJournalSaveFailed")
+            : saved
+              ? t("voyageJournalSaved")
+              : `${draft.length} / 2000`}
+        </span>
+        <button
+          className="primary-button"
+          disabled={saving || !draft.trim()}
+          onClick={() => void save()}
+        >
+          {t("voyageJournalSave")}
+        </button>
       </div>
 
-      {/* 画像で保存(スマホでは共有シート)。SNSやアルバムへ。 */}
-      <div className="chip-row" style={{ marginTop: 20, justifyContent: "center" }}>
-        {(
-          [
-            ["days", "saveDaysCard"],
-            ["voyage", "saveVoyageCard"],
-            ["archetype", "saveTypeCard"],
-          ] as [CardKind, "saveDaysCard" | "saveVoyageCard" | "saveTypeCard"][]
-        ).map(([kind, labelKey]) => (
-          <button
-            key={kind}
-            className="chip"
-            onClick={() => {
-              const keys = ARCHETYPE_KEYS[month.archetype];
-              const hours = Math.floor(month.totalMinutes / 60);
-              const mins = month.totalMinutes % 60;
-              const canvas = drawCard(kind, month, monthTitle(ym.year, ym.month), {
-                studied: t("studiedDays"),
-                rested: t("restedDays"),
-                quit: t("quitCount"),
-                total:
-                  month.totalMinutes > 0
-                    ? lang === "ja"
-                      ? `${hours > 0 ? `${hours}時間` : ""}${mins}分`
-                      : `${hours > 0 ? `${hours}h ` : ""}${mins}m`
-                    : "",
-                returns: t("returnsLabel"),
-                longestGap: t("longestGapLabel"),
-                typeName: t(keys.name),
-                tagline: t(keys.tag),
-                subline: t(keys.sub),
-              });
-              void saveCanvas(canvas, `landfall-${ym.year}-${ym.month}-${kind}.png`);
-            }}
-          >
-            {t(labelKey)}
-          </button>
-        ))}
-      </div>
-    </div>
+      <p className="section-label voyage-journal-recent-label">{t("voyageJournalRecent")}</p>
+      {data.voyageLogs.length === 0 ? (
+        <p className="empty-note">{t("voyageJournalEmpty")}</p>
+      ) : (
+        <div className="voyage-journal-entries">
+          {data.voyageLogs.slice(0, 30).map((log) => (
+            <button
+              key={log.id}
+              className={`voyage-journal-entry${log.id === selectedId ? " selected" : ""}`}
+              onClick={() => setSelectedId(log.id)}
+            >
+              <time>
+                {new Intl.DateTimeFormat(lang, {
+                  month: "short",
+                  day: "numeric",
+                }).format(log.date)}
+              </time>
+              <span>{log.body}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -285,108 +323,6 @@ function ReachedIslands({ uid, data }: { uid: string; data: UserData }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function Brandmark({ color }: { color: string }) {
-  return (
-    <div className="wrapped-brand" style={{ color }}>
-      Landfall-StudyLog
-    </div>
-  );
-}
-
-/// 1枚目: 学んだ日・休んだ日・やめた回数(同格の三段)。
-function DaysCard({ month, title }: { month: WrappedMonth; title: string }) {
-  const hours = Math.floor(month.totalMinutes / 60);
-  const mins = month.totalMinutes % 60;
-  const total =
-    lang === "ja"
-      ? `${hours > 0 ? `${hours}時間` : ""}${mins}分`
-      : `${hours > 0 ? `${hours}h ` : ""}${mins}m`;
-  return (
-    <div className="wrapped-card" style={{ background: "#FFD84D", color: "#141414" }}>
-      <div className="wrapped-kicker" style={{ color: "#4A1B0C" }}>
-        {title}
-      </div>
-      <div className="wrapped-stats">
-        <div className="wrapped-stat">
-          <span className="wrapped-number">{month.studiedDays.size}</span>
-          <span className="wrapped-label">{t("studiedDays")}</span>
-        </div>
-        <div className="wrapped-stat">
-          <span className="wrapped-number">{month.restedDays}</span>
-          <span className="wrapped-label">{t("restedDays")}</span>
-        </div>
-        <div className="wrapped-stat">
-          <span className="wrapped-number">0</span>
-          <span className="wrapped-label">{t("quitCount")}</span>
-        </div>
-      </div>
-      {month.totalMinutes > 0 && (
-        <div className="wrapped-total" style={{ color: "#4A1B0C" }}>
-          {total}
-        </div>
-      )}
-      <Brandmark color="rgba(20,20,20,0.4)" />
-    </div>
-  );
-}
-
-/// 2枚目: 月の航海図(日々の帯)と、帰還・いちばん長い空白。
-function VoyageCard({ month }: { month: WrappedMonth }) {
-  return (
-    <div className="wrapped-card" style={{ background: "#F0997B", color: "#4A1B0C" }}>
-      <div className="wrapped-kicker">{t("trace")}</div>
-      <div className="wrapped-days-strip">
-        {Array.from({ length: month.daysInMonth }, (_, i) => i + 1).map((day) => (
-          <span
-            key={day}
-            className="wrapped-day"
-            style={{
-              background: month.studiedDays.has(day) ? "#4A1B0C" : "rgba(74,27,12,0.18)",
-            }}
-          />
-        ))}
-      </div>
-      <div className="wrapped-facts">
-        <div className="wrapped-fact">
-          <span className="wrapped-number">
-            {month.resumeCount}
-            {lang === "ja" && <span className="wrapped-unit">{t("timesUnit")}</span>}
-          </span>
-          <span className="wrapped-label">{t("returnsLabel")}</span>
-        </div>
-        {month.longestGap && (
-          <div className="wrapped-fact">
-            <span className="wrapped-number">
-              {month.longestGap.length}
-              <span className="wrapped-unit">
-                {lang === "ja" ? t("daysUnit") : ` ${t("daysUnit")}`}
-              </span>
-            </span>
-            <span className="wrapped-label">{t("longestGapLabel")}</span>
-          </div>
-        )}
-      </div>
-      <Brandmark color="rgba(74,27,12,0.4)" />
-    </div>
-  );
-}
-
-/// 3枚目: タイプ診断。シンボル+型名+決め台詞+添え書き。
-function ArchetypeCard({ month }: { month: WrappedMonth }) {
-  const keys = ARCHETYPE_KEYS[month.archetype];
-  return (
-    <div className="wrapped-card wrapped-card-center" style={{ background: "#1A1130", color: "#CECBF6" }}>
-      <div className="wrapped-symbol">
-        <ArchetypeSymbolSvg archetype={month.archetype} />
-      </div>
-      <div className="wrapped-type-name">{t(keys.name)}</div>
-      <div className="wrapped-type-tag">{t(keys.tag)}</div>
-      <div className="wrapped-type-sub">{t(keys.sub)}</div>
-      <Brandmark color="rgba(206,203,246,0.4)" />
     </div>
   );
 }

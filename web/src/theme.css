@@ -1537,6 +1537,179 @@ textarea {
   height: auto;
 }
 
+/* ---- 航海誌: 航海日録 ---- */
+
+.voyage-journal {
+  border-radius: var(--radius);
+  padding: 24px;
+  background: color-mix(in srgb, var(--home-glass, var(--paper)) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.voyage-journal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.voyage-journal-heading .section-label {
+  margin: 0 0 8px;
+  color: var(--return-orange);
+}
+
+.voyage-journal-heading h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.voyage-journal-heading p:last-child {
+  margin: 8px 0 0;
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: color-mix(in srgb, var(--ink) 60%, transparent);
+}
+
+.voyage-journal-date {
+  flex: none;
+  min-height: 42px;
+  max-width: 148px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 14px;
+  color-scheme: dark;
+}
+
+.voyage-journal-weather {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 24px 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.voyage-journal-weather span,
+.voyage-journal-weather small {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--ink) 52%, transparent);
+}
+
+.voyage-journal-weather strong {
+  color: var(--return-orange);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.voyage-journal-weather small {
+  margin-left: auto;
+}
+
+.voyage-journal-field {
+  display: block;
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--paper) 12%, transparent);
+  line-height: 1.9;
+  outline: none;
+}
+
+.voyage-journal-field:focus {
+  border-color: color-mix(in srgb, var(--return-orange) 62%, transparent);
+}
+
+.voyage-journal-field::placeholder {
+  color: color-mix(in srgb, var(--ink) 36%, transparent);
+}
+
+.voyage-journal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.voyage-journal-actions span {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--ink) 42%, transparent);
+}
+
+.voyage-journal-actions .primary-button {
+  width: auto;
+  min-height: 44px;
+  padding: 0 22px;
+  font-size: 14px;
+}
+
+.voyage-journal-recent-label {
+  margin-top: 32px;
+}
+
+.voyage-journal-entries {
+  display: flex;
+  flex-direction: column;
+}
+
+.voyage-journal-entry {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 16px;
+  width: 100%;
+  padding: 15px 0;
+  text-align: left;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 11%, transparent);
+}
+
+.voyage-journal-entry time {
+  color: var(--return-orange);
+  font-size: 12px;
+}
+
+.voyage-journal-entry span {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--ink) 72%, transparent);
+  font-size: 13px;
+  line-height: 1.6;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voyage-journal-entry.selected span {
+  color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .voyage-journal {
+    padding: 20px;
+  }
+
+  .voyage-journal-heading {
+    flex-direction: column;
+  }
+
+  .voyage-journal-date {
+    width: 100%;
+    max-width: none;
+  }
+
+  .voyage-journal-weather {
+    flex-wrap: wrap;
+  }
+
+  .voyage-journal-weather small {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
 .boat-preview {
   display: flex;
   align-items: center;

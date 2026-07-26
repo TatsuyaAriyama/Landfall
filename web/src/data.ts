@@ -25,6 +25,7 @@ import {
   type StudyDay,
   type StudyItem,
   type StudySession,
+  type VoyageLogEntry,
 } from "./types";
 
 // users/{uid}/items|sessions|days を購読し、iOS と同じ書式(updatedAt LWW)で書く。
@@ -62,6 +63,7 @@ export interface UserData {
   items: StudyItem[];
   sessions: StudySession[];
   days: StudyDay[];
+  voyageLogs: VoyageLogEntry[];
   destinations: Destination[];
   ready: boolean;
   /// 購読が失敗した、または待っても何も届かなかった。
@@ -80,6 +82,7 @@ interface Loaded {
   items: boolean;
   sessions: boolean;
   days: boolean;
+  voyageLogs: boolean;
 }
 
 /// これだけ待って何も届かなければ、繋がらないものとして扱う。
@@ -91,25 +94,38 @@ export function useUserData(uid: string, enabled = true): UserData {
   const [items, setItems] = useState<StudyItem[]>([]);
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [days, setDays] = useState<StudyDay[]>([]);
+  const [voyageLogs, setVoyageLogs] = useState<VoyageLogEntry[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [loaded, setLoaded] = useState<Loaded>({
     items: false,
     sessions: false,
     days: false,
+    voyageLogs: false,
   });
   const [failed, setFailed] = useState(false);
   // 再試行のたびに増やして、購読を張り直す。
   const [attempt, setAttempt] = useState(0);
-  const loadedRef = useRef<Loaded>({ items: false, sessions: false, days: false });
+  const loadedRef = useRef<Loaded>({
+    items: false,
+    sessions: false,
+    days: false,
+    voyageLogs: false,
+  });
 
   useEffect(() => {
     if (!enabled) return;
     setItems([]);
     setSessions([]);
     setDays([]);
+    setVoyageLogs([]);
     setDestinations([]);
     setFailed(false);
-    loadedRef.current = { items: false, sessions: false, days: false };
+    loadedRef.current = {
+      items: false,
+      sessions: false,
+      days: false,
+      voyageLogs: false,
+    };
     setLoaded(loadedRef.current);
 
     const mark = (key: keyof Loaded) => {
@@ -174,12 +190,34 @@ export function useUserData(uid: string, enabled = true): UserData {
       mark("days");
     }, onError);
 
+    const offVoyageLogs = onSnapshot(
+      collection(db, "users", uid, "voyageLogs"),
+      (snap) => {
+        setVoyageLogs(
+          snap.docs
+            .map((d) => {
+              const v = d.data();
+              return {
+                id: d.id,
+                date: asDate(v.date),
+                body: String(v.body ?? ""),
+                updatedAt: asDate(v.updatedAt),
+              };
+            })
+            .filter((entry) => entry.body.length > 0)
+            .sort((a, b) => b.date.getTime() - a.date.getTime()),
+        );
+        mark("voyageLogs");
+      },
+      onError,
+    );
+
     const offDestinations = listenDestinations(uid, setDestinations);
 
     // 黙ったまま何も来ない場合の見切り。
     const timer = setTimeout(() => {
       const l = loadedRef.current;
-      if (!(l.items && l.sessions && l.days)) setFailed(true);
+      if (!(l.items && l.sessions && l.days && l.voyageLogs)) setFailed(true);
     }, CONNECT_TIMEOUT_MS);
 
     return () => {
@@ -187,15 +225,17 @@ export function useUserData(uid: string, enabled = true): UserData {
       offItems();
       offSessions();
       offDays();
+      offVoyageLogs();
       offDestinations();
     };
   }, [uid, enabled, attempt]);
 
-  const ready = loaded.items && loaded.sessions && loaded.days;
+  const ready = loaded.items && loaded.sessions && loaded.days && loaded.voyageLogs;
   return {
     items,
     sessions,
     days,
+    voyageLogs,
     destinations,
     ready,
     // 届いた後の失敗で画面を作り直さない(既に見えているものは見せ続ける)。
@@ -207,6 +247,26 @@ export function useUserData(uid: string, enabled = true): UserData {
 // ---- 書き込み(iOS の DTO 形に一致させる。undefined は書かない) ----
 // 記録の保存・編集・削除では、参加中の港への月間ペイロード公開と、
 // プライベート港チャットへの自動の行(着岸/帰還)も iOS と同じく行う。
+
+/// 航海日録を一日一件で保存する。空文字は記録の削除として扱う。
+export async function saveVoyageLog(
+  uid: string,
+  date: Date,
+  body: string,
+): Promise<void> {
+  const id = dayId(date);
+  const trimmed = trimAll(body).slice(0, 2000);
+  const ref = doc(db, "users", uid, "voyageLogs", id);
+  if (!trimmed) {
+    await deleteDoc(ref);
+    return;
+  }
+  await setDoc(ref, {
+    date: startOfDay(date),
+    body: trimmed,
+    updatedAt: new Date(),
+  });
+}
 
 export async function saveItem(
   uid: string,

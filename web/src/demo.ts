@@ -194,5 +194,22 @@ export function demoData(): UserData {
       updatedAt: now,
     },
   ];
-  return { items, sessions, days, destinations, ready: true, failed: false, retry: () => {} };
+  const voyageLogs = [
+    {
+      id: dayId(now),
+      date: startOfDay(now),
+      body: "朝は静かな海。英語を30分進め、夜は読書の続きを開いた。",
+      updatedAt: now,
+    },
+  ];
+  return {
+    items,
+    sessions,
+    days,
+    voyageLogs,
+    destinations,
+    ready: true,
+    failed: false,
+    retry: () => {},
+  };
 }
