@@ -57,7 +57,6 @@ import {
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { ProfileEditor } from "./ProfileEditor";
 import { MemberTrace } from "./MemberTrace";
-import { VoyageChartPanel } from "./VoyageChart";
 import { Modal, askConfirm, showToast } from "../overlays";
 import {
   chatDateLabel,
@@ -956,8 +955,7 @@ function RoomDetail({
         </HarborWorldBoundary>
       )}
 
-      {/* 共同航海: 無ければ海図パネル、到着済みなら「次の航海」。 */}
-      {!isDemo && voyage === null && <VoyageChartPanel roomId={room.id} />}
+      {/* 共同航海の新規設定UIは置かない。進行中／到着済みの航海表示だけを残す。 */}
       {!isDemo && voyage?.arrivedAt && (
         <div className="quest-done-row">
           <span className="badge">{t("voyageArrivedBadge")}</span>
