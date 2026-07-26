@@ -168,18 +168,21 @@ export type HoodShape = (typeof HOOD_SHAPES)[number];
 
 const HOOD_GEOS: Record<"peak", THREE.BufferGeometry> = {
   // 頭巾: 先が柔らかく尖り、背中へ垂れる。
+  // 細く、高く。以前は最大半径0.148で頭(0.099)の1.5倍あり、寸胴に見えていた。
+  // 頭に沿わせて0.121まで絞り、そのぶん背を伸ばして縦長の比率にする。
+  // 幅を詰めると布の量が減って軽く見えるので、倒す量は少し増やして流れを残す。
   peak: makeHood(
     [
-      [0.132, -0.035],
-      [0.148, 0.02],
-      [0.146, 0.075],
-      [0.128, 0.132],
-      [0.096, 0.185],
-      [0.058, 0.232],
-      [0.024, 0.268],
-      [0.0, 0.288],
+      [0.106, -0.03],
+      [0.119, 0.025],
+      [0.121, 0.078],
+      [0.112, 0.135],
+      [0.092, 0.192],
+      [0.064, 0.248],
+      [0.032, 0.3],
+      [0.0, 0.338],
     ],
-    0.105,
+    0.125,
   ),
 };
 
@@ -210,7 +213,7 @@ const COWL_GEO = (() => {
 const FOLD_GEO = new THREE.SphereGeometry(0.115, 16, 12);
 
 const FACE_GEO = new THREE.SphereGeometry(0.075, 14, 10);
-const EYE_GEO = new THREE.SphereGeometry(0.019, 10, 8);
+const EYE_GEO = new THREE.SphereGeometry(0.016, 10, 8);
 /// 立ち襟。以前は太いドーナツを首に一周させていたが、輪が一本通るだけで
 /// 浮き輪のように見えて、いちばん野暮ったい部分になっていた。
 /// 首に沿って低く立ち上げ、前は開けて顎の下を塞がない。
@@ -747,8 +750,8 @@ export default function PhoenixModel({
               <mesh
                 geometry={FACE_GEO}
                 material={FACE_MAT}
-                position={[0, 0.058, 0.055]}
-                scale={[1.02, 1.12, 0.62]}
+                position={[0, 0.063, 0.032]}
+                scale={[0.82, 1.02, 0.5]}
               />
             </>
           ) : (
@@ -768,7 +771,7 @@ export default function PhoenixModel({
                 material={EYE_MAT}
                 position={
                 shape === "peak"
-                  ? [s * 0.03, 0.062, 0.094]
+                  ? [s * 0.026, 0.067, 0.079]
                   : [s * 0.034, 0.124, 0.092]
               }
               />
