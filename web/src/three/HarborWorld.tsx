@@ -64,6 +64,8 @@ export interface HarborWorldProps {
   /// 航海の進捗(全員の合算・分)。導出は呼び出し側(RoomDetail)。
   progressMinutes?: number;
   strike?: StrikeEvent | null;
+  /// この更新で新しく入港したメンバー。画面外から定位置まで航行させる。
+  arrivingMemberIds?: ReadonlySet<string>;
 }
 
 const CAM_POS: [number, number, number] = [0.2, 2.6, 8.4];
@@ -692,12 +694,14 @@ function MemberBoat({
   lit,
   animate,
   isSelf,
+  arriving,
   onSelect,
 }: {
   berth: Berth;
   lit: boolean;
   animate: boolean;
   isSelf: boolean;
+  arriving: boolean;
   onSelect?: (member: HarborMember) => void;
 }) {
   const { member, phase } = berth;
@@ -712,13 +716,42 @@ function MemberBoat({
       }),
     [member],
   );
+  const root = useRef<THREE.Group>(null);
   const bob = useRef<THREE.Group>(null);
   const lanternMat = useRef<THREE.MeshStandardMaterial>(null);
+  const initialized = useRef(false);
+  const invalidate = useThree((state) => state.invalidate);
+
+  // 新しく届いた船だけ、左の画面外から始める。既にいた船は最初から定位置。
+  // refを直接動かすため、親の再描画で開始位置へ巻き戻らない。
+  useLayoutEffect(() => {
+    const group = root.current;
+    if (!group || initialized.current) return;
+    initialized.current = true;
+    group.position.set(arriving && animate ? berth.x - 11 : berth.x, 0, berth.z);
+    group.rotation.set(0, arriving && animate ? -0.16 : berth.rot, 0);
+    invalidate();
+  }, [arriving, animate, berth.x, berth.z, berth.rot, invalidate]);
+
+  // 動きを減らす設定では入港を省略し、定位置の更新も即時反映する。
+  useLayoutEffect(() => {
+    if (animate || !root.current) return;
+    root.current.position.set(berth.x, 0, berth.z);
+    root.current.rotation.set(0, berth.rot, 0);
+    invalidate();
+  }, [animate, berth.x, berth.z, berth.rot, invalidate]);
 
   // BoatModel自体の揺れは全船同位相なので、外側でuidごとの位相を重ねる。
-  useFrame(({ clock }) => {
+  useFrame(({ clock }, delta) => {
     if (!animate) return;
     const time = clock.elapsedTime;
+    const outer = root.current;
+    if (outer) {
+      // 新しい船の入港と、人数変化で既存船のレーンが変わる動きを同じ滑走で結ぶ。
+      outer.position.x = THREE.MathUtils.damp(outer.position.x, berth.x, 1.65, delta);
+      outer.position.z = THREE.MathUtils.damp(outer.position.z, berth.z, 1.65, delta);
+      outer.rotation.y = THREE.MathUtils.damp(outer.rotation.y, berth.rot, 1.8, delta);
+    }
     const g = bob.current;
     if (g) {
       g.position.y = Math.sin(time * 0.7 + phase) * 0.05;
@@ -731,7 +764,7 @@ function MemberBoat({
   });
 
   return (
-    <group position={[berth.x, 0, berth.z]} rotation={[0, berth.rot, 0]} scale={0.45}>
+    <group ref={root} scale={0.45}>
       <Ripples animate={animate} />
       <group ref={bob}>
         <BoatModel parts={parts} animate={animate} />
@@ -789,6 +822,7 @@ function HarborSea({
   roomName,
   berths,
   litIds,
+  arrivingMemberIds,
   animate,
   selfUid,
   onSelect,
@@ -807,6 +841,7 @@ function HarborSea({
   roomName: string;
   berths: Berth[];
   litIds: ReadonlySet<string>;
+  arrivingMemberIds: ReadonlySet<string>;
   animate: boolean;
   selfUid?: string;
   onSelect?: (member: HarborMember) => void;
@@ -948,6 +983,7 @@ function HarborSea({
             lit={litIds.has(berth.member.id)}
             animate={animate}
             isSelf={berth.member.id === selfUid}
+            arriving={arrivingMemberIds.has(berth.member.id)}
             onSelect={onSelect}
           />
         ))}
@@ -988,6 +1024,7 @@ export default function HarborWorld({
   route,
   progressMinutes = 0,
   strike,
+  arrivingMemberIds = new Set<string>(),
 }: HarborWorldProps) {
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -1303,6 +1340,7 @@ export default function HarborWorld({
             roomName={room.name}
             berths={berths}
             litIds={litIds}
+            arrivingMemberIds={arrivingMemberIds}
             animate={animate}
             selfUid={selfUid}
             onSelect={onSelectMember}

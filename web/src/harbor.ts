@@ -1,7 +1,6 @@
 import {
   addDoc,
   arrayRemove,
-  arrayUnion,
   collection,
   deleteDoc,
   deleteField,
@@ -13,6 +12,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -150,20 +150,37 @@ function uid(): string {
 
 // ---- プライベートの港(rooms) ----
 
+function roomFromDoc(id: string, value: Record<string, unknown>): HarborRoom {
+  return {
+    id,
+    name: String(value.name ?? ""),
+    memberIds: Array.isArray(value.memberIds)
+      ? value.memberIds.filter((memberId): memberId is string => typeof memberId === "string")
+      : [],
+    ownerUid: typeof value.ownerUid === "string" ? value.ownerUid : undefined,
+  };
+}
+
 export async function fetchRooms(): Promise<HarborRoom[]> {
   const u = uid();
   const snap = await getDocs(
     query(collection(db, "rooms"), where("memberIds", "array-contains", u)),
   );
-  return snap.docs.map((d) => {
-    const v = d.data();
-    return {
-      id: d.id,
-      name: String(v.name ?? ""),
-      memberIds: (v.memberIds as string[]) ?? [],
-      ownerUid: typeof v.ownerUid === "string" ? v.ownerUid : undefined,
-    };
-  });
+  return snap.docs.map((d) => roomFromDoc(d.id, d.data()));
+}
+
+/// 参加中の港と人数をリアルタイムで反映する。
+/// 招待された側の参加・退港が、既に港を開いている端末にも再読込なしで届く。
+export function listenRooms(
+  cb: (rooms: HarborRoom[]) => void,
+  onError?: () => void,
+): () => void {
+  const u = uid();
+  return onSnapshot(
+    query(collection(db, "rooms"), where("memberIds", "array-contains", u)),
+    (snap) => cb(snap.docs.map((d) => roomFromDoc(d.id, d.data()))),
+    () => onError?.(),
+  );
 }
 
 /// iOS と同じ紛らわしくない文字集合(I/O/0/1 なし)。
@@ -210,19 +227,48 @@ export async function createRoom(
 /// 招待コードで港に入る。
 export async function joinRoom(rawCode: string, data: PublishSource): Promise<void> {
   const u = uid();
-  const code = rawCode.trim().toUpperCase();
-  if (!code) throw new HarborError("roomNotFound");
+  const code = normalizeRoomCode(rawCode);
+  if (code.length !== 6) throw new HarborError("roomNotFound");
   const ref = doc(db, "rooms", code);
-  const snap = await getDoc(ref).catch(() => null);
-  if (!snap || !snap.exists()) throw new HarborError("roomNotFound");
-  const members = (snap.data().memberIds as string[]) ?? [];
-  if (!members.includes(u)) {
-    const rooms = await fetchRooms();
-    if (rooms.length >= ROOM_MAX_JOINED) throw new HarborError("tooManyRooms");
-    if (members.length >= ROOM_MAX_MEMBERS) throw new HarborError("roomFull");
-    await updateDoc(ref, { memberIds: arrayUnion(u) });
+  const rooms = await fetchRooms();
+  const alreadyJoined = rooms.some((room) => room.id === code);
+  if (!alreadyJoined && rooms.length >= ROOM_MAX_JOINED) {
+    throw new HarborError("tooManyRooms");
   }
-  await joinedSetup("rooms", code, data);
+
+  // 読み取り→更新を一つのトランザクションにする。二人が最後の一席へ同時に
+  // 入ろうとしても、再試行時に最新人数を読み直して4人を超えない。
+  let addedMembership = false;
+  await runTransaction(db, async (transaction) => {
+    // トランザクションは競合時に同じコールバックを再実行する。
+    addedMembership = false;
+    const snap = await transaction.get(ref);
+    if (!snap.exists()) throw new HarborError("roomNotFound");
+    const rawMembers: unknown = snap.data().memberIds;
+    const members = Array.isArray(rawMembers)
+      ? rawMembers.filter((memberId: unknown): memberId is string => typeof memberId === "string")
+      : [];
+    if (members.includes(u)) return;
+    if (members.length >= ROOM_MAX_MEMBERS) throw new HarborError("roomFull");
+    transaction.update(ref, { memberIds: [...members, u] });
+    addedMembership = true;
+  });
+
+  try {
+    await joinedSetup("rooms", code, data);
+  } catch (error) {
+    // メンバーカードの作成に失敗したとき、人数だけ増えた「見えない参加者」を
+    // 港に残さない。元から参加済みだった場合は所属を触らない。
+    if (addedMembership) {
+      await updateDoc(ref, { memberIds: arrayRemove(u) }).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+/// 招待コード入力。区切りを含む貼り付けにも耐え、実際に発行する文字だけを残す。
+export function normalizeRoomCode(rawCode: string): string {
+  return rawCode.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, "").slice(0, 6);
 }
 
 /// 退港。自分の共有分(プロフィール+月間記録)を消してから抜ける。
@@ -322,16 +368,11 @@ export async function pushProfileEverywhere(sinceDay?: Date | null): Promise<voi
 
 // ---- メンバーと月間記録の閲覧 ----
 
-export async function fetchMembers(
-  root: "rooms" | "publicHarbors",
-  id: string,
-): Promise<HarborMember[]> {
-  const snap = await getDocs(
-    query(collection(db, root, id, "members"), orderBy("joinedAt", "desc"), limit(200)),
-  ).catch(() => null);
-  if (!snap) return [];
+function membersFromDocs(
+  docs: { id: string; data: () => Record<string, unknown> }[],
+): HarborMember[] {
   const str = (value: unknown) => (typeof value === "string" ? value : undefined);
-  return snap.docs.map((d) => {
+  return docs.map((d) => {
     const v = d.data();
     return {
       id: d.id,
@@ -347,6 +388,31 @@ export async function fetchMembers(
       boatFlag: str(v.boatFlag),
     };
   });
+}
+
+export async function fetchMembers(
+  root: "rooms" | "publicHarbors",
+  id: string,
+): Promise<HarborMember[]> {
+  const snap = await getDocs(
+    query(collection(db, root, id, "members"), orderBy("joinedAt", "desc"), limit(200)),
+  ).catch(() => null);
+  return snap ? membersFromDocs(snap.docs) : [];
+}
+
+/// 港内の船をリアルタイムで保つ。初回以降に増えたメンバーは画面側で
+/// 入港アニメーションへ渡し、退港したメンバーは購読結果から自然に消える。
+export function listenMembers(
+  root: "rooms" | "publicHarbors",
+  id: string,
+  cb: (members: HarborMember[]) => void,
+  onError?: () => void,
+): () => void {
+  return onSnapshot(
+    query(collection(db, root, id, "members"), orderBy("joinedAt", "desc"), limit(200)),
+    (snap) => cb(membersFromDocs(snap.docs)),
+    () => onError?.(),
+  );
 }
 
 export async function fetchMonth(

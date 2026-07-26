@@ -27,9 +27,12 @@ import {
   leavePublic,
   leaveRoom,
   listenChat,
+  listenMembers,
+  listenRooms,
   listenVoyage,
   loadBlocked,
   markVoyageArrived,
+  normalizeRoomCode,
   reactChat,
   reportUser,
   sendChat,
@@ -150,13 +153,22 @@ async function checkVoyageLootOnce(rooms: HarborRoom[]): Promise<void> {
   if (granted) showToast(t("lootToast"));
 }
 
-export function HarborView({ uid, data }: { uid: string; data: UserData }) {
+export function HarborView({
+  uid,
+  data,
+  inviteCode,
+}: {
+  uid: string;
+  data: UserData;
+  inviteCode?: string;
+}) {
   const [nav, setNav] = useState<HarborNav>({ type: "root" });
   const [rooms, setRooms] = useState<HarborRoom[]>([]);
   const [publicJoined, setPublicJoined] = useState<Set<string>>(cachedPublicJoined());
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileTick, setProfileTick] = useState(0);
+  const [pendingInvite, setPendingInvite] = useState(inviteCode);
 
   const reload = useCallback(async () => {
     // デモ(#demo)はFirestoreに触れず、見本の港をひとつ見せる。
@@ -177,7 +189,20 @@ export function HarborView({ uid, data }: { uid: string; data: UserData }) {
 
   useEffect(() => {
     void reload();
+    if (isDemo) return;
+    return listenRooms((next) => {
+      setRooms(next);
+      void checkVoyageLootOnce(next);
+    });
   }, [reload]);
+
+  const clearInvite = useCallback(() => {
+    setPendingInvite(undefined);
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("invite")) return;
+    url.searchParams.delete("invite");
+    history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   if (nav.type === "member") {
     return (
@@ -250,6 +275,8 @@ export function HarborView({ uid, data }: { uid: string; data: UserData }) {
       onEditProfile={() => setEditingProfile(true)}
       onChanged={reload}
       editingProfile={editingProfile}
+      inviteCode={pendingInvite}
+      onInviteHandled={clearInvite}
       onCloseProfile={() => {
         setEditingProfile(false);
         setProfileTick((n) => n + 1);
@@ -269,6 +296,8 @@ function HarborRoot({
   onEditProfile,
   onChanged,
   editingProfile,
+  inviteCode,
+  onInviteHandled,
   onCloseProfile,
 }: {
   rooms: HarborRoom[];
@@ -279,10 +308,12 @@ function HarborRoot({
   onEditProfile: () => void;
   onChanged: () => Promise<void>;
   editingProfile: boolean;
+  inviteCode?: string;
+  onInviteHandled: () => void;
   onCloseProfile: () => void;
 }) {
   const [creating, setCreating] = useState(false);
-  const [joining, setJoining] = useState(false);
+  const [joining, setJoining] = useState(() => Boolean(inviteCode));
   const cardStyle = STYLE_COLORS[normalizeProfileStyle(PlayerProfile.styleToken)];
   // このサービスを使い始めた日(since.ts)。
   const sinceDay = serviceStartDay(data.days, data.sessions);
@@ -380,8 +411,10 @@ function HarborRoot({
       {joining && (
         <JoinRoomDialog
           data={data}
+          initialCode={inviteCode}
           onClose={async (changed) => {
             setJoining(false);
+            onInviteHandled();
             if (changed) await onChanged();
           }}
         />
@@ -444,17 +477,19 @@ function CreateRoomDialog({
 
 function JoinRoomDialog({
   data,
+  initialCode,
   onClose,
 }: {
   data: UserData;
+  initialCode?: string;
   onClose: (changed: boolean) => void;
 }) {
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(() => normalizeRoomCode(initialCode ?? ""));
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
   const join = async () => {
-    if (code.trim().length < 6 || working) return;
+    if (code.length !== 6 || working) return;
     setWorking(true);
     try {
       await joinRoom(code, data);
@@ -473,19 +508,22 @@ function JoinRoomDialog({
         <input
           className="field code-field"
           value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onChange={(e) => setCode(normalizeRoomCode(e.target.value))}
           placeholder={t("codePlaceholder")}
-          maxLength={6}
           autoCapitalize="characters"
           autoCorrect="off"
+          spellCheck={false}
           autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && code.length === 6) void join();
+          }}
         />
         {error && <p className="harbor-error">{error}</p>}
         <div style={{ height: 24 }} />
         <button
           className="primary-button"
           onClick={join}
-          disabled={code.trim().length < 6 || working}
+          disabled={code.length !== 6 || working}
         >
           {t("join")}
         </button>
@@ -728,8 +766,43 @@ function RoomDetail({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [copied, setCopied] = useState(false);
+  const [arrivingMemberIds, setArrivingMemberIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const knownMemberIds = useRef<Set<string> | null>(null);
+  const arrivalTimers = useRef<number[]>([]);
+
+  const applyMembers = useCallback((next: HarborMember[]) => {
+    const ids = new Set(next.map((member) => member.id));
+    const known = knownMemberIds.current;
+    knownMemberIds.current = ids;
+    setMembers(next);
+    // 最初の取得は既に在港していた船なので静かに配置する。以後に増えた船だけを
+    // 画面外から入港させ、プロフィール更新では演出を繰り返さない。
+    if (known === null) return;
+    const added = [...ids].filter((id) => !known.has(id));
+    if (added.length === 0) return;
+    setArrivingMemberIds((current) => new Set([...current, ...added]));
+    arrivalTimers.current.push(
+      window.setTimeout(() => {
+        setArrivingMemberIds((current) => {
+          const remaining = new Set(current);
+          for (const id of added) remaining.delete(id);
+          return remaining;
+        });
+      }, 4200),
+    );
+  }, []);
+
+  useEffect(
+    () => () => {
+      arrivalTimers.current.forEach((id) => window.clearTimeout(id));
+      arrivalTimers.current.length = 0;
+    },
+    [],
+  );
 
   // 削除できる一時間の窓を、新着メッセージが無くても数え切れるように
   // 1分おきに再評価する(でないと1時間を過ぎても削除ボタンが残り続ける)。
@@ -769,12 +842,15 @@ function RoomDetail({
   useEffect(() => {
     // デモ(#demo)は見本のメンバーと航海だけ(Firestoreは購読しない)。
     if (isDemo) {
-      setMembers(demoHarborMembers());
+      const demoMembers = demoHarborMembers();
+      applyMembers(demoMembers.slice(0, -1));
+      // 招待された船の入港を、Firestoreを使わずデザイン確認できる見本。
+      const arrival = window.setTimeout(() => applyMembers(demoMembers), 900);
       setVoyage(demoVoyage());
       setVoyageProgress(demoVoyageProgressMinutes());
-      return;
+      return () => window.clearTimeout(arrival);
     }
-    void fetchMembers("rooms", room.id).then(setMembers);
+    const stopMembers = listenMembers("rooms", room.id, applyMembers);
     const stopChat = listenChat(room.id, (msgs) => {
       setMessages(msgs);
       // マウント後に新しく届いた着岸/帰還を「一撃」として世界へ流し、
@@ -806,10 +882,11 @@ function RoomDetail({
       if (v && !v.arrivedAt) void refreshVoyageProgress();
     });
     return () => {
+      stopMembers();
       stopChat();
       stopVoyage();
     };
-  }, [room.id, refreshVoyageProgress]);
+  }, [room.id, refreshVoyageProgress, applyMembers]);
 
   // 合算が目標に達したのを見た閲覧者が、到着を一度だけ刻む。
   // (並走した他の閲覧者の2回目はルールで拒否される — 握りつぶす。)
@@ -865,10 +942,13 @@ function RoomDetail({
 
   // 招待をOSの共有シートで送る(対応ブラウザのみ表示)。
   const shareInvite = () => {
+    const inviteUrl = new URL("https://landfall-studylog.com");
+    inviteUrl.searchParams.set("invite", room.id);
+    inviteUrl.hash = "harbor";
     void navigator
       .share({
         text: inviteShareLine(room.name, room.id),
-        url: "https://landfall-studylog.com",
+        url: inviteUrl.toString(),
       })
       .catch(() => {});
   };
@@ -950,6 +1030,7 @@ function RoomDetail({
               route={route}
               progressMinutes={voyageProgress}
               strike={strike}
+              arrivingMemberIds={arrivingMemberIds}
             />
           </Suspense>
         </HarborWorldBoundary>

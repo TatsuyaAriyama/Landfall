@@ -95,7 +95,15 @@ class TabErrorBoundary extends Component<
 const PhoenixViewer = lazy(() => import("./three/PhoenixViewer"));
 
 /// 再読込しても開いていたタブに戻れるよう、タブを URL ハッシュに控える。
+function initialInviteCode(): string | undefined {
+  const raw = new URLSearchParams(window.location.search).get("invite") ?? "";
+  const code = raw.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, "").slice(0, 6);
+  return code.length === 6 ? code : undefined;
+}
+
 function initialTab(): Tab {
+  // 招待URLは、サインイン後もコード入力画面へ直接戻す。
+  if (initialInviteCode()) return "harbor";
   const hash = window.location.hash.replace("#", "");
   return (TABS as string[]).includes(hash) ? (hash as Tab) : "today";
 }
@@ -120,6 +128,7 @@ export default function App() {
 
 function Main({ uid }: { uid: string }) {
   const [tab, setTabState] = useState<Tab>(() => initialTab());
+  const [inviteCode] = useState(() => initialInviteCode());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const timeOfDay = useTimeOfDay();
   const live = useUserData(uid, !isDemo);
@@ -210,7 +219,7 @@ function Main({ uid }: { uid: string }) {
             <BoatStudio data={data} />
           </TabErrorBoundary>
         ) : (
-          <HarborView uid={uid} data={data} />
+          <HarborView uid={uid} data={data} inviteCode={inviteCode} />
         )}
       </Suspense>
 
