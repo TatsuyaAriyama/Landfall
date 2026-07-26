@@ -105,6 +105,12 @@ function initialTab(): Tab {
   // 招待URLは、サインイン後もコード入力画面へ直接戻す。
   if (initialInviteCode()) return "harbor";
   const hash = window.location.hash.replace("#", "");
+  // 以前の本番確認で #demo が残った端末は、本物の港へそのまま戻す。
+  // demo.ts 側でも本番のデモ表示を無効化しているため、実データを読み直せる。
+  if (hash === "demo" && !isDemo) {
+    history.replaceState(null, "", `${window.location.pathname}${window.location.search}#harbor`);
+    return "harbor";
+  }
   return (TABS as string[]).includes(hash) ? (hash as Tab) : "today";
 }
 

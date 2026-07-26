@@ -4,9 +4,12 @@ import type { HarborMember, HarborRoom, HarborVoyage } from "./harbor";
 import { generateRoutes } from "./voyageMap";
 
 // URLに #demo を付けたときだけ使う見本データ(デザイン確認用。Firestoreには触れない)。
+// 本番で #demo が残ると、実データが消えたように見えてしまうため開発環境だけで有効にする。
 
 export const isDemo =
-  typeof window !== "undefined" && window.location.hash === "#demo";
+  import.meta.env.DEV &&
+  typeof window !== "undefined" &&
+  window.location.hash === "#demo";
 
 // ---- 港のデモ(プライベートの港と「みんなの海」の見本) ----
 
