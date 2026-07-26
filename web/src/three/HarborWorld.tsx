@@ -54,6 +54,7 @@ export interface StrikeEvent {
 }
 
 export interface HarborWorldProps {
+  currentUid: string;
   room: HarborRoom;
   members: HarborMember[];
   /// 共同航海。undefined=読込中(何も出さない)、null=航海なし。
@@ -826,11 +827,15 @@ function MemberBoat({
   lit,
   animate,
   arriving,
+  showSailor,
+  onBoard,
 }: {
   berth: Berth;
   lit: boolean;
   animate: boolean;
   arriving: boolean;
+  showSailor: boolean;
+  onBoard?: () => void;
 }) {
   const { member, phase } = berth;
   const parts = useMemo(
@@ -892,15 +897,28 @@ function MemberBoat({
   });
 
   return (
-    <group ref={root} scale={0.45}>
+    <group
+      ref={root}
+      scale={0.45}
+      onClick={
+        onBoard
+          ? (event) => {
+              event.stopPropagation();
+              onBoard();
+            }
+          : undefined
+      }
+    >
       <Ripples animate={animate} />
       <group ref={bob}>
         <BoatModel parts={parts} animate={animate} />
-        {/* 誰の船にも航海士がいる。同じ港にいる人を、無人の船ではなく
-            同じ海を渡る仲間として見せる。灯があれば掲げて応える。 */}
-        <group position={[0.45, 0.5, 0]} scale={1.15}>
-          <PhoenixModel animate={animate} pose={lit ? "raise" : "idle"} />
-        </group>
+        {/* 他の船には航海士を常に表示する。自分は陸上の操作キャラと二重にせず、
+            乗船中だけここへ戻す。 */}
+        {showSailor && (
+          <group position={[0.45, 0.5, 0]} scale={1.15}>
+            <PhoenixModel animate={animate} pose={lit ? "raise" : "idle"} />
+          </group>
+        )}
         {/* 今日の灯: 船尾の短い掲灯柱+暖色のランタン(emissiveな小球のみ) */}
         {lit && (
           <group position={[-0.88, 0.42, 0]}>
@@ -986,11 +1004,17 @@ function HarborWalker({
   animate,
   input,
   look,
+  aboard,
+  ownBerth,
+  onNearOwnBoatChange,
 }: {
   active: boolean;
   animate: boolean;
   input: HarborWalkInputRef;
   look: HarborLookRef;
+  aboard: boolean;
+  ownBerth?: Berth;
+  onNearOwnBoatChange: (near: boolean) => void;
 }) {
   const root = useRef<THREE.Group>(null);
   const position = useRef(WALK_START.clone());
@@ -998,17 +1022,38 @@ function HarborWalker({
   const facing = useRef(Math.PI + WALKER_FRONT_YAW);
   const pressed = useRef(new Set<string>());
   const walkingRef = useRef(false);
+  const nearBoatRef = useRef(false);
   const [walking, setWalking] = useState(false);
   const camera = useThree((state) => state.camera);
   const size = useThree((state) => state.size);
   const cameraTarget = useRef(new THREE.Vector3());
   const desiredCamera = useRef(new THREE.Vector3());
 
+  // 船体を直接タップして遠くから乗った場合も、降りる場所は必ず自分の船に
+  // 最も近い桟橋端へ揃える。乗船中は非表示なので移動は見えず、降船時だけ自然に現れる。
   useEffect(() => {
-    if (!active) {
+    if (!aboard || !ownBerth) return;
+    const pierX = HARBOR_PIER_X.reduce((nearest, candidate) =>
+      Math.abs(candidate - ownBerth.x) < Math.abs(nearest - ownBerth.x)
+        ? candidate
+        : nearest,
+    );
+    position.current.set(pierX, WALK_START.y, 0.98);
+    facing.current =
+      Math.atan2(ownBerth.x - pierX, ownBerth.z - position.current.z) +
+      WALKER_FRONT_YAW;
+    root.current?.position.copy(position.current);
+  }, [aboard, ownBerth]);
+
+  useEffect(() => {
+    if (!active || aboard) {
       pressed.current.clear();
       walkingRef.current = false;
       setWalking(false);
+      if (nearBoatRef.current) {
+        nearBoatRef.current = false;
+        onNearOwnBoatChange(false);
+      }
       return;
     }
     const movementKeys = new Set([
@@ -1043,7 +1088,7 @@ function HarborWalker({
       window.removeEventListener("blur", release);
       release();
     };
-  }, [active]);
+  }, [active, aboard, onNearOwnBoatChange]);
 
   useFrame((_, delta) => {
     if (!active || !root.current) return;
@@ -1059,7 +1104,7 @@ function HarborWalker({
       (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0);
     let movedX = 0;
     let movedZ = 0;
-    if (dx !== 0 || dz !== 0) {
+    if (!aboard && (dx !== 0 || dz !== 0)) {
       const length = Math.hypot(dx, dz);
       const strength = Math.min(length, 1);
       dx /= length;
@@ -1089,29 +1134,44 @@ function HarborWalker({
       walkingRef.current = moving;
       setWalking(moving);
     }
+    const nearOwnBoat =
+      !aboard &&
+      Boolean(
+        ownBerth &&
+          Math.hypot(
+            position.current.x - ownBerth.x,
+            position.current.z - ownBerth.z,
+          ) <= 1.2,
+      );
+    if (nearOwnBoat !== nearBoatRef.current) {
+      nearBoatRef.current = nearOwnBoat;
+      onNearOwnBoatChange(nearOwnBoat);
+    }
 
     root.current.position.copy(position.current);
     root.current.rotation.y = facing.current;
+    const focusX = aboard && ownBerth ? ownBerth.x : position.current.x;
+    const focusZ = aboard && ownBerth ? ownBerth.z : position.current.z;
     const tall = size.width / Math.max(size.height, 1) < 0.72;
     const distance = tall ? 6.4 : 4.35;
     const horizontalDistance = Math.cos(look.current.pitch) * distance;
     const height = 0.74 + Math.sin(look.current.pitch) * distance;
     desiredCamera.current.set(
-      position.current.x - Math.sin(look.current.yaw) * horizontalDistance,
+      focusX - Math.sin(look.current.yaw) * horizontalDistance,
       position.current.y + height,
-      position.current.z + Math.cos(look.current.yaw) * horizontalDistance,
+      focusZ + Math.cos(look.current.yaw) * horizontalDistance,
     );
     camera.position.lerp(desiredCamera.current, 1 - Math.exp(-delta * 8));
     cameraTarget.current.set(
-      position.current.x + Math.sin(look.current.yaw) * 0.68,
+      focusX + Math.sin(look.current.yaw) * 0.68,
       0.68,
-      position.current.z - Math.cos(look.current.yaw) * 0.68,
+      focusZ - Math.cos(look.current.yaw) * 0.68,
     );
     camera.lookAt(cameraTarget.current);
   });
 
   return (
-    <group ref={root} position={WALK_START} scale={0.42}>
+    <group ref={root} position={WALK_START} scale={0.42} visible={!aboard}>
       <PhoenixModel animate={animate} pose={walking ? "walk" : "idle"} />
     </group>
   );
@@ -1218,6 +1278,11 @@ function HarborSea({
   onWorldExited,
   walkInput,
   look,
+  currentUid,
+  ownBerth,
+  aboard,
+  onNearOwnBoatChange,
+  onBoardOwnBoat,
 }: {
   roomName: string;
   timeOfDay: TimeOfDay;
@@ -1242,6 +1307,11 @@ function HarborSea({
   onWorldExited: () => void;
   walkInput: HarborWalkInputRef;
   look: HarborLookRef;
+  currentUid: string;
+  ownBerth?: Berth;
+  aboard: boolean;
+  onNearOwnBoatChange: (near: boolean) => void;
+  onBoardOwnBoat: () => void;
 }) {
   const camera = useThree((s) => s.camera);
   const invalidate = useThree((s) => s.invalidate);
@@ -1359,6 +1429,9 @@ function HarborSea({
           animate={animate}
           input={walkInput}
           look={look}
+          aboard={aboard}
+          ownBerth={ownBerth}
+          onNearOwnBoatChange={onNearOwnBoatChange}
         />
       )}
       <Html
@@ -1404,6 +1477,12 @@ function HarborSea({
             lit={litIds.has(berth.member.id)}
             animate={animate}
             arriving={arrivingMemberIds.has(berth.member.id)}
+            showSailor={berth.member.id !== currentUid || !immersive || aboard}
+            onBoard={
+              immersive && !aboard && berth.member.id === currentUid
+                ? onBoardOwnBoat
+                : undefined
+            }
           />
         ))}
       </group>
@@ -1435,6 +1514,7 @@ function HarborSea({
 
 /// 帰港する3Dの拠点。桟橋・砂地・写真・チャット・共同航海を一つにする。
 export default function HarborWorld({
+  currentUid,
   room,
   members,
   voyage,
@@ -1457,6 +1537,8 @@ export default function HarborWorld({
   // ---- 没入(みんなの海に入る) ----
   const [immersive, setImmersive] = useState(false);
   const [phase, setPhase] = useState<WorldPhase>("idle");
+  const [aboard, setAboard] = useState(false);
+  const [nearOwnBoat, setNearOwnBoat] = useState(false);
   const walkInput = useRef<HarborWalkInput>({ x: 0, z: 0 });
   const setWalkInput = useCallback((next: HarborWalkInput) => {
     walkInput.current = next;
@@ -1467,6 +1549,8 @@ export default function HarborWorld({
     setImmersive((on) => {
       if (on) return on;
       look.current = { yaw: 0, pitch: 0.38 };
+      setAboard(false);
+      setNearOwnBoat(false);
       setPhase(
         window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "idle" : "enter",
       );
@@ -1475,6 +1559,7 @@ export default function HarborWorld({
   }, []);
   const requestClose = useCallback(() => {
     setWalkInput({ x: 0, z: 0 });
+    setNearOwnBoat(false);
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setImmersive(false);
       setPhase("idle");
@@ -1488,7 +1573,14 @@ export default function HarborWorld({
   const handleWorldExited = useCallback(() => {
     setImmersive(false);
     setPhase("idle");
+    setAboard(false);
+    setNearOwnBoat(false);
   }, []);
+  const boardOwnBoat = useCallback(() => {
+    setWalkInput({ x: 0, z: 0 });
+    setNearOwnBoat(false);
+    setAboard(true);
+  }, [setWalkInput]);
   const beginLook = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!immersive || !(event.target instanceof HTMLCanvasElement)) return;
@@ -1681,6 +1773,10 @@ export default function HarborWorld({
   useEffect(() => () => window.clearTimeout(flashTimer.current), []);
 
   const berths = useMemo(() => makeBerths(members), [members]);
+  const ownBerth = useMemo(
+    () => berths.find((berth) => berth.member.id === currentUid),
+    [berths, currentUid],
+  );
 
   // 嵐の航海 — ハリケーンの海域に入った瞬間、イベントの題字を一度だけ掲げる
   // (同じ航海では再表示しない)。表示のトリガーと消灯タイマーは別のeffectに
@@ -1825,6 +1921,11 @@ export default function HarborWorld({
             onWorldExited={handleWorldExited}
             walkInput={walkInput}
             look={look}
+            currentUid={currentUid}
+            ownBerth={ownBerth}
+            aboard={aboard}
+            onNearOwnBoatChange={setNearOwnBoat}
+            onBoardOwnBoat={boardOwnBoat}
           />
         </Canvas>
         {/* コンパクト時の誘い。海(空・水面)をタップで世界へ入る。 */}
@@ -1838,7 +1939,21 @@ export default function HarborWorld({
               {t("close")}
             </button>
             <div className="harbor-walk-hint">{t("harborWalkHint")}</div>
-            <HarborWalkControls onInput={setWalkInput} />
+            {!aboard && <HarborWalkControls onInput={setWalkInput} />}
+            {phase === "idle" && ownBerth && (aboard || nearOwnBoat) && (
+              <button
+                type="button"
+                className="harbor-board-action"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={() => {
+                  setWalkInput({ x: 0, z: 0 });
+                  setNearOwnBoat(false);
+                  setAboard((current) => !current);
+                }}
+              >
+                {t(aboard ? "harborLeaveBoat" : "harborBoardBoat")}
+              </button>
+            )}
             {immersiveChat}
           </>
         )}

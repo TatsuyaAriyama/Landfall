@@ -1053,6 +1053,7 @@ function RoomDetail({
         <HarborWorldBoundary>
           <Suspense fallback={<div className="harbor-world-fallback" />}>
             <HarborWorld
+              currentUid={uid}
               room={room}
               members={members}
               voyage={voyage}

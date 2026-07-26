@@ -137,6 +137,8 @@ const ja = {
   harborWalkLeft: "左へ歩く",
   harborWalkRight: "右へ歩く",
   harborWalkBack: "後ろへ歩く",
+  harborBoardBoat: "船に乗る",
+  harborLeaveBoat: "船を降りる",
 
   // 共同航海(海図と航路)
   voyageTitle: "共同航海",
@@ -490,6 +492,8 @@ const en: Record<I18nKey, string> = {
   harborWalkLeft: "Walk left",
   harborWalkRight: "Walk right",
   harborWalkBack: "Walk back",
+  harborBoardBoat: "Board your boat",
+  harborLeaveBoat: "Step ashore",
 
   voyageTitle: "Voyage together",
   voyageIntro:

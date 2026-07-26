@@ -3557,6 +3557,30 @@ textarea {
   cursor: grabbing;
 }
 
+.harbor-board-action {
+  position: absolute;
+  top: calc(62px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 6;
+  min-height: 42px;
+  padding: 0 22px;
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 34%, transparent);
+  border-radius: 999px;
+  color: #123830;
+  background: color-mix(in srgb, var(--harbor-sand) 92%, transparent);
+  box-shadow: 0 10px 26px color-mix(in srgb, #071713 24%, transparent);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.harbor-board-action:active {
+  transform: translateX(-50%) scale(0.96);
+}
+
 /* スマホ用のアナログスティック。PCでは常に非表示で、WASD/矢印だけを使う。 */
 .harbor-walk-controls {
   position: absolute;
