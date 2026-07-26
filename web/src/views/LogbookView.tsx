@@ -28,8 +28,14 @@ export function LogbookView({ uid, data }: { uid: string; data: UserData }) {
           {t("yearChart")}
         </button>
       </div>
-      {view === "journal" ? <VoyageJournal uid={uid} data={data} /> : <YearChart data={data} />}
-      <ReachedIslands uid={uid} data={data} />
+      {view === "journal" ? (
+        <VoyageJournal uid={uid} data={data} />
+      ) : (
+        <>
+          <YearChart data={data} />
+          <ReachedIslands uid={uid} data={data} />
+        </>
+      )}
     </div>
   );
 }
@@ -119,7 +125,7 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
       <textarea
         className="voyage-journal-field"
         value={draft}
-        maxLength={2000}
+        maxLength={260}
         placeholder={t("voyageJournalPrompt")}
         onChange={(event) => {
           setDraft(event.target.value);
@@ -133,7 +139,7 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
             ? t("voyageJournalSaveFailed")
             : saved
               ? t("voyageJournalSaved")
-              : `${draft.length} / 2000`}
+              : `${draft.length} / 260`}
         </span>
         <button
           className="primary-button"

@@ -255,7 +255,7 @@ export async function saveVoyageLog(
   body: string,
 ): Promise<void> {
   const id = dayId(date);
-  const trimmed = trimAll(body).slice(0, 2000);
+  const trimmed = trimAll(body).slice(0, 260);
   const ref = doc(db, "users", uid, "voyageLogs", id);
   if (!trimmed) {
     await deleteDoc(ref);

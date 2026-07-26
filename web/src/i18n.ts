@@ -262,7 +262,7 @@ const ja = {
   // 航海誌の追加
   monthCards: "月のカード",
   voyageJournal: "航海日録",
-  voyageJournalIntro: "その日の風、進んだ距離、心に残ったことを記す場所。",
+  voyageJournalIntro: "その日、心に残ったことを記す場所。",
   voyageJournalPrompt: "今日の海は、どんな様子でしたか。",
   voyageJournalSave: "航海記を残す",
   voyageJournalSaved: "航海誌に記しました。",
@@ -604,7 +604,7 @@ const en: Record<I18nKey, string> = {
 
   monthCards: "Monthly cards",
   voyageJournal: "Daily Log",
-  voyageJournalIntro: "Record the wind, the distance made, and what stayed with you.",
+  voyageJournalIntro: "A place to record what stayed with you that day.",
   voyageJournalPrompt: "What were the waters like today?",
   voyageJournalSave: "Add to the logbook",
   voyageJournalSaved: "Added to your Logbook.",

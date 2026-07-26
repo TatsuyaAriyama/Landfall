@@ -60,7 +60,7 @@ docID = `yyyy-MM-dd`(端末ローカルのタイムゾーンでの startOfDay)�
 | フィールド | 型 | 備考 |
 |---|---|---|
 | `date` | timestamp | その日の startOfDay |
-| `body` | string | 本文。1〜2000文字 |
+| `body` | string | 本文。1〜260文字 |
 | `updatedAt` | timestamp | LWW |
 
 ### `users/{uid}/destinations/{uuid}` — 目的地(島)
