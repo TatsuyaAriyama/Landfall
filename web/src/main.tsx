@@ -38,14 +38,49 @@ function renderFatalError() {
     'color:#141414;font-size:15px;border:none;">再読込する</button></div>';
 }
 
+const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+/// 動的importの例外から、取得に失敗した同一オリジンの分割JSだけを取り出す。
+/// Firebase等の別種の例外では無関係なURLへ通信しない。
+function failedAssetUrl(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  const found = error.message.match(/https?:\/\/[^\s)]+/)?.[0];
+  if (!found) return null;
+  try {
+    const url = new URL(found);
+    return url.origin === location.origin && url.pathname.startsWith("/assets/")
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /// デプロイ直後、CDNのHTMLと分割JSが一瞬だけ別世代になる場合がある。
-/// 初回だけビルド固有のURLで取り直し、同じURLで再び失敗したときだけ案内へ落とす。
-/// URLだけを番兵にするため、sessionStorageが使えない環境でもループしない。
-function recoverTransientLoadOnce(): boolean {
+/// 失敗したJSが実際に取得可能になるまで短く待ち、HTTPキャッシュを正常な応答で
+/// 更新してから再読込する。即時再読込だけだと、同じ404を繰り返してしまう。
+async function recoverTransientLoad(error: unknown): Promise<boolean> {
   const url = new URL(location.href);
-  if (url.searchParams.get("recover") === APP_BUILD) return false;
-  url.searchParams.set("recover", APP_BUILD);
+  const sameBuild = url.searchParams.get("recover") === APP_BUILD;
+  const previousTry = sameBuild ? Number(url.searchParams.get("recoverTry") ?? "0") : 0;
+  if (previousTry >= 2) return false;
+
   root.innerHTML = '<div class="harbor-loading"></div>';
+  const assetUrl = failedAssetUrl(error);
+  if (assetUrl) {
+    for (const delay of [500, 1200, 2500]) {
+      await wait(delay);
+      try {
+        const response = await fetch(assetUrl, { cache: "reload" });
+        if (response.ok) break;
+      } catch {
+        // 次の間隔で再確認する。
+      }
+    }
+  }
+
+  url.searchParams.set("recover", APP_BUILD);
+  url.searchParams.set("recoverTry", String(previousTry + 1));
   location.replace(url);
   return true;
 }
@@ -54,6 +89,7 @@ function clearRecoveryUrl() {
   const url = new URL(location.href);
   if (url.searchParams.get("recover") !== APP_BUILD) return;
   url.searchParams.delete("recover");
+  url.searchParams.delete("recoverTry");
   history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
@@ -75,5 +111,5 @@ try {
       .replace(/https?:\/\/\S+/g, "[url]")
       .slice(0, 160);
   }
-  if (!recoverTransientLoadOnce()) renderFatalError();
+  if (!(await recoverTransientLoad(error))) renderFatalError();
 }
