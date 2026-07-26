@@ -80,8 +80,9 @@ function Main({ uid }: { uid: string }) {
 
   return (
     <div
-      className={`shell${tab === "today" ? ` home-ocean time-${timeOfDay}` : ""}`}
-      data-time-of-day={tab === "today" ? timeOfDay : undefined}
+      className={`shell home-ocean time-${timeOfDay}`}
+      data-time-of-day={timeOfDay}
+      data-tab={tab}
     >
       <header className="topbar">
         <span className="brand">
