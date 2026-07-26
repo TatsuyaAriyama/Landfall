@@ -3,7 +3,7 @@ import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 import { deleteEverything } from "../harbor";
 import type { UserData } from "../data";
-import { Modal, askConfirm } from "../overlays";
+import { DialogHeader, Modal, askConfirm } from "../overlays";
 import { LANGUAGE_KEY, t } from "../i18n";
 
 export const THEME_KEY = "appTheme";
@@ -122,7 +122,7 @@ export function SettingsDialog({
   return (
     <Modal onClose={onClose}>
       <>
-        <h2 className="dialog-title">{t("settings")}</h2>
+        <DialogHeader title={t("settings")} onBack={onClose} />
 
         <p className="section-label">{t("language")}</p>
         <div className="chip-row">

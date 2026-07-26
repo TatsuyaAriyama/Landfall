@@ -20,6 +20,41 @@ enum AppIconStore {
     }
 }
 
+/// シート内のどこまでスクロールしても見失わない、ひとつ前の画面への入口。
+/// 左右を同じ幅にして、タイトルは端末の中央に固定する。
+struct LFBackHeader: View {
+    let title: LocalizedStringKey
+    let onBack: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button(action: onBack) {
+                HStack(spacing: 5) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Back")
+                }
+                .font(LFFont.label(15))
+                .foregroundStyle(LFColor.ink.opacity(0.72))
+                .frame(minWidth: 78, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Spacer(minLength: 8)
+            Text(title)
+                .font(LFFont.copy(20))
+                .foregroundStyle(LFColor.ink)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+
+            Color.clear
+                .frame(width: 78, height: 44)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 /// 設定シート。v1ではアプリアイコンの選択のみ。
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -39,72 +74,80 @@ struct SettingsView: View {
     ) ?? Date()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
+        VStack(spacing: 0) {
+            LFBackHeader(title: "Settings") { dismiss() }
+                .padding(.horizontal, LFMetrics.cardPadding)
+                .padding(.vertical, 6)
 
-                sectionLabel("Language")
-                    .padding(.top, 32)
-                    .padding(.bottom, 18)
+            Rectangle()
+                .fill(LFColor.ink.opacity(0.08))
+                .frame(height: 1)
 
-                HStack(spacing: 10) {
-                    ForEach(AppLanguage.allCases) { language in
-                        languagePill(language)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    sectionLabel("Language")
+                        .padding(.top, 24)
+                        .padding(.bottom, 18)
+
+                    HStack(spacing: 10) {
+                        ForEach(AppLanguage.allCases) { language in
+                            languagePill(language)
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
-                }
 
-                sectionLabel("Appearance")
-                    .padding(.top, 36)
-                    .padding(.bottom, 18)
-
-                HStack(spacing: 10) {
-                    ForEach(AppTheme.allCases) { theme in
-                        themePill(theme)
-                    }
-                    Spacer(minLength: 0)
-                }
-
-                sectionLabel("Notifications")
-                    .padding(.top, 36)
-                    .padding(.bottom, 18)
-
-                notificationSection
-
-                // 代替アイコン非対応の文脈では、押しても無反応な節を出さない。
-                if AppIconStore.isSupported {
-                    sectionLabel("App Icon")
+                    sectionLabel("Appearance")
                         .padding(.top, 36)
                         .padding(.bottom, 18)
 
-                    LazyVGrid(
-                        columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)],
-                        alignment: .leading,
-                        spacing: 22
-                    ) {
-                        ForEach(AppIconOption.allCases) { option in
-                            iconTile(option)
+                    HStack(spacing: 10) {
+                        ForEach(AppTheme.allCases) { theme in
+                            themePill(theme)
+                        }
+                        Spacer(minLength: 0)
+                    }
+
+                    sectionLabel("Notifications")
+                        .padding(.top, 36)
+                        .padding(.bottom, 18)
+
+                    notificationSection
+
+                    // 代替アイコン非対応の文脈では、押しても無反応な節を出さない。
+                    if AppIconStore.isSupported {
+                        sectionLabel("App Icon")
+                            .padding(.top, 36)
+                            .padding(.bottom, 18)
+
+                        LazyVGrid(
+                            columns: [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)],
+                            alignment: .leading,
+                            spacing: 22
+                        ) {
+                            ForEach(AppIconOption.allCases) { option in
+                                iconTile(option)
+                            }
                         }
                     }
-                }
 
-                // 到達した島。本人の記録なので、要らなくなったものは削除できる。
-                if !reachedIslands.isEmpty {
-                    sectionLabel("Islands reached")
+                    // 到達した島。本人の記録なので、要らなくなったものは削除できる。
+                    if !reachedIslands.isEmpty {
+                        sectionLabel("Islands reached")
+                            .padding(.top, 36)
+                            .padding(.bottom, 18)
+
+                        reachedIslandsSection
+                    }
+
+                    sectionLabel("Account")
                         .padding(.top, 36)
                         .padding(.bottom, 18)
 
-                    reachedIslandsSection
+                    accountSection
                 }
-
-                sectionLabel("Account")
-                    .padding(.top, 36)
-                    .padding(.bottom, 18)
-
-                accountSection
+                .padding(LFMetrics.cardPadding)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(LFMetrics.cardPadding)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .background(LFColor.paper)
         // シート自身も選択言語に追従させる(切替が即時に反映される)。
@@ -351,18 +394,6 @@ struct SettingsView: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    private var header: some View {
-        HStack {
-            Text("Settings")
-                .font(LFFont.copy(20))
-                .foregroundStyle(LFColor.ink)
-            Spacer()
-            Button("Close") { dismiss() }
-                .font(LFFont.label(15))
-                .foregroundStyle(LFColor.ink.opacity(0.6))
-        }
     }
 
     private func iconTile(_ option: AppIconOption) -> some View {
