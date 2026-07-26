@@ -7,6 +7,14 @@
 # 逆に /assets/ の中身はファイル名にハッシュが入っていて中身が変われば名前も
 # 変わるので、長く持たせて良い(immutable)。
 
+# アプリの入口は必ず最新を取得する。HTMLだけ古い状態で新しいハッシュ付きJSが
+# 消えていると起動不能になるため、ブラウザにもCDNにも保存させない。
+/
+  Cache-Control: no-store
+
+/index.html
+  Cache-Control: no-store
+
 # no-cache は Cloudflare 側で max-age=14400 に正規化されてしまったので、
 # トップページと同じ「max-age=0 + 毎回検証」の形で書く(こちらは通る)。
 /sw.js
