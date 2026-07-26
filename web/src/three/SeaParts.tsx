@@ -144,3 +144,89 @@ export function Ripples({ animate }: { animate: boolean }) {
     </group>
   );
 }
+
+// ---- 後ろへ流れていく水の筋 ----
+// 船を世界の原点に置いたまま「進んでいる」ことを伝える主役なので、
+// はっきり見える濃さで流す(薄すぎると船が止まって見える)。
+// 手前(カメラ寄り=zが大きい)を速く、奥を遅くして視差をつける。
+// 速さは「ゆっくり進む帆船」に合わせる。船体は約1.3単位なので、手前の筋が
+// 毎秒1.2単位 ≒ 船一隻ぶん/秒。これ以上速いとモーターボートに見える。
+
+const SWELL_SAND = "#EADEBD";
+const SWELL_GEO = new THREE.PlaneGeometry(1.6, 0.05);
+/// うねりが流れる範囲。端まで行ったら反対側へ回して継ぎ目なく続ける。
+const SWELL_SPAN = 34;
+const SWELL_MIN_X = -17;
+const SWELL_LAYERS = [
+  { count: 14, zMin: -8, zSpread: 6, speed: 0.45, opacity: 0.1, len: 1.15 },
+  { count: 12, zMin: 0.8, zSpread: 4.6, speed: 1.2, opacity: 0.22, len: 0.8 },
+];
+
+/// 流れる水の筋。`flow` は船足(1=通常、0=止まる)。即座に切り替えず減衰で寄せる
+/// ので、錨を下ろしても舫っても、水は惰性をもって静まっていく。
+export function PassingSwells({
+  animate,
+  flow: target = 1,
+}: {
+  animate: boolean;
+  flow?: number;
+}) {
+  const layers = useRef<(THREE.Group | null)[]>([]);
+  const flow = useRef(target);
+  // 毎フレーム乱数を引かない。決まった散らし方で並べる。
+  const swells = useMemo(
+    () =>
+      SWELL_LAYERS.map((layer, li) =>
+        Array.from({ length: layer.count }, (_, i) => ({
+          x: SWELL_MIN_X + ((i * 2.4 + li * 1.3) % SWELL_SPAN),
+          z: layer.zMin + ((i * 5) % 7) * (layer.zSpread / 7),
+          scale: layer.len * (0.6 + ((i * 3) % 6) / 6),
+          opacity: layer.opacity * (0.7 + ((i * 7) % 4) / 6),
+        })),
+      ),
+    [],
+  );
+
+  useFrame((_, delta) => {
+    if (!animate) return;
+    flow.current = THREE.MathUtils.damp(flow.current, target, 0.7, delta);
+    SWELL_LAYERS.forEach((layer, li) => {
+      const group = layers.current[li];
+      if (!group) return;
+      for (const child of group.children) {
+        child.position.x -= delta * layer.speed * flow.current;
+        if (child.position.x < SWELL_MIN_X) child.position.x += SWELL_SPAN;
+      }
+    });
+  });
+
+  return (
+    <>
+      {swells.map((list, li) => (
+        <group
+          key={li}
+          ref={(g) => {
+            layers.current[li] = g;
+          }}
+        >
+          {list.map((s, i) => (
+            <mesh
+              key={i}
+              geometry={SWELL_GEO}
+              position={[s.x, 0.035 + li * 0.004, s.z]}
+              rotation={[-Math.PI / 2, 0, 0]}
+              scale={[s.scale, 1, 1]}
+            >
+              <meshBasicMaterial
+                color={SWELL_SAND}
+                transparent
+                opacity={s.opacity}
+                depthWrite={false}
+              />
+            </mesh>
+          ))}
+        </group>
+      ))}
+    </>
+  );
+}

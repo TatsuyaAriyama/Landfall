@@ -45,6 +45,9 @@ function loadVoyageWorld() {
 }
 const VoyageWorld = lazy(loadVoyageWorld);
 
+/// 着岸の一幕。到達した瞬間だけ開くので、ここも表示するときに読み込む。
+const LandfallWorld = lazy(() => import("../three/LandfallWorld"));
+
 /// 3Dの描画に失敗したら、白画面にせずフォールバックへ静かに戻る。
 class VoyageErrorBoundary extends Component<
   { fallback: ReactNode; children?: ReactNode },
@@ -182,11 +185,25 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
         </VoyageErrorBoundary>
       )}
       {celebrating && (
-        <LandfallCelebration
-          dest={celebrating}
-          minutes={destinationProgress(celebrating, data.sessions).minutes}
-          onClose={() => setCelebrating(null)}
-        />
+        // 3Dが使えない端末では言葉だけを出す。演出は諦めても、
+        // 到達したことは必ず伝える。
+        <VoyageErrorBoundary
+          fallback={
+            <LandfallWords
+              name={celebrating.name}
+              minutes={destinationProgress(celebrating, data.sessions).minutes}
+              onClose={() => setCelebrating(null)}
+            />
+          }
+        >
+          <Suspense fallback={null}>
+            <LandfallWorld
+              name={celebrating.name}
+              minutes={destinationProgress(celebrating, data.sessions).minutes}
+              onClose={() => setCelebrating(null)}
+            />
+          </Suspense>
+        </VoyageErrorBoundary>
       )}
     </>
   );
@@ -378,49 +395,29 @@ function DestinationCard({
   );
 }
 
-/// 着岸の一枚。夜の海を船が島まで走り、「着岸。」の言葉が浮かぶ。
-/// 目標の種類に関わらず、ここまで積み重ねた航海の時間を添える。
-function LandfallCelebration({
-  dest,
+/// 3Dを描けないときの着岸。船も海も出さず、到達だけを伝える。
+function LandfallWords({
+  name,
   minutes,
   onClose,
 }: {
-  dest: Destination;
+  name: string;
   minutes: number;
   onClose: () => void;
 }) {
-  // 出現から少しの間はタップを受けない(直前の指で消えるのを防ぐ)。
+  // 出た直後のタップでは閉じない(直前に押した指がそのまま当たる)。
   const readyAt = useRef(Date.now() + 700);
   return (
     <div
       className="landfall-overlay"
       onClick={() => {
-        // 出た直後のタップでは閉じない。着岸はFirestoreの往復のあとに非同期で
-        // 現れるので、その直前に押した指(次のステップのチェックや保存)がそのまま
-        // ここに当たって、祝いを一瞬で消してしまっていた。
         if (Date.now() < readyAt.current) return;
         onClose();
       }}
     >
-      <span className="harbor-star" style={{ top: "14%", left: "16%", width: 4, height: 4 }} />
-      <span className="harbor-star" style={{ top: "8%", left: "42%", width: 3, height: 3 }} />
-      <span className="harbor-star" style={{ top: "18%", left: "70%", width: 4, height: 4 }} />
-      <span className="harbor-star" style={{ top: "28%", left: "88%", width: 3, height: 3 }} />
-      <span className="harbor-moon" style={{ top: "10%", right: "14%" }} />
-
-      <div className="landfall-sea">
-        <div className="landfall-horizon" />
-        <div className="landfall-coast">
-          <CoastSvg />
-        </div>
-        <div className="landfall-boat">
-          <BoatSvg {...boatProps()} />
-        </div>
-      </div>
-
       <div className="landfall-words">
         <div className="landfall-title">{t("landfallExcl")}</div>
-        <p className="landfall-line">{tf(t("reachedIsland"), { name: dest.name })}</p>
+        <p className="landfall-line">{tf(t("reachedIsland"), { name })}</p>
         {minutes > 0 && (
           <p className="landfall-time">
             {tf(t("landfallTime"), { time: durationLabel(minutes) })}

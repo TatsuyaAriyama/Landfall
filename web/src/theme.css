@@ -1721,60 +1721,30 @@ textarea {
   }
 }
 
-.landfall-sea {
+/* 3Dの上陸。世界はCanvasが描くので、ここは器と言葉だけ。 */
+.landfall-world {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  background: var(--harbor-teal);
+  overflow: hidden;
+  animation: landfall-fade 0.4s ease-out;
+}
+
+.landfall-world canvas {
+  display: block;
+}
+
+/* 上陸を見ているあいだは出さず、歩き出してから下から浮かせる。
+   世界の上に重ねるので、下端に寄せて島と船を隠さない。 */
+.landfall-caption {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
-  height: 38%;
-}
-
-.landfall-horizon {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 30%;
-  height: 2px;
-  background: color-mix(in srgb, var(--harbor-sand) 25%, transparent);
-}
-
-.landfall-coast {
-  position: absolute;
-  right: 6%;
-  top: calc(30% - 64px);
-  width: 200px;
-  height: 66px;
-}
-
-.landfall-coast svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.landfall-boat {
-  position: absolute;
-  top: calc(30% - 128px);
-  width: 72px;
-  left: -80px;
-  animation:
-    landfall-sail 2.4s cubic-bezier(0.3, 0, 0.2, 1) forwards,
-    harbor-bob 2.4s ease-in-out infinite alternate;
-}
-
-.landfall-boat svg {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-@keyframes landfall-sail {
-  from {
-    left: -80px;
-  }
-  to {
-    left: calc(94% - 280px);
-  }
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  text-align: center;
+  padding: 0 24px;
+  animation: landfall-words-in 0.9s ease-out forwards;
 }
 
 .landfall-words {
@@ -1784,7 +1754,7 @@ textarea {
   padding: 0 24px;
   margin-bottom: 16vh;
   opacity: 0;
-  animation: landfall-words-in 0.8s ease-out 1.9s forwards;
+  animation: landfall-words-in 0.8s ease-out 0.3s forwards;
 }
 
 @keyframes landfall-words-in {
@@ -1852,9 +1822,6 @@ textarea {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .landfall-boat {
-    animation: landfall-sail 0.01s forwards;
-  }
   .dest-star {
     animation: none;
   }
