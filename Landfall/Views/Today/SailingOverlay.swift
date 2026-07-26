@@ -125,17 +125,18 @@ struct SailingOverlay: View {
                     .offset(y: bobbing ? 3 : -3)
                     .position(x: boatX, y: h * 0.55)
 
-                // ひとこと。着岸時は、いま記録した合計時間を今日画面と同じ
-                // 小さなオレンジの文字で添える。
-                VStack(spacing: 7) {
-                    Text(kind == .arrival ? "Made landfall." : "Setting sail.")
-                        .font(LFFont.copy(20))
-                        .foregroundStyle(LFColor.harborSand)
+                // 出航時だけひとことを出す。着岸時は「着岸。」を重ねず、
+                // いま記録した作業時間だけを今日画面と同じオレンジで添える。
+                Group {
                     if kind == .arrival, let minutes = animator.loggedMinutes {
-                        Text("Total time · \(LF.duration(minutes: minutes))")
+                        Text("Work time \(LF.duration(minutes: minutes))")
                             .font(LFFont.label(11))
                             .foregroundStyle(LFColor.returnOrange)
                             .monospacedDigit()
+                    } else if kind == .departure {
+                        Text("Setting sail.")
+                            .font(LFFont.copy(20))
+                            .foregroundStyle(LFColor.harborSand)
                     }
                 }
                     .position(x: w / 2, y: h * 0.82)

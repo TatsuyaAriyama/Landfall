@@ -316,6 +316,8 @@
 "Total time · %@" = "合計時間 · %@";
 "You reached %@." = "%@に到達しました。";
 "Time at sea · %@" = "航海した時間 · %@";
+"You arrived at %@." = "%@に到着しました。";
+"Work time %@" = "作業時間 %@";
 "Completed at" = "達成日時";
 "This voyage stays in your Logbook." = "この航海は、航海誌に残ります。";
 

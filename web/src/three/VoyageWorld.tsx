@@ -38,6 +38,7 @@ import { newUUID } from "../types";
 import { askConfirm, showToast } from "../overlays";
 import { t } from "../i18n";
 import { useBackToClose } from "../backClose";
+import { TAP_SLOP } from "./voyageConstants";
 
 // 目的地の没入エディタ。3D航海カードをタップすると、この「世界」へズームインして
 // 入り、夜の海の中で島の名前・対象項目・目標を設定・変更できる。
@@ -63,7 +64,6 @@ const FAR_TARGET = new THREE.Vector3(0.2, 0.5, 0.2);
 const DOLLY_SECONDS = 1.2;
 
 /// タップと「見渡すドラッグ」を分ける移動距離(px)。DOM側の判定と同じ値にする。
-export const TAP_SLOP = 6;
 const ISLAND_POS: [number, number, number] = [3.5, 0, -0.9];
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
