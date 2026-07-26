@@ -475,6 +475,8 @@ export default function PhoenixModel({
   const lantern = useRef<THREE.Group>(null);
   // 接地判定用。root=モデルの座標系、contact=床に押し上げられる体ぜんたい。
   const root = useRef<THREE.Group>(null);
+  // 座ったとき、床に広がる裾。
+  const skirt = useRef<THREE.Group>(null);
   const contact = useRef<THREE.Group>(null);
   const lift = useRef(0);
   const tick = useRef(0);
@@ -607,6 +609,13 @@ export default function PhoenixModel({
     // ゆらぎは明るさに比例させる(暗く落とした灯がちらついて見えないように)。
     LANTERN_GLOW_MAT.emissiveIntensity = c.glow + Math.sin(time * 2.1) * 0.2 * c.glow;
 
+    // 裾: 座ると布は床に溜まって外へ広がる。コートは硬い円錐なので、そのままだと
+    // 「立ったまま脚だけ前に出した人」に見えてしまう。腰の高さに合わせて裾を
+    // 広げ、低くすると、はじめて座って見える(接地判定がこの形も含めて測る)。
+    if (skirt.current) {
+      skirt.current.scale.set(1 + 0.3 * c.sit, 1 - 0.22 * c.sit, 1 + 0.3 * c.sit);
+    }
+
     // 接地: 姿勢を当てたあとの体を実際に測り、床(y=0)を割ったぶんだけ押し上げる。
     // 測るときだけ補正を外した素の姿に戻す(補正込みで測ると押し上げが積み上がる)。
     const body = contact.current;
@@ -667,8 +676,10 @@ export default function PhoenixModel({
           <mesh geometry={BUCKLE_GEO} material={SAND_MAT} position={[0, 0.585, 0.172]} />
 
           {/* コート: 裾へ広がる袍。裾の内側に深錆の縁で重さを出す */}
-          <mesh geometry={COAT_GEO} material={CORAL_MAT} />
-          <mesh geometry={COAT_GEO} material={RUST_MAT} position={[0, -0.02, 0]} scale={[0.97, 0.35, 0.97]} />
+          <group ref={skirt}>
+            <mesh geometry={COAT_GEO} material={CORAL_MAT} />
+            <mesh geometry={COAT_GEO} material={RUST_MAT} position={[0, -0.02, 0]} scale={[0.97, 0.35, 0.97]} />
+          </group>
           {/* 肩マント: 首から肩へ流れ落ちる短い外掛け。腕はこの裾の下から出る */}
           <mesh geometry={MANTLE_GEO} material={CORAL_MAT} position={[0, 0.78, 0]} />
           {/* 留め具: 紋章の丸い目穴(sandの環+midnightの芯)。肩マントの前面に */}
