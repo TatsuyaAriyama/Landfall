@@ -3557,81 +3557,94 @@ textarea {
   cursor: grabbing;
 }
 
-/* 小さな船着き場の歩行パッド。PCはWASD/矢印、スマホはこの4方向を使う。 */
+/* スマホ用のアナログスティック。PCでは常に非表示で、WASD/矢印だけを使う。 */
 .harbor-walk-controls {
   position: absolute;
-  top: calc(70px + env(safe-area-inset-top));
-  right: 14px;
+  right: 16px;
+  bottom: calc(190px + env(safe-area-inset-bottom));
   z-index: 5;
-  width: 118px;
-  height: 118px;
+  width: 142px;
+  height: 142px;
   display: none;
-  grid-template-columns: repeat(3, 36px);
-  grid-template-rows: repeat(3, 36px);
-  gap: 5px;
-  place-content: center;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 20%, transparent);
+  border-radius: 50%;
+  color: color-mix(in srgb, var(--harbor-sand) 58%, transparent);
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in srgb, #0d2a24 48%, transparent) 0 34%,
+      color-mix(in srgb, #0d2a24 68%, transparent) 35% 100%
+    );
+  box-shadow:
+    inset 0 0 30px color-mix(in srgb, #eadebd 5%, transparent),
+    0 14px 34px color-mix(in srgb, #071713 22%, transparent);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.harbor-walk-controls button,
-.harbor-walk-controls .center {
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--harbor-sand) 22%, transparent);
-  color: var(--harbor-sand);
-  background: color-mix(in srgb, #0d2a24 66%, transparent);
-  box-shadow: 0 8px 20px color-mix(in srgb, #071713 16%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  font: inherit;
-  font-size: 17px;
+.harbor-walk-controls .direction {
+  position: absolute;
+  font-size: 13px;
   line-height: 1;
-  cursor: pointer;
-  touch-action: none;
-}
-
-.harbor-walk-controls button:active {
-  color: #123830;
-  background: var(--harbor-sand);
-  transform: scale(0.94);
+  pointer-events: none;
 }
 
 .harbor-walk-controls .up {
-  grid-column: 2;
-  grid-row: 1;
+  top: 11px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 .harbor-walk-controls .left {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-.harbor-walk-controls .center {
-  grid-column: 2;
-  grid-row: 2;
-  width: 14px;
-  height: 14px;
-  place-self: center;
-  border-radius: 999px;
-  opacity: 0.58;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
 }
 
 .harbor-walk-controls .right {
-  grid-column: 3;
-  grid-row: 2;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
 }
 
 .harbor-walk-controls .down {
-  grid-column: 2;
-  grid-row: 3;
+  bottom: 11px;
+  left: 50%;
+  transform: translateX(-50%);
 }
 
-@media (hover: none), (max-width: 700px) {
+.harbor-walk-controls .joystick-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 36%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, #eadebd 82%, #123830);
+  box-shadow:
+    0 7px 18px color-mix(in srgb, #071713 28%, transparent),
+    inset 0 2px 6px color-mix(in srgb, white 18%, transparent);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.harbor-walk-controls .joystick-knob span {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: color-mix(in srgb, #123830 72%, transparent);
+}
+
+@media (max-width: 700px), (pointer: coarse) and (max-width: 1000px) {
   .harbor-walk-controls {
-    display: grid;
+    display: block;
   }
 
   .harbor-walk-hint {

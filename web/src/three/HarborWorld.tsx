@@ -933,8 +933,12 @@ function MemberBoat({
 }
 
 interface HarborWalkInput {
-  x: -1 | 0 | 1;
-  z: -1 | 0 | 1;
+  x: number;
+  z: number;
+}
+
+interface HarborWalkInputRef {
+  current: HarborWalkInput;
 }
 
 interface HarborLookState {
@@ -974,7 +978,7 @@ function canStandInHarbor(x: number, z: number): boolean {
   return true;
 }
 
-/// 没入時の航海士。WASD/矢印と画面ボタンを同じ入力へまとめ、
+/// 没入時の航海士。WASD/矢印とスマホのスティックを同じ入力へまとめ、
 /// 砂地と三本の桟橋だけを歩く。入力は常にカメラ基準へ変換し、
 /// 障害物に沿って滑った時も「実際に進んだ方向」へ体を向ける。
 function HarborWalker({
@@ -985,7 +989,7 @@ function HarborWalker({
 }: {
   active: boolean;
   animate: boolean;
-  input: HarborWalkInput;
+  input: HarborWalkInputRef;
   look: HarborLookRef;
 }) {
   const root = useRef<THREE.Group>(null);
@@ -1044,18 +1048,20 @@ function HarborWalker({
   useFrame((_, delta) => {
     if (!active || !root.current) return;
     const keys = pressed.current;
+    const touch = input.current;
     let dx =
-      input.x +
+      touch.x +
       (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) -
       (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
     let dz =
-      input.z +
+      touch.z +
       (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) -
       (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0);
     let movedX = 0;
     let movedZ = 0;
     if (dx !== 0 || dz !== 0) {
       const length = Math.hypot(dx, dz);
+      const strength = Math.min(length, 1);
       dx /= length;
       dz /= length;
 
@@ -1065,8 +1071,8 @@ function HarborWalker({
       const worldZ = Math.sin(yaw) * dx + Math.cos(yaw) * dz;
       const beforeX = position.current.x;
       const beforeZ = position.current.z;
-      const nextX = beforeX + worldX * WALK_SPEED * delta;
-      const nextZ = beforeZ + worldZ * WALK_SPEED * delta;
+      const nextX = beforeX + worldX * WALK_SPEED * strength * delta;
+      const nextZ = beforeZ + worldZ * WALK_SPEED * strength * delta;
       if (canStandInHarbor(nextX, position.current.z)) position.current.x = nextX;
       if (canStandInHarbor(position.current.x, nextZ)) position.current.z = nextZ;
       movedX = position.current.x - beforeX;
@@ -1116,57 +1122,77 @@ function HarborWalkControls({
 }: {
   onInput: (input: HarborWalkInput) => void;
 }) {
-  const releaseTimer = useRef<number | undefined>(undefined);
-  useEffect(
-    () => () => {
-      window.clearTimeout(releaseTimer.current);
-    },
-    [],
-  );
-  const release = () => {
-    window.clearTimeout(releaseTimer.current);
-    // ごく短いタップでも数フレームは歩かせる。長押しはそのまま連続移動になる。
-    releaseTimer.current = window.setTimeout(() => onInput({ x: 0, z: 0 }), 90);
+  const activePointer = useRef<number | null>(null);
+  const [knob, setKnob] = useState({ x: 0, y: 0 });
+  const updateInput = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const dx = event.clientX - (rect.left + rect.width / 2);
+    const dy = event.clientY - (rect.top + rect.height / 2);
+    const distance = Math.hypot(dx, dy);
+    const maxRadius = rect.width * 0.31;
+    const deadZone = rect.width * 0.07;
+    const visualScale = distance > maxRadius ? maxRadius / distance : 1;
+    setKnob({ x: dx * visualScale, y: dy * visualScale });
+    if (distance <= deadZone) {
+      onInput({ x: 0, z: 0 });
+      return;
+    }
+    const strength = Math.min((distance - deadZone) / (maxRadius - deadZone), 1);
+    onInput({
+      x: (dx / distance) * strength,
+      z: (dy / distance) * strength,
+    });
   };
-  const button = (
-    label: string,
-    symbol: string,
-    className: string,
-    input: HarborWalkInput,
-  ) => (
-    <button
-      type="button"
-      className={className}
-      aria-label={label}
-      onPointerDown={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        window.clearTimeout(releaseTimer.current);
-        event.currentTarget.setPointerCapture(event.pointerId);
-        onInput(input);
-      }}
-      onPointerUp={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        release();
-      }}
-      onPointerCancel={release}
-      onLostPointerCapture={release}
-    >
-      {symbol}
-    </button>
-  );
+  const release = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (activePointer.current !== event.pointerId) return;
+    activePointer.current = null;
+    setKnob({ x: 0, y: 0 });
+    onInput({ x: 0, z: 0 });
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
   return (
     <div
       className="harbor-walk-controls"
+      role="group"
       aria-label={t("harborWalkControls")}
-      onPointerDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (activePointer.current !== null) return;
+        activePointer.current = event.pointerId;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        updateInput(event);
+      }}
+      onPointerMove={(event) => {
+        if (activePointer.current !== event.pointerId) return;
+        event.preventDefault();
+        event.stopPropagation();
+        updateInput(event);
+      }}
+      onPointerUp={release}
+      onPointerCancel={release}
+      onLostPointerCapture={(event) => {
+        if (activePointer.current !== event.pointerId) return;
+        activePointer.current = null;
+        setKnob({ x: 0, y: 0 });
+        onInput({ x: 0, z: 0 });
+      }}
     >
-      {button(t("harborWalkForward"), "↑", "up", { x: 0, z: -1 })}
-      {button(t("harborWalkLeft"), "←", "left", { x: -1, z: 0 })}
-      <span className="center" aria-hidden="true" />
-      {button(t("harborWalkRight"), "→", "right", { x: 1, z: 0 })}
-      {button(t("harborWalkBack"), "↓", "down", { x: 0, z: 1 })}
+      <span className="direction up" aria-hidden="true">↑</span>
+      <span className="direction left" aria-hidden="true">←</span>
+      <span className="direction right" aria-hidden="true">→</span>
+      <span className="direction down" aria-hidden="true">↓</span>
+      <span
+        className="joystick-knob"
+        aria-hidden="true"
+        style={{ transform: `translate3d(${knob.x}px, ${knob.y}px, 0)` }}
+      >
+        <span />
+      </span>
     </div>
   );
 }
@@ -1214,7 +1240,7 @@ function HarborSea({
   onEnterWorld: () => void;
   onWorldEntered: () => void;
   onWorldExited: () => void;
-  walkInput: HarborWalkInput;
+  walkInput: HarborWalkInputRef;
   look: HarborLookRef;
 }) {
   const camera = useThree((s) => s.camera);
@@ -1431,7 +1457,10 @@ export default function HarborWorld({
   // ---- 没入(みんなの海に入る) ----
   const [immersive, setImmersive] = useState(false);
   const [phase, setPhase] = useState<WorldPhase>("idle");
-  const [walkInput, setWalkInput] = useState<HarborWalkInput>({ x: 0, z: 0 });
+  const walkInput = useRef<HarborWalkInput>({ x: 0, z: 0 });
+  const setWalkInput = useCallback((next: HarborWalkInput) => {
+    walkInput.current = next;
+  }, []);
   const look = useRef<HarborLookState>({ yaw: 0, pitch: 0.38 });
   const lookDrag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const enterWorld = useCallback(() => {
@@ -1452,7 +1481,7 @@ export default function HarborWorld({
       return;
     }
     setPhase((p) => (p === "exit" ? p : "exit"));
-  }, []);
+  }, [setWalkInput]);
   const handleWorldEntered = useCallback(() => {
     setPhase((p) => (p === "enter" ? "idle" : p));
   }, []);
