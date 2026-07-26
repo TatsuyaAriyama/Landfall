@@ -7,6 +7,9 @@ import { watchViewport } from "./viewport";
 // 保存済みのライト設定で文字色だけ古いままになるのを防ぎ、単一テーマへ移行する。
 localStorage.removeItem("appTheme");
 document.documentElement.removeAttribute("data-theme");
+// Service Worker廃止前に失敗したメインJSのHTTPキャッシュとURLを分離する。
+// 今後の障害調査でも、表示中の配信世代をDOMから確認できる。
+document.documentElement.dataset.appBuild = "2026-07-26-sw-retired";
 
 // キーボード/ピッカーで実際に見えている高さを :root に流す(全階層のCSSが参照する)。
 watchViewport();
