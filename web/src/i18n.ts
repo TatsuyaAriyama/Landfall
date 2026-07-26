@@ -130,7 +130,7 @@ const ja = {
   // 帰る場所(港の3Dホームタウン)
   takePhoto: "写真を撮る",
   lanternHint: "今日、海へ出た船には灯がともる。",
-  enterWorldHint: "港町をタップして、帰る場所へ",
+  enterWorldHint: "港をタップして、帰る場所へ",
 
   // 共同航海(海図と航路)
   voyageTitle: "共同航海",
