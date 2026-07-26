@@ -34,8 +34,9 @@
     <meta property="og:url" content="https://landfall-studylog.com/" />
     <meta property="og:image" content="https://landfall-studylog.com/favicon.svg" />
     <title>Landfall — Study Log</title>
-    <!-- アプリ本体のJSが旧キャッシュ混在で読めない場合にも、Service Workerだけは
-         更新して自力復旧できるよう、登録処理をインラインで先に動かす。 -->
+    <!-- Service Workerは更新時の新旧JS混在を繰り返したため廃止した。
+         既存端末に登録が残っている場合だけ、終了専用Workerへ差し替えて
+         キャッシュ削除・登録解除・ネットワーク版への再読込を行う。 -->
     <script>
       (() => {
         const host = window.location.hostname;
@@ -43,43 +44,16 @@
           host === "landfall-studylog.com" || host.endsWith(".landfall-studylog.pages.dev");
         if (!production || !("serviceWorker" in navigator)) return;
 
-        const hadController = Boolean(navigator.serviceWorker.controller);
-        let reloading = false;
-        navigator.serviceWorker.addEventListener("controllerchange", () => {
-          if (reloading || !hadController) return;
-          reloading = true;
-          window.location.reload();
-        });
-
-        window.addEventListener("load", () => {
-          navigator.serviceWorker
-            .register("/sw.js?v=10", { updateViaCache: "none" })
-            .then((registration) => {
-              const check = () => registration.update().catch(() => {});
-              check();
-              document.addEventListener("visibilitychange", () => {
-                if (document.visibilityState === "visible") check();
-              });
-            })
-            .catch(() => {});
-
-          // 更新途中で新旧アセットが混ざり、アプリ本体が一度も描画できない場合の
-          // 最後の安全網。正常な画面では何もしない。失敗時だけ旧Workerを解除し、
-          // 同じタブで一度だけネットワークから読み直す。
-          window.setTimeout(async () => {
-            const root = document.getElementById("root");
-            const recoveryKey = "landfall-sw-recovery";
-            if (root && root.childElementCount > 0) {
-              sessionStorage.removeItem(recoveryKey);
-              return;
-            }
-            if (sessionStorage.getItem(recoveryKey)) return;
-            sessionStorage.setItem(recoveryKey, "1");
-            const registration = await navigator.serviceWorker.getRegistration();
-            await registration?.unregister();
-            window.location.reload();
-          }, 4000);
-        });
+        navigator.serviceWorker
+          .getRegistration()
+          .then((registration) => {
+            if (!registration) return;
+            return navigator.serviceWorker.register("/sw-retire.js?v=1", {
+              scope: "/",
+              updateViaCache: "none",
+            });
+          })
+          .catch(() => {});
       })();
     </script>
   </head>
