@@ -82,7 +82,7 @@ textarea {
   padding: 0 24px 96px;
 }
 
-/* ホームは、現地時刻の海を一枚の背景として持つ。
+/* 通常画面はすべて、現地時刻の海を一枚の共通背景として持つ。
    時刻を文字で説明せず、空から海へ溶ける色と光だけで朝昼晩を伝える。 */
 .shell.home-ocean {
   position: relative;
@@ -178,6 +178,24 @@ textarea {
 
 .home-ocean .today-date {
   border-bottom-color: color-mix(in srgb, var(--return-orange) 48%, transparent);
+}
+
+/* 設定・確認・編集も同じ海の上に浮かぶガラス面にする。
+   不透明な paper で覆うと、タブからダイアログへ移った瞬間だけ別世界に見える。 */
+.home-ocean .overlay {
+  background: color-mix(in srgb, var(--ink-fixed) 18%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.home-ocean .dialog {
+  background: color-mix(in srgb, var(--home-glass) 84%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.home-ocean .dialog-nav {
+  background: color-mix(in srgb, var(--home-glass) 92%, transparent);
 }
 
 .topbar {
