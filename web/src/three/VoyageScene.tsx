@@ -6,7 +6,7 @@ import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
 import { Gulls, type GullFlock } from "./Gulls";
-import { TAP_SLOP } from "./VoyageWorld";
+import { TAP_SLOP } from "./voyageConstants";
 import { boatProps } from "../boat";
 import { useNavigatorPose } from "./navigatorPose";
 import { shortDateLabel } from "../i18n";

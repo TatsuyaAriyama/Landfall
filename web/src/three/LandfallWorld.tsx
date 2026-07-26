@@ -348,13 +348,12 @@ export default function LandfallWorld({ name, minutes, onClose }: LandfallWorldP
 
       {words && (
         <div className="landfall-caption">
-          <div className="landfall-title">{t("landfallExcl")}</div>
-          <p className="landfall-line">{tf(t("reachedIsland"), { name })}</p>
           {minutes > 0 && (
             <p className="landfall-time">
               {tf(t("landfallTime"), { time: durationLabel(minutes) })}
             </p>
           )}
+          <p className="landfall-line">{tf(t("reachedIsland"), { name })}</p>
           <p className="landfall-sub">{t("voyageStays")}</p>
           <button className="landfall-close" onClick={onClose}>
             {t("close")}

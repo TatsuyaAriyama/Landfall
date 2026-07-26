@@ -4,7 +4,7 @@
 // バージョンを上げると activate 時に旧キャッシュが破棄される
 // (「真っ黒画面が再読込しても直らない」の一因になり得るため、
 //  以前壊れた状態がキャッシュされていた場合の脱出路として機能する)。
-const CACHE = "landfall-v4";
+const CACHE = "landfall-v6";
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -27,7 +27,10 @@ self.addEventListener("fetch", (e) => {
         const hit = await c.match(e.request);
         if (hit) return hit;
         const res = await fetch(e.request);
-        c.put(e.request, res.clone());
+        // デプロイ切替の瞬間には、新しいHTMLだけが先に見えてアセットがまだ
+        // 取れないことがある。失敗レスポンスまで保存すると、ハッシュ付きURLを
+        // 永久キャッシュして3Dだけ消えたままになるため、成功時だけ控える。
+        if (res.ok) c.put(e.request, res.clone());
         return res;
       }),
     );

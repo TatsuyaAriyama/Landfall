@@ -15,25 +15,20 @@ struct LandfallCelebrationView: View {
 
             VStack(spacing: 12) {
                 Spacer()
-                Text("Landfall.")
-                    .font(LFFont.copy(34))
-                    .foregroundStyle(LFColor.harborSand)
-                Text("You reached \(destination.name).")
-                    .font(LFFont.copy(17))
-                    .foregroundStyle(LFColor.harborSand.opacity(0.9))
-                    .multilineTextAlignment(.center)
                 if minutes > 0 {
-                    Text("Time at sea · \(LF.duration(minutes: minutes))")
-                        .font(LFFont.label(13))
+                    Text("Work time \(LF.duration(minutes: minutes))")
+                        .font(LFFont.label(12))
                         .foregroundStyle(LFColor.returnOrange)
-                        .padding(.horizontal, 14).padding(.vertical, 5)
-                        .background(LFColor.returnOrange.opacity(0.14), in: Capsule())
-                        .padding(.top, 4)
+                        .tracking(1.1)
                 }
+                Text("You arrived at \(destination.name).")
+                    .font(LFFont.copy(24))
+                    .foregroundStyle(LFColor.harborSand)
+                    .multilineTextAlignment(.center)
                 Text("This voyage stays in your Logbook.")
                     .font(LFFont.label(13))
                     .foregroundStyle(LFColor.harborSand.opacity(0.55))
-                    .padding(.top, 8)
+                    .padding(.top, 2)
                 Spacer()
                 Button { onClose() } label: {
                     Text("Close")

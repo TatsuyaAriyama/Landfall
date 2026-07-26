@@ -1735,15 +1735,32 @@ textarea {
   display: block;
 }
 
+/* R3FのCanvasラッパーを明示的に背面へ固定する。WebGLの合成レイヤーが
+   DOMの到着文より前へ出るブラウザでも、言葉と閉じるボタンを隠させない。 */
+.landfall-world > div:first-child {
+  position: absolute !important;
+  inset: 0;
+  z-index: 0;
+}
+
 /* 上陸を見ているあいだは出さず、歩き出してから下から浮かせる。
-   世界の上に重ねるので、下端に寄せて島と船を隠さない。 */
+   明るい砂の上でも読めるよう、海色の薄い幕を下端へ向けてだけ重ねる。
+   四角いパネルにはせず、映像から言葉へ自然につながるグラデーションにする。 */
 .landfall-caption {
   position: absolute;
+  z-index: 2;
   left: 0;
   right: 0;
-  bottom: calc(24px + env(safe-area-inset-bottom));
+  bottom: 0;
   text-align: center;
-  padding: 0 24px;
+  padding: 84px 24px calc(24px + env(safe-area-inset-bottom));
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, #0d2a24 55%, transparent) 34%,
+    color-mix(in srgb, #0d2a24 92%, transparent) 72%,
+    #0d2a24 100%
+  );
   animation: landfall-words-in 0.9s ease-out forwards;
 }
 
@@ -1768,35 +1785,32 @@ textarea {
   }
 }
 
-.landfall-title {
-  font-size: 44px;
-  font-weight: 500;
-  color: var(--harbor-sand);
-}
-
 .landfall-line {
-  font-size: 17px;
-  color: color-mix(in srgb, var(--harbor-sand) 90%, transparent);
-  margin: 16px 0 0;
+  max-width: 30rem;
+  margin: 12px auto 0;
+  font-size: clamp(22px, 5.2vw, 30px);
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0.035em;
+  color: var(--harbor-sand);
+  text-wrap: balance;
 }
 
 .landfall-sub {
-  font-size: 14px;
+  font-size: 13px;
   color: color-mix(in srgb, var(--harbor-sand) 55%, transparent);
-  margin: 6px 0 0;
+  margin: 10px 0 0;
 }
 
-/* 着岸時に添える「航海した時間」。帰帆の色の小さなバッジ。 */
+/* 到着の見出しになる「作業時間」。学習時間と同じ帰帆色の小さな文字で、
+   大きな到着文の上に余白を持たせて置く。 */
 .landfall-time {
-  display: inline-block;
-  margin: 12px 0 0;
-  padding: 5px 14px;
-  border-radius: 999px;
-  font-size: 13px;
+  margin: 0;
+  font-size: 12px;
   font-weight: 500;
-  letter-spacing: 0.4px;
+  line-height: 1.4;
+  letter-spacing: 0.12em;
   color: var(--return-orange);
-  background: color-mix(in srgb, var(--return-orange) 14%, transparent);
   font-variant-numeric: tabular-nums;
 }
 
