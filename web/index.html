@@ -53,7 +53,7 @@
 
         window.addEventListener("load", () => {
           navigator.serviceWorker
-            .register("/sw.js", { updateViaCache: "none" })
+            .register("/sw.js?v=10", { updateViaCache: "none" })
             .then((registration) => {
               const check = () => registration.update().catch(() => {});
               check();
