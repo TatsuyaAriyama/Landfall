@@ -25,7 +25,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Landfall" />
     <meta name="description" content="Landfall — 学習記録アプリ。スマートフォン・タブレット・PCで、記録が同期します。" />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="dark" />
     <link rel="canonical" href="https://landfall-studylog.com/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Landfall-StudyLog" />
@@ -34,6 +34,37 @@
     <meta property="og:url" content="https://landfall-studylog.com/" />
     <meta property="og:image" content="https://landfall-studylog.com/favicon.svg" />
     <title>Landfall — Study Log</title>
+    <!-- アプリ本体のJSが旧キャッシュ混在で読めない場合にも、Service Workerだけは
+         更新して自力復旧できるよう、登録処理をインラインで先に動かす。 -->
+    <script>
+      (() => {
+        const host = window.location.hostname;
+        const production =
+          host === "landfall-studylog.com" || host.endsWith(".landfall-studylog.pages.dev");
+        if (!production || !("serviceWorker" in navigator)) return;
+
+        const hadController = Boolean(navigator.serviceWorker.controller);
+        let reloading = false;
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (reloading || !hadController) return;
+          reloading = true;
+          window.location.reload();
+        });
+
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/sw.js", { updateViaCache: "none" })
+            .then((registration) => {
+              const check = () => registration.update().catch(() => {});
+              check();
+              document.addEventListener("visibilitychange", () => {
+                if (document.visibilityState === "visible") check();
+              });
+            })
+            .catch(() => {});
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
