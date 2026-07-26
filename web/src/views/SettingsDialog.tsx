@@ -6,19 +6,7 @@ import type { UserData } from "../data";
 import { DialogHeader, Modal, askConfirm } from "../overlays";
 import { LANGUAGE_KEY, t } from "../i18n";
 
-export const THEME_KEY = "appTheme";
-
-/// 外観の反映。system は data-theme を外して prefers-color-scheme に任せる。
-export function applyTheme(value: string | null) {
-  const root = document.documentElement;
-  if (value === "light" || value === "dark") {
-    root.setAttribute("data-theme", value);
-  } else {
-    root.removeAttribute("data-theme");
-  }
-}
-
-/// 設定。言語・外観・船・データ・アカウント。
+/// 設定。言語・データ・アカウント。
 export function SettingsDialog({
   data,
   onClose,
@@ -27,7 +15,6 @@ export function SettingsDialog({
   onClose: () => void;
 }) {
   const [language, setLanguage] = useState(localStorage.getItem(LANGUAGE_KEY) ?? "system");
-  const [theme, setTheme] = useState(localStorage.getItem(THEME_KEY) ?? "system");
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,13 +72,6 @@ export function SettingsDialog({
     window.location.reload();
   };
 
-  const pickTheme = (value: string) => {
-    setTheme(value);
-    if (value === "system") localStorage.removeItem(THEME_KEY);
-    else localStorage.setItem(THEME_KEY, value);
-    applyTheme(value === "system" ? null : value);
-  };
-
   const deleteAccount = async () => {
     if (deleting) return;
     const ok = await askConfirm({
@@ -129,13 +109,6 @@ export function SettingsDialog({
           {pill(language === "system", t("system"), () => pickLanguage("system"))}
           {pill(language === "ja", "日本語", () => pickLanguage("ja"))}
           {pill(language === "en", "English", () => pickLanguage("en"))}
-        </div>
-
-        <p className="section-label">{t("appearance")}</p>
-        <div className="chip-row">
-          {pill(theme === "system", t("system"), () => pickTheme("system"))}
-          {pill(theme === "light", t("light"), () => pickTheme("light"))}
-          {pill(theme === "dark", t("dark"), () => pickTheme("dark"))}
         </div>
 
         <p className="section-label">{t("dataSection")}</p>

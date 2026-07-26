@@ -1,11 +1,11 @@
 /* Landfall Web テーマ。
    原則は iOS と同じ: フラット塗りのみ・影/グラデーション/絵文字なし・角丸20px・font-weight ≤500。
-   ink/paper は明暗に追従する意味色。ブランド色は固定。 */
+   外観モードは持たず、夜の配色を基準に時間帯の海が必要な意味色を上書きする。 */
 
 :root {
-  --ink: #141414;
-  --paper: #ffffff;
-  --tile-ink: #141414;
+  --ink: #f4f1ec;
+  --paper: #161412;
+  --tile-ink: #2c2a28;
   --sun-yellow: #ffd84d;
   --sea-green: #5dcaa5;
   --coral: #f0997b;
@@ -19,21 +19,7 @@
   --ember-gold: #f3c065;
   --ink-fixed: #141414;
   --radius: 20px;
-}
-
-/* 外観: 既定は端末設定に追従。設定で選ぶと data-theme が優先される。 */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --ink: #f4f1ec;
-    --paper: #161412;
-    --tile-ink: #2c2a28;
-  }
-}
-
-:root[data-theme="dark"] {
-  --ink: #f4f1ec;
-  --paper: #161412;
-  --tile-ink: #2c2a28;
+  color-scheme: dark;
 }
 
 * {
