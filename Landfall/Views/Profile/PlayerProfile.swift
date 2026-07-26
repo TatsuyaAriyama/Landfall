@@ -169,18 +169,17 @@ struct ProfileEditorSheet: View {
     @AppStorage(PlayerProfile.resolveKey) private var resolve = ""
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("Player card")
-                        .font(LFFont.copy(20))
-                        .foregroundStyle(LFColor.ink)
-                    Spacer()
-                    Button("Close") { dismiss() }
-                        .font(LFFont.label(15))
-                        .foregroundStyle(LFColor.ink.opacity(0.6))
-                }
+        VStack(spacing: 0) {
+            LFBackHeader(title: "Player card") { dismiss() }
+                .padding(.horizontal, LFMetrics.cardPadding)
+                .padding(.vertical, 6)
 
+            Rectangle()
+                .fill(LFColor.ink.opacity(0.08))
+                .frame(height: 1)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
                 // プレビュー: 入力がそのままカードになる。
                 PlayerCardView(
                     name: name.trimmingCharacters(in: .whitespaces).isEmpty
@@ -190,7 +189,7 @@ struct ProfileEditorSheet: View {
                     resolve: resolve,
                     sinceDay: PlayerProfile.sinceDay
                 )
-                .padding(.top, 24)
+                .padding(.top, 20)
 
                 sectionLabel("Player name")
                     .padding(.top, 32)
@@ -302,8 +301,9 @@ struct ProfileEditorSheet: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 32)
+                }
+                .padding(LFMetrics.cardPadding)
             }
-            .padding(LFMetrics.cardPadding)
         }
         .background(LFColor.paper)
     }

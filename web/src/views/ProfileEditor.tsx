@@ -9,7 +9,7 @@ import {
   normalizeSymbol,
 } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
-import { Modal, showToast } from "../overlays";
+import { DialogHeader, Modal, showToast } from "../overlays";
 import { fullDateLabel, t, tf } from "../i18n";
 
 /// プレイヤーカードの編集。保存でローカルに書き、参加中の全ての港へも反映する。
@@ -42,7 +42,7 @@ export function ProfileEditor({
   return (
     <Modal onClose={onClose}>
       <>
-        <h2 className="dialog-title">{t("playerCard")}</h2>
+        <DialogHeader title={t("playerCard")} onBack={onClose} />
 
         {/* プレビュー: 入力がそのままカードになる。 */}
         <div

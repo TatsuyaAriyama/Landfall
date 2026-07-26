@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { t } from "./i18n";
+import { useBackToClose } from "./backClose";
 
 // ダイアログとトーストの共通基盤。
 // - Modal: Esc で閉じる+表示中は背景スクロールを固定
@@ -7,6 +8,10 @@ import { t } from "./i18n";
 // - showToast: 保存・参加・失敗などの静かなフィードバック
 
 export function Modal({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  // Androidの戻る・ブラウザの戻るは、アプリを離れるのではなく最前面の
+  // ダイアログを一つだけ閉じる。確認ダイアログが重なっていてもスタック順に戻る。
+  useBackToClose(true, onClose);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -25,6 +30,21 @@ export function Modal({ onClose, children }: { onClose: () => void; children: Re
       <div className="dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
         {children}
       </div>
+    </div>
+  );
+}
+
+/// 長いダイアログでも常に見える「一つ前へ戻る」ための見出し。
+/// ×や背景タップだけに頼らず、戻り先を言葉で明示する。
+export function DialogHeader({ title, onBack }: { title: string; onBack: () => void }) {
+  return (
+    <div className="dialog-nav">
+      <button className="dialog-back" onClick={onBack} aria-label={t("back")}>
+        <span aria-hidden="true">‹</span>
+        {t("back")}
+      </button>
+      <h2 className="dialog-title">{title}</h2>
+      <span className="dialog-nav-balance" aria-hidden="true" />
     </div>
   );
 }
