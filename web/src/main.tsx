@@ -14,7 +14,7 @@ try {
 document.documentElement.removeAttribute("data-theme");
 // Service Worker廃止前に失敗したメインJSのHTTPキャッシュとURLを分離する。
 // 今後の障害調査でも、表示中の配信世代をDOMから確認できる。
-const APP_BUILD = "2026-07-26-performance-v1";
+const APP_BUILD = "2026-07-26-chat-v1";
 document.documentElement.dataset.appBuild = APP_BUILD;
 
 // キーボード/ピッカーで実際に見えている高さを :root に流す(全階層のCSSが参照する)。
@@ -65,6 +65,15 @@ try {
       <App />
     </StrictMode>,
   );
-} catch {
+} catch (error) {
+  // 表示用には詳細を出さないが、端末上の診断で原因を区別できるようDOMへ控える。
+  // 値は例外名だけに絞り、設定値やURLなどを露出させない。
+  document.documentElement.dataset.loadError =
+    error instanceof Error ? error.name : "UnknownError";
+  if (error instanceof Error) {
+    document.documentElement.dataset.loadErrorDetail = error.message
+      .replace(/https?:\/\/\S+/g, "[url]")
+      .slice(0, 160);
+  }
   if (!recoverTransientLoadOnce()) renderFatalError();
 }
