@@ -114,6 +114,7 @@ export async function saveDestination(
   const id = input.id ?? newUUID();
   // ステップは名前を整えて上限で切り、doneAtは立っているものだけ持つ。
   const steps = (input.steps ?? [])
+    .filter((s) => trimAll(s.name).length > 0)
     .slice(0, MAX_STEPS)
     .map((s) => ({
       id: s.id,

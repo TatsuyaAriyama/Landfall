@@ -2778,6 +2778,12 @@ textarea {
   gap: 8px;
 }
 
+.step-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .step-row {
   display: flex;
   align-items: center;
@@ -2812,6 +2818,25 @@ textarea {
 .step-input.done {
   opacity: 0.6;
   text-decoration: line-through;
+}
+
+.step-done-at {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-left: 36px;
+  color: var(--return-orange);
+  font-size: 11px;
+}
+
+.step-done-at input {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--return-orange);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
 }
 
 .step-remove {

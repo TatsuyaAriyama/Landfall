@@ -7,6 +7,14 @@ enum StudyTimer {
     static let itemKey = "landfall.timer.item"
     /// これを超える航海は「閉じ忘れ」の可能性が高いので、着岸時に確認する。
     static let longSessionMinutes = 8 * 60
+
+    /// 項目の削除経路が増えても、孤立したタイマーを残さないための共通処理。
+    static func clear(ifMatching itemID: String? = nil) {
+        let defaults = UserDefaults.standard
+        if let itemID, defaults.string(forKey: itemKey) != itemID { return }
+        defaults.set(0, forKey: startKey)
+        defaults.set("", forKey: itemKey)
+    }
 }
 
 /// 項目をタップして開く記録シート。タイマー計測か手入力で時間を決め、ひとことを添えて刻む。
@@ -309,7 +317,7 @@ struct RecordSessionSheet: View {
         Haptics.success()
         // 着岸アニメと「おかえり」は今日つけたときだけ。過去の後追いは静かに保存する。
         if isToday, (blanks ?? 0) < 2 {
-            SailAnimator.shared.play(.arrival)
+            SailAnimator.shared.play(.arrival, minutes: minutes)
         }
         onSaved(blanks)
     }

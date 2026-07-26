@@ -313,8 +313,10 @@
 "Delete" = "削除";
 "Islands reached" = "到達した島";
 "Landfall." = "着岸。";
+"Total time · %@" = "合計時間 · %@";
 "You reached %@." = "%@に到達しました。";
 "Time at sea · %@" = "航海した時間 · %@";
+"Completed at" = "達成日時";
 "This voyage stays in your Logbook." = "この航海は、航海誌に残ります。";
 
 /* 装い(船カスタム) */

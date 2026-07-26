@@ -209,6 +209,7 @@ const ja = {
   landfallTime: "航海した時間 · {time}",
   addStep: "ステップを追加",
   stepPlaceholder: "例: 単語帳を1周",
+  stepCompletedAt: "達成日時",
   stepsCount: "{done} / {total}",
   nextStepLabel: "次: {name}",
   optionalDateLabel: "締切(任意)",
@@ -544,6 +545,7 @@ const en: Record<I18nKey, string> = {
   landfallTime: "Time at sea · {time}",
   addStep: "Add a step",
   stepPlaceholder: "e.g. one pass of the vocab book",
+  stepCompletedAt: "Completed at",
   stepsCount: "{done} / {total}",
   nextStepLabel: "Next: {name}",
   optionalDateLabel: "Deadline (optional)",
@@ -810,4 +812,3 @@ export function chatReturnLine(name: string, gapDays: number): string {
     ? `${name}が帰還 — ${gapDays}日ぶりの航海。`
     : `${name} returned — first sail in ${gapDays} days.`;
 }
-
