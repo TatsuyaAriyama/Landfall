@@ -161,49 +161,13 @@ function makeHood(profile: [number, number][], lean: number): THREE.BufferGeomet
   return geo;
 }
 
-/// 選べるフードの形。名前は装いの一覧に出る。
-/// どれも前面の開口と「後ろへ倒す」作りは共有していて、変わるのは
-/// 頭の丸みと先の伸び方だけ — 同じ航海士の衣装の範囲に収める。
-export const HOOD_SHAPES = ["peak", "windcut"] as const;
+/// 選べるフードの形。
+/// peak = 被った頭巾。down = 肩へ下ろして畳んだ姿。
+export const HOOD_SHAPES = ["peak", "down"] as const;
 export type HoodShape = (typeof HOOD_SHAPES)[number];
 
-/// 風切頭巾。深く被って顔を落とし、額に帯を締め、尾が風で片側へ流れる。
-///
-/// 「かっこよさ」は形の情報量ではなく、方向と非対称で出す:
-///  - 深く前に張り出した庇 → 顔がさらに奥に落ちて表情が読めなくなる
-///  - 尾を強く後ろへ倒し、さらに横へ流す → 風の中に立っている姿勢になる
-///  - 額の帯 → 布だけの塊に硬い一本が入り、意志のある装備に見える
-/// 左右対称のまま尖らせても「大きい頭巾」にしかならないので、横流しが要。
-function makeWindcutHood(): THREE.BufferGeometry {
-  const profile: [number, number][] = [
-    [0.152, -0.05],
-    [0.166, 0.015],
-    [0.162, 0.08],
-    [0.14, 0.145],
-    [0.104, 0.215],
-    [0.064, 0.29],
-    [0.03, 0.355],
-    [0.0, 0.4],
-  ];
-  const pts = profile.map(([r, y]) => new THREE.Vector2(r, y));
-  const gap = 1.62;
-  const geo = new THREE.LatheGeometry(pts, 22, gap / 2, Math.PI * 2 - gap);
-  const pos = geo.attributes.position as THREE.BufferAttribute;
-  const base = profile[0][1];
-  const span = profile[profile.length - 1][1] - base;
-  for (let i = 0; i < pos.count; i += 1) {
-    const k = Math.max(0, (pos.getY(i) - base) / span);
-    // 尾を後ろへ倒しつつ、横へも流す(風下へなびく非対称)。
-    pos.setZ(i, pos.getZ(i) - k * k * 0.3);
-    pos.setX(i, pos.getX(i) + k * k * 0.075);
-  }
-  pos.needsUpdate = true;
-  geo.computeVertexNormals();
-  return geo;
-}
-
-const HOOD_GEOS: Record<HoodShape, THREE.BufferGeometry> = {
-  // 頭巾: 先が柔らかく尖り、背中へ垂れる(既定)。
+const HOOD_GEOS: Record<"peak", THREE.BufferGeometry> = {
+  // 頭巾: 先が柔らかく尖り、背中へ垂れる。
   peak: makeHood(
     [
       [0.132, -0.035],
@@ -217,14 +181,32 @@ const HOOD_GEOS: Record<HoodShape, THREE.BufferGeometry> = {
     ],
     0.105,
   ),
-  windcut: makeWindcutHood(),
 };
 
-/// 風切頭巾の庇。開口の上に前へ張り出させて、顔に影を落とす。
-/// 円弧なので、正面から見ると眉のように一本通る。
-const HOOD_BRIM_GEO = new THREE.TorusGeometry(0.152, 0.021, 8, 22, Math.PI * 1.0);
-/// 額の帯。布の塊に硬い線を一本入れて、装備らしさを出す。
-const HOOD_BAND_GEO = new THREE.TorusGeometry(0.163, 0.012, 8, 24, Math.PI * 1.2);
+// ---- フードを下ろした姿 ----
+// 尖った布の塊をやめる。頭が出るとシルエットが人になり、円錐の子供っぽさが消える。
+// 頭は夜色の一塊にして、その中で目だけが灯る(顔の造作は作らない — 作ると
+// 低ポリの世界から浮くうえ、この航海士は「顔の見えない人」であることが持ち味)。
+
+/// 頭。わずかに縦長の卵形。真球だと人形になる。
+const HEAD_GEO = new THREE.SphereGeometry(0.099, 18, 14);
+
+/// 首から立ち上がる襟。下ろした頭巾が首のまわりに畳まれている部分。
+/// 前は開けて、顎の下を塞がない。
+const COWL_GEO = (() => {
+  const pts: THREE.Vector2[] = [
+    [0.104, 0.0],
+    [0.124, 0.035],
+    [0.14, 0.062],
+    [0.148, 0.085],
+    [0.15, 0.1],
+  ].map(([r, y]) => new THREE.Vector2(r, y));
+  const gap = 1.15;
+  return new THREE.LatheGeometry(pts, 22, gap / 2, Math.PI * 2 - gap);
+})();
+
+/// 背中に落ちた頭巾のかたまり。畳まれた布なので、丸くたわませる。
+const FOLD_GEO = new THREE.SphereGeometry(0.115, 16, 12);
 
 const FACE_GEO = new THREE.SphereGeometry(0.075, 14, 10);
 const EYE_GEO = new THREE.SphereGeometry(0.019, 10, 8);
@@ -483,7 +465,6 @@ export default function PhoenixModel({
   // フードは指定が無ければ、この端末で選ばれている形を使う
   // (甲板・港・カードなど、呼び出し側が装いを知らない場所のため)。
   const shape: HoodShape = hood ?? navigatorHood();
-  const hoodGeo = HOOD_GEOS[shape];
 
   const core = useRef<THREE.Group>(null); // 足以外(呼吸・歩行の弾み)
   const head = useRef<THREE.Group>(null);
@@ -698,6 +679,20 @@ export default function PhoenixModel({
 
           {/* 襟巻き: sandの環+背に垂れる端 */}
           <mesh geometry={SCARF_GEO} material={SAND_MAT} position={[0, 0.96, 0]} rotation={[Math.PI / 2 + 0.08, 0, 0]} />
+        {shape === "down" && (
+          <>
+            {/* 首のまわりに畳まれた襟。前は開けて顎の下を塞がない。
+                頭と一緒に回らないよう、頭のピボットの外に置く。 */}
+            <mesh geometry={COWL_GEO} material={HOOD_MAT} position={[0, 0.94, 0]} />
+            {/* 背中に落ちた頭巾。畳まれた布なので丸くたわませる。 */}
+            <mesh
+              geometry={FOLD_GEO}
+              material={CORAL_MAT}
+              position={[0, 0.9, -0.115]}
+              scale={[1.05, 0.78, 0.72]}
+            />
+          </>
+        )}
 
           {/* マント: 紋章の背景色の一枚布。肩に固定され、裾ほど自由に靡く
               (波は updateCape が毎フレーム頂点へ書く) */}
@@ -706,38 +701,42 @@ export default function PhoenixModel({
           {/* 頭(首振りのピボット): 頭サイズの尖ったフード=紋章の冠羽。
               開口部の闇に両目が灯る */}
           <group ref={head} position={[0, 0.98, 0]}>
-            <mesh geometry={hoodGeo} material={HOOD_MAT} position={[0, 0.03, 0]} rotation={[-0.04, 0, 0]} />
-          {shape === "windcut" && (
+            {shape === "peak" ? (
             <>
-              {/* 庇: 開口の上へ前傾させて張り出す */}
               <mesh
-                geometry={HOOD_BRIM_GEO}
+                geometry={HOOD_GEOS.peak}
                 material={HOOD_MAT}
-                position={[0, 0.088, 0.052]}
-                rotation={[1.3, 0, Math.PI]}
+                position={[0, 0.03, 0]}
+                rotation={[-0.04, 0, 0]}
               />
-              {/* 額の帯 */}
+              {/* 顔の闇。フードの開口部に収まる大きさで、少しだけ前に出す */}
               <mesh
-                geometry={HOOD_BAND_GEO}
-                material={SAND_MAT}
-                position={[0, 0.052, 0.0]}
-                rotation={[1.5, 0, Math.PI]}
+                geometry={FACE_GEO}
+                material={FACE_MAT}
+                position={[0, 0.058, 0.055]}
+                scale={[1.02, 1.12, 0.62]}
               />
             </>
-          )}
-            {/* 顔の闇。フードの開口部に収まる大きさで、少しだけ前に出す */}
+          ) : (
+            /* 下ろした姿: 頭そのものを夜色の一塊として出す。
+               顔の造作は作らない(目だけが灯る)。 */
             <mesh
-              geometry={FACE_GEO}
+              geometry={HEAD_GEO}
               material={FACE_MAT}
-              position={[0, 0.058, 0.055]}
-              scale={[1.02, 1.12, 0.62]}
+              position={[0, 0.115, 0.006]}
+              scale={[1, 1.08, 0.97]}
             />
-            {[1, -1].map((s) => (
+          )}
+          {[1, -1].map((s) => (
               <mesh
                 key={s}
                 geometry={EYE_GEO}
                 material={EYE_MAT}
-                position={[s * 0.03, 0.062, 0.094]}
+                position={
+                shape === "peak"
+                  ? [s * 0.03, 0.062, 0.094]
+                  : [s * 0.034, 0.124, 0.092]
+              }
               />
             ))}
           </group>

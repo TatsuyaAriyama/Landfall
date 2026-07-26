@@ -121,7 +121,7 @@ export function navigatorPose(): NavigatorPose {
 /// 航海士のフードの形。仕草と同じくこの端末に憶えておく
 /// (見た目の好みなので、記録と一緒に同期はしない)。
 const HOOD_KEY = "navigator.hood";
-const HOODS = ["peak", "windcut"] as const;
+const HOODS = ["peak", "down"] as const;
 export type NavigatorHood = (typeof HOODS)[number];
 
 export function navigatorHood(): NavigatorHood {

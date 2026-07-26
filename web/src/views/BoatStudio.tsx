@@ -118,7 +118,7 @@ function SailorStage({
 
 const HOODS: [NavigatorHood, I18nKey][] = [
   ["peak", "hoodPeak"],
-  ["windcut", "hoodWindcut"],
+  ["down", "hoodDown"],
 ];
 
 const POSES: [PhoenixPose, I18nKey][] = [
