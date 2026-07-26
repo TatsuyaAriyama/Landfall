@@ -3554,6 +3554,120 @@ textarea {
   cursor: pointer;
 }
 
+/* 世界の中でも会話を見失わない、小さな半透明チャット。
+   最新3件と入力だけに絞り、海と船を覆い尽くさない。 */
+.harbor-world-chat-mini {
+  position: absolute;
+  left: 14px;
+  bottom: calc(54px + env(safe-area-inset-bottom));
+  z-index: 4;
+  width: min(330px, calc(100vw - 28px));
+  max-height: min(34vh, 250px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, #eadebd 20%, transparent);
+  border-radius: 16px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 68%, transparent);
+  box-shadow: 0 12px 34px color-mix(in srgb, #071713 24%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.harbor-world-chat-mini-messages {
+  min-height: 24px;
+  max-height: 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.harbor-world-chat-mini-line {
+  width: fit-content;
+  max-width: 90%;
+  padding: 5px 9px;
+  border-radius: 10px 10px 10px 3px;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  background: color-mix(in srgb, #eadebd 12%, transparent);
+}
+
+.harbor-world-chat-mini-line.mine {
+  align-self: flex-end;
+  border-radius: 10px 10px 3px;
+  color: #123830;
+  background: color-mix(in srgb, var(--harbor-sand) 88%, transparent);
+}
+
+.harbor-world-chat-mini-line.auto {
+  align-self: center;
+  max-width: 100%;
+  color: color-mix(in srgb, var(--harbor-sand) 72%, transparent);
+  background: transparent;
+  text-align: center;
+}
+
+.harbor-world-chat-mini-empty {
+  align-self: center;
+  padding: 4px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--harbor-sand) 60%, transparent);
+}
+
+.harbor-world-chat-mini-input {
+  display: flex;
+  gap: 6px;
+}
+
+.harbor-world-chat-mini-input input {
+  min-width: 0;
+  min-height: 36px;
+  flex: 1;
+  padding: 0 11px;
+  border: 1px solid color-mix(in srgb, #eadebd 18%, transparent);
+  border-radius: 11px;
+  outline: none;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #071713 38%, transparent);
+  font: inherit;
+  font-size: 12px;
+}
+
+.harbor-world-chat-mini-input input:focus {
+  border-color: color-mix(in srgb, var(--return-orange) 75%, transparent);
+}
+
+.harbor-world-chat-mini-input input::placeholder {
+  color: color-mix(in srgb, var(--harbor-sand) 44%, transparent);
+}
+
+.harbor-world-chat-mini-input button {
+  min-width: 52px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 11px;
+  color: #123830;
+  background: var(--harbor-sand);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.harbor-world-chat-mini-input button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+@media (max-height: 560px) {
+  .harbor-world-chat-mini-messages {
+    max-height: 76px;
+  }
+}
+
 /* 船の上の名前(drei Htmlでアンカー)。sandの小さなピル。 */
 .harbor-world-name {
   font-size: 12px;

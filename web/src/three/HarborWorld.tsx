@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import * as THREE from "three";
 import {
@@ -12,7 +13,6 @@ import {
   useFrame,
   useThree,
   type RootState,
-  type ThreeEvent,
 } from "@react-three/fiber";
 import { Html, OrbitControls, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
@@ -54,9 +54,6 @@ export interface StrikeEvent {
 export interface HarborWorldProps {
   room: HarborRoom;
   members: HarborMember[];
-  /// 自分のuid。自分の船の甲板に航海士(プレイヤー)を立たせる。
-  selfUid?: string;
-  onSelectMember?: (member: HarborMember) => void;
   /// 共同航海。undefined=読込中(何も出さない)、null=航海なし。
   voyage?: HarborVoyage | null;
   /// 選択中の航路(generateRoutes(voyage.seed)[voyage.routeIndex])。導出は呼び出し側。
@@ -66,6 +63,8 @@ export interface HarborWorldProps {
   strike?: StrikeEvent | null;
   /// この更新で新しく入港したメンバー。画面外から定位置まで航行させる。
   arrivingMemberIds?: ReadonlySet<string>;
+  /// 世界へ入った間も使える、小さなチャットUI。
+  immersiveChat?: ReactNode;
 }
 
 const CAM_POS: [number, number, number] = [0.2, 2.6, 8.4];
@@ -94,7 +93,6 @@ const LANES_X = [0.15, -2.05, 0.75, -1.35];
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
 const LANTERN_GEO = new THREE.SphereGeometry(0.16, 10, 8);
 const LANTERN_POLE_GEO = new THREE.CylinderGeometry(0.022, 0.022, 0.55, 6);
-const BOAT_HIT_GEO = new THREE.BoxGeometry(3.0, 2.6, 1.6);
 
 /// uid→32bit。船のレーンと揺れの位相を決める(進捗とは無関係)。
 function hashUid(uid: string): number {
@@ -688,21 +686,17 @@ function ImmersiveCamera({
   );
 }
 
-/// 一隻の船。位相の違う揺れ+名前ラベル+今日の灯+タップで軌跡へ。
+/// 一隻の船。位相の違う揺れ+航海士+名前ラベル+今日の灯。
 function MemberBoat({
   berth,
   lit,
   animate,
-  isSelf,
   arriving,
-  onSelect,
 }: {
   berth: Berth;
   lit: boolean;
   animate: boolean;
-  isSelf: boolean;
   arriving: boolean;
-  onSelect?: (member: HarborMember) => void;
 }) {
   const { member, phase } = berth;
   const parts = useMemo(
@@ -768,13 +762,11 @@ function MemberBoat({
       <Ripples animate={animate} />
       <group ref={bob}>
         <BoatModel parts={parts} animate={animate} />
-        {/* 自分の船だけ、舳先に航海士(プレイヤー)を立たせる。
-            今日の灯が点いていれば灯を掲げるポーズで応える。 */}
-        {isSelf && (
-          <group position={[0.45, 0.5, 0]} scale={1.15}>
-            <PhoenixModel animate={animate} pose={lit ? "raise" : "idle"} />
-          </group>
-        )}
+        {/* 誰の船にも航海士がいる。同じ港にいる人を、無人の船ではなく
+            同じ海を渡る仲間として見せる。灯があれば掲げて応える。 */}
+        <group position={[0.45, 0.5, 0]} scale={1.15}>
+          <PhoenixModel animate={animate} pose={lit ? "raise" : "idle"} />
+        </group>
         {/* 今日の灯: 船尾の短い掲灯柱+暖色のランタン(emissiveな小球のみ) */}
         {lit && (
           <group position={[-0.88, 0.42, 0]}>
@@ -802,17 +794,6 @@ function MemberBoat({
       >
         <div className="harbor-world-name">{member.displayName}</div>
       </Html>
-      {/* 透明な当たり判定(船体+帆を覆う)。タップでこの人の軌跡へ。 */}
-      <mesh
-        geometry={BOAT_HIT_GEO}
-        position={[0.1, 1.0, 0]}
-        onClick={(e: ThreeEvent<MouseEvent>) => {
-          e.stopPropagation();
-          onSelect?.(member);
-        }}
-      >
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
     </group>
   );
 }
@@ -824,8 +805,6 @@ function HarborSea({
   litIds,
   arrivingMemberIds,
   animate,
-  selfUid,
-  onSelect,
   encounter,
   advanceOn,
   arriveFx,
@@ -843,8 +822,6 @@ function HarborSea({
   litIds: ReadonlySet<string>;
   arrivingMemberIds: ReadonlySet<string>;
   animate: boolean;
-  selfUid?: string;
-  onSelect?: (member: HarborMember) => void;
   encounter: EncounterView | null;
   /// 到着済み(船団を島へ寄せる)。マウント時に真なら最初から寄せた位置で描く。
   advanceOn: boolean;
@@ -982,9 +959,7 @@ function HarborSea({
             berth={berth}
             lit={litIds.has(berth.member.id)}
             animate={animate}
-            isSelf={berth.member.id === selfUid}
             arriving={arrivingMemberIds.has(berth.member.id)}
-            onSelect={onSelect}
           />
         ))}
       </group>
@@ -1018,13 +993,12 @@ function HarborSea({
 export default function HarborWorld({
   room,
   members,
-  selfUid,
-  onSelectMember,
   voyage,
   route,
   progressMinutes = 0,
   strike,
   arrivingMemberIds = new Set<string>(),
+  immersiveChat,
 }: HarborWorldProps) {
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -1342,8 +1316,6 @@ export default function HarborWorld({
             litIds={litIds}
             arrivingMemberIds={arrivingMemberIds}
             animate={animate}
-            selfUid={selfUid}
-            onSelect={onSelectMember}
             encounter={encounterView}
             advanceOn={arrived}
             arriveFx={arriveStage === "fx"}
@@ -1363,9 +1335,12 @@ export default function HarborWorld({
         )}
         {/* 没入時に世界から出るボタン。 */}
         {immersive && (
-          <button className="harbor-world-close" onClick={requestClose}>
-            {t("close")}
-          </button>
+          <>
+            <button className="harbor-world-close" onClick={requestClose}>
+              {t("close")}
+            </button>
+            {immersiveChat}
+          </>
         )}
         {/* 航海の進捗(連続バー+海域の印+残り)。個人の内訳や順位は出さない。 */}
         {voyageActive && voyage && activeRoute && (

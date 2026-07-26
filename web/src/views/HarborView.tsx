@@ -771,6 +771,7 @@ function RoomDetail({
   );
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const compactInputRef = useRef<HTMLInputElement>(null);
   const knownMemberIds = useRef<Set<string> | null>(null);
   const arrivalTimers = useRef<number[]>([]);
 
@@ -910,13 +911,25 @@ function RoomDetail({
   const memberById = new Map(members.map((m) => [m.id, m]));
   const nameOf = (id: string) => memberById.get(id)?.displayName ?? t("sailor");
   const visibleMessages = messages.filter((m) => !blocked.has(m.uid));
+  const compactMessages = visibleMessages.slice(-3);
+  const compactMessageLine = (message: ChatMessage): string => {
+    const name = nameOf(message.uid);
+    if (message.kind === "text") return `${name}: ${message.text ?? ""}`;
+    return message.kind === "return"
+      ? chatReturnLine(name, message.gapDays ?? 0)
+      : chatLandfallLine(name, message.itemName ?? "—", message.minutes ?? 0);
+  };
 
   const send = async () => {
     const text = draft.trim();
     if (!text) return;
     setDraft("");
     // 送信後もフォーカスを保ち、続けて書けるようにする。
-    inputRef.current?.focus();
+    const focused =
+      document.activeElement instanceof HTMLInputElement
+        ? document.activeElement
+        : compactInputRef.current ?? inputRef.current;
+    focused?.focus();
     try {
       await sendChat(room.id, text);
     } catch {
@@ -1016,21 +1029,64 @@ function RoomDetail({
         </div>
       </div>
 
-      {/* みんなの海: メンバー全員の船が同じ夜の海で島へ並走する3D。
-          船をタップするとその人の軌跡へ。失敗時は静かに何も出さない。 */}
+      {/* みんなの海: メンバー全員の船と航海士が同じ夜の海で島へ並走する3D。
+          船は詳細ボタンにせず、港の景色として扱う。 */}
       {canUseWebGL() && (
         <HarborWorldBoundary>
           <Suspense fallback={<div className="harbor-world-fallback" />}>
             <HarborWorld
               room={room}
               members={members}
-              selfUid={uid}
-              onSelectMember={onOpenMember}
               voyage={voyage}
               route={route}
               progressMinutes={voyageProgress}
               strike={strike}
               arrivingMemberIds={arrivingMemberIds}
+              immersiveChat={
+                <section
+                  className="harbor-world-chat-mini"
+                  aria-label={t("chatTitle")}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <div className="harbor-world-chat-mini-messages" aria-live="polite">
+                    {compactMessages.length === 0 ? (
+                      <span className="harbor-world-chat-mini-empty">{t("chatEmpty")}</span>
+                    ) : (
+                      compactMessages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`harbor-world-chat-mini-line${
+                            message.uid === uid ? " mine" : ""
+                          }${message.kind !== "text" ? " auto" : ""}`}
+                        >
+                          {compactMessageLine(message)}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="harbor-world-chat-mini-input">
+                    <input
+                      ref={compactInputRef}
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      placeholder={t("chatPlaceholder")}
+                      aria-label={t("chatPlaceholder")}
+                      maxLength={500}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "Enter" &&
+                          !event.nativeEvent.isComposing
+                        ) {
+                          void send();
+                        }
+                      }}
+                    />
+                    <button onClick={send} disabled={!draft.trim()}>
+                      {t("send")}
+                    </button>
+                  </div>
+                </section>
+              }
             />
           </Suspense>
         </HarborWorldBoundary>
