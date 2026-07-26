@@ -146,9 +146,13 @@ const MANTLE_GEO = makeMantleGeometry();
 /// 根元は動かず先だけが背中へ流れる。
 function makeHood(profile: [number, number][], lean: number): THREE.BufferGeometry {
   const pts = profile.map(([r, y]) => new THREE.Vector2(r, y));
-  // 前面は開けない。開けると開口の奥に「別の頭が入っている」ように見えてしまう。
-  // 布で全面を覆いきり、目だけを表面へわずかに覗かせる。
-  const geo = new THREE.LatheGeometry(pts, 24);
+  // 前面を開けたまま回す。閉じた回転体だと顔が布に埋まってしまう。
+  // ただし開けすぎると、闇そのものが「黒い頭」の形として見えてしまい、
+  // 「フードの奥に目だけが灯る」にならない。
+  // 低い円錐にしてからは頭のあたりの半径が小さく、同じ角度でも開口が
+  // 相対的に広く見える(顔が横一文字の帯になる)。約41度まで絞る。
+  const gap = 0.72;
+  const geo = new THREE.LatheGeometry(pts, 20, gap / 2, Math.PI * 2 - gap);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const base = profile[0][1];
   const top = profile[profile.length - 1][1];
@@ -199,10 +203,8 @@ const HEAD_GEO = new THREE.SphereGeometry(0.099, 18, 14);
 /// 背中に落ちた頭巾のかたまり。畳まれた布なので、丸くたわませる。
 const FOLD_GEO = new THREE.SphereGeometry(0.115, 16, 12);
 
-/// 目。布の面にわずかに覗くだけの小さな灯。
-/// 面より内側に置いて、はみ出した分だけが見えるようにする(球のままだと
-/// 「顔に貼った丸い目」になり、覆われている感じが消える)。
-const EYE_GEO = new THREE.SphereGeometry(0.021, 12, 9);
+const FACE_GEO = new THREE.SphereGeometry(0.075, 14, 10);
+const EYE_GEO = new THREE.SphereGeometry(0.016, 10, 8);
 /// 立ち襟。以前は太いドーナツを首に一周させていたが、輪が一本通るだけで
 /// 浮き輪のように見えて、いちばん野暮ったい部分になっていた。
 /// 首に沿って低く立ち上げ、前は開けて顎の下を塞がない。
@@ -275,10 +277,8 @@ const SAND_MAT = new THREE.MeshStandardMaterial({
   roughness: 0.85,
 });
 /// 立ち襟。前を開けた一枚なので内側も見える。
-/// 夜色にすると首元だけが黒く抜けて、全身を布で覆った姿が崩れる。
-/// コートと同系の深い錆で、影として読ませる。
 const COLLAR_MAT = new THREE.MeshStandardMaterial({
-  color: RUST,
+  color: MIDNIGHT,
   flatShading: false,
   roughness: 0.7,
   side: THREE.DoubleSide,
@@ -731,18 +731,27 @@ export default function PhoenixModel({
               開口部の闇に両目が灯る */}
           <group ref={head} position={[0, 0.98, 0]}>
             {shape === "peak" ? (
-            <mesh
-              geometry={HOOD_GEOS.peak}
-              material={HOOD_MAT}
-              position={[0, -0.02, 0]}
-              rotation={[-0.03, 0, 0]}
-            />
+            <>
+              <mesh
+                geometry={HOOD_GEOS.peak}
+                material={HOOD_MAT}
+                position={[0, -0.02, 0]}
+                rotation={[-0.03, 0, 0]}
+              />
+              {/* 顔の闇。フードの開口部に収まる大きさで、少しだけ前に出す */}
+              <mesh
+                geometry={FACE_GEO}
+                material={FACE_MAT}
+                position={[0, 0.03, 0.006]}
+                scale={[0.98, 1.05, 0.9]}
+              />
+            </>
           ) : (
-            /* 下ろした姿: 頭も布と同じ色で覆う。夜色の塊にすると
-               「布の中に別の頭が入っている」姿に戻ってしまう。 */
+            /* 下ろした姿: 頭そのものを夜色の一塊として出す。
+               顔の造作は作らない(目だけが灯る)。 */
             <mesh
               geometry={HEAD_GEO}
-              material={HOOD_MAT}
+              material={FACE_MAT}
               position={[0, 0.115, 0.006]}
               scale={[1, 1.08, 0.97]}
             />
@@ -754,13 +763,9 @@ export default function PhoenixModel({
                 material={EYE_MAT}
                 position={
                 shape === "peak"
-                  ? [s * 0.034, 0.026, 0.1]
-                  : [s * 0.036, 0.122, 0.088]
+                  ? [s * 0.028, 0.022, 0.094]
+                  : [s * 0.034, 0.124, 0.092]
               }
-                /* 横に長く、薄く。丸い点だと「顔に貼った目」になるが、
-                   細い隙間なら布の合わせ目から灯が覗いているように読める */
-                scale={[1.5, 0.42, 0.55]}
-                rotation={[0, s * -0.22, s * 0.1]}
               />
             ))}
           </group>
