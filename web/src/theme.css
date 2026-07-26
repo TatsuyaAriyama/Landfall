@@ -3548,6 +3548,15 @@ textarea {
   -webkit-backdrop-filter: blur(8px);
 }
 
+.harbor-world.immersive canvas {
+  cursor: grab;
+  touch-action: none;
+}
+
+.harbor-world.immersive canvas:active {
+  cursor: grabbing;
+}
+
 /* 小さな船着き場の歩行パッド。PCはWASD/矢印、スマホはこの4方向を使う。 */
 .harbor-walk-controls {
   position: absolute;

@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import * as THREE from "three";
@@ -1116,6 +1117,17 @@ interface HarborWalkInput {
   z: -1 | 0 | 1;
 }
 
+interface HarborLookState {
+  /// 0 = 世界の-Z方向を見る。正値で視線を右へ回す。
+  yaw: number;
+  /// 水平線から見下ろす仰角。
+  pitch: number;
+}
+
+interface HarborLookRef {
+  current: HarborLookState;
+}
+
 const WALK_START = new THREE.Vector3(0, 0.31, 0.18);
 const WALK_SPEED = 1.45;
 
@@ -1137,21 +1149,25 @@ function canStandInHarbor(x: number, z: number): boolean {
 }
 
 /// 没入時の航海士。WASD/矢印と画面ボタンを同じ入力へまとめ、
-/// 岸壁と三本の桟橋だけを歩く。固定視点の小さな船着き場なので迷子にならない。
+/// 岸壁と三本の桟橋だけを歩く。入力は常にカメラ基準へ変換し、
+/// 障害物に沿って滑った時も「実際に進んだ方向」へ体を向ける。
 function HarborWalker({
   active,
   animate,
   input,
+  look,
 }: {
   active: boolean;
   animate: boolean;
   input: HarborWalkInput;
+  look: HarborLookRef;
 }) {
   const root = useRef<THREE.Group>(null);
   const position = useRef(WALK_START.clone());
   const facing = useRef(Math.PI);
   const pressed = useRef(new Set<string>());
-  const [keyboardMoving, setKeyboardMoving] = useState(false);
+  const walkingRef = useRef(false);
+  const [walking, setWalking] = useState(false);
   const camera = useThree((state) => state.camera);
   const size = useThree((state) => state.size);
   const cameraTarget = useRef(new THREE.Vector3());
@@ -1160,7 +1176,8 @@ function HarborWalker({
   useEffect(() => {
     if (!active) {
       pressed.current.clear();
-      setKeyboardMoving(false);
+      walkingRef.current = false;
+      setWalking(false);
       return;
     }
     const movementKeys = new Set([
@@ -1177,17 +1194,14 @@ function HarborWalker({
       if (!movementKeys.has(event.code)) return;
       event.preventDefault();
       pressed.current.add(event.code);
-      setKeyboardMoving(true);
     };
     const onKeyUp = (event: KeyboardEvent) => {
       if (!movementKeys.has(event.code)) return;
       event.preventDefault();
       pressed.current.delete(event.code);
-      setKeyboardMoving(pressed.current.size > 0);
     };
     const release = () => {
       pressed.current.clear();
-      setKeyboardMoving(false);
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -1211,48 +1225,61 @@ function HarborWalker({
       input.z +
       (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) -
       (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0);
-    const moving = dx !== 0 || dz !== 0;
-    if (moving) {
+    let movedX = 0;
+    let movedZ = 0;
+    if (dx !== 0 || dz !== 0) {
       const length = Math.hypot(dx, dz);
       dx /= length;
       dz /= length;
-      const nextX = position.current.x + dx * WALK_SPEED * delta;
-      const nextZ = position.current.z + dz * WALK_SPEED * delta;
+
+      // 画面の右/奥を基準にした入力を、港のワールド座標へ変換する。
+      const yaw = look.current.yaw;
+      const worldX = Math.cos(yaw) * dx - Math.sin(yaw) * dz;
+      const worldZ = Math.sin(yaw) * dx + Math.cos(yaw) * dz;
+      const beforeX = position.current.x;
+      const beforeZ = position.current.z;
+      const nextX = beforeX + worldX * WALK_SPEED * delta;
+      const nextZ = beforeZ + worldZ * WALK_SPEED * delta;
       if (canStandInHarbor(nextX, position.current.z)) position.current.x = nextX;
       if (canStandInHarbor(position.current.x, nextZ)) position.current.z = nextZ;
-      const targetFacing = Math.atan2(dx, dz);
-      const turn = Math.atan2(
-        Math.sin(targetFacing - facing.current),
-        Math.cos(targetFacing - facing.current),
-      );
-      facing.current += turn * Math.min(delta * 8, 1);
+      movedX = position.current.x - beforeX;
+      movedZ = position.current.z - beforeZ;
+
+      // 入力ではなく実移動へ即座に正対させる。これで方向転換時の横滑りと、
+      // 衝突時に片軸だけ進んだ際の体のずれを残さない。
+      if (Math.hypot(movedX, movedZ) > 0.00001) {
+        facing.current = Math.atan2(movedX, movedZ);
+      }
+    }
+    const moving = Math.hypot(movedX, movedZ) > 0.00001;
+    if (moving !== walkingRef.current) {
+      walkingRef.current = moving;
+      setWalking(moving);
     }
 
     root.current.position.copy(position.current);
     root.current.rotation.y = facing.current;
     const tall = size.width / Math.max(size.height, 1) < 0.72;
+    const distance = tall ? 6.4 : 4.35;
+    const horizontalDistance = Math.cos(look.current.pitch) * distance;
+    const height = 0.74 + Math.sin(look.current.pitch) * distance;
     desiredCamera.current.set(
-      position.current.x,
-      tall ? 3.15 : 2.55,
-      position.current.z + (tall ? 6.4 : 4.35),
+      position.current.x - Math.sin(look.current.yaw) * horizontalDistance,
+      position.current.y + height,
+      position.current.z + Math.cos(look.current.yaw) * horizontalDistance,
     );
-    camera.position.lerp(desiredCamera.current, 1 - Math.exp(-delta * 5));
-    cameraTarget.current.set(position.current.x, 0.68, position.current.z - 0.78);
+    camera.position.lerp(desiredCamera.current, 1 - Math.exp(-delta * 8));
+    cameraTarget.current.set(
+      position.current.x + Math.sin(look.current.yaw) * 0.68,
+      0.68,
+      position.current.z - Math.cos(look.current.yaw) * 0.68,
+    );
     camera.lookAt(cameraTarget.current);
   });
 
   return (
     <group ref={root} position={WALK_START} scale={0.42}>
-      <PhoenixModel
-        animate={animate}
-        pose={
-          input.x !== 0 ||
-          input.z !== 0 ||
-          keyboardMoving
-            ? "walk"
-            : "idle"
-        }
-      />
+      <PhoenixModel animate={animate} pose={walking ? "walk" : "idle"} />
     </group>
   );
 }
@@ -1338,6 +1365,7 @@ function HarborSea({
   onWorldEntered,
   onWorldExited,
   walkInput,
+  look,
 }: {
   roomName: string;
   roomSeed: number;
@@ -1362,6 +1390,7 @@ function HarborSea({
   onWorldEntered: () => void;
   onWorldExited: () => void;
   walkInput: HarborWalkInput;
+  look: HarborLookRef;
 }) {
   const camera = useThree((s) => s.camera);
   const invalidate = useThree((s) => s.invalidate);
@@ -1478,6 +1507,7 @@ function HarborSea({
           active={phase === "idle"}
           animate={animate}
           input={walkInput}
+          look={look}
         />
       )}
       <Html
@@ -1577,9 +1607,12 @@ export default function HarborWorld({
   const [immersive, setImmersive] = useState(false);
   const [phase, setPhase] = useState<WorldPhase>("idle");
   const [walkInput, setWalkInput] = useState<HarborWalkInput>({ x: 0, z: 0 });
+  const look = useRef<HarborLookState>({ yaw: 0, pitch: 0.38 });
+  const lookDrag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const enterWorld = useCallback(() => {
     setImmersive((on) => {
       if (on) return on;
+      look.current = { yaw: 0, pitch: 0.38 };
       setPhase(
         window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "idle" : "enter",
       );
@@ -1601,6 +1634,42 @@ export default function HarborWorld({
   const handleWorldExited = useCallback(() => {
     setImmersive(false);
     setPhase("idle");
+  }, []);
+  const beginLook = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!immersive || !(event.target instanceof HTMLCanvasElement)) return;
+      event.preventDefault();
+      lookDrag.current = {
+        pointerId: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [immersive],
+  );
+  const moveLook = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = lookDrag.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    const nextYaw = look.current.yaw - dx * 0.007;
+    look.current.yaw = Math.atan2(Math.sin(nextYaw), Math.cos(nextYaw));
+    look.current.pitch = THREE.MathUtils.clamp(
+      look.current.pitch + dy * 0.005,
+      0.18,
+      1.02,
+    );
+  }, []);
+  const endLook = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (lookDrag.current?.pointerId !== event.pointerId) return;
+    lookDrag.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   }, []);
 
   // 没入中は Esc で出る+背景スクロールを固定(Modalと同じ作法)。
@@ -1869,6 +1938,10 @@ export default function HarborWorld({
         ref={rootRef}
         className={`harbor-world time-${timeOfDay}${immersive ? " immersive" : ""}`}
         data-time-of-day={timeOfDay}
+        onPointerDown={beginLook}
+        onPointerMove={moveLook}
+        onPointerUp={endLook}
+        onPointerCancel={endLook}
       >
         <Canvas
           dpr={[1, 2]}
@@ -1898,6 +1971,7 @@ export default function HarborWorld({
             onWorldEntered={handleWorldEntered}
             onWorldExited={handleWorldExited}
             walkInput={walkInput}
+            look={look}
           />
         </Canvas>
         {/* コンパクト時の誘い。海(空・水面)をタップで世界へ入る。 */}
