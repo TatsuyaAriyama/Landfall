@@ -317,16 +317,15 @@ export default function LandfallWorld({ name, minutes, onClose }: LandfallWorldP
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
   const [words, setWords] = useState(!animate);
-  // 出現から少しの間はタップを受けない。着岸はFirestoreの往復のあとに非同期で
-  // 現れるので、その直前に押した指(次のステップのチェックや保存)がそのまま
-  // ここに当たって、一幕を一瞬で消してしまう。
-  const readyAt = useRef(Date.now() + 700);
 
+  // 端末の「戻る」だけは受ける。ここを塞ぐと Android で戻るを押した人が
+  // アプリの外へ出てしまう(閉じ込めるより、逃げ道は残す)。
   useBackToClose(true, onClose);
 
   useEffect(() => {
+    // Esc も上陸を見終えるまでは効かせない。タップと同じく「飛ばす操作」。
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && words) onClose();
     };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -335,18 +334,14 @@ export default function LandfallWorld({ name, minutes, onClose }: LandfallWorldP
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [onClose]);
+  }, [onClose, words]);
 
   return (
-    <div
-      className="landfall-world"
-      role="dialog"
-      aria-modal="true"
-      onClick={() => {
-        if (Date.now() < readyAt.current) return;
-        onClose();
-      }}
-    >
+    // タップでは閉じない。上陸は自分で「上陸する」を押して始めた一幕なので、
+    // 途中で消す必要がない。以前は画面のどこを触っても閉じたため、
+    // 見ようとした指がそのまま演出を飛ばしていた。
+    // 閉じるのは、言葉と一緒に現れる「閉じる」だけ。
+    <div className="landfall-world" role="dialog" aria-modal="true">
       <Canvas dpr={[1, 2]} camera={{ position: CAM_KEYS[0].pos, fov: 38 }}>
         <LandfallSea animate={animate} onWords={() => setWords(true)} />
       </Canvas>
