@@ -159,6 +159,9 @@ final class SyncService {
                     context.insert(item); changed = true
                 }
             case .removed:
+                // 別端末から項目が削除された場合も、その項目を指す端末ローカルの
+                // タイマーだけが走り続けないよう同時に畳む。
+                StudyTimer.clear(ifMatching: id)
                 if let existing = fetchItem(id, context) { context.delete(existing); changed = true }
             }
         }

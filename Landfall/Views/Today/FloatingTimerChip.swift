@@ -32,8 +32,21 @@ struct FloatingTimerChip: View {
         .sheet(item: $landing) { item in
             RecordSessionSheet(item: item, onSaved: { _ in }, onEdit: { _ in })
         }
-        .onAppear { debugStartTimerIfRequested() }
-        .onChange(of: items.count) { _, _ in debugStartTimerIfRequested() }
+        .onAppear {
+            clearOrphanedTimer()
+            debugStartTimerIfRequested()
+        }
+        .onChange(of: items.map(\.uuid)) { _, _ in
+            clearOrphanedTimer()
+            debugStartTimerIfRequested()
+        }
+    }
+
+    /// 削除時にアプリが終了していたなど、過去に残った孤立タイマーも起動時に掃除する。
+    private func clearOrphanedTimer() {
+        guard timerStart > 0,
+              !items.contains(where: { $0.uuid.uuidString == timerItemID }) else { return }
+        StudyTimer.clear(ifMatching: timerItemID)
     }
 
     /// 動作確認用: LANDFALL_TIMER=1 で最初の項目のタイマーを起動した状態にする。

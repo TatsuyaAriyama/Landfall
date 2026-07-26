@@ -207,37 +207,66 @@ struct VoyageWorldView: View {
     private var stepsEditor: some View {
         VStack(spacing: 8) {
             ForEach($steps) { $step in
-                HStack(spacing: 10) {
-                    Button {
-                        toggleStep(id: step.id)
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .strokeBorder(LFColor.harborSand.opacity(0.5), lineWidth: 1.5)
-                                .background(Circle().fill(step.doneAt != nil ? LFColor.harborSand : .clear))
-                                .frame(width: 26, height: 26)
-                            if step.doneAt != nil {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(LFColor.inkFixed)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 10) {
+                        Button {
+                            toggleStep(id: step.id)
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .strokeBorder(LFColor.harborSand.opacity(0.5), lineWidth: 1.5)
+                                    .background(Circle().fill(step.doneAt != nil ? LFColor.harborSand : .clear))
+                                    .frame(width: 26, height: 26)
+                                if step.doneAt != nil {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(LFColor.inkFixed)
+                                }
                             }
                         }
-                    }
-                    .buttonStyle(.plain)
+                        .buttonStyle(.plain)
 
-                    TextField("e.g. one pass of the vocab book", text: $step.name)
-                        .font(LFFont.copy(15))
-                        .foregroundStyle(LFColor.harborSand)
-                        .strikethrough(step.doneAt != nil, color: LFColor.harborSand.opacity(0.6))
+                        TextField("e.g. one pass of the vocab book", text: $step.name)
+                            .font(LFFont.copy(15))
+                            .foregroundStyle(LFColor.harborSand)
+                            .strikethrough(step.doneAt != nil, color: LFColor.harborSand.opacity(0.6))
+                            .submitLabel(.done)
+                            .onSubmit { persistSteps() }
 
-                    Button {
-                        steps.removeAll { $0.id == step.id }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13))
-                            .foregroundStyle(LFColor.harborSand.opacity(0.5))
+                        Button {
+                            var next = steps
+                            next.removeAll { $0.id == step.id }
+                            steps = next
+                            persistSteps(next)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13))
+                                .foregroundStyle(LFColor.harborSand.opacity(0.5))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+
+                    if step.doneAt != nil {
+                        HStack(spacing: 8) {
+                            Text("Completed at")
+                                .font(LFFont.label(11))
+                                .foregroundStyle(LFColor.returnOrange)
+                            Spacer()
+                            DatePicker(
+                                "",
+                                selection: stepDoneAtBinding(id: step.id),
+                                in: ...Date(),
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            .labelsHidden()
+                            .datePickerStyle(.compact)
+                            .font(LFFont.label(11))
+                            .tint(LFColor.returnOrange)
+                            .environment(\.colorScheme, .dark)
+                            .fixedSize()
+                        }
+                        .padding(.leading, 36)
+                    }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(LFColor.harborSand.opacity(0.06),
@@ -289,18 +318,46 @@ struct VoyageWorldView: View {
     /// ブイのタップ(世界)/チェックのタップ(パネル)共通。
     private func toggleStep(index i: Int) {
         guard steps.indices.contains(i) else { return }
-        steps[i].doneAt = steps[i].doneAt == nil ? Date() : nil
+        var next = steps
+        next[i].doneAt = next[i].doneAt == nil ? Date() : nil
+        steps = next
         SoundFX.plink()
         Haptics.tap(.light)
-        persistSteps()
+        persistSteps(next)
+    }
+
+    /// 達成済みステップの日付と時刻を後から直す。変更のたびに既存目的地へ確定する。
+    private func stepDoneAtBinding(id: DestinationStep.ID) -> Binding<Date> {
+        Binding(
+            get: {
+                steps.first(where: { $0.id == id })?.doneAt ?? Date()
+            },
+            set: { value in
+                guard let i = steps.firstIndex(where: { $0.id == id }) else { return }
+                var next = steps
+                next[i].doneAt = value
+                steps = next
+                persistSteps(next)
+            }
+        )
     }
 
     /// チェックの反転は、既存の目的地ならその場で確定する(fire-and-forget)。
     /// 新規(未保存)は局所stateだけ動かし、確定は「保存」に委ねる。
-    private func persistSteps() {
-        guard let existing, !trimmedName.isEmpty, !namedSteps.isEmpty else { return }
+    private func persistSteps(_ source: [DestinationStep]? = nil) {
+        let validSteps = (source ?? steps).filter {
+            !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        guard let existing, !trimmedName.isEmpty, !validSteps.isEmpty else { return }
         existing.name = trimmedName
-        existing.steps = namedSteps
+        // 新しい配列を再代入し、SwiftData に Codable 配列の変更を確実に検知させる。
+        existing.steps = validSteps.map {
+            DestinationStep(
+                id: $0.id,
+                name: String($0.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60)),
+                doneAt: $0.doneAt
+            )
+        }
         existing.targetDate = nil
         existing.updatedAt = Date()
         try? modelContext.save()
@@ -345,7 +402,9 @@ struct VoyageWorldView: View {
     }
 
     /// 退場のドリーアウトを開始する(演出後に dismiss)。
-    private func requestClose() {
+    private func requestClose(persistDraft: Bool = true) {
+        // 既存のステップ目標は、保存ボタンを押さず閉じても編集内容を失わない。
+        if persistDraft, kind == .steps { persistSteps() }
         closing = true
     }
 
@@ -355,6 +414,7 @@ struct VoyageWorldView: View {
         modelContext.delete(existing)
         try? modelContext.save()
         Haptics.success()
-        requestClose()
+        // 削除後の下書きを保存すると目的地が復活してしまうため、そのまま閉じる。
+        requestClose(persistDraft: false)
     }
 }

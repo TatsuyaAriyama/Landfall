@@ -307,10 +307,7 @@ struct ItemEditorSheet: View {
     private func deleteItem() {
         guard let existing else { return }
         // 計測中の項目を消すならタイマーも捨てる。
-        if UserDefaults.standard.string(forKey: StudyTimer.itemKey) == existing.uuid.uuidString {
-            UserDefaults.standard.set(0, forKey: StudyTimer.startKey)
-            UserDefaults.standard.set("", forKey: StudyTimer.itemKey)
-        }
+        StudyTimer.clear(ifMatching: existing.uuid.uuidString)
         SyncService.shared.delete(existing)
         modelContext.delete(existing)
         try? modelContext.save()

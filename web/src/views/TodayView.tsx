@@ -104,6 +104,15 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     return () => clearInterval(id);
   }, [timer]);
 
+  // 読み込み済みの項目一覧から大元が消えたら、別端末からの削除を含めて
+  // その項目を指す端末ローカルのタイマーも同時に畳む。
+  useEffect(() => {
+    if (!timer || data.items.some((item) => item.id === timer.itemId)) return;
+    eraseTimer();
+    setTimer(null);
+    setVoyaging(false);
+  }, [data.items, timer]);
+
   // タイルを押した瞬間に世界へ入れるよう、先に読み込んでおく。
   useEffect(() => {
     if (canUseWebGL()) void loadVoyagingWorld();

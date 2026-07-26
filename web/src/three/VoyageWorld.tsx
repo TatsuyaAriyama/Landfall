@@ -479,6 +479,9 @@ function dateInputValue(d: Date): string {
 function timeInputValue(d: Date): string {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
+function dateTimeInputValue(d: Date): string {
+  return `${dateInputValue(d)}T${timeInputValue(d)}`;
+}
 
 /// 没入エディタ本体。全画面の夜の海+世界に馴染む半透明の編集UI。
 export default function VoyageWorld({ dest, data, uid, onClose, onLand }: VoyageWorldProps) {
@@ -490,6 +493,8 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
   const [uiHidden, setUiHidden] = useState(false);
   // タップと「見渡すドラッグ」を見分けるための、押した位置。
   const pointerDown = useRef<{ x: number; y: number; onWorld: boolean } | null>(null);
+  // 閉じる直前に、既存ステップ目標の編集中の値を確定する。
+  const persistDraftRef = useRef<() => void>(() => {});
 
   // ---- 編集状態 ----
   // 目標のかたちは2つだけ:「期日を決める」か「ステップで辿る」か。
@@ -568,6 +573,7 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
   onCloseRef.current = onClose;
   const requestClose = useCallback(() => {
     if (confirmingRef.current || phaseRef.current === "exit") return;
+    persistDraftRef.current();
     if (!animate) {
       onCloseRef.current();
       return;
@@ -620,7 +626,7 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
   const persistSteps = (next: DestinationStep[]) => {
     setSteps(next);
     if (dest?.id && trimmed.length > 0 && next.some((s) => s.name.trim().length > 0)) {
-      // fire-and-forget。オフラインや一時的な失敗は握りつぶす(局所stateは進む)。
+      // fire-and-forget。局所stateは先に進めるが、保存失敗は知らせる。
       // saveDestination は setDoc(マージ無し)なので、渡さなかった項目は
       // ドキュメントから消える。チェックを1つ入れるたびに紐づく項目や達成日が
       // 消えていた(項目指定の目的地が全記録を数え始め、船が飛ぶ)。必ず引き継ぐ。
@@ -631,8 +637,11 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
         steps: next,
         createdAt: dest.createdAt,
         achievedAt: dest.achievedAt,
-      }).catch(() => {});
+      }).catch(() => showToast(t("errGeneric")));
     }
+  };
+  persistDraftRef.current = () => {
+    if (kind === "steps") persistSteps(steps);
   };
   const toggleStep = (index: number) => {
     playPlink();
@@ -649,10 +658,15 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
     setSteps((list) => [...list, { id: newUUID(), name: "" }]);
   };
   const removeStep = (index: number) => {
-    setSteps((list) => list.filter((_, i) => i !== index));
+    persistSteps(steps.filter((_, i) => i !== index));
   };
   const renameStep = (index: number, value: string) => {
     setSteps((list) => list.map((s, i) => (i === index ? { ...s, name: value } : s)));
+  };
+  const changeStepDoneAt = (index: number, value: string) => {
+    const doneAt = new Date(value);
+    if (Number.isNaN(doneAt.getTime()) || doneAt.getTime() > Date.now()) return;
+    persistSteps(steps.map((s, i) => (i === index ? { ...s, doneAt } : s)));
   };
 
   // ---- 保存/削除(DestinationDialogと同等) ----
@@ -715,6 +729,8 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
     setWorking(true);
     try {
       await deleteDestination(uid, dest.id);
+      // 閉じる直前の下書き保存で、削除した目的地を作り直さない。
+      persistDraftRef.current = () => {};
       requestClose();
     } catch {
       showToast(t("errGeneric"));
@@ -896,43 +912,57 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
                 <p className="quest-intro">{t("goalStepsDesc")}</p>
                 <div className="step-list">
                   {steps.map((step, i) => (
-                    <div key={step.id} className="step-row">
-                      <button
-                        type="button"
-                        className={`step-check${step.doneAt ? " done" : ""}`}
-                        onClick={() => toggleStep(i)}
-                        aria-pressed={Boolean(step.doneAt)}
-                        aria-label={t("markDone")}
-                      >
-                        {step.doneAt ? (
-                          <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-                            <path
-                              d="M5 13l4 4L19 7"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="3"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        ) : null}
-                      </button>
-                      <input
-                        className={`field step-input${step.doneAt ? " done" : ""}`}
-                        value={step.name}
-                        onChange={(e) => renameStep(i, e.target.value)}
-                        placeholder={t("stepPlaceholder")}
-                        maxLength={60}
-                        aria-label={t("goalSteps")}
-                      />
-                      <button
-                        type="button"
-                        className="step-remove"
-                        onClick={() => removeStep(i)}
-                        aria-label={t("delete")}
-                      >
-                        ×
-                      </button>
+                    <div key={step.id} className="step-entry">
+                      <div className="step-row">
+                        <button
+                          type="button"
+                          className={`step-check${step.doneAt ? " done" : ""}`}
+                          onClick={() => toggleStep(i)}
+                          aria-pressed={Boolean(step.doneAt)}
+                          aria-label={t("markDone")}
+                        >
+                          {step.doneAt ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                              <path
+                                d="M5 13l4 4L19 7"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="3"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          ) : null}
+                        </button>
+                        <input
+                          className={`field step-input${step.doneAt ? " done" : ""}`}
+                          value={step.name}
+                          onChange={(e) => renameStep(i, e.target.value)}
+                          onBlur={() => persistSteps(steps)}
+                          placeholder={t("stepPlaceholder")}
+                          maxLength={60}
+                          aria-label={t("goalSteps")}
+                        />
+                        <button
+                          type="button"
+                          className="step-remove"
+                          onClick={() => removeStep(i)}
+                          aria-label={t("delete")}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {step.doneAt && (
+                        <label className="step-done-at">
+                          <span>{t("stepCompletedAt")}</span>
+                          <input
+                            type="datetime-local"
+                            value={dateTimeInputValue(step.doneAt)}
+                            max={dateTimeInputValue(new Date())}
+                            onChange={(e) => changeStepDoneAt(i, e.target.value)}
+                          />
+                        </label>
+                      )}
                     </div>
                   ))}
                 </div>

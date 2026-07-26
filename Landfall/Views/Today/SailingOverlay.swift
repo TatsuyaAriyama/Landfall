@@ -12,19 +12,23 @@ enum SailKind {
 final class SailAnimator: ObservableObject {
     static let shared = SailAnimator()
     @Published var kind: SailKind?
+    /// 着岸した航海の記録時間。出航時や時間を伴わないデバッグ再生では表示しない。
+    @Published private(set) var loggedMinutes: Int?
 
     private init() {}
 
     var sailing: Bool { kind != nil }
 
-    func play(_ kind: SailKind) {
+    func play(_ kind: SailKind, minutes: Int? = nil) {
         guard !UIAccessibility.isReduceMotionEnabled else { return }
         guard self.kind == nil else { return }
+        loggedMinutes = kind == .arrival ? minutes : nil
         self.kind = kind
     }
 
     func finish() {
         kind = nil
+        loggedMinutes = nil
     }
 }
 
@@ -121,10 +125,19 @@ struct SailingOverlay: View {
                     .offset(y: bobbing ? 3 : -3)
                     .position(x: boatX, y: h * 0.55)
 
-                // ひとこと。断言調、句点つき。
-                Text(kind == .arrival ? "Made landfall." : "Setting sail.")
-                    .font(LFFont.copy(20))
-                    .foregroundStyle(LFColor.harborSand)
+                // ひとこと。着岸時は、いま記録した合計時間を今日画面と同じ
+                // 小さなオレンジの文字で添える。
+                VStack(spacing: 7) {
+                    Text(kind == .arrival ? "Made landfall." : "Setting sail.")
+                        .font(LFFont.copy(20))
+                        .foregroundStyle(LFColor.harborSand)
+                    if kind == .arrival, let minutes = animator.loggedMinutes {
+                        Text("Total time · \(LF.duration(minutes: minutes))")
+                            .font(LFFont.label(11))
+                            .foregroundStyle(LFColor.returnOrange)
+                            .monospacedDigit()
+                    }
+                }
                     .position(x: w / 2, y: h * 0.82)
             }
         }
