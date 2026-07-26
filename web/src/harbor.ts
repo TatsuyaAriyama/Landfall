@@ -3,7 +3,6 @@ import {
   arrayRemove,
   collection,
   deleteDoc,
-  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -118,12 +117,7 @@ export interface ChatMessage {
   minutes?: number;
   gapDays?: number;
   createdAt: Date;
-  reactions: Record<string, string>; // uid → heart | lighthouse
 }
-
-// チャットの反応だけの語彙(共有アイテムアイコンとは別枠。views/HarborView.tsxのReactionSymbolSvg参照)。
-// heart=いいね(汎用)、lighthouse=見てるよ(汎用の見守り)。
-export const CHAT_REACTIONS = ["heart", "lighthouse"] as const;
 
 export type HarborErrorCode =
   | "notSignedIn"
@@ -536,7 +530,6 @@ export function listenChat(
             minutes: typeof v.minutes === "number" ? v.minutes : undefined,
             gapDays: typeof v.gapDays === "number" ? v.gapDays : undefined,
             createdAt: v.createdAt instanceof Timestamp ? v.createdAt.toDate() : new Date(),
-            reactions: (v.reactions as Record<string, string>) ?? {},
           };
         }),
       );
@@ -560,19 +553,6 @@ export async function sendChat(roomId: string, text: string): Promise<void> {
 
 export async function deleteChat(roomId: string, messageId: string): Promise<void> {
   await deleteDoc(doc(chatRef(roomId), messageId));
-}
-
-/// リアクション。同じ印をもう一度押すと消える(1人1つ)。
-export async function reactChat(
-  roomId: string,
-  message: ChatMessage,
-  token: string,
-): Promise<void> {
-  const u = uid();
-  const current = message.reactions[u];
-  await updateDoc(doc(chatRef(roomId), message.id), {
-    [`reactions.${u}`]: current === token ? deleteField() : token,
-  }).catch(() => {});
 }
 
 /// 今日の記録を、参加中の全プライベート港のチャットに自動の行として流す。

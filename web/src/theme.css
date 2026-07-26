@@ -1271,9 +1271,9 @@ textarea {
 .chat-box {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 4px 0 8px;
-  min-height: 120px;
+  gap: 5px;
+  padding: 2px 0 4px;
+  min-height: 56px;
   max-height: 48vh;
   overflow-y: auto;
 }
@@ -1281,43 +1281,55 @@ textarea {
 .chat-msg {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  max-width: 82%;
+  width: 100%;
 }
 
-.chat-msg.mine {
-  align-self: flex-end;
-  align-items: flex-end;
+.chat-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
 }
 
 .chat-name {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex: none;
+  gap: 5px;
+  max-width: 32%;
   font-size: 12px;
   color: color-mix(in srgb, var(--ink) 45%, transparent);
-  margin-bottom: 4px;
 }
 
-.chat-bubble {
-  padding: 10px 16px;
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--ink) 7%, transparent);
-  color: var(--ink);
-  font-size: 15px;
-  line-height: 1.6;
+.chat-name > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-text {
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  color: color-mix(in srgb, var(--ink) 78%, transparent);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
   overflow-wrap: anywhere;
   cursor: pointer;
 }
 
-.chat-msg.mine .chat-bubble {
-  background: var(--ink);
-  color: var(--paper);
+.chat-msg.mine .chat-text {
+  color: var(--ink);
 }
 
 .chat-time {
-  margin-top: 3px;
-  font-size: 11px;
+  flex: none;
+  margin-left: auto;
+  font-size: 10px;
   color: color-mix(in srgb, var(--ink) 40%, transparent);
   font-variant-numeric: tabular-nums;
 }
@@ -1336,7 +1348,7 @@ textarea {
 /* 日付の区切り。中央に小さく、その日の始まりを示す。 */
 .chat-date-sep {
   align-self: center;
-  margin: 4px 0;
+  margin: 3px 0 5px;
   padding: 2px 12px;
   border-radius: 999px;
   font-size: 11px;
@@ -1347,65 +1359,26 @@ textarea {
 .chat-auto {
   align-self: center;
   text-align: center;
-  font-size: 13px;
+  padding: 3px 0;
+  font-size: 11px;
   color: color-mix(in srgb, var(--ink) 55%, transparent);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
 }
 
 .chat-auto.return {
   color: var(--return-orange);
 }
 
-.chat-reactions {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.reaction {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
-  color: color-mix(in srgb, var(--ink) 55%, transparent);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.reaction.selected {
-  border-color: var(--return-orange);
-  color: var(--return-orange);
-}
-
-/* 未反応(0件・未選択)は控えめに。反応が増えるほど自然と主張が強くなる。 */
-.reaction.quiet {
-  opacity: 0.5;
-  border-color: color-mix(in srgb, var(--ink) 10%, transparent);
-}
-
-.reaction-symbol {
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-}
-
 .chat-actions {
   display: flex;
   gap: 8px;
-  margin-top: 4px;
+  margin: 2px 0 3px 28px;
 }
 
 .chat-input {
   display: flex;
   gap: 10px;
   align-items: center;
-  margin-top: 10px;
+  margin-top: 6px;
 }
 
 .chat-input .field {

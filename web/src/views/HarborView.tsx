@@ -10,7 +10,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  CHAT_REACTIONS,
   HarborError,
   PUBLIC_HARBORS,
   blockUser,
@@ -33,7 +32,6 @@ import {
   loadBlocked,
   markVoyageArrived,
   normalizeRoomCode,
-  reactChat,
   reportUser,
   sendChat,
   voyageProgressMinutes,
@@ -70,7 +68,6 @@ import {
   inviteShareLine,
   t,
   tf,
-  type I18nKey,
 } from "../i18n";
 import { serviceStartDay } from "../since";
 
@@ -1149,7 +1146,6 @@ function RoomDetail({
                 message={m}
                 name={nameOf(m.uid)}
                 sender={memberById.get(m.uid)}
-                onReact={(token) => void reactChat(room.id, m, token)}
                 onDelete={
                   m.uid === uid && nowTick - m.createdAt.getTime() < CHAT_DELETE_WINDOW_MS
                     ? async () => {
@@ -1201,35 +1197,11 @@ function RoomDetail({
   );
 }
 
-const REACTION_LABEL_KEY: Record<(typeof CHAT_REACTIONS)[number], I18nKey> = {
-  heart: "reactionHeart",
-  lighthouse: "reactionLighthouse",
-};
-
-/// リアクションの印。共有アイテムアイコン(TileSymbolSvg/TILE_SYMBOLS)とは
-/// 別枠 — チャットの反応だけの語彙にして、項目アイコン一覧やiOS側の
-/// シンボル集合に影響させない。
-function ReactionSymbolSvg({ token }: { token: (typeof CHAT_REACTIONS)[number] }) {
-  if (token === "heart") {
-    return (
-      <svg viewBox="0 0 200 200" aria-hidden="true">
-        <path
-          d="M100 172 C42 130 12 92 12 56 C12 27 35 6 62 6 C82 6 96 17 100 36
-             C104 17 118 6 138 6 C165 6 188 27 188 56 C188 92 158 130 100 172 Z"
-          fill="currentColor"
-        />
-      </svg>
-    );
-  }
-  return <TileSymbolSvg symbol="lighthouse" fg="currentColor" bg="transparent" />;
-}
-
 function ChatRow({
   uid,
   message,
   name,
   sender,
-  onReact,
   onDelete,
   onReport,
   onBlock,
@@ -1238,42 +1210,12 @@ function ChatRow({
   message: ChatMessage;
   name: string;
   sender?: HarborMember;
-  onReact: (token: string) => void;
   onDelete?: () => void;
   onReport?: () => void;
   onBlock?: () => void;
 }) {
   const [actionsOpen, setActionsOpen] = useState(false);
   const mine = message.uid === uid;
-
-  const counts = new Map<string, number>();
-  for (const token of Object.values(message.reactions)) {
-    counts.set(token, (counts.get(token) ?? 0) + 1);
-  }
-  const myReaction = message.reactions[uid];
-
-  const reactions = (
-    <div className="chat-reactions">
-      {CHAT_REACTIONS.map((token) => {
-        const count = counts.get(token) ?? 0;
-        const selected = myReaction === token;
-        return (
-          <button
-            key={token}
-            className={`reaction${selected ? " selected" : ""}${!selected && count === 0 ? " quiet" : ""}`}
-            onClick={() => onReact(token)}
-            aria-label={t(REACTION_LABEL_KEY[token])}
-            title={t(REACTION_LABEL_KEY[token])}
-          >
-            <span className="reaction-symbol">
-              <ReactionSymbolSvg token={token} />
-            </span>
-            {count > 0 && <span>{count}</span>}
-          </button>
-        );
-      })}
-    </div>
-  );
 
   if (message.kind !== "text") {
     const line =
@@ -1283,14 +1225,13 @@ function ChatRow({
     return (
       <div className={`chat-auto${message.kind === "return" ? " return" : ""}`}>
         <span>{line}</span>
-        {reactions}
       </div>
     );
   }
 
   return (
     <div className={`chat-msg${mine ? " mine" : ""}`}>
-      {!mine && (
+      <div className="chat-line">
         <div className="chat-name">
           {sender && (
             <PlayerAvatar
@@ -1301,16 +1242,15 @@ function ChatRow({
           )}
           <span>{name}</span>
         </div>
-      )}
-      <div
-        className="chat-bubble"
-        onClick={() => setActionsOpen((v) => !v)}
-        role="button"
-        tabIndex={0}
-      >
-        {message.text}
+        <button
+          className="chat-text"
+          onClick={() => setActionsOpen((v) => !v)}
+          aria-expanded={actionsOpen}
+        >
+          {message.text}
+        </button>
+        <span className="chat-time">{chatTimeLabel(message.createdAt)}</span>
       </div>
-      <span className="chat-time">{chatTimeLabel(message.createdAt)}</span>
       {actionsOpen && (
         <div className="chat-actions">
           {onDelete && (
@@ -1330,7 +1270,6 @@ function ChatRow({
           )}
         </div>
       )}
-      {reactions}
     </div>
   );
 }

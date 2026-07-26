@@ -392,12 +392,8 @@ service cloud.firestore {
               && request.resource.data.gapDays >= 0 )
           );
 
-        // 更新はリアクションのみ。自分の枠(reactions[自分のuid])だけを、許可された印で。
-        allow update: if isMember()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-          && request.resource.data.reactions.diff(resource.data.reactions).affectedKeys().hasOnly([request.auth.uid])
-          && ( !(request.auth.uid in request.resource.data.reactions)
-            || request.resource.data.reactions[request.auth.uid] in ['heart', 'lighthouse'] );
+        // リアクション機能は廃止。チャット本文を含め、送信後の更新は許可しない。
+        allow update: if false;
 
         // 自分の発言だけ、書いてから1時間以内に限り取り下げられる。
         allow delete: if request.auth != null
