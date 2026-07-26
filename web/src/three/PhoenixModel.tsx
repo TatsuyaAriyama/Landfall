@@ -103,13 +103,15 @@ function updateCape(geo: THREE.BufferGeometry, time: number, wind = 1) {
 /// 肩マント(ショルダーケープ)。首から肩を包んで流れ落ちる短い外掛け。
 /// フード→肩→コートの衣服の流れを一続きにして、腕の付け根の「図形感」を隠す。
 function makeMantleGeometry(): THREE.BufferGeometry {
+  // 首元は高く伸ばさない。伸ばすと、この面がフードの開口より手前に来て
+  // 顔の闇を下から隠し、目の上に細い黒帯が乗っただけの顔になる。
+  // 上端は襟とフードの裾で隠れる高さで止める。
   const pts = [
     new THREE.Vector2(0.2, 0),
     new THREE.Vector2(0.185, 0.05),
     new THREE.Vector2(0.16, 0.11),
-    new THREE.Vector2(0.125, 0.17),
-    new THREE.Vector2(0.095, 0.21),
-    new THREE.Vector2(0.078, 0.24),
+    new THREE.Vector2(0.128, 0.155),
+    new THREE.Vector2(0.1, 0.175),
   ];
   return new THREE.LatheGeometry(pts, 22);
 }
@@ -146,8 +148,10 @@ function makeHood(profile: [number, number][], lean: number): THREE.BufferGeomet
   const pts = profile.map(([r, y]) => new THREE.Vector2(r, y));
   // 前面を開けたまま回す。閉じた回転体だと顔が布に埋まってしまう。
   // ただし開けすぎると、闇そのものが「黒い頭」の形として見えてしまい、
-  // 「フードの奥に目だけが灯る」にならない。目のまわりが覗く幅(約63度)に絞る。
-  const gap = 1.1;
+  // 「フードの奥に目だけが灯る」にならない。
+  // 低い円錐にしてからは頭のあたりの半径が小さく、同じ角度でも開口が
+  // 相対的に広く見える(顔が横一文字の帯になる)。約41度まで絞る。
+  const gap = 0.72;
   const geo = new THREE.LatheGeometry(pts, 20, gap / 2, Math.PI * 2 - gap);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const base = profile[0][1];
@@ -168,22 +172,23 @@ export const HOOD_SHAPES = ["peak", "down"] as const;
 export type HoodShape = (typeof HOOD_SHAPES)[number];
 
 const HOOD_GEOS: Record<"peak", THREE.BufferGeometry> = {
-  // 頭巾: 先が柔らかく尖り、背中へ垂れる。
-  // 細く、高く。以前は最大半径0.148で頭(0.099)の1.5倍あり、寸胴に見えていた。
-  // 頭に沿わせて0.121まで絞り、そのぶん背を伸ばして縦長の比率にする。
-  // 幅を詰めると布の量が減って軽く見えるので、倒す量は少し増やして流れを残す。
+  // 頭巾: 肩からそのまま立ち上がる低い円錐。
+  //
+  // 以前は頭の上に高い尖り布を載せていたが、それだと体とは別の「帽子」に
+  // 見えてしまう。裾を肩マントの高さまで下ろして幅を合わせ、コート→肩→頭巾が
+  // 一本の稜線でつながるようにする。高さも半分ほどに詰めて、頭のぶんだけ
+  // 盛り上がる小さな円錐にする。
+  // 低いぶん倒す量も減らす(短い布を強く倒すと折れて見える)。
   peak: makeHood(
     [
-      [0.106, -0.03],
-      [0.119, 0.025],
-      [0.121, 0.078],
-      [0.112, 0.135],
-      [0.092, 0.192],
-      [0.064, 0.248],
-      [0.032, 0.3],
-      [0.0, 0.338],
+      [0.148, -0.06],
+      [0.14, 0.0],
+      [0.126, 0.055],
+      [0.104, 0.105],
+      [0.07, 0.15],
+      [0.0, 0.185],
     ],
-    0.125,
+    0.05,
   ),
 };
 
@@ -194,21 +199,6 @@ const HOOD_GEOS: Record<"peak", THREE.BufferGeometry> = {
 
 /// 頭。わずかに縦長の卵形。真球だと人形になる。
 const HEAD_GEO = new THREE.SphereGeometry(0.099, 18, 14);
-
-/// 首から立ち上がる襟。下ろした頭巾が首のまわりに畳まれている部分。
-/// 前は開けて、顎の下を塞がない。
-const COWL_GEO = (() => {
-  const pts: THREE.Vector2[] = [
-    [0.104, 0.0],
-    [0.126, 0.03],
-    [0.142, 0.052],
-    [0.15, 0.068],
-  ].map(([r, y]) => new THREE.Vector2(r, y));
-  // 前は大きく開ける。狭く開けると開口の縁が首の両脇に立って、
-  // ツノのような二枚のタブになってしまう(実機で見て分かった)。
-  const gap = 2.7;
-  return new THREE.LatheGeometry(pts, 22, gap / 2, Math.PI * 2 - gap);
-})();
 
 /// 背中に落ちた頭巾のかたまり。畳まれた布なので、丸くたわませる。
 const FOLD_GEO = new THREE.SphereGeometry(0.115, 16, 12);
@@ -721,10 +711,9 @@ export default function PhoenixModel({
           <mesh geometry={COLLAR_GEO} material={COLLAR_MAT} position={[0, 0.935, 0]} />
         {shape === "down" && (
           <>
-            {/* 首のまわりに畳まれた襟。前は開けて顎の下を塞がない。
-                頭と一緒に回らないよう、頭のピボットの外に置く。 */}
-            <mesh geometry={COWL_GEO} material={HOOD_MAT} position={[0, 0.94, 0]} />
-            {/* 背中に落ちた頭巾。畳まれた布なので丸くたわませる。 */}
+            {/* 背中に落ちた頭巾。畳まれた布なので丸くたわませる。
+                首まわりは立ち襟(COLLAR)が受け持つ。ここにコーラルの
+                カウルを重ねると、開口の縁が肩の両脇にツノとして立つ。 */}
             <mesh
               geometry={FOLD_GEO}
               material={CORAL_MAT}
@@ -746,15 +735,15 @@ export default function PhoenixModel({
               <mesh
                 geometry={HOOD_GEOS.peak}
                 material={HOOD_MAT}
-                position={[0, 0.03, 0]}
-                rotation={[-0.04, 0, 0]}
+                position={[0, -0.02, 0]}
+                rotation={[-0.03, 0, 0]}
               />
               {/* 顔の闇。フードの開口部に収まる大きさで、少しだけ前に出す */}
               <mesh
                 geometry={FACE_GEO}
                 material={FACE_MAT}
-                position={[0, 0.076, 0.006]}
-                scale={[0.98, 1.5, 0.88]}
+                position={[0, 0.03, 0.006]}
+                scale={[0.98, 1.05, 0.9]}
               />
             </>
           ) : (
@@ -774,7 +763,7 @@ export default function PhoenixModel({
                 material={EYE_MAT}
                 position={
                 shape === "peak"
-                  ? [s * 0.027, 0.084, 0.088]
+                  ? [s * 0.028, 0.022, 0.094]
                   : [s * 0.034, 0.124, 0.092]
               }
               />
