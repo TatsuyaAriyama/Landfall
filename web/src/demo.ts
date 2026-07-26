@@ -194,5 +194,5 @@ export function demoData(): UserData {
       updatedAt: now,
     },
   ];
-  return { items, sessions, days, destinations, ready: true };
+  return { items, sessions, days, destinations, ready: true, failed: false, retry: () => {} };
 }

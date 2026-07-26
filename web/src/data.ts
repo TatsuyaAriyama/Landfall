@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { onAuthStateChanged, type User } from "firebase/auth";
 import {
   collection,
@@ -64,14 +64,43 @@ export interface UserData {
   days: StudyDay[];
   destinations: Destination[];
   ready: boolean;
+  /// 購読が失敗した、または待っても何も届かなかった。
+  /// 画面を「読み込み中…」のまま放置せず、理由と再試行を出すために使う。
+  failed: boolean;
+  /// もう一度購読しなおす。
+  retry: () => void;
 }
+
+/// どのコレクションが届いたか。1つのカウンタで数えてはいけない —
+/// Firestoreは同じコレクションについて「キャッシュ→サーバ」と2回流すことがあり、
+/// 合計3回に達しても days が一度も来ていない、という状態が起きる。
+/// その場合 ready になってしまい、カレンダーが全ての過去日を「休んだ日」として
+/// 塗ってしまう(繋がっているのに嘘を表示する)。
+interface Loaded {
+  items: boolean;
+  sessions: boolean;
+  days: boolean;
+}
+
+/// これだけ待って何も届かなければ、繋がらないものとして扱う。
+/// Firestoreはオフラインでも onSnapshot をエラーにせず、ただ黙るだけなので、
+/// 時間で見切らないと「読み込み中…」から永久に戻らない。
+const CONNECT_TIMEOUT_MS = 12000;
 
 export function useUserData(uid: string, enabled = true): UserData {
   const [items, setItems] = useState<StudyItem[]>([]);
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [days, setDays] = useState<StudyDay[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
-  const [readyCount, setReadyCount] = useState(0);
+  const [loaded, setLoaded] = useState<Loaded>({
+    items: false,
+    sessions: false,
+    days: false,
+  });
+  const [failed, setFailed] = useState(false);
+  // 再試行のたびに増やして、購読を張り直す。
+  const [attempt, setAttempt] = useState(0);
+  const loadedRef = useRef<Loaded>({ items: false, sessions: false, days: false });
 
   useEffect(() => {
     if (!enabled) return;
@@ -79,8 +108,17 @@ export function useUserData(uid: string, enabled = true): UserData {
     setSessions([]);
     setDays([]);
     setDestinations([]);
-    setReadyCount(0);
-    const bump = () => setReadyCount((n) => Math.min(n + 1, 3));
+    setFailed(false);
+    loadedRef.current = { items: false, sessions: false, days: false };
+    setLoaded(loadedRef.current);
+
+    const mark = (key: keyof Loaded) => {
+      if (loadedRef.current[key]) return;
+      loadedRef.current = { ...loadedRef.current, [key]: true };
+      setLoaded(loadedRef.current);
+    };
+    // 購読が落ちたら、待たせ続けずにその場で伝える(権限切れ・トークン失効など)。
+    const onError = () => setFailed(true);
 
     const offItems = onSnapshot(collection(db, "users", uid, "items"), (snap) => {
       setItems(
@@ -99,8 +137,8 @@ export function useUserData(uid: string, enabled = true): UserData {
           })
           .sort((a, b) => a.sortOrder - b.sortOrder),
       );
-      bump();
-    });
+      mark("items");
+    }, onError);
 
     const offSessions = onSnapshot(collection(db, "users", uid, "sessions"), (snap) => {
       setSessions(
@@ -118,8 +156,8 @@ export function useUserData(uid: string, enabled = true): UserData {
           })
           .sort((a, b) => b.date.getTime() - a.date.getTime()),
       );
-      bump();
-    });
+      mark("sessions");
+    }, onError);
 
     const offDays = onSnapshot(collection(db, "users", uid, "days"), (snap) => {
       setDays(
@@ -133,20 +171,37 @@ export function useUserData(uid: string, enabled = true): UserData {
           };
         }),
       );
-      bump();
-    });
+      mark("days");
+    }, onError);
 
     const offDestinations = listenDestinations(uid, setDestinations);
 
+    // 黙ったまま何も来ない場合の見切り。
+    const timer = setTimeout(() => {
+      const l = loadedRef.current;
+      if (!(l.items && l.sessions && l.days)) setFailed(true);
+    }, CONNECT_TIMEOUT_MS);
+
     return () => {
+      clearTimeout(timer);
       offItems();
       offSessions();
       offDays();
       offDestinations();
     };
-  }, [uid, enabled]);
+  }, [uid, enabled, attempt]);
 
-  return { items, sessions, days, destinations, ready: readyCount >= 3 };
+  const ready = loaded.items && loaded.sessions && loaded.days;
+  return {
+    items,
+    sessions,
+    days,
+    destinations,
+    ready,
+    // 届いた後の失敗で画面を作り直さない(既に見えているものは見せ続ける)。
+    failed: failed && !ready,
+    retry: () => setAttempt((n) => n + 1),
+  };
 }
 
 // ---- 書き込み(iOS の DTO 形に一致させる。undefined は書かない) ----

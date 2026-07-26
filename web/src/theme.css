@@ -3411,3 +3411,13 @@ textarea {
   position: absolute;
   inset: -9px;
 }
+
+/* 繋がらなかったときの案内。文と再試行を縦に並べて中央へ。 */
+.load-failed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 32px 16px;
+  text-align: center;
+}

@@ -114,7 +114,16 @@ function Main({ uid }: { uid: string }) {
         ))}
       </nav>
 
-      {!data.ready ? (
+      {data.failed ? (
+        /* 繋がらないまま終わったときは、理由と次の一手を出す。
+           「読み込み中…」のまま放置すると、直せるのに直せないと思われる。 */
+        <div className="load-failed">
+          <p className="empty-note">{t("loadFailed")}</p>
+          <button className="chip" onClick={data.retry}>
+            {t("retry")}
+          </button>
+        </div>
+      ) : !data.ready ? (
         <p className="empty-note">{t("loading")}</p>
       ) : tab === "today" ? (
         <TodayView uid={uid} data={data} />
