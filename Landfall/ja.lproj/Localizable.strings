@@ -319,6 +319,9 @@
 "You arrived at %@." = "%@に到着しました。";
 "Work time %@" = "作業時間 %@";
 "Completed at" = "達成日時";
+"Scheduled for" = "予定日時";
+"Set date & time" = "日時を設定";
+"Clear scheduled date" = "予定日時を解除";
 "This voyage stays in your Logbook." = "この航海は、航海誌に残ります。";
 
 /* 装い(船カスタム) */

@@ -517,6 +517,13 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
   const confirmingRef = useRef(false);
   // 保存の二重実行を同期的に防ぐ(state では間に合わない)。
   const savingRef = useRef(false);
+  // 入力変更の保存順を直列化する。日時を続けて変更してすぐ閉じても、
+  // 遅れて到着した古い書き込みが新しい値を上書きしないようにする。
+  const stepSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  // 新規作成でも「閉じる」で同じ1件へ保存できるよう、初回表示時にIDを確定する。
+  // saveDestination 側で毎回採番すると、編集途中の自動保存ごとに別の島が生まれる。
+  const destinationIdRef = useRef(dest?.id ?? newUUID());
+  const destinationCreatedAtRef = useRef(dest?.createdAt ?? new Date());
 
   const trimmed = name.replace(/^[\s　]+|[\s　]+$/g, "");
   // 名前のあるステップだけを有効とみなす(空行は保存時に落とす)。
@@ -620,24 +627,29 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
   }, [requestClose]);
 
   // ---- ステップの編集(追加・改名・削除・達成の反転) ----
-  // チェックの反転(パネル/世界のブイ)は、既存の目的地ならその場で確定する。
-  // 新規(未保存)の目的地は局所stateだけ動かし、確定は「保存」に委ねる
-  // (id未確定のまま書くと毎回別の島が生まれてしまうため)。
+  // 名前と1件以上のステップが揃ったら、既存/新規を問わず同じIDへ確定する。
+  // これにより保存ボタンを押さず「閉じる」で戻っても入力した航路が残る。
   const persistSteps = (next: DestinationStep[]) => {
     setSteps(next);
-    if (dest?.id && trimmed.length > 0 && next.some((s) => s.name.trim().length > 0)) {
+    if (trimmed.length > 0 && next.some((s) => s.name.trim().length > 0)) {
       // fire-and-forget。局所stateは先に進めるが、保存失敗は知らせる。
       // saveDestination は setDoc(マージ無し)なので、渡さなかった項目は
       // ドキュメントから消える。チェックを1つ入れるたびに紐づく項目や達成日が
       // 消えていた(項目指定の目的地が全記録を数え始め、船が飛ぶ)。必ず引き継ぐ。
-      void saveDestination(uid, {
-        id: dest.id,
-        name: trimmed,
-        itemUUID: dest.itemUUID,
-        steps: next,
-        createdAt: dest.createdAt,
-        achievedAt: dest.achievedAt,
-      }).catch(() => showToast(t("errGeneric")));
+      const write = stepSaveQueueRef.current
+        .catch(() => {})
+        .then(() =>
+          saveDestination(uid, {
+            id: destinationIdRef.current,
+            name: trimmed,
+            itemUUID: dest?.itemUUID,
+            steps: next,
+            createdAt: destinationCreatedAtRef.current,
+            achievedAt: dest?.achievedAt,
+          }),
+        );
+      stepSaveQueueRef.current = write;
+      void write.catch(() => showToast(t("errGeneric")));
     }
   };
   persistDraftRef.current = () => {
@@ -668,6 +680,11 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
     if (Number.isNaN(doneAt.getTime()) || doneAt.getTime() > Date.now()) return;
     persistSteps(steps.map((s, i) => (i === index ? { ...s, doneAt } : s)));
   };
+  const changeStepScheduledAt = (index: number, value: string) => {
+    const scheduledAt = value ? new Date(value) : undefined;
+    if (scheduledAt && Number.isNaN(scheduledAt.getTime())) return;
+    persistSteps(steps.map((s, i) => (i === index ? { ...s, scheduledAt } : s)));
+  };
 
   // ---- 保存/削除(DestinationDialogと同等) ----
   const save = async () => {
@@ -679,8 +696,10 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
     savingRef.current = true;
     setWorking(true);
     try {
+      // onBlur等の直前のステップ保存を先に終え、最後に画面全体の値を確定する。
+      await stepSaveQueueRef.current.catch(() => {});
       await saveDestination(uid, {
-        id: dest?.id,
+        id: destinationIdRef.current,
         name: trimmed,
         // 目標の種類(期日/ステップ)は排他なので、選んだ種類の値だけを書く。
         targetDate: targetDateValue(),
@@ -689,7 +708,7 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
         // 種類に関係なく持ち続けるものは引き継ぐ(setDocなので渡さないと消える)。
         // achievedAt を落とすと、着岸した目的地がまた未達に戻ってしまう。
         itemUUID: dest?.itemUUID,
-        createdAt: dest?.createdAt,
+        createdAt: destinationCreatedAtRef.current,
         achievedAt: dest?.achievedAt,
       });
       showToast(t("savedToast"));
@@ -952,6 +971,14 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
                           ×
                         </button>
                       </div>
+                      <label className="step-done-at">
+                        <span>{t("stepScheduledAt")}</span>
+                        <input
+                          type="datetime-local"
+                          value={step.scheduledAt ? dateTimeInputValue(step.scheduledAt) : ""}
+                          onChange={(e) => changeStepScheduledAt(i, e.target.value)}
+                        />
+                      </label>
                       {step.doneAt && (
                         <label className="step-done-at">
                           <span>{t("stepCompletedAt")}</span>

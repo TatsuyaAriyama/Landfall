@@ -246,6 +246,44 @@ struct VoyageWorldView: View {
                         .buttonStyle(.plain)
                     }
 
+                    HStack(spacing: 8) {
+                        Text("Scheduled for")
+                            .font(LFFont.label(11))
+                            .foregroundStyle(LFColor.returnOrange)
+                        Spacer()
+                        if step.scheduledAt != nil {
+                            DatePicker(
+                                "",
+                                selection: stepScheduledAtBinding(id: step.id),
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            .labelsHidden()
+                            .datePickerStyle(.compact)
+                            .font(LFFont.label(11))
+                            .tint(LFColor.returnOrange)
+                            .environment(\.colorScheme, .dark)
+                            .fixedSize()
+
+                            Button {
+                                clearStepSchedule(id: step.id)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(LFColor.harborSand.opacity(0.45))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Clear scheduled date")
+                        } else {
+                            Button("Set date & time") {
+                                setStepSchedule(id: step.id)
+                            }
+                            .font(LFFont.label(11))
+                            .foregroundStyle(LFColor.returnOrange)
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.leading, 36)
+
                     if step.doneAt != nil {
                         HStack(spacing: 8) {
                             Text("Completed at")
@@ -342,8 +380,41 @@ struct VoyageWorldView: View {
         )
     }
 
-    /// チェックの反転は、既存の目的地ならその場で確定する(fire-and-forget)。
-    /// 新規(未保存)は局所stateだけ動かし、確定は「保存」に委ねる。
+    /// 各ステップの予定日時。達成前から決められ、変更のたびに既存目的地へ確定する。
+    private func stepScheduledAtBinding(id: DestinationStep.ID) -> Binding<Date> {
+        Binding(
+            get: {
+                steps.first(where: { $0.id == id })?.scheduledAt ?? Date()
+            },
+            set: { value in
+                guard let i = steps.firstIndex(where: { $0.id == id }) else { return }
+                var next = steps
+                next[i].scheduledAt = value
+                steps = next
+                persistSteps(next)
+            }
+        )
+    }
+
+    private func setStepSchedule(id: DestinationStep.ID) {
+        guard let i = steps.firstIndex(where: { $0.id == id }) else { return }
+        var next = steps
+        next[i].scheduledAt =
+            Calendar.current.date(byAdding: .hour, value: 1, to: Date()) ?? Date()
+        steps = next
+        persistSteps(next)
+    }
+
+    private func clearStepSchedule(id: DestinationStep.ID) {
+        guard let i = steps.firstIndex(where: { $0.id == id }) else { return }
+        var next = steps
+        next[i].scheduledAt = nil
+        steps = next
+        persistSteps(next)
+    }
+
+    /// 既存の目的地はステップの変更をその場で確定する。
+    /// 新規は局所stateを保ち、「保存」または「閉じる」で目的地として確定する。
     private func persistSteps(_ source: [DestinationStep]? = nil) {
         let validSteps = (source ?? steps).filter {
             !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -355,6 +426,7 @@ struct VoyageWorldView: View {
             DestinationStep(
                 id: $0.id,
                 name: String($0.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60)),
+                scheduledAt: $0.scheduledAt,
                 doneAt: $0.doneAt
             )
         }
@@ -373,9 +445,9 @@ struct VoyageWorldView: View {
         save()
     }
 
-    private func save() {
-        guard isValid, !working else { return }
-        working = true
+    @discardableResult
+    private func persistCurrentDestination() -> Bool {
+        guard isValid else { return false }
         let dest: Destination
         if let existing {
             dest = existing
@@ -390,21 +462,43 @@ struct VoyageWorldView: View {
         } else {
             // 名前を整えて上限で切る(Web saveDestination と同じ)。
             dest.steps = namedSteps.map {
-                DestinationStep(id: $0.id, name: String($0.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60)), doneAt: $0.doneAt)
+                DestinationStep(
+                    id: $0.id,
+                    name: String($0.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60)),
+                    scheduledAt: $0.scheduledAt,
+                    doneAt: $0.doneAt
+                )
             }
             dest.targetDate = nil
         }
         dest.updatedAt = Date()
         try? modelContext.save()
         SyncService.shared.push(dest)
+        return true
+    }
+
+    private func save() {
+        guard !working else { return }
+        working = true
+        guard persistCurrentDestination() else {
+            working = false
+            return
+        }
         Haptics.success()
-        requestClose()
+        closing = true
     }
 
     /// 退場のドリーアウトを開始する(演出後に dismiss)。
     private func requestClose(persistDraft: Bool = true) {
         // 既存のステップ目標は、保存ボタンを押さず閉じても編集内容を失わない。
-        if persistDraft, kind == .steps { persistSteps() }
+        // 新規でも名前とステップが揃っていれば、その場で目的地を作って残す。
+        if persistDraft, kind == .steps {
+            if existing != nil {
+                persistSteps()
+            } else {
+                _ = persistCurrentDestination()
+            }
+        }
         closing = true
     }
 

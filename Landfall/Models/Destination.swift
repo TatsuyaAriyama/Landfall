@@ -7,11 +7,19 @@ import SwiftData
 struct DestinationStep: Codable, Identifiable, Hashable {
     var id: String
     var name: String
+    /// このステップへ向かう予定日時。達成日時(doneAt)とは別に、未達でも設定できる。
+    var scheduledAt: Date?
     var doneAt: Date?
 
-    init(id: String = UUID().uuidString, name: String, doneAt: Date? = nil) {
+    init(
+        id: String = UUID().uuidString,
+        name: String,
+        scheduledAt: Date? = nil,
+        doneAt: Date? = nil
+    ) {
         self.id = id
         self.name = name
+        self.scheduledAt = scheduledAt
         self.doneAt = doneAt
     }
 }

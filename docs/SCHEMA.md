@@ -65,7 +65,7 @@ docID = `yyyy-MM-dd`(端末ローカルのタイムゾーンでの startOfDay)�
 | `targetHasTime` | boolean? | `targetDate` に時刻まで含まれるか。false/未設定なら「その日いっぱい」= 締切はその日の 23:59:59.999(`destinationDeadline`) |
 | `manual` | boolean? | 完了ゴール(3つ目の目標種類)。時間や日数で測れない課題向け |
 | `manualDone` | boolean? | 完了ゴールで本人が「完了にする」を押したか。**このアプリで唯一の手動達成** — 記録からは自動導出しない |
-| `steps` | array? | ステップ目標(4つ目の目標種類)。長期の大きな目標を小さな目印に分解。要素 `{ id: string, name: string(≤60), doneAt?: timestamp }`。最大20(`MAX_STEPS`)。非空なら他の目標種類とは排他 |
+| `steps` | array? | ステップ目標(4つ目の目標種類)。長期の大きな目標を小さな目印に分解。要素 `{ id: string, name: string(≤60), scheduledAt?: timestamp, doneAt?: timestamp }`。`scheduledAt` は予定日時、`doneAt` は達成日時。最大20(`MAX_STEPS`)。非空なら他の目標種類とは排他 |
 | `createdAt` | timestamp | 進捗の起点 |
 | `achievedAt` | timestamp? | 着岸した日。設定後は「到達した島」として航海誌に残る |
 | `updatedAt` | timestamp | |
@@ -79,9 +79,7 @@ docID = `yyyy-MM-dd`(端末ローカルのタイムゾーンでの startOfDay)�
 今日を期日にした瞬間に締切を過ぎたことになり即着岸してしまうため、この解釈を必ず通すこと。進捗の比率も
 日単位に丸めず実時刻で計算する(丸めると同じ日のうち船が動かない)。
 
-**注意**: iOSアプリは同一Firestoreを共有するが、`steps` と `targetHasTime` は未対応。未知フィールドとして
-無視するためデータは壊れないが、iOS側の対応は別タスク(iOSは日付だけの期日を 00:00 締切として扱うので、
-今日を期日にすると即着岸する挙動が残っている)。
+Web / iOS は同一 Firestore を共有し、`steps.scheduledAt` と `steps.doneAt` を相互に同期する。
 
 ---
 
