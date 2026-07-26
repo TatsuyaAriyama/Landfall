@@ -144,9 +144,10 @@ const MANTLE_GEO = makeMantleGeometry();
 /// 根元は動かず先だけが背中へ流れる。
 function makeHood(profile: [number, number][], lean: number): THREE.BufferGeometry {
   const pts = profile.map(([r, y]) => new THREE.Vector2(r, y));
-  // 前面を開けたまま回す。閉じた回転体だと顔が布に埋まってしまうので、
-  // 開口部ぶん(約92度)を残して肩から後頭部までを一枚の布として張る。
-  const gap = 1.6;
+  // 前面を開けたまま回す。閉じた回転体だと顔が布に埋まってしまう。
+  // ただし開けすぎると、闇そのものが「黒い頭」の形として見えてしまい、
+  // 「フードの奥に目だけが灯る」にならない。目のまわりが覗く幅(約63度)に絞る。
+  const gap = 1.1;
   const geo = new THREE.LatheGeometry(pts, 20, gap / 2, Math.PI * 2 - gap);
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const base = profile[0][1];
@@ -219,12 +220,14 @@ const EYE_GEO = new THREE.SphereGeometry(0.016, 10, 8);
 /// 首に沿って低く立ち上げ、前は開けて顎の下を塞がない。
 /// 色はコートと分けて夜色にする(頭と同じ色にすると、頭・首・顔が一続きの
 /// 影になって、コーラルのコートが際立つ)。
+/// 上へ向かって「すぼめる」のが要。広げるとフードの裾より外へ出て、
+/// 頭の両脇に黒い角タブが立つ(実機で見て分かった)。
 const COLLAR_GEO = (() => {
   const pts: THREE.Vector2[] = [
-    [0.098, 0.0],
-    [0.106, 0.028],
-    [0.116, 0.055],
-    [0.124, 0.078],
+    [0.12, 0.0],
+    [0.115, 0.028],
+    [0.106, 0.055],
+    [0.094, 0.078],
   ].map(([r, y]) => new THREE.Vector2(r, y));
   const gap = 1.05;
   return new THREE.LatheGeometry(pts, 22, gap / 2, Math.PI * 2 - gap);
@@ -309,7 +312,7 @@ const EYE_MAT = new THREE.MeshStandardMaterial({
   flatShading: false,
   roughness: 0.7,
   emissive: new THREE.Color(SAND),
-  emissiveIntensity: 0.55,
+  emissiveIntensity: 0.85,
   fog: false,
 });
 /// ランタンの灯。船のランタンと同じ色・同じゆらぎ(同時に1体なので共有で良い)。
@@ -750,8 +753,8 @@ export default function PhoenixModel({
               <mesh
                 geometry={FACE_GEO}
                 material={FACE_MAT}
-                position={[0, 0.063, 0.032]}
-                scale={[0.82, 1.02, 0.5]}
+                position={[0, 0.076, 0.006]}
+                scale={[0.98, 1.5, 0.88]}
               />
             </>
           ) : (
@@ -771,7 +774,7 @@ export default function PhoenixModel({
                 material={EYE_MAT}
                 position={
                 shape === "peak"
-                  ? [s * 0.026, 0.067, 0.079]
+                  ? [s * 0.027, 0.084, 0.088]
                   : [s * 0.034, 0.124, 0.092]
               }
               />
