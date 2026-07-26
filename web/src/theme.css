@@ -83,7 +83,7 @@ textarea {
 }
 
 /* ホームは、現地時刻の海を一枚の背景として持つ。
-   時刻を文字で説明せず、空の色・水平線・水面の光だけで朝昼晩を伝える。 */
+   時刻を文字で説明せず、空から海へ溶ける色と光だけで朝昼晩を伝える。 */
 .shell.home-ocean {
   position: relative;
   isolation: isolate;
@@ -100,7 +100,6 @@ textarea {
   --home-sea-b: #73aaa7;
   --home-glow: #fff1c9;
   --home-glass: #f6eee1;
-  --home-wave: rgba(255, 245, 220, 0.28);
   --home-light-x: 20%;
   --home-stars: transparent;
 }
@@ -113,7 +112,6 @@ textarea {
   --home-sea-b: #4f969c;
   --home-glow: #fff5c8;
   --home-glass: #e7f4ef;
-  --home-wave: rgba(255, 255, 235, 0.25);
   --home-light-x: 62%;
   --home-stars: transparent;
 }
@@ -126,7 +124,6 @@ textarea {
   --home-sea-b: #284f58;
   --home-glow: #ffc27e;
   --home-glass: #173f43;
-  --home-wave: rgba(255, 204, 142, 0.2);
   --home-light-x: 78%;
   --home-stars: rgba(255, 239, 204, 0.32);
 }
@@ -139,7 +136,6 @@ textarea {
   --home-sea-b: #0b2928;
   --home-glow: #d8e0c8;
   --home-glass: #102f2c;
-  --home-wave: rgba(205, 226, 211, 0.15);
   --home-light-x: 74%;
   --home-stars: rgba(238, 232, 201, 0.6);
 }
@@ -158,42 +154,11 @@ textarea {
     linear-gradient(
       to bottom,
       var(--home-sky-a) 0%,
-      var(--home-sky-b) 35%,
-      var(--home-sea-a) 35.4%,
+      var(--home-sky-b) 24%,
+      var(--home-sea-a) 52%,
       var(--home-sea-b) 100%
     );
   transition: background 1.2s ease;
-}
-
-.home-ocean::after {
-  content: "";
-  position: fixed;
-  z-index: -1;
-  left: -18vw;
-  right: -18vw;
-  top: 35%;
-  bottom: 0;
-  pointer-events: none;
-  opacity: 0.9;
-  background:
-    radial-gradient(ellipse at var(--home-light-x) 0%, var(--home-wave), transparent 28%),
-    repeating-linear-gradient(
-      176deg,
-      transparent 0 18px,
-      var(--home-wave) 19px 20px,
-      transparent 21px 38px
-    );
-  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.4), #000 38%, transparent 100%);
-  animation: home-tide 18s ease-in-out infinite alternate;
-}
-
-@keyframes home-tide {
-  from {
-    transform: translate3d(-1.2%, 0, 0);
-  }
-  to {
-    transform: translate3d(1.2%, 8px, 0);
-  }
 }
 
 /* 記録は海を隠さない薄い一枚に載せ、明るい昼も暗い夜も読みやすくする。 */
@@ -213,12 +178,6 @@ textarea {
 
 .home-ocean .today-date {
   border-bottom-color: color-mix(in srgb, var(--return-orange) 48%, transparent);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .home-ocean::after {
-    animation: none;
-  }
 }
 
 .topbar {
