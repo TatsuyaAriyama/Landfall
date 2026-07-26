@@ -223,6 +223,38 @@ const COLLAR_GEO = (() => {
   return new THREE.LatheGeometry(pts, 22, gap / 2, Math.PI * 2 - gap);
 })();
 
+/// フードの合わせ目を留める撚り紐。船で使う綱と同じ撚りを入れる。
+///
+/// 素のトーラスだと「輪ゴム」に見えるので、大円まわりの角度と管まわりの角度を
+/// 足した位相で管の太さを膨らませる。これで螺旋の稜が立ち、撚った綱になる。
+function makeRopeRing(R: number, r: number, strands: number): THREE.BufferGeometry {
+  const geo = new THREE.TorusGeometry(R, r, 6, 108);
+  const pos = geo.attributes.position as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i += 1) {
+    v.fromBufferAttribute(pos, i);
+    // トーラスは XY 平面。大円上の位置と、そこからの管のずれに分ける
+    const a = Math.atan2(v.y, v.x);
+    const cx = Math.cos(a) * R;
+    const cy = Math.sin(a) * R;
+    const ox = v.x - cx;
+    const oy = v.y - cy;
+    const radial = ox * Math.cos(a) + oy * Math.sin(a);
+    const b = Math.atan2(v.z, radial);
+    const k = 1 + 0.36 * Math.cos(strands * a - b);
+    pos.setXYZ(i, cx + ox * k, cy + oy * k, v.z * k);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const ROPE_RING_GEO = makeRopeRing(0.15, 0.0125, 15);
+/// 正面の結び目。輪だけだと「どこで留めたか」が読めない。
+const ROPE_KNOT_GEO = new THREE.SphereGeometry(0.022, 10, 8);
+/// 結び目から垂れる端。先を細らせて綱の切り口に見せる。
+const ROPE_TAIL_GEO = new THREE.CylinderGeometry(0.0115, 0.008, 0.072, 8);
+
 const ARM_GEO = new THREE.CylinderGeometry(0.036, 0.044, 0.22, 12);
 // 袖口: 手首へ向かって開くフレア。「棒」ではなく「袖」に見せる要。
 const SLEEVE_CUFF_GEO = new THREE.CylinderGeometry(0.046, 0.064, 0.1, 12);
@@ -275,6 +307,12 @@ const SAND_MAT = new THREE.MeshStandardMaterial({
   color: SAND,
   flatShading: false,
   roughness: 0.85,
+});
+/// 撚り紐(綱)。麻の粗さを出すため、他の面より荒く反射を落とす。
+const ROPE_MAT = new THREE.MeshStandardMaterial({
+  color: SAND,
+  flatShading: false,
+  roughness: 0.95,
 });
 /// 立ち襟。前を開けた一枚なので内側も見える。
 const COLLAR_MAT = new THREE.MeshStandardMaterial({
@@ -709,6 +747,32 @@ export default function PhoenixModel({
 
           {/* 襟巻き: sandの環+背に垂れる端 */}
           <mesh geometry={COLLAR_GEO} material={COLLAR_MAT} position={[0, 0.935, 0]} />
+
+          {/* フードの合わせ目を留める撚り紐。頭と一緒に回らないよう体側に置く
+              (綱は肩に留まっていて、首を振っても動かない) */}
+          <group position={[0, 0.905, 0]}>
+            <mesh
+              geometry={ROPE_RING_GEO}
+              material={ROPE_MAT}
+              rotation={[Math.PI / 2, 0, 0]}
+            />
+            {/* 結び目は正面をわずかに外す。真正面だと胸の留め具と重なって
+                隠れてしまうし、少し斜めのほうが結んだ手つきに見える */}
+            <group rotation={[0, -0.62, 0]}>
+            <group position={[0, -0.004, 0.147]}>
+              <mesh geometry={ROPE_KNOT_GEO} material={ROPE_MAT} scale={[1.15, 0.85, 0.85]} />
+              {[1, -1].map((s) => (
+                <mesh
+                  key={s}
+                  geometry={ROPE_TAIL_GEO}
+                  material={ROPE_MAT}
+                  position={[s * 0.021, -0.038, 0.004]}
+                  rotation={[0.14, 0, s * 0.32]}
+                />
+              ))}
+            </group>
+            </group>
+          </group>
         {shape === "down" && (
           <>
             {/* 背中に落ちた頭巾。畳まれた布なので丸くたわませる。
