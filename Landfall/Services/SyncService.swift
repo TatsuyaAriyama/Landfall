@@ -68,7 +68,14 @@ final class SyncService {
         // 旧フィールド(targetMinutes/manual等)は書き込み用DTOに含めないので消える(意図的)。
         let steps = dest.steps.isEmpty
             ? nil
-            : dest.steps.map { DestinationStepDTO(id: $0.id, name: $0.name, doneAt: $0.doneAt) }
+            : dest.steps.map {
+                DestinationStepDTO(
+                    id: $0.id,
+                    name: $0.name,
+                    scheduledAt: $0.scheduledAt,
+                    doneAt: $0.doneAt
+                )
+            }
         let dto = DestinationWriteDTO(
             name: dest.name,
             targetDate: dest.steps.isEmpty ? dest.targetDate : nil,
@@ -229,7 +236,12 @@ final class SyncService {
                 guard let dto = try? change.document.data(as: DestinationDTO.self) else { continue }
                 let remoteAt = dto.updatedAt ?? .distantPast
                 let steps = (dto.steps ?? []).map {
-                    DestinationStep(id: $0.id, name: $0.name, doneAt: $0.doneAt)
+                    DestinationStep(
+                        id: $0.id,
+                        name: $0.name,
+                        scheduledAt: $0.scheduledAt,
+                        doneAt: $0.doneAt
+                    )
                 }
                 if let existing = fetchDestination(id, context) {
                     if remoteAt > existing.updatedAt {
@@ -341,6 +353,7 @@ private struct DayDTO: Codable {
 private struct DestinationStepDTO: Codable {
     var id: String
     var name: String
+    var scheduledAt: Date?
     var doneAt: Date?
 }
 
