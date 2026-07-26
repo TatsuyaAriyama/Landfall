@@ -62,6 +62,23 @@
               });
             })
             .catch(() => {});
+
+          // 更新途中で新旧アセットが混ざり、アプリ本体が一度も描画できない場合の
+          // 最後の安全網。正常な画面では何もしない。失敗時だけ旧Workerを解除し、
+          // 同じタブで一度だけネットワークから読み直す。
+          window.setTimeout(async () => {
+            const root = document.getElementById("root");
+            const recoveryKey = "landfall-sw-recovery";
+            if (root && root.childElementCount > 0) {
+              sessionStorage.removeItem(recoveryKey);
+              return;
+            }
+            if (sessionStorage.getItem(recoveryKey)) return;
+            sessionStorage.setItem(recoveryKey, "1");
+            const registration = await navigator.serviceWorker.getRegistration();
+            await registration?.unregister();
+            window.location.reload();
+          }, 4000);
         });
       })();
     </script>
