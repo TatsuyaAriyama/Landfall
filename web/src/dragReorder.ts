@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 
 // タイルのドラッグ並び替え。
 //
@@ -22,6 +26,7 @@ const SCROLL_CANCEL_PX = 10;
 interface Pending {
   id: string;
   pointerId: number;
+  element: HTMLElement;
   startX: number;
   startY: number;
   touch: boolean;
@@ -46,6 +51,7 @@ export interface DragReorder {
   /// タイルに渡すハンドラ。
   tileProps: (id: string) => {
     onPointerDown: (e: ReactPointerEvent) => void;
+    onContextMenu: (e: ReactMouseEvent) => void;
     style: CSSProperties | undefined;
     "data-reorder-id": string;
   };
@@ -195,6 +201,14 @@ export function useDragReorder(
       if (held) {
         if (!pending || e.pointerId !== pending.pointerId) return;
         pointerRef.current = { x: e.clientX, y: e.clientY };
+        // 画面端へ運んだときは少しずつページも送る。項目が1画面を超えても
+        // 上下の離れた位置へ並べ替えられるようにする。
+        const edge = 72;
+        if (e.clientY < edge) {
+          window.scrollBy(0, -Math.ceil((edge - e.clientY) / 5));
+        } else if (e.clientY > window.innerHeight - edge) {
+          window.scrollBy(0, Math.ceil((e.clientY - (window.innerHeight - edge)) / 5));
+        }
         const next = offsetToPointer(held, e.clientX, e.clientY);
         if (next) setLifted({ ...held, ...next });
         moveTo(e.clientX, e.clientY);
@@ -261,6 +275,7 @@ export function useDragReorder(
       const pending: Pending = {
         id,
         pointerId: e.pointerId,
+        element: e.currentTarget as HTMLElement,
         startX: e.clientX,
         startY: e.clientY,
         touch,
@@ -270,6 +285,14 @@ export function useDragReorder(
         pending.holdTimer = window.setTimeout(() => {
           if (pendingRef.current !== pending) return;
           pending.holdTimer = null;
+          // 長押し成立後はブラウザーのパン判定へ渡さず、指がタイルの外へ
+          // 出ても pointermove/up を受け続ける。特にiOS/Androidで重要。
+          try {
+            pending.element.setPointerCapture?.(pending.pointerId);
+          } catch {
+            // 指が既に離れていれば何もしない。
+          }
+          navigator.vibrate?.(10);
           lift(id, pending.startX, pending.startY);
         }, LIFT_HOLD_MS);
       }
@@ -281,6 +304,7 @@ export function useDragReorder(
   const tileProps = useCallback(
     (id: string) => ({
       onPointerDown: (e: ReactPointerEvent) => onPointerDown(id, e),
+      onContextMenu: (e: ReactMouseEvent) => e.preventDefault(),
       style:
         lifted?.id === id
           ? ({

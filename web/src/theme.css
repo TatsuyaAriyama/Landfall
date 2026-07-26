@@ -2247,6 +2247,27 @@ textarea {
      右端の✕がピルの外にはみ出す。 */
   width: max-content;
   max-width: min(92vw, 420px);
+  /* ピルの余白を掴んでもブラウザーのスクロールに奪われない。操作ボタンは
+     data-no-floating-drag でドラッグ開始から除外してある。 */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  transition: opacity 0.12s ease-out;
+}
+
+.timer-chip.dragging {
+  cursor: grabbing;
+  opacity: 0.9;
+}
+
+.timer-chip .timer-back {
+  touch-action: none;
+  cursor: grab;
+}
+
+.timer-chip.dragging .timer-back {
+  cursor: grabbing;
 }
 
 .timer-name {

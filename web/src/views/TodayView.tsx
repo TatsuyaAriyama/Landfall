@@ -47,6 +47,7 @@ import {
 } from "../timer";
 import { canUseWebGL } from "../webgl";
 import { useDragReorder } from "../dragReorder";
+import { useFloatingDrag } from "../floatingDrag";
 
 // 航海の世界は three.js を含んで重いので、計測をはじめるときだけ読み込む。
 // タイルを押してすぐ入りたいので、Todayを開いた時点で先に取りに行っておく。
@@ -493,6 +494,7 @@ function TimerChip({
   onFinish: () => void;
   onDiscard: () => void;
 }) {
+  const floating = useFloatingDrag("landfall.timer-chip-position.v1");
   const [sound, setSound] = useState<SoundMode>(() => soundPref());
   // 休憩中は時計が止まる(elapsedSecが休憩ぶんを引く)。止まった数字だけでは
   // 事故に見えるので、局面の代わりに「錨を下ろしている」と出す。
@@ -543,30 +545,47 @@ function TimerChip({
     sound === "off" ? t("soundOff") : sound === "waves" ? t("soundWaves") : t("soundPiano");
 
   return (
-    <div className="timer-chip">
+    <div
+      ref={floating.elementRef}
+      className={`timer-chip${floating.dragging ? " dragging" : ""}`}
+      style={floating.style}
+      {...floating.pointerProps}
+    >
       {/* 名前と時間を押すと、航海の世界へ戻る。 */}
-      <button className="timer-back" onClick={onOpen} aria-label={t("backToVoyage")}>
+      <button
+        className="timer-back"
+        onClick={() => {
+          if (!floating.consumeDraggedClick()) onOpen();
+        }}
+        aria-label={t("backToVoyage")}
+      >
         <span className="timer-name">
           {phaseLabel && <span className="timer-phase">{phaseLabel} </span>}
           {item?.name ?? "—"}
         </span>
         <span className="timer-elapsed">{display}</span>
       </button>
-      <button className="timer-sound" onClick={cycleSound}>
+      <button className="timer-sound" data-no-floating-drag onClick={cycleSound}>
         {soundLabel}
       </button>
       {/* 休憩。世界を閉じて実際に作業しているときこそ要る操作なので、
           世界の中だけでなくここにも置く。 */}
       <button
         className={`timer-break${resting ? " on" : ""}`}
+        data-no-floating-drag
         onClick={onToggleBreak}
       >
         {resting ? t("endBreakShort") : t("takeBreakShort")}
       </button>
-      <button className="timer-finish" onClick={onFinish}>
+      <button className="timer-finish" data-no-floating-drag onClick={onFinish}>
         {t("timerFinish")}
       </button>
-      <button className="timer-discard" onClick={onDiscard} aria-label="discard">
+      <button
+        className="timer-discard"
+        data-no-floating-drag
+        onClick={onDiscard}
+        aria-label="discard"
+      >
         ✕
       </button>
     </div>
