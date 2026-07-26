@@ -70,6 +70,20 @@ docID = `yyyy-MM-dd`(端末ローカルのタイムゾーンでの startOfDay)�
 | `body` | string | 本文。1〜260文字 |
 | `updatedAt` | timestamp | LWW |
 
+### `users/{uid}/state/timer` — Web版の進行中タイマー
+
+PCで始めた航海をスマホでもホームの「航海中」カードから再開するための一時状態。
+終了・破棄・項目削除時にドキュメントを削除する。
+
+| フィールド | 型 | 備考 |
+|---|---|---|
+| `itemId` | string | 対象項目UUID |
+| `startedAt` | timestamp | 計測開始 |
+| `mode` | string | `free` / `pomo` |
+| `breakMs` | number(int) | 終了済み休憩の累計ms |
+| `breakStartedAt` | timestamp? | 休憩中の場合のみ |
+| `updatedAt` | timestamp | 最終更新 |
+
 ### `users/{uid}/destinations/{uuid}` — 目的地(島)
 
 学習の目標を「島」として置く。到達した日が Landfall(着岸)。アクティブは1つまで(クライアント制約、`MAX_ACTIVE_DESTINATIONS`)。

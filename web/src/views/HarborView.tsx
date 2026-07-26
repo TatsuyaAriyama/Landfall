@@ -68,6 +68,7 @@ import {
   inviteShareLine,
   t,
   tf,
+  voyageRemainingLabel,
   type I18nKey,
 } from "../i18n";
 import { serviceStartDay } from "../since";
@@ -90,15 +91,54 @@ function canUseWebGL(): boolean {
   return webglCache;
 }
 
-/// 3Dの描画に失敗したら、何も表示しない(港の他の機能はそのまま)。
-class HarborWorldBoundary extends Component<{ children?: ReactNode }, { failed: boolean }> {
+/// 3Dの描画に失敗しても、共同航海そのものを消さない。
+class HarborWorldBoundary extends Component<
+  { children?: ReactNode; fallback: ReactNode },
+  { failed: boolean }
+> {
   state = { failed: false };
   static getDerivedStateFromError() {
     return { failed: true };
   }
   render() {
-    return this.state.failed ? null : this.props.children;
+    return this.state.failed ? this.props.fallback : this.props.children;
   }
+}
+
+function HarborVoyageFallback({
+  roomName,
+  voyage,
+  progressMinutes,
+}: {
+  roomName: string;
+  voyage: HarborVoyage | null | undefined;
+  progressMinutes: number;
+}) {
+  const ratio = voyage
+    ? Math.min(1, progressMinutes / Math.max(1, voyage.targetMinutes))
+    : 0;
+  return (
+    <div className="harbor-voyage-fallback" role="status">
+      <div className="harbor-voyage-fallback-glow" />
+      <div className="harbor-voyage-fallback-copy">
+        <span>{voyage ? t("voyagingNow") : t("loading")}</span>
+        <strong>{roomName}</strong>
+      </div>
+      {voyage && !voyage.arrivedAt && (
+        <div className="harbor-voyage-fallback-progress">
+          <div className="voyage-track" aria-hidden="true">
+            <span
+              className="voyage-fill"
+              style={{ width: `${Math.round(ratio * 100)}%` }}
+            />
+          </div>
+          <small>
+            {voyageRemainingLabel(voyage.targetMinutes - progressMinutes)}
+          </small>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /// チャットの発言を削除できる猶予(firestore.rulesの一時間窓と同じ)。
@@ -938,10 +978,26 @@ function RoomDetail({
       </div>
 
       {/* みんなの海: メンバー全員の船が同じ夜の海で島へ並走する3D。
-          船をタップするとその人の軌跡へ。失敗時は静かに何も出さない。 */}
-      {canUseWebGL() && (
-        <HarborWorldBoundary>
-          <Suspense fallback={<div className="harbor-world-fallback" />}>
+          スマホで読込が遅い／WebGLが使えない場合も、航海中カードは必ず残す。 */}
+      {canUseWebGL() ? (
+        <HarborWorldBoundary
+          fallback={
+            <HarborVoyageFallback
+              roomName={room.name}
+              voyage={voyage}
+              progressMinutes={voyageProgress}
+            />
+          }
+        >
+          <Suspense
+            fallback={
+              <HarborVoyageFallback
+                roomName={room.name}
+                voyage={voyage}
+                progressMinutes={voyageProgress}
+              />
+            }
+          >
             <HarborWorld
               room={room}
               members={members}
@@ -954,6 +1010,12 @@ function RoomDetail({
             />
           </Suspense>
         </HarborWorldBoundary>
+      ) : (
+        <HarborVoyageFallback
+          roomName={room.name}
+          voyage={voyage}
+          progressMinutes={voyageProgress}
+        />
       )}
 
       {/* 共同航海: 無ければ海図パネル、到着済みなら「次の航海」。 */}

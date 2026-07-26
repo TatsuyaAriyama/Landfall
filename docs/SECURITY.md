@@ -14,8 +14,9 @@ Landfall の防御は3層です。**それぞれ「有効化」の手順が違�
 
 ### 保証している不変条件
 - `users/{uid}/**` … 本人だけが読み書き。他人のバックアップには一切触れない。
-  `items / sessions / days / voyageLogs / destinations / blocks` ごとに許可フィールド・型・
+  `items / sessions / days / voyageLogs / destinations / blocks / state` ごとに許可フィールド・型・
   文字数・件数を検証し、未知の個人コレクションは既定で拒否する。
+  `state` は固定ID `timer` 一件だけを許可し、項目ID・時刻・モードを検証する。
 - 港(`rooms/{code}`)
   - **乗っ取り防止**: 港名・作成日時・他メンバーは誰も改変できない。
   - 更新は「自分ひとりを加える/外す」だけに限定(在港者による追い出し・強制追加を拒否)。

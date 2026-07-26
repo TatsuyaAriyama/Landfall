@@ -3497,6 +3497,80 @@ textarea {
   background: #123830;
 }
 
+.harbor-voyage-fallback {
+  position: relative;
+  height: 180px;
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 13%, transparent);
+  border-radius: var(--radius);
+  color: var(--harbor-sand);
+  background:
+    radial-gradient(circle at 78% 24%, rgb(234 222 189 / 24%) 0 4%, transparent 25%),
+    linear-gradient(165deg, #19483e, #0b2823 70%);
+}
+
+.harbor-voyage-fallback::after {
+  content: "";
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  bottom: 42px;
+  height: 28px;
+  opacity: 0.32;
+  border-top: 1px solid var(--harbor-sand);
+  border-radius: 50%;
+  transform: rotate(-2deg);
+}
+
+.harbor-voyage-fallback-glow {
+  position: absolute;
+  right: 12%;
+  top: 24px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgb(234 222 189 / 16%);
+  filter: blur(12px);
+}
+
+.harbor-voyage-fallback-copy {
+  position: absolute;
+  left: 20px;
+  top: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.harbor-voyage-fallback-copy span {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--return-orange);
+}
+
+.harbor-voyage-fallback-copy strong {
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.harbor-voyage-fallback-progress {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 20px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.harbor-voyage-fallback-progress small {
+  flex: none;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--harbor-sand) 78%, transparent);
+}
+
 .harbor-world canvas {
   display: block;
 }
@@ -3972,6 +4046,15 @@ textarea {
 /* 狭い画面のピル。操作が4つ(音・休憩・終了・✕)あると一行には収まらず、
    右端の✕から順にはみ出す。名前と時計を一行目に回して二段にする —
    どれかを削るより、少し背の高い小さなカードになるほうが理に適っている。 */
+/* ベースの .timer-chip は先にあるモバイル指定より後で宣言されているため、
+   ここで改めてタブバーより上へ置く。保存位置がある場合は floatingDrag 側も
+   同じ84pxを可動域から除外する。 */
+@media (max-width: 600px) {
+  .timer-chip {
+    bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+}
+
 @media (max-width: 440px) {
   .timer-chip {
     flex-wrap: wrap;

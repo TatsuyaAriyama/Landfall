@@ -80,6 +80,18 @@ service cloud.firestore {
           && data.updatedAt is timestamp;
       }
 
+      function validRunningTimer() {
+        let data = request.resource.data;
+        return data.keys().hasAll(['itemId', 'startedAt', 'mode', 'breakMs', 'updatedAt'])
+          && data.keys().hasOnly(['itemId', 'startedAt', 'mode', 'breakMs', 'breakStartedAt', 'updatedAt'])
+          && validUUID(data.itemId)
+          && data.startedAt is timestamp
+          && data.mode in ['free', 'pomo']
+          && data.breakMs is int && data.breakMs >= 0
+          && (!('breakStartedAt' in data) || data.breakStartedAt is timestamp)
+          && data.updatedAt is timestamp;
+      }
+
       function validDestinationStep(step) {
         return step is map
           && step.keys().hasAll(['id', 'name'])
@@ -159,6 +171,13 @@ service cloud.firestore {
         allow read: if isOwner();
         allow create, update: if isOwner() && validDayID(dayId) && validVoyageLog();
         allow delete: if isOwner();
+      }
+
+      // Web版の進行中タイマー。履歴ではなく一時状態なので、固定ID一件だけにする。
+      match /state/{stateId} {
+        allow read: if isOwner() && stateId == 'timer';
+        allow create, update: if isOwner() && stateId == 'timer' && validRunningTimer();
+        allow delete: if isOwner() && stateId == 'timer';
       }
 
       match /destinations/{destinationId} {

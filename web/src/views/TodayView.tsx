@@ -49,6 +49,12 @@ import { canUseWebGL } from "../webgl";
 import { useDragReorder } from "../dragReorder";
 import { useFloatingDrag } from "../floatingDrag";
 import { whenIdle } from "../idle";
+import {
+  deleteRunningTimer,
+  listenRunningTimer,
+  saveRunningTimer,
+} from "../runningTimerSync";
+import { isDemo } from "../demo";
 
 // 航海の世界は three.js を含んで重いので、初期描画と競合させない。
 // 空き時間か、タイルへ指を置いた瞬間から読み込み、押した後の待ちを短くする。
@@ -102,14 +108,27 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   // 「時間を手で入れる」で開くときの初期値(測った分)。
   const [prefillMinutes, setPrefillMinutes] = useState<number | null>(null);
 
+  // 進行中の航海も記録と同じように端末間で同期する。別端末から届いたときは
+  // 全画面を突然開かず、まずホームの小さな「航海中」カードとして知らせる。
+  useEffect(() => {
+    if (isDemo) return;
+    const localTimer = readTimer();
+    return listenRunningTimer(uid, localTimer, (remote) => {
+      if (remote) writeTimer(remote);
+      else eraseTimer();
+      setTimer(remote);
+    });
+  }, [uid]);
+
   // 読み込み済みの項目一覧から大元が消えたら、別端末からの削除を含めて
   // その項目を指す端末ローカルのタイマーも同時に畳む。
   useEffect(() => {
     if (!timer || data.items.some((item) => item.id === timer.itemId)) return;
     eraseTimer();
+    if (!isDemo) void deleteRunningTimer(uid).catch(() => {});
     setTimer(null);
     setVoyaging(false);
-  }, [data.items, timer]);
+  }, [data.items, timer, uid]);
 
   // 初期描画が終わって端末が空いたときだけ先読みする。Safariは idle API が
   // ないため idle.ts の短いタイマーへ落ちる。画面を離れたら予約も解除する。
@@ -129,6 +148,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
       breakStartedAt: null,
     };
     writeTimer(next);
+    if (!isDemo) void saveRunningTimer(uid, next).catch(() => {});
     setTimer(next);
     setRecording(null);
     setVoyaging(true);
@@ -150,6 +170,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
 
   const clearTimer = () => {
     eraseTimer();
+    if (!isDemo) void deleteRunningTimer(uid).catch(() => {});
     setTimer(null);
     setVoyaging(false);
   };
@@ -160,6 +181,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     if (!timer) return;
     const next: RunningTimer = { ...timer, mode: timer.mode === "pomo" ? "free" : "pomo" };
     writeTimer(next);
+    if (!isDemo) void saveRunningTimer(uid, next).catch(() => {});
     setTimer(next);
   };
 
@@ -171,6 +193,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     const at = Date.now();
     const next = isOnBreak(timer) ? endBreak(timer, at) : startBreak(timer, at);
     writeTimer(next);
+    if (!isDemo) void saveRunningTimer(uid, next).catch(() => {});
     setTimer(next);
   };
 
@@ -500,7 +523,9 @@ function TimerChip({
   onFinish: () => void;
   onDiscard: () => void;
 }) {
-  const floating = useFloatingDrag("landfall.timer-chip-position.v1");
+  const floating = useFloatingDrag("landfall.timer-chip-position.v1", {
+    mobileBottomInset: 84,
+  });
   const [sound, setSound] = useState<SoundMode>(() => soundPref());
   // 1秒更新をチップの中だけに閉じ込める。親のTodayViewで持つと、時計の数字を
   // 変えるたびに目的地・全タイル・今日の記録まで再描画されてしまう。
