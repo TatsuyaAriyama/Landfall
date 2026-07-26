@@ -196,12 +196,13 @@ const HEAD_GEO = new THREE.SphereGeometry(0.099, 18, 14);
 const COWL_GEO = (() => {
   const pts: THREE.Vector2[] = [
     [0.104, 0.0],
-    [0.124, 0.035],
-    [0.14, 0.062],
-    [0.148, 0.085],
-    [0.15, 0.1],
+    [0.126, 0.03],
+    [0.142, 0.052],
+    [0.15, 0.068],
   ].map(([r, y]) => new THREE.Vector2(r, y));
-  const gap = 1.15;
+  // 前は大きく開ける。狭く開けると開口の縁が首の両脇に立って、
+  // ツノのような二枚のタブになってしまう(実機で見て分かった)。
+  const gap = 2.7;
   return new THREE.LatheGeometry(pts, 22, gap / 2, Math.PI * 2 - gap);
 })();
 
@@ -210,7 +211,22 @@ const FOLD_GEO = new THREE.SphereGeometry(0.115, 16, 12);
 
 const FACE_GEO = new THREE.SphereGeometry(0.075, 14, 10);
 const EYE_GEO = new THREE.SphereGeometry(0.019, 10, 8);
-const SCARF_GEO = new THREE.TorusGeometry(0.105, 0.034, 9, 18);
+/// 立ち襟。以前は太いドーナツを首に一周させていたが、輪が一本通るだけで
+/// 浮き輪のように見えて、いちばん野暮ったい部分になっていた。
+/// 首に沿って低く立ち上げ、前は開けて顎の下を塞がない。
+/// 色はコートと分けて夜色にする(頭と同じ色にすると、頭・首・顔が一続きの
+/// 影になって、コーラルのコートが際立つ)。
+const COLLAR_GEO = (() => {
+  const pts: THREE.Vector2[] = [
+    [0.098, 0.0],
+    [0.106, 0.028],
+    [0.116, 0.055],
+    [0.124, 0.078],
+  ].map(([r, y]) => new THREE.Vector2(r, y));
+  const gap = 1.05;
+  return new THREE.LatheGeometry(pts, 22, gap / 2, Math.PI * 2 - gap);
+})();
+
 const ARM_GEO = new THREE.CylinderGeometry(0.036, 0.044, 0.22, 12);
 // 袖口: 手首へ向かって開くフレア。「棒」ではなく「袖」に見せる要。
 const SLEEVE_CUFF_GEO = new THREE.CylinderGeometry(0.046, 0.064, 0.1, 12);
@@ -263,6 +279,13 @@ const SAND_MAT = new THREE.MeshStandardMaterial({
   color: SAND,
   flatShading: false,
   roughness: 0.85,
+});
+/// 立ち襟。前を開けた一枚なので内側も見える。
+const COLLAR_MAT = new THREE.MeshStandardMaterial({
+  color: MIDNIGHT,
+  flatShading: false,
+  roughness: 0.7,
+  side: THREE.DoubleSide,
 });
 const FACE_MAT = new THREE.MeshStandardMaterial({
   color: MIDNIGHT,
@@ -689,7 +712,7 @@ export default function PhoenixModel({
           </group>
 
           {/* 襟巻き: sandの環+背に垂れる端 */}
-          <mesh geometry={SCARF_GEO} material={SAND_MAT} position={[0, 0.96, 0]} rotation={[Math.PI / 2 + 0.08, 0, 0]} />
+          <mesh geometry={COLLAR_GEO} material={COLLAR_MAT} position={[0, 0.935, 0]} />
         {shape === "down" && (
           <>
             {/* 首のまわりに畳まれた襟。前は開けて顎の下を塞がない。
