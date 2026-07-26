@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
+import { navigatorHood } from "../boat";
 
 // 航海士フェニックス(プレイヤーキャラクター)。
 // 紋章を「体」ではなく「衣装のモチーフ」として着せた、小さな旅の航海士:
@@ -137,35 +138,94 @@ const COAT_GEO = makeCoatGeometry();
 const MANTLE_GEO = makeMantleGeometry();
 /// フード。円錐だと頭ではなく三角コーンに見えるので、頭を包む布として作る:
 /// 肩の上で広く、頭のまわりで丸く張り、上へ行くほど細って柔らかい先になる。
-/// さらに上ほど後ろへ倒して、頭巾の先が背中へ垂れている形にする
-/// (まっすぐ尖らせると、それだけで作り物に見える)。
-function makeHoodGeometry(): THREE.BufferGeometry {
-  const profile: THREE.Vector2[] = [
-    [0.132, -0.035],
-    [0.148, 0.02],
-    [0.146, 0.075],
-    [0.128, 0.132],
-    [0.096, 0.185],
-    [0.058, 0.232],
-    [0.024, 0.268],
-    [0.0, 0.288],
-  ].map(([r, y]) => new THREE.Vector2(r, y));
+///
+/// profile は (半径, 高さ) の並び。lean は「上へ行くほど後ろへ倒す量」で、
+/// これがゼロだとまっすぐ尖って作り物に見える。高さの二次で効かせるので、
+/// 根元は動かず先だけが背中へ流れる。
+function makeHood(profile: [number, number][], lean: number): THREE.BufferGeometry {
+  const pts = profile.map(([r, y]) => new THREE.Vector2(r, y));
   // 前面を開けたまま回す。閉じた回転体だと顔が布に埋まってしまうので、
   // 開口部ぶん(約92度)を残して肩から後頭部までを一枚の布として張る。
   const gap = 1.6;
-  const geo = new THREE.LatheGeometry(profile, 20, gap / 2, Math.PI * 2 - gap);
+  const geo = new THREE.LatheGeometry(pts, 20, gap / 2, Math.PI * 2 - gap);
   const pos = geo.attributes.position as THREE.BufferAttribute;
+  const base = profile[0][1];
+  const top = profile[profile.length - 1][1];
+  const span = Math.max(0.001, top - base);
   for (let i = 0; i < pos.count; i += 1) {
-    // 高さに対して二次で効かせる = 根元は動かさず、先だけ後ろへ流す。
-    const k = Math.max(0, (pos.getY(i) + 0.035) / 0.323);
-    pos.setZ(i, pos.getZ(i) - k * k * 0.105);
+    const k = Math.max(0, (pos.getY(i) - base) / span);
+    pos.setZ(i, pos.getZ(i) - k * k * lean);
   }
   pos.needsUpdate = true;
   geo.computeVertexNormals();
   return geo;
 }
 
-const HOOD_GEO = makeHoodGeometry();
+/// 選べるフードの形。名前は装いの一覧に出る。
+/// どれも前面の開口と「後ろへ倒す」作りは共有していて、変わるのは
+/// 頭の丸みと先の伸び方だけ — 同じ航海士の衣装の範囲に収める。
+export const HOOD_SHAPES = ["peak", "round", "long", "deep"] as const;
+export type HoodShape = (typeof HOOD_SHAPES)[number];
+
+const HOOD_GEOS: Record<HoodShape, THREE.BufferGeometry> = {
+  // 頭巾: 先が柔らかく尖り、背中へ垂れる(既定)。
+  peak: makeHood(
+    [
+      [0.132, -0.035],
+      [0.148, 0.02],
+      [0.146, 0.075],
+      [0.128, 0.132],
+      [0.096, 0.185],
+      [0.058, 0.232],
+      [0.024, 0.268],
+      [0.0, 0.288],
+    ],
+    0.105,
+  ),
+  // 丸頭巾: 先を作らず、頭の丸みのまま収める。いちばん穏やかな印象。
+  round: makeHood(
+    [
+      [0.134, -0.035],
+      [0.152, 0.02],
+      [0.155, 0.08],
+      [0.146, 0.138],
+      [0.122, 0.185],
+      [0.082, 0.219],
+      [0.036, 0.239],
+      [0.0, 0.247],
+    ],
+    0.045,
+  ),
+  // 長頭巾: 先が長く伸びて、背中へ大きく垂れる。
+  long: makeHood(
+    [
+      [0.13, -0.035],
+      [0.146, 0.02],
+      [0.142, 0.08],
+      [0.118, 0.145],
+      [0.086, 0.215],
+      [0.052, 0.285],
+      [0.024, 0.345],
+      [0.0, 0.385],
+    ],
+    0.2,
+  ),
+  // 深頭巾: ゆったりと大きく、肩まで覆う。顔がいちばん奥まって見える。
+  deep: makeHood(
+    [
+      [0.168, -0.06],
+      [0.176, 0.01],
+      [0.172, 0.075],
+      [0.152, 0.135],
+      [0.116, 0.19],
+      [0.07, 0.236],
+      [0.03, 0.268],
+      [0.0, 0.284],
+    ],
+    0.085,
+  ),
+};
+
 const FACE_GEO = new THREE.SphereGeometry(0.075, 14, 10);
 const EYE_GEO = new THREE.SphereGeometry(0.019, 10, 8);
 const SCARF_GEO = new THREE.TorusGeometry(0.105, 0.034, 9, 18);
@@ -413,10 +473,17 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
 export default function PhoenixModel({
   animate = true,
   pose = "idle",
+  hood,
 }: {
   animate?: boolean;
   pose?: PhoenixPose;
+  /// フードの形。省略時はこの端末で選ばれているものを使う。
+  hood?: HoodShape;
 }) {
+  // フードは指定が無ければ、この端末で選ばれている形を使う
+  // (甲板・港・カードなど、呼び出し側が装いを知らない場所のため)。
+  const hoodGeo = HOOD_GEOS[hood ?? navigatorHood()];
+
   const core = useRef<THREE.Group>(null); // 足以外(呼吸・歩行の弾み)
   const head = useRef<THREE.Group>(null);
   const armR = useRef<THREE.Group>(null);
@@ -638,7 +705,7 @@ export default function PhoenixModel({
           {/* 頭(首振りのピボット): 頭サイズの尖ったフード=紋章の冠羽。
               開口部の闇に両目が灯る */}
           <group ref={head} position={[0, 0.98, 0]}>
-            <mesh geometry={HOOD_GEO} material={HOOD_MAT} position={[0, 0.03, 0]} rotation={[-0.04, 0, 0]} />
+            <mesh geometry={hoodGeo} material={HOOD_MAT} position={[0, 0.03, 0]} rotation={[-0.04, 0, 0]} />
             {/* 顔の闇。フードの開口部に収まる大きさで、少しだけ前に出す */}
             <mesh
               geometry={FACE_GEO}

@@ -118,6 +118,23 @@ export function navigatorPose(): NavigatorPose {
     : "idle";
 }
 
+/// 航海士のフードの形。仕草と同じくこの端末に憶えておく
+/// (見た目の好みなので、記録と一緒に同期はしない)。
+const HOOD_KEY = "navigator.hood";
+const HOODS = ["peak", "round", "long", "deep"] as const;
+export type NavigatorHood = (typeof HOODS)[number];
+
+export function navigatorHood(): NavigatorHood {
+  const saved = localStorage.getItem(HOOD_KEY);
+  return (HOODS as readonly string[]).includes(saved ?? "")
+    ? (saved as NavigatorHood)
+    : "peak";
+}
+
+export function setNavigatorHood(hood: NavigatorHood) {
+  localStorage.setItem(HOOD_KEY, hood);
+}
+
 export function setNavigatorPose(pose: NavigatorPose) {
   localStorage.setItem(POSE_KEY, pose);
 }

@@ -11,11 +11,14 @@ import {
   boatPartId,
   boatProps,
   isBoatOptionUnlocked,
+  navigatorHood,
   navigatorPose,
   setBoatPart,
+  setNavigatorHood,
   setNavigatorPose,
   totalMinutes,
   type BoatPart,
+  type NavigatorHood,
 } from "../boat";
 import { pushProfileEverywhere } from "../harbor";
 import { lang, t, unlockAtLabel, type I18nKey } from "../i18n";
@@ -65,7 +68,15 @@ function NightSea({ parts, animate }: { parts: BoatParts; animate: boolean }) {
 
 /// 航海士ステージ。同じ夜の海に、プレイヤー(不死鳥の航海士)を大きく立たせて見せる。
 /// 船より一回り寄って、ポーズ切り替えで歩行や仕草を確認できる。
-function SailorStage({ pose, animate }: { pose: PhoenixPose; animate: boolean }) {
+function SailorStage({
+  pose,
+  hood,
+  animate,
+}: {
+  pose: PhoenixPose;
+  hood: NavigatorHood;
+  animate: boolean;
+}) {
   const [autoRotate, setAutoRotate] = useState(true);
   return (
     <>
@@ -87,7 +98,7 @@ function SailorStage({ pose, animate }: { pose: PhoenixPose; animate: boolean })
       <Sea moonX={-8.5} animate={animate} />
       <Ripples animate={animate} />
       <group scale={0.95}>
-        <PhoenixModel animate={animate} pose={pose} />
+        <PhoenixModel animate={animate} pose={pose} hood={hood} />
       </group>
       <OrbitControls
         target={[0, 0.62, 0]}
@@ -104,6 +115,13 @@ function SailorStage({ pose, animate }: { pose: PhoenixPose; animate: boolean })
     </>
   );
 }
+
+const HOODS: [NavigatorHood, I18nKey][] = [
+  ["peak", "hoodPeak"],
+  ["round", "hoodRound"],
+  ["long", "hoodLong"],
+  ["deep", "hoodDeep"],
+];
 
 const POSES: [PhoenixPose, I18nKey][] = [
   ["idle", "poseIdle"],
@@ -125,6 +143,11 @@ export default function BoatStudio({ data }: { data: UserData }) {
   // 選んだ仕草はローカルに保存され、次にこのタブを開いたときも続きから眺められる。
   // 甲板の航海士(目的地・航海中)はここの選択を使わない — あちらは見張りなので
   // 待機+たまに見渡す(three/navigatorPose.ts)。
+  const [hood, setHoodState] = useState<NavigatorHood>(() => navigatorHood());
+  const setHood = (next: NavigatorHood) => {
+    setHoodState(next);
+    setNavigatorHood(next);
+  };
   const [pose, setPoseState] = useState<PhoenixPose>(() => navigatorPose());
   const setPose = (next: PhoenixPose) => {
     setPoseState(next);
@@ -179,11 +202,28 @@ export default function BoatStudio({ data }: { data: UserData }) {
           {mode === "boat" ? (
             <NightSea parts={parts} animate={animate} />
           ) : (
-            <SailorStage pose={pose} animate={animate} />
+            <SailorStage pose={pose} hood={hood} animate={animate} />
           )}
         </Canvas>
       </div>
       <p className="boat-studio-hint">{t("boatHint")}</p>
+      {mode === "sailor" ? (
+        <>
+          <p className="section-label">{t("hoodLabel")}</p>
+          <div className="chip-row" style={{ marginTop: 4 }}>
+            {HOODS.map(([key, labelKey]) => (
+              <button
+                key={key}
+                className={`chip${hood === key ? " selected" : ""}`}
+                onClick={() => setHood(key)}
+              >
+                {t(labelKey)}
+              </button>
+            ))}
+          </div>
+          <p className="section-label">{t("poseLabel")}</p>
+        </>
+      ) : null}
       {mode === "sailor" ? (
         <div className="chip-row" style={{ marginTop: 4 }}>
           {POSES.map(([key, labelKey]) => (
