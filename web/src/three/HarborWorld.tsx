@@ -14,7 +14,7 @@ import {
   useThree,
   type RootState,
 } from "@react-three/fiber";
-import { Html, OrbitControls, Stars } from "@react-three/drei";
+import { Html, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
 import { Moon, Ripples, Sea, Sun } from "./SeaParts";
@@ -409,20 +409,20 @@ function HarborTown({
       {HARBOR_PIER_X.map((x) => (
         <group key={x} position={[x, 0, 0]}>
           <mesh position={[0, 0.16, 0.1]}>
-            <boxGeometry args={[0.28, 0.18, 2.3]} />
+            <boxGeometry args={[0.46, 0.18, 2.3]} />
             <meshStandardMaterial color="#76523A" flatShading roughness={0.96} />
           </mesh>
           {[-0.82, -0.18, 0.46, 1.1].map((z) => (
             <mesh key={z} position={[0, 0.27, z]}>
-              <boxGeometry args={[0.5, 0.06, 0.08]} />
+              <boxGeometry args={[0.64, 0.06, 0.08]} />
               <meshStandardMaterial color="#A27650" flatShading roughness={0.94} />
             </mesh>
           ))}
-          <mesh position={[-0.12, 0.02, 1.05]}>
+          <mesh position={[-0.2, 0.02, 1.05]}>
             <cylinderGeometry args={[0.045, 0.055, 0.5, 7]} />
             <meshStandardMaterial color="#4A3428" flatShading roughness={1} />
           </mesh>
-          <mesh position={[0.12, 0.02, 1.05]}>
+          <mesh position={[0.2, 0.02, 1.05]}>
             <cylinderGeometry args={[0.045, 0.055, 0.5, 7]} />
             <meshStandardMaterial color="#4A3428" flatShading roughness={1} />
           </mesh>
@@ -960,7 +960,7 @@ function HarborCameraRig({
   return null;
 }
 
-/// 近景の構図を画面比で決め、入退場カメラと(idle中の)手回しをまとめる。
+/// 近景の構図を画面比で決め、船着き場へ入退場するカメラを動かす。
 function ImmersiveCamera({
   phase,
   animate,
@@ -981,36 +981,21 @@ function ImmersiveCamera({
       ? {
           pos: new THREE.Vector3(0.2, 2.55, 8.6),
           target: new THREE.Vector3(0.4, 0.72, -1.5),
-          maxPolar: Math.PI * 0.54,
         }
       : {
           pos: new THREE.Vector3(0.25, 2.95, 9.9),
           target: new THREE.Vector3(0.35, 0.72, -1.72),
-          maxPolar: Math.PI * 0.5,
         };
   }, [size.width, size.height]);
 
   return (
-    <>
-      <HarborCameraRig
-        phase={phase}
-        animate={animate}
-        near={near}
-        onEntered={onEntered}
-        onExited={onExited}
-      />
-      {phase === "idle" && (
-        <OrbitControls
-          target={[near.target.x, near.target.y, near.target.z]}
-          enablePan={false}
-          enableDamping
-          minDistance={3.2}
-          maxDistance={12}
-          minPolarAngle={Math.PI * 0.14}
-          maxPolarAngle={near.maxPolar}
-        />
-      )}
-    </>
+    <HarborCameraRig
+      phase={phase}
+      animate={animate}
+      near={near}
+      onEntered={onEntered}
+      onExited={onExited}
+    />
   );
 }
 
@@ -1126,6 +1111,212 @@ function MemberBoat({
   );
 }
 
+interface HarborWalkInput {
+  x: -1 | 0 | 1;
+  z: -1 | 0 | 1;
+}
+
+const WALK_START = new THREE.Vector3(0, 0.31, 0.18);
+const WALK_SPEED = 1.45;
+
+function canStandInHarbor(x: number, z: number): boolean {
+  const onQuay = x >= -3.35 && x <= 3.35 && z >= -2.55 && z <= -0.68;
+  const onPier =
+    z >= -1.18 &&
+    z <= 1.14 &&
+    HARBOR_PIER_X.some((pierX) => Math.abs(x - pierX) <= 0.27);
+  if (!onQuay && !onPier) return false;
+
+  // 網干し場・帰港灯・荷揚げ場は見た目だけでなく、きちんと回り込む障害物にする。
+  if (Math.abs(x + 1.58) < 0.72 && Math.abs(z + 2.06) < 0.2) return false;
+  if (Math.abs(x - 2.15) < 0.72 && Math.abs(z + 2.18) < 0.2) return false;
+  if (Math.hypot(x - 1.15, z + 1.92) < 0.38) return false;
+  if (Math.abs(x + 3.03) < 0.58 && Math.abs(z + 1.55) < 0.38) return false;
+  if (Math.hypot(x - 3.04, z + 1.46) < 0.3) return false;
+  return true;
+}
+
+/// 没入時の航海士。WASD/矢印と画面ボタンを同じ入力へまとめ、
+/// 岸壁と三本の桟橋だけを歩く。固定視点の小さな船着き場なので迷子にならない。
+function HarborWalker({
+  active,
+  animate,
+  input,
+}: {
+  active: boolean;
+  animate: boolean;
+  input: HarborWalkInput;
+}) {
+  const root = useRef<THREE.Group>(null);
+  const position = useRef(WALK_START.clone());
+  const facing = useRef(Math.PI);
+  const pressed = useRef(new Set<string>());
+  const [keyboardMoving, setKeyboardMoving] = useState(false);
+  const camera = useThree((state) => state.camera);
+  const size = useThree((state) => state.size);
+  const cameraTarget = useRef(new THREE.Vector3());
+  const desiredCamera = useRef(new THREE.Vector3());
+
+  useEffect(() => {
+    if (!active) {
+      pressed.current.clear();
+      setKeyboardMoving(false);
+      return;
+    }
+    const movementKeys = new Set([
+      "KeyW",
+      "KeyA",
+      "KeyS",
+      "KeyD",
+      "ArrowUp",
+      "ArrowLeft",
+      "ArrowDown",
+      "ArrowRight",
+    ]);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!movementKeys.has(event.code)) return;
+      event.preventDefault();
+      pressed.current.add(event.code);
+      setKeyboardMoving(true);
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (!movementKeys.has(event.code)) return;
+      event.preventDefault();
+      pressed.current.delete(event.code);
+      setKeyboardMoving(pressed.current.size > 0);
+    };
+    const release = () => {
+      pressed.current.clear();
+      setKeyboardMoving(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", release);
+      release();
+    };
+  }, [active]);
+
+  useFrame((_, delta) => {
+    if (!active || !root.current) return;
+    const keys = pressed.current;
+    let dx =
+      input.x +
+      (keys.has("KeyD") || keys.has("ArrowRight") ? 1 : 0) -
+      (keys.has("KeyA") || keys.has("ArrowLeft") ? 1 : 0);
+    let dz =
+      input.z +
+      (keys.has("KeyS") || keys.has("ArrowDown") ? 1 : 0) -
+      (keys.has("KeyW") || keys.has("ArrowUp") ? 1 : 0);
+    const moving = dx !== 0 || dz !== 0;
+    if (moving) {
+      const length = Math.hypot(dx, dz);
+      dx /= length;
+      dz /= length;
+      const nextX = position.current.x + dx * WALK_SPEED * delta;
+      const nextZ = position.current.z + dz * WALK_SPEED * delta;
+      if (canStandInHarbor(nextX, position.current.z)) position.current.x = nextX;
+      if (canStandInHarbor(position.current.x, nextZ)) position.current.z = nextZ;
+      const targetFacing = Math.atan2(dx, dz);
+      const turn = Math.atan2(
+        Math.sin(targetFacing - facing.current),
+        Math.cos(targetFacing - facing.current),
+      );
+      facing.current += turn * Math.min(delta * 8, 1);
+    }
+
+    root.current.position.copy(position.current);
+    root.current.rotation.y = facing.current;
+    const tall = size.width / Math.max(size.height, 1) < 0.72;
+    desiredCamera.current.set(
+      position.current.x,
+      tall ? 3.15 : 2.55,
+      position.current.z + (tall ? 6.4 : 4.35),
+    );
+    camera.position.lerp(desiredCamera.current, 1 - Math.exp(-delta * 5));
+    cameraTarget.current.set(position.current.x, 0.68, position.current.z - 0.78);
+    camera.lookAt(cameraTarget.current);
+  });
+
+  return (
+    <group ref={root} position={WALK_START} scale={0.42}>
+      <PhoenixModel
+        animate={animate}
+        pose={
+          input.x !== 0 ||
+          input.z !== 0 ||
+          keyboardMoving
+            ? "walk"
+            : "idle"
+        }
+      />
+    </group>
+  );
+}
+
+function HarborWalkControls({
+  onInput,
+}: {
+  onInput: (input: HarborWalkInput) => void;
+}) {
+  const releaseTimer = useRef<number | undefined>(undefined);
+  useEffect(
+    () => () => {
+      window.clearTimeout(releaseTimer.current);
+    },
+    [],
+  );
+  const release = () => {
+    window.clearTimeout(releaseTimer.current);
+    // ごく短いタップでも数フレームは歩かせる。長押しはそのまま連続移動になる。
+    releaseTimer.current = window.setTimeout(() => onInput({ x: 0, z: 0 }), 90);
+  };
+  const button = (
+    label: string,
+    symbol: string,
+    className: string,
+    input: HarborWalkInput,
+  ) => (
+    <button
+      type="button"
+      className={className}
+      aria-label={label}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        window.clearTimeout(releaseTimer.current);
+        event.currentTarget.setPointerCapture(event.pointerId);
+        onInput(input);
+      }}
+      onPointerUp={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        release();
+      }}
+      onPointerCancel={release}
+      onLostPointerCapture={release}
+    >
+      {symbol}
+    </button>
+  );
+  return (
+    <div
+      className="harbor-walk-controls"
+      aria-label={t("harborWalkControls")}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      {button(t("harborWalkForward"), "↑", "up", { x: 0, z: -1 })}
+      {button(t("harborWalkLeft"), "←", "left", { x: -1, z: 0 })}
+      <span className="center" aria-hidden="true" />
+      {button(t("harborWalkRight"), "→", "right", { x: 1, z: 0 })}
+      {button(t("harborWalkBack"), "↓", "down", { x: 0, z: 1 })}
+    </div>
+  );
+}
+
 /// シーン本体。時間帯の海+港町+停泊する船団+沖の航路の海域(海獣/嵐)。
 function HarborSea({
   roomName,
@@ -1146,6 +1337,7 @@ function HarborSea({
   onEnterWorld,
   onWorldEntered,
   onWorldExited,
+  walkInput,
 }: {
   roomName: string;
   roomSeed: number;
@@ -1169,6 +1361,7 @@ function HarborSea({
   onEnterWorld: () => void;
   onWorldEntered: () => void;
   onWorldExited: () => void;
+  walkInput: HarborWalkInput;
 }) {
   const camera = useThree((s) => s.camera);
   const invalidate = useThree((s) => s.invalidate);
@@ -1280,6 +1473,13 @@ function HarborSea({
       />
       <Horizon />
       <HarborTown roomSeed={roomSeed} timeOfDay={timeOfDay} animate={animate} />
+      {immersive && (
+        <HarborWalker
+          active={phase === "idle"}
+          animate={animate}
+          input={walkInput}
+        />
+      )}
       <Html
         position={[0.75, 2.35, -3.25]}
         center
@@ -1376,6 +1576,7 @@ export default function HarborWorld({
   // ---- 没入(みんなの海に入る) ----
   const [immersive, setImmersive] = useState(false);
   const [phase, setPhase] = useState<WorldPhase>("idle");
+  const [walkInput, setWalkInput] = useState<HarborWalkInput>({ x: 0, z: 0 });
   const enterWorld = useCallback(() => {
     setImmersive((on) => {
       if (on) return on;
@@ -1386,6 +1587,7 @@ export default function HarborWorld({
     });
   }, []);
   const requestClose = useCallback(() => {
+    setWalkInput({ x: 0, z: 0 });
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setImmersive(false);
       setPhase("idle");
@@ -1670,7 +1872,7 @@ export default function HarborWorld({
       >
         <Canvas
           dpr={[1, 2]}
-          frameloop={animate && (visible || immersive) ? "always" : "demand"}
+          frameloop={immersive || (animate && visible) ? "always" : "demand"}
           camera={{ position: CAM_POS, fov: 36 }}
           onCreated={(state) => {
             glRef.current = state;
@@ -1695,6 +1897,7 @@ export default function HarborWorld({
             onEnterWorld={enterWorld}
             onWorldEntered={handleWorldEntered}
             onWorldExited={handleWorldExited}
+            walkInput={walkInput}
           />
         </Canvas>
         {/* コンパクト時の誘い。海(空・水面)をタップで世界へ入る。 */}
@@ -1707,6 +1910,8 @@ export default function HarborWorld({
             <button className="harbor-world-close" onClick={requestClose}>
               {t("close")}
             </button>
+            <div className="harbor-walk-hint">{t("harborWalkHint")}</div>
+            <HarborWalkControls onInput={setWalkInput} />
             {immersiveChat}
           </>
         )}

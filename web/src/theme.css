@@ -3528,6 +3528,114 @@ textarea {
   cursor: pointer;
 }
 
+.harbor-walk-hint {
+  position: absolute;
+  top: calc(18px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  max-width: min(52vw, 430px);
+  padding: 5px 12px;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--harbor-sand) 76%, transparent);
+  background: color-mix(in srgb, #0d2a24 54%, transparent);
+  font-size: 11px;
+  letter-spacing: 0.25px;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* 小さな船着き場の歩行パッド。PCはWASD/矢印、スマホはこの4方向を使う。 */
+.harbor-walk-controls {
+  position: absolute;
+  top: calc(70px + env(safe-area-inset-top));
+  right: 14px;
+  z-index: 5;
+  width: 118px;
+  height: 118px;
+  display: none;
+  grid-template-columns: repeat(3, 36px);
+  grid-template-rows: repeat(3, 36px);
+  gap: 5px;
+  place-content: center;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.harbor-walk-controls button,
+.harbor-walk-controls .center {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 22%, transparent);
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 66%, transparent);
+  box-shadow: 0 8px 20px color-mix(in srgb, #071713 16%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.harbor-walk-controls button:active {
+  color: #123830;
+  background: var(--harbor-sand);
+  transform: scale(0.94);
+}
+
+.harbor-walk-controls .up {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.harbor-walk-controls .left {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.harbor-walk-controls .center {
+  grid-column: 2;
+  grid-row: 2;
+  width: 14px;
+  height: 14px;
+  place-self: center;
+  border-radius: 999px;
+  opacity: 0.58;
+}
+
+.harbor-walk-controls .right {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.harbor-walk-controls .down {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+@media (hover: none), (max-width: 700px) {
+  .harbor-walk-controls {
+    display: grid;
+  }
+
+  .harbor-walk-hint {
+    top: calc(14px + env(safe-area-inset-top));
+    left: 14px;
+    transform: none;
+    max-width: calc(100vw - 120px);
+    font-size: 10px;
+    text-align: left;
+    white-space: normal;
+  }
+}
+
 /* 世界の中でも会話を見失わない、小さな半透明チャット。
    過去ログと入力を一つの器に収め、港町を覆い尽くさない。 */
 .harbor-world-chat-mini {
@@ -3680,6 +3788,10 @@ textarea {
   padding: 4px 12px;
   white-space: nowrap;
   pointer-events: none;
+}
+
+.harbor-world.immersive .harbor-world-island {
+  display: none;
 }
 
 /* 朝昼も航海画面と同じ空になる。文字UIだけは濃い海色へ寄せ、

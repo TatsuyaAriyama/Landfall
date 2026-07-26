@@ -131,6 +131,12 @@ const ja = {
   takePhoto: "写真を撮る",
   lanternHint: "今日、海へ出た船には灯がともる。",
   enterWorldHint: "港をタップして、帰る場所へ",
+  harborWalkHint: "WASD・矢印キー、または画面のボタンで歩く",
+  harborWalkControls: "歩く",
+  harborWalkForward: "前へ歩く",
+  harborWalkLeft: "左へ歩く",
+  harborWalkRight: "右へ歩く",
+  harborWalkBack: "後ろへ歩く",
 
   // 共同航海(海図と航路)
   voyageTitle: "共同航海",
@@ -478,6 +484,12 @@ const en: Record<I18nKey, string> = {
   takePhoto: "Take a photo",
   lanternHint: "Boats that sailed today carry a light.",
   enterWorldHint: "Tap the harbor to return home",
+  harborWalkHint: "Walk with WASD, arrow keys, or the on-screen controls",
+  harborWalkControls: "Walk",
+  harborWalkForward: "Walk forward",
+  harborWalkLeft: "Walk left",
+  harborWalkRight: "Walk right",
+  harborWalkBack: "Walk back",
 
   voyageTitle: "Voyage together",
   voyageIntro:
