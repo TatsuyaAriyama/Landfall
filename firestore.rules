@@ -265,7 +265,7 @@ service cloud.firestore {
           && request.resource.data.yaw <= 3.142
           && request.resource.data.pose in [
             'idle', 'walk', 'pickupRod', 'equipRod', 'holdRod', 'walkRod',
-            'stowRod', 'hail', 'raise', 'point', 'lookout'
+            'stowRod', 'hail', 'raise', 'point', 'lookout', 'rest'
           ]
           && request.resource.data.aboard is bool
           && request.resource.data.fishingRod is bool

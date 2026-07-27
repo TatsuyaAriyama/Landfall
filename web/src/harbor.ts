@@ -88,6 +88,7 @@ export const HARBOR_PRESENCE_POSES = [
   "raise",
   "point",
   "lookout",
+  "rest",
 ] as const;
 export type HarborPresencePose = (typeof HARBOR_PRESENCE_POSES)[number];
 

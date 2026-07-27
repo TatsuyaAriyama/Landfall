@@ -3770,7 +3770,8 @@ textarea {
 }
 
 .harbor-board-action,
-.harbor-pickup-action {
+.harbor-pickup-action,
+.harbor-tent-action {
   position: absolute;
   top: calc(62px + env(safe-area-inset-top));
   left: 50%;
@@ -3791,7 +3792,8 @@ textarea {
 }
 
 .harbor-board-action:active,
-.harbor-pickup-action:active {
+.harbor-pickup-action:active,
+.harbor-tent-action:active {
   transform: translateX(-50%) scale(0.96);
 }
 
