@@ -539,7 +539,7 @@ struct MemberTraceView: View {
     }
 
     private func sessionRow(_ session: SharedSession) -> some View {
-        let style = TileStyle.from(session.styleToken)
+        let style = ItemTileStyle.from(session.styleToken)
         return HStack(alignment: .top, spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous).fill(style.background)

@@ -158,13 +158,14 @@ struct HarborChatView: View {
         return VStack(spacing: 4) {
             HStack(spacing: 8) {
                 if let style = message.itemStyle, let symbol = message.itemSymbol {
+                    let itemStyle = ItemTileStyle.from(style)
                     ZStack {
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(TileStyle.from(style).background)
+                            .fill(itemStyle.background)
                         TileSymbolView(
                             symbol: TileSymbol.from(symbol),
-                            fg: TileStyle.from(style).foreground,
-                            bg: TileStyle.from(style).background
+                            fg: itemStyle.foreground,
+                            bg: itemStyle.background
                         )
                         .frame(width: 14, height: 14)
                     }

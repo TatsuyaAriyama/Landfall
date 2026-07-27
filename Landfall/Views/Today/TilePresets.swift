@@ -61,6 +61,163 @@ enum TileStyle: String, CaseIterable, Identifiable {
     }
 }
 
+/// PCCSのトーン。24色相と組み合わせ、`pccs-{tone}-{hue}` として同期する。
+enum PCCSTone: String, CaseIterable, Identifiable {
+    case vivid = "v"
+    case bright = "b"
+    case strong = "s"
+    case deep = "dp"
+    case light = "lt"
+    case soft = "sf"
+    case dull = "d"
+    case dark = "dk"
+    case pale = "p"
+    case lightGrayish = "ltg"
+    case grayish = "g"
+    case darkGrayish = "dkg"
+
+    var id: String { rawValue }
+
+    var displayName: LocalizedStringKey {
+        switch self {
+        case .vivid: "Vivid"
+        case .bright: "Bright"
+        case .strong: "Strong"
+        case .deep: "Deep"
+        case .light: "PCCS Light"
+        case .soft: "Soft"
+        case .dull: "Dull"
+        case .dark: "PCCS Dark"
+        case .pale: "Pale"
+        case .lightGrayish: "Light grayish"
+        case .grayish: "Grayish"
+        case .darkGrayish: "Dark grayish"
+        }
+    }
+
+    var saturation: Double {
+        switch self {
+        case .vivid: 0.88
+        case .bright, .strong: 0.72
+        case .deep: 0.78
+        case .light, .soft: 0.42
+        case .dull: 0.45
+        case .dark: 0.55
+        case .pale, .lightGrayish: 0.22
+        case .grayish: 0.25
+        case .darkGrayish: 0.28
+        }
+    }
+
+    var brightness: Double {
+        switch self {
+        case .vivid: 0.88
+        case .bright, .light: 0.96
+        case .strong, .soft, .lightGrayish: 0.78
+        case .deep, .dull: 0.62
+        case .dark: 0.42
+        case .pale: 0.97
+        case .grayish: 0.60
+        case .darkGrayish: 0.40
+        }
+    }
+}
+
+struct PCCSSelection: Equatable {
+    let tone: PCCSTone
+    let hue: Int
+
+    var token: String {
+        "pccs-\(tone.rawValue)-\(String(format: "%02d", min(24, max(1, hue))))"
+    }
+
+    init(tone: PCCSTone, hue: Int) {
+        self.tone = tone
+        self.hue = min(24, max(1, hue))
+    }
+
+    init?(token: String) {
+        let parts = token.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3,
+              parts[0] == "pccs",
+              let tone = PCCSTone(rawValue: String(parts[1])),
+              let hue = Int(parts[2]),
+              (1...24).contains(hue) else { return nil }
+        self.init(tone: tone, hue: hue)
+    }
+}
+
+/// PCCSの24色相をsRGB表示向けに近似した色。Webと同じ角度を使う。
+enum PCCSPalette {
+    static let hueDegrees: [Double] = [
+        350, 5, 20, 35, 50, 60, 72, 88, 105, 125, 145, 165,
+        180, 195, 210, 225, 240, 255, 270, 285, 300, 315, 330, 340,
+    ]
+
+    static func background(_ selection: PCCSSelection) -> Color {
+        let degrees = hueDegrees[selection.hue - 1]
+        return Color(
+            hue: degrees / 360,
+            saturation: selection.tone.saturation,
+            brightness: selection.tone.brightness
+        )
+    }
+
+    static func foreground(_ selection: PCCSSelection) -> Color {
+        let rgb = rgbValues(selection)
+        let linear = rgb.map { value -> Double in
+            value <= 0.04045
+                ? value / 12.92
+                : pow((value + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+        return luminance > 0.38 ? Color(hex: 0x141414) : Color(hex: 0xF4F1EC)
+    }
+
+    private static func rgbValues(_ selection: PCCSSelection) -> [Double] {
+        let hue = hueDegrees[selection.hue - 1]
+        let saturation = selection.tone.saturation
+        let value = selection.tone.brightness
+        let chroma = value * saturation
+        let section = hue / 60
+        let x = chroma * (1 - abs(section.truncatingRemainder(dividingBy: 2) - 1))
+        let base: [Double]
+        switch section {
+        case ..<1: base = [chroma, x, 0]
+        case ..<2: base = [x, chroma, 0]
+        case ..<3: base = [0, chroma, x]
+        case ..<4: base = [0, x, chroma]
+        case ..<5: base = [x, 0, chroma]
+        default: base = [chroma, 0, x]
+        }
+        let offset = value - chroma
+        return base.map { $0 + offset }
+    }
+}
+
+/// 作業項目用の配色解決。プロフィール用のTileStyleは従来どおり固定プリセット。
+struct ItemTileStyle {
+    let token: String
+    let background: Color
+    let foreground: Color
+
+    static func from(_ token: String) -> ItemTileStyle {
+        if let selection = PCCSSelection(token: token) {
+            return ItemTileStyle(
+                token: selection.token,
+                background: PCCSPalette.background(selection),
+                foreground: PCCSPalette.foreground(selection)
+            )
+        }
+        let legacy = TileStyle.from(token)
+        return ItemTileStyle(
+            token: legacy.rawValue,
+            background: legacy.background,
+            foreground: legacy.foreground
+        )
+    }
+}
+
 /// タイルのシンボルプリセット。航海の語彙(休む・進む・帰る・辿り着く・再生)+ 学びの本・ペン。
 enum TileSymbol: String, CaseIterable, Identifiable {
     case anchor      // 停泊・休息
@@ -423,7 +580,7 @@ struct ItemTileArt: View {
                         .scaledToFill()
                         .frame(width: s, height: s)
                 } else {
-                    let style = TileStyle.from(item.styleToken)
+                    let style = ItemTileStyle.from(item.styleToken)
                     style.background
                     TileSymbolView(
                         symbol: TileSymbol.from(item.symbolToken),
@@ -450,7 +607,7 @@ struct SessionTileArt: View {
         } else {
             GeometryReader { geo in
                 let size = min(geo.size.width, geo.size.height)
-                let style = TileStyle.from(session.displayItemStyle)
+                let style = ItemTileStyle.from(session.displayItemStyle)
                 ZStack {
                     style.background
                     TileSymbolView(

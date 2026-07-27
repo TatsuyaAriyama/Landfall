@@ -876,6 +876,176 @@ textarea {
   border: 3px solid var(--return-orange);
 }
 
+.item-color-picker {
+  display: grid;
+  gap: 12px;
+}
+
+.item-color-current {
+  min-height: 58px;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+
+.item-color-current-swatch {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 12px;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--ink) 10%, transparent),
+    0 2px 8px color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.item-color-current > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.item-color-current strong {
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.item-color-current small,
+.item-color-subsection small,
+.pccs-tone-strip small {
+  color: color-mix(in srgb, var(--ink) 52%, transparent);
+}
+
+.item-color-current small {
+  font-size: 12px;
+}
+
+.item-color-subsection {
+  margin-top: 3px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.item-color-subsection small {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.item-color-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.item-color-presets .swatch {
+  width: 42px;
+  height: 42px;
+}
+
+.pccs-tone-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(96px, 1fr);
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: inline proximity;
+  scrollbar-width: none;
+  padding: 2px 1px 5px;
+}
+
+.pccs-tone-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.pccs-tone-strip button {
+  min-height: 48px;
+  padding: 6px 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  scroll-snap-align: start;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  text-align: left;
+}
+
+.pccs-tone-strip button.selected {
+  border-color: var(--return-orange);
+  box-shadow: inset 0 0 0 1px var(--return-orange);
+}
+
+.pccs-tone-dot {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.pccs-tone-strip button > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.pccs-tone-strip strong {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.pccs-tone-strip small {
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.pccs-hue-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(36px, 1fr));
+  gap: 8px;
+}
+
+.pccs-hue-grid button {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 9%, transparent);
+  transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
+}
+
+.pccs-hue-grid button:active {
+  transform: scale(0.92);
+}
+
+.pccs-hue-grid button.selected {
+  border-color: var(--paper);
+  box-shadow:
+    0 0 0 3px var(--return-orange),
+    inset 0 0 0 1px color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
+.pccs-hue-grid span {
+  font-size: 10px;
+  font-weight: 750;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+@media (max-width: 420px) {
+  .pccs-hue-grid {
+    grid-template-columns: repeat(6, minmax(36px, 1fr));
+  }
+}
+
 .symbol-pick {
   width: 44px;
   height: 44px;

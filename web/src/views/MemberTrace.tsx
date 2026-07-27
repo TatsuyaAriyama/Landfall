@@ -5,7 +5,7 @@ import {
   type HarborMember,
   type SharedMonth,
 } from "../harbor";
-import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
+import { itemStyleColors, normalizeSymbol } from "../types";
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { fullDateLabel, lang, t, tf,
   durationLabel,
@@ -146,7 +146,7 @@ export function MemberTrace({
               </p>
               <div className="rows">
                 {daySessions.map((s, i) => {
-                  const style = STYLE_COLORS[normalizeStyle(s.styleToken)];
+                  const style = itemStyleColors(s.styleToken);
                   const time = s.date
                     ? `${String(s.date.getHours()).padStart(2, "0")}:${String(
                         s.date.getMinutes(),

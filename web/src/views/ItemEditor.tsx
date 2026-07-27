@@ -1,18 +1,26 @@
 import { useState } from "react";
 import {
-  STYLE_COLORS,
   TILE_STYLES,
   TILE_SYMBOLS,
-  normalizeStyle,
+  itemStyleColors,
+  normalizeItemStyle,
   normalizeSymbol,
   trimAll,
   type StudyItem,
 } from "../types";
+import {
+  PCCS_HUES,
+  PCCS_TONES,
+  parsePccsToken,
+  pccsColor,
+  pccsToken,
+  type PccsToneId,
+} from "../pccs";
 import { deleteItemPreservingHistory, saveItem, type UserData } from "../data";
 import { publishCurrentMonth } from "../harbor";
 import { TileSymbolSvg } from "../symbols";
 import { DialogHeader, Modal, askConfirm, showToast } from "../overlays";
-import { t } from "../i18n";
+import { lang, t } from "../i18n";
 
 export function ItemEditor({
   uid,
@@ -28,7 +36,11 @@ export function ItemEditor({
   onClose: () => void;
 }) {
   const [name, setName] = useState(item?.name ?? "");
-  const [styleToken, setStyleToken] = useState(normalizeStyle(item?.styleToken ?? "midnight"));
+  const initialStyleToken = normalizeItemStyle(item?.styleToken ?? "midnight");
+  const initialPccs = parsePccsToken(initialStyleToken);
+  const [styleToken, setStyleToken] = useState(initialStyleToken);
+  const [pccsTone, setPccsTone] = useState<PccsToneId>(initialPccs?.tone ?? "v");
+  const [pccsHue, setPccsHue] = useState(initialPccs?.hue ?? 2);
   const [symbolToken, setSymbolToken] = useState(normalizeSymbol(item?.symbolToken ?? "compass"));
   const [working, setWorking] = useState(false);
   const orderedItems = [...data.items].sort(
@@ -118,7 +130,19 @@ export function ItemEditor({
     }
   };
 
-  const previewStyle = STYLE_COLORS[styleToken];
+  const previewStyle = itemStyleColors(styleToken);
+  const selectedPccs = parsePccsToken(styleToken);
+  const selectedTone = PCCS_TONES.find((tone) => tone.id === pccsTone) ?? PCCS_TONES[0];
+
+  const choosePccsTone = (tone: PccsToneId) => {
+    setPccsTone(tone);
+    setStyleToken(pccsToken(tone, pccsHue));
+  };
+
+  const choosePccsHue = (hue: number) => {
+    setPccsHue(hue);
+    setStyleToken(pccsToken(pccsTone, hue));
+  };
 
   return (
     <Modal onClose={onClose}>
@@ -155,16 +179,95 @@ export function ItemEditor({
         {isDuplicateName && <p className="field-error-text">{t("duplicateItemName")}</p>}
 
         <p className="section-label">{t("color")}</p>
-        <div className="chip-row">
-          {TILE_STYLES.map((token) => (
-            <button
-              key={token}
-              className={`swatch${styleToken === token ? " selected" : ""}`}
-              style={{ background: STYLE_COLORS[token].bg }}
-              onClick={() => setStyleToken(token)}
-              aria-label={token}
-            />
-          ))}
+        <div className="item-color-picker">
+          <div className="item-color-current" aria-live="polite">
+            <span className="item-color-current-swatch" style={{ background: previewStyle.bg }} />
+            <span>
+              <strong>
+                {selectedPccs
+                  ? `PCCS ${selectedPccs.tone}${selectedPccs.hue}`
+                  : lang === "ja"
+                    ? "Aftide 基本色"
+                    : "Aftide preset"}
+              </strong>
+              <small>
+                {selectedPccs
+                  ? `${lang === "ja" ? selectedTone.nameJa : selectedTone.nameEn} · H${selectedPccs.hue}`
+                  : lang === "ja"
+                    ? "これまでの配色もそのまま使えます"
+                    : "Existing colors remain available"}
+              </small>
+            </span>
+          </div>
+
+          <div className="item-color-subsection">
+            <span>{lang === "ja" ? "基本色" : "Presets"}</span>
+          </div>
+          <div className="item-color-presets" role="group" aria-label={lang === "ja" ? "基本色" : "Presets"}>
+            {TILE_STYLES.map((token) => {
+              const colors = itemStyleColors(token);
+              return (
+                <button
+                  key={token}
+                  className={`swatch${styleToken === token ? " selected" : ""}`}
+                  style={{ background: colors.bg }}
+                  onClick={() => setStyleToken(token)}
+                  aria-label={token}
+                  aria-pressed={styleToken === token}
+                />
+              );
+            })}
+          </div>
+
+          <div className="item-color-subsection">
+            <span>PCCS {lang === "ja" ? "トーン" : "tone"}</span>
+            <small>{lang === "ja" ? "雰囲気を選ぶ" : "Choose a mood"}</small>
+          </div>
+          <div className="pccs-tone-strip" role="group" aria-label="PCCS tone">
+            {PCCS_TONES.map((tone) => (
+              <button
+                key={tone.id}
+                className={pccsTone === tone.id ? "selected" : ""}
+                onClick={() => choosePccsTone(tone.id)}
+                aria-pressed={pccsTone === tone.id}
+              >
+                <span
+                  className="pccs-tone-dot"
+                  style={{ background: pccsColor({ tone: tone.id, hue: pccsHue }) }}
+                />
+                <span>
+                  <strong>{tone.id}</strong>
+                  <small>{lang === "ja" ? tone.nameJa : tone.nameEn}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="item-color-subsection">
+            <span>{lang === "ja" ? "24色相" : "24 hues"}</span>
+            <small>{lang === "ja" ? "色を選ぶ" : "Choose a hue"}</small>
+          </div>
+          <div className="pccs-hue-grid" role="group" aria-label="PCCS 24 hues">
+            {PCCS_HUES.map((hue) => {
+              const selected =
+                selectedPccs?.tone === pccsTone && selectedPccs.hue === hue.number;
+              const background = pccsColor({ tone: pccsTone, hue: hue.number });
+              return (
+                <button
+                  key={hue.number}
+                  className={selected ? "selected" : ""}
+                  style={{ background }}
+                  onClick={() => choosePccsHue(hue.number)}
+                  aria-label={`PCCS ${pccsTone}${hue.number}`}
+                  aria-pressed={selected}
+                >
+                  <span style={{ color: itemStyleColors(pccsToken(pccsTone, hue.number)).fg }}>
+                    {hue.number}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <p className="section-label">{t("symbol")}</p>

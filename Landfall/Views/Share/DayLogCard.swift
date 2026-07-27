@@ -296,7 +296,7 @@ private struct TokenTile: View {
                         .scaledToFill()
                         .frame(width: s, height: s)
                 } else {
-                    let style = TileStyle.from(styleToken)
+                    let style = ItemTileStyle.from(styleToken)
                     style.background
                     TileSymbolView(
                         symbol: TileSymbol.from(symbolToken),

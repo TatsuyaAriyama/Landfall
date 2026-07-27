@@ -18,9 +18,8 @@ import {
   type SoundMode,
 } from "../audio";
 import {
-  STYLE_COLORS,
   dayId,
-  normalizeStyle,
+  itemStyleColors,
   normalizeSymbol,
   type StudyItem,
   type StudySession,
@@ -322,7 +321,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
       {data.items.length === 0 && <p className="empty-note">{t("emptyToday")}</p>}
       <div className="tile-grid">
         {orderedItems.map((item) => {
-          const style = STYLE_COLORS[normalizeStyle(item.styleToken)];
+          const style = itemStyleColors(item.styleToken);
           const lifted = item.id === reorder.liftedId ? " lifted" : "";
           const timing = timer?.itemId === item.id;
           const totalMin = totalByItem.get(item.id) ?? 0;
@@ -492,9 +491,7 @@ export function SessionRow({
   item?: StudyItem;
   onDelete?: () => void;
 }) {
-  const style = STYLE_COLORS[
-    normalizeStyle(item?.styleToken ?? session.itemStyle ?? "midnight")
-  ];
+  const style = itemStyleColors(item?.styleToken ?? session.itemStyle ?? "midnight");
   const time = `${String(session.date.getHours()).padStart(2, "0")}:${String(
     session.date.getMinutes(),
   ).padStart(2, "0")}`;
@@ -677,7 +674,7 @@ function RecordDialog({
   const minutes = minuteState.minutes;
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
-  const style = STYLE_COLORS[normalizeStyle(item.styleToken)];
+  const style = itemStyleColors(item.styleToken);
 
   const changeMinutes = (next: (current: number) => number) => {
     setMinuteState((state) => {

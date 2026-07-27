@@ -14,7 +14,9 @@ struct ItemEditorSheet: View {
     @Query(sort: \StudyItem.sortOrder) private var items: [StudyItem]
 
     @State private var name = ""
-    @State private var style: TileStyle = .midnight
+    @State private var styleToken = TileStyle.midnight.rawValue
+    @State private var pccsTone: PCCSTone = .vivid
+    @State private var pccsHue = 2
     @State private var symbol: TileSymbol = .compass
     @State private var photoData: Data?
     @State private var pickerItem: PhotosPickerItem?
@@ -61,8 +63,32 @@ struct ItemEditorSheet: View {
                 if photoData == nil {
                     sectionLabel("Color")
                         .padding(.top, 24)
+                    selectedColorSummary
+                        .padding(.top, 10)
                     styleRow
                         .padding(.top, 10)
+
+                    HStack {
+                        sectionLabel("PCCS tone")
+                        Spacer()
+                        Text("Choose a mood")
+                            .font(LFFont.label(11))
+                            .foregroundStyle(LFColor.ink.opacity(0.42))
+                    }
+                    .padding(.top, 18)
+                    pccsToneRow
+                        .padding(.top, 8)
+
+                    HStack {
+                        sectionLabel("24 hues")
+                        Spacer()
+                        Text("Choose a hue")
+                            .font(LFFont.label(11))
+                            .foregroundStyle(LFColor.ink.opacity(0.42))
+                    }
+                    .padding(.top, 18)
+                    pccsHueGrid
+                        .padding(.top, 8)
 
                     sectionLabel("Symbol")
                         .padding(.top, 20)
@@ -135,6 +161,10 @@ struct ItemEditorSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
+    private var style: ItemTileStyle {
+        ItemTileStyle.from(styleToken)
+    }
+
     private func sectionLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(LFFont.label(13))
@@ -167,7 +197,7 @@ struct ItemEditorSheet: View {
         HStack(spacing: 12) {
             ForEach(TileStyle.itemCases) { candidate in
                 Button {
-                    style = candidate
+                    styleToken = candidate.rawValue
                 } label: {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(candidate.background)
@@ -175,14 +205,135 @@ struct ItemEditorSheet: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .strokeBorder(
-                                    style == candidate ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
-                                    lineWidth: style == candidate ? 3 : 1
+                                    styleToken == candidate.rawValue
+                                        ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
+                                    lineWidth: styleToken == candidate.rawValue ? 3 : 1
                                 )
                         )
                 }
                 .buttonStyle(.plain)
             }
             Spacer(minLength: 0)
+        }
+    }
+
+    private var selectedColorSummary: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(style.background)
+                .frame(width: 40, height: 40)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(LFColor.ink.opacity(0.1), lineWidth: 1)
+                )
+
+            VStack(alignment: .leading, spacing: 2) {
+                if let selection = PCCSSelection(token: styleToken) {
+                    Text("PCCS \(selection.tone.rawValue)\(selection.hue)")
+                        .font(LFFont.label(14))
+                        .foregroundStyle(LFColor.ink)
+                    Text(selection.tone.displayName)
+                        .font(LFFont.label(12))
+                        .foregroundStyle(LFColor.ink.opacity(0.52))
+                } else {
+                    Text("Aftide preset")
+                        .font(LFFont.label(14))
+                        .foregroundStyle(LFColor.ink)
+                    Text("Existing colors remain available")
+                        .font(LFFont.label(12))
+                        .foregroundStyle(LFColor.ink.opacity(0.52))
+                }
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .frame(minHeight: 58)
+        .background(LFColor.ink.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var pccsToneRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(PCCSTone.allCases) { tone in
+                    let selection = PCCSSelection(tone: tone, hue: pccsHue)
+                    Button {
+                        pccsTone = tone
+                        styleToken = selection.token
+                        Haptics.tap(.light)
+                    } label: {
+                        HStack(spacing: 8) {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(PCCSPalette.background(selection))
+                                .frame(width: 28, height: 28)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(tone.rawValue)
+                                    .font(LFFont.label(13))
+                                    .foregroundStyle(LFColor.ink)
+                                Text(tone.displayName)
+                                    .font(LFFont.label(10))
+                                    .foregroundStyle(LFColor.ink.opacity(0.5))
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(.horizontal, 9)
+                        .frame(minWidth: 96, minHeight: 48, alignment: .leading)
+                        .background(LFColor.paper)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(
+                                    pccsTone == tone ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
+                                    lineWidth: pccsTone == tone ? 2 : 1
+                                )
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("\(tone.displayName), \(tone.rawValue)"))
+                    .accessibilityAddTraits(pccsTone == tone ? .isSelected : [])
+                }
+            }
+            .padding(.vertical, 2)
+        }
+    }
+
+    private var pccsHueGrid: some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6),
+            spacing: 8
+        ) {
+            ForEach(1...24, id: \.self) { hue in
+                let selection = PCCSSelection(tone: pccsTone, hue: hue)
+                let selected = PCCSSelection(token: styleToken) == selection
+                Button {
+                    pccsHue = hue
+                    styleToken = selection.token
+                    Haptics.tap(.light)
+                } label: {
+                    Text("\(hue)")
+                        .font(LFFont.label(10))
+                        .foregroundStyle(PCCSPalette.foreground(selection))
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(1, contentMode: .fit)
+                        .background(PCCSPalette.background(selection))
+                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                .strokeBorder(
+                                    selected ? LFColor.paper : LFColor.ink.opacity(0.08),
+                                    lineWidth: selected ? 2 : 1
+                                )
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .strokeBorder(selected ? LFColor.returnOrange : .clear, lineWidth: 3)
+                                .padding(-3)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("PCCS \(pccsTone.rawValue)\(hue)")
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
         }
     }
 
@@ -269,7 +420,11 @@ struct ItemEditorSheet: View {
             return
         }
         name = existing.name
-        style = TileStyle.from(existing.styleToken)
+        styleToken = ItemTileStyle.from(existing.styleToken).token
+        if let selection = PCCSSelection(token: styleToken) {
+            pccsTone = selection.tone
+            pccsHue = selection.hue
+        }
         symbol = TileSymbol.from(existing.symbolToken)
         photoData = existing.photoData
     }
@@ -283,14 +438,14 @@ struct ItemEditorSheet: View {
         let saved: StudyItem
         if let existing {
             existing.name = trimmedName
-            existing.styleToken = style.rawValue
+            existing.styleToken = styleToken
             existing.symbolToken = symbol.rawValue
             existing.photoData = photoData
             saved = existing
         } else {
             let item = StudyItem(
                 name: trimmedName,
-                styleToken: style.rawValue,
+                styleToken: styleToken,
                 symbolToken: symbol.rawValue,
                 photoData: photoData,
                 sortOrder: (items.map(\.sortOrder).max() ?? -1) + 1

@@ -23,7 +23,7 @@ import { durationLabel, t } from "../i18n";
 import { useBackToClose } from "../backClose";
 import { lockBodyScroll } from "../scrollLock";
 import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
-import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
+import { itemStyleColors, normalizeSymbol } from "../types";
 import { TileSymbolSvg } from "../symbols";
 
 // 作業中の世界。自分の船が現在の時間帯の海を走り、その上に経過時間が出る。
@@ -478,7 +478,7 @@ function VoyageCompletion({
   symbolToken: string;
   onHome: () => void;
 }) {
-  const style = STYLE_COLORS[normalizeStyle(styleToken)];
+  const style = itemStyleColors(styleToken);
 
   return (
     <section

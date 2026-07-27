@@ -1,4 +1,5 @@
 // Firestore スキーマ(docs/SCHEMA.md)に対応する型とデザイントークン。
+import { parsePccsToken, pccsStyle } from "./pccs";
 
 /// 項目タイルで選べる配色。グリッドは一覧性が命なので、ここは意図的に増やさない。
 export const TILE_STYLES = [
@@ -85,6 +86,17 @@ export const STYLE_COLORS: Record<ProfileStyleToken, { bg: string; fg: string }>
   lavender: { bg: "#CECBF6", fg: "#534AB7" },
   sunrise: { bg: "#F5822A", fg: "#1A1130" },
 };
+
+/// 作業項目は従来の6配色に加え、`pccs-{tone}-{hue}` を解釈する。
+/// 未知の値は従来通りmidnightへ戻し、新旧クライアント間の互換性を保つ。
+export function itemStyleColors(token: string): { bg: string; fg: string } {
+  const pccs = parsePccsToken(token);
+  return pccs ? pccsStyle(pccs) : STYLE_COLORS[normalizeStyle(token)];
+}
+
+export function normalizeItemStyle(token: string): string {
+  return parsePccsToken(token) ? token : normalizeStyle(token);
+}
 
 export interface StudyItem {
   id: string; // UUID(大文字)

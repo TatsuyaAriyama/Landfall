@@ -5,7 +5,7 @@ import { deleteEverything } from "../harbor";
 import type { UserData } from "../data";
 import { DialogHeader, Modal, askConfirm } from "../overlays";
 import { LANGUAGE_KEY, t, tf } from "../i18n";
-import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
+import { itemStyleColors, normalizeSymbol } from "../types";
 import { TileSymbolSvg } from "../symbols";
 import { ItemEditor } from "./ItemEditor";
 import { storage } from "../storage";
@@ -269,7 +269,7 @@ export function SettingsDialog({
           ) : (
             <div className="rows settings-item-rows">
               {orderedItems.map((item) => {
-                const style = STYLE_COLORS[normalizeStyle(item.styleToken)];
+                const style = itemStyleColors(item.styleToken);
                 return (
                   <button
                     key={item.id}
