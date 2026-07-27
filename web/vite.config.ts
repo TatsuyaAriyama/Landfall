@@ -5,8 +5,9 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
-    // 旧Service WorkerとSPAフォールバックがHTMLを誤保存した /assets/ URLを
-    // 全ファイルまとめて避ける。404ページ導入後の世代だけをこの名前空間で配る。
-    assetsDir: 'assets/stable-v1',
+    // Vite/Rolldownでは、動的import先だけが変わっても親チャンクのファイル名が
+    // 据え置かれる場合がある。immutable配信された旧親チャンクとの混在を避けるため、
+    // 航海士v4を含む公開世代では名前空間ごと更新する。
+    assetsDir: 'assets/stable-v2',
   },
 })
