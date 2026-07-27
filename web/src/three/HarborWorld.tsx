@@ -42,10 +42,10 @@ import {
   type EncounterKind,
   type SeaRoute,
 } from "../voyageMap";
-import { saveCanvas } from "../share";
+import { downloadCanvas } from "../share";
 import { demoLitMemberIds, isDemo } from "../demo";
 import { playStrike } from "../audio";
-import { lang, t, voyageRemainingLabel, type I18nKey } from "../i18n";
+import { t, voyageRemainingLabel, type I18nKey } from "../i18n";
 import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 import {
   loadNavigatorInventory,
@@ -2779,8 +2779,8 @@ export default function HarborWorld({
     };
   }, [room.id, members]);
 
-  // 写真撮影。フラッシュ→WebGLの絵を2Dキャンバスへ合成(下部に港名・日付・
-  // ワードマークをフラットに描く)→保存/共有シート。
+  // 写真撮影。UIを含まないWebGLの絵を、見えている世界と同じ縦横比の
+  // PNGへ同期レンダリングし、共有シートを挟まずそのまま端末へ保存する。
   const takePhoto = () => {
     const state = glRef.current;
     if (!state) return;
@@ -2793,12 +2793,9 @@ export default function HarborWorld({
 
     const w = src.width;
     const h = src.height;
-    const k = w / Math.max(src.clientWidth, 1); // 実効dpr
-    const footer = Math.round(56 * k);
-    const pad = Math.round(16 * k);
     const out = document.createElement("canvas");
     out.width = w;
-    out.height = h + footer;
+    out.height = h;
     const ctx = out.getContext("2d");
     if (!ctx) return;
     ctx.fillStyle = harborLight.sky;
@@ -2806,24 +2803,8 @@ export default function HarborWorld({
     // preserveDrawingBufferなしで確実に写すため、直前に同期レンダリングする。
     state.gl.render(state.scene, state.camera);
     ctx.drawImage(src, 0, 0);
-    const font = "-apple-system, 'Hiragino Sans', 'Noto Sans JP', sans-serif";
-    const midY = h + footer / 2;
-    const dateLabel = new Intl.DateTimeFormat(lang, { dateStyle: "medium" }).format(
-      new Date(),
-    );
-    ctx.textBaseline = "middle";
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#EADEBD";
-    ctx.font = `500 ${Math.round(14 * k)}px ${font}`;
-    ctx.fillText(`${room.name} · ${dateLabel}`, pad, midY);
-    ctx.textAlign = "right";
-    ctx.fillStyle = "rgba(234,222,189,0.55)";
-    ctx.font = `400 ${Math.round(11 * k)}px ${font}`;
-    ctx.fillText(t("wordmark"), w - pad, midY);
-    const stamp = new Date().toISOString().slice(0, 10);
-    // クリック直後に呼ぶ。待つとtransient activationが切れ、iOS Safariで
-    // navigator.share が無言で拒否される。
-    void saveCanvas(out, `landfall-harbor-${stamp}.png`);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    void downloadCanvas(out, `landfall-harbor-${stamp}.png`);
   };
 
   return (

@@ -178,27 +178,20 @@ function drawArchetype(ctx: CanvasRenderingContext2D, archetype: Archetype) {
   ctx.restore();
 }
 
-/// 保存/共有。モバイルは共有シート、それ以外はPNGダウンロード。
-export async function saveCanvas(canvas: HTMLCanvasElement, filename: string) {
+/// CanvasをPNGとして端末へ直接保存する。
+/// 写真ボタンでは共有シートを挟まず、一度の操作でスクリーンショットにする。
+export async function downloadCanvas(canvas: HTMLCanvasElement, filename: string) {
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, "image/png"),
   );
   if (!blob) return;
-  const file = new File([blob], filename, { type: "image/png" });
-  if (navigator.canShare?.({ files: [file] })) {
-    try {
-      await navigator.share({ files: [file] });
-      return;
-    } catch (err) {
-      // 共有をやめた場合(AbortError)はダウンロードにも進まない。
-      // それ以外(ジェスチャ切れ等)は無言で終わらせずダウンロードへ。
-      if (err instanceof DOMException && err.name === "AbortError") return;
-    }
-  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  a.style.display = "none";
+  document.body.appendChild(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
