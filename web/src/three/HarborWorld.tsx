@@ -92,7 +92,10 @@ const HARBOR_PIER_URL = "/models/harbor_pier.glb";
 const HARBOR_TENT_URL = "/models/harbor_tent.glb";
 const FISHING_ROD_URL = "/models/fishing_rod.glb";
 type EquipmentAction = "pickup" | "equip" | "unequip" | null;
-type HarborEmotePose = Extract<PhoenixPose, "hail" | "raise" | "point" | "lookout">;
+type HarborEmotePose = Extract<
+  PhoenixPose,
+  "hail" | "raise" | "point" | "lookout" | "read"
+>;
 
 const HARBOR_EMOTES: {
   pose: HarborEmotePose;
@@ -103,6 +106,7 @@ const HARBOR_EMOTES: {
   { pose: "raise", label: "emoteLantern", mark: "✦" },
   { pose: "point", label: "emotePoint", mark: "→" },
   { pose: "lookout", label: "emoteLookout", mark: "⌁" },
+  { pose: "read", label: "emoteRead", mark: "▤" },
 ];
 
 function activeNavigatorPose(
@@ -2052,7 +2056,7 @@ export default function HarborWorld({
       setEmoteOpen(false);
       emoteTimer.current = window.setTimeout(
         () => setEmotePose(null),
-        animate ? 4200 : 1800,
+        animate ? (pose === "read" ? 8_000 : 4_200) : 1_800,
       );
     },
     [animate, equipmentAction, setWalkInput],

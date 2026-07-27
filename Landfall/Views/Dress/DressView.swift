@@ -75,7 +75,7 @@ struct DressView: View {
                             .padding(.top, 12)
 
                         if mode == .navigator {
-                            // ポーズ切替(待機/歩く/掲げる/手を振る)。Web SailorStage 相当。
+                            // ポーズ切替(待機/歩く/掲げる/手を振る/読書)。Web SailorStage 相当。
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 10) {
                                     ForEach(PhoenixPose.allCases) { pose in

@@ -134,6 +134,7 @@ const POSES: [NavigatorPose, I18nKey][] = [
   ["stargaze", "poseStargaze"],
   ["rest", "poseRest"],
   ["sit", "poseSit"],
+  ["read", "poseRead"],
 ];
 
 /// 装いタブ。上が3Dステージ、下がカスタマイズ。
