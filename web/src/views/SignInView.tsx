@@ -1,25 +1,26 @@
-import { useState } from "react";
+import { Component, lazy, Suspense, useState, type ReactNode } from "react";
 import { isEmbeddedWebView, signInWithApple, signInWithGoogle } from "../auth";
-import { BoatSvg, CoastSvg } from "../symbols";
 import { t } from "../i18n";
+import { useTimeOfDay } from "../timeOfDay";
 
-// 「夜の入港」。星と月の空、水平線に落ちる月光、静かに揺れる帆船、迎える海岸。
-// harborTeal 一色の地に harborSand のフラット塗りのみ(グラデーション・影なし)。
-// サインイン=入港、という iOS と同じ物語を、Web ではポスターの構図で描く。
+const SignInVoyageWorld = lazy(() => import("../three/SignInVoyageWorld"));
 
-const STARS: Array<{ top: string; left: string; size: number }> = [
-  { top: "16%", left: "10%", size: 4 },
-  { top: "8%", left: "24%", size: 3 },
-  { top: "20%", left: "36%", size: 3 },
-  { top: "6%", left: "52%", size: 4 },
-  { top: "14%", left: "68%", size: 3 },
-  { top: "9%", left: "83%", size: 4 },
-  { top: "24%", left: "91%", size: 3 },
-  { top: "30%", left: "17%", size: 2 },
-  { top: "12%", left: "44%", size: 2 },
-  { top: "28%", left: "60%", size: 2 },
-  { top: "18%", left: "76%", size: 2 },
-];
+// WebGLが無効・一時的に失敗した端末でも、認証操作は必ず残す。
+// 背景色は .harbor-signin 自体が持つため、失敗時は静かな海色へ自然に戻る。
+class VoyageBackgroundBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 /// Apple のマーク(公式の意匠に沿った単色シルエット)。
 function AppleGlyph() {
@@ -73,6 +74,7 @@ function messageForCode(code: string): string | null {
 }
 
 export function SignInView({ redirectError }: { redirectError?: string | null }) {
+  const timeOfDay = useTimeOfDay();
   const [error, setError] = useState<string | null>(
     redirectError ? messageForCode(redirectError) : null,
   );
@@ -99,19 +101,22 @@ export function SignInView({ redirectError }: { redirectError?: string | null })
   };
 
   return (
-    <div className="harbor-signin">
+    <div
+      className={`harbor-signin time-${timeOfDay}`}
+      data-time-of-day={timeOfDay}
+    >
+      <div className="harbor-voyage-layer">
+        <VoyageBackgroundBoundary>
+          <Suspense fallback={null}>
+            <SignInVoyageWorld timeOfDay={timeOfDay} />
+          </Suspense>
+        </VoyageBackgroundBoundary>
+      </div>
+      <div className="harbor-voyage-shade" aria-hidden="true" />
+
       <p className="harbor-topbar">{t("wordmark")}</p>
 
-      {STARS.map((s, i) => (
-        <span
-          key={i}
-          className="harbor-star"
-          style={{ top: s.top, left: s.left, width: s.size, height: s.size }}
-        />
-      ))}
-      <span className="harbor-moon" />
-
-      <div className="harbor-content">
+      <main className="harbor-content">
         <h1 className="harbor-enter">{t("signInEnter")}</h1>
         <p className="harbor-sync">{t("signInSync")}</p>
         {embedded && <p className="harbor-webview-warning">{t("signInWebviewWarning")}</p>}
@@ -135,24 +140,7 @@ export function SignInView({ redirectError }: { redirectError?: string | null })
           <p className="harbor-note">{t("signInNote")}</p>
           {error && <p className="harbor-error">{error}</p>}
         </div>
-      </div>
-
-      <div className="harbor-sea">
-        <div className="harbor-horizon" />
-        {/* 月光の道: 月の真下に落ちて、手前ほど広がって崩れる */}
-        <span className="harbor-moonpath" />
-        <span className="harbor-glint harbor-glint-1" />
-        <span className="harbor-glint harbor-glint-2" />
-        <span className="harbor-glint harbor-glint-3" />
-        <div className="harbor-boat-wrap">
-          <div className="harbor-boat">
-            <BoatSvg />
-          </div>
-        </div>
-        <div className="harbor-coast">
-          <CoastSvg />
-        </div>
-      </div>
+      </main>
     </div>
   );
 }

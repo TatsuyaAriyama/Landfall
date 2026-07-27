@@ -2435,9 +2435,8 @@ textarea {
   opacity: 1;
 }
 
-/* ---- サインイン(夜の入港) ----
-   harborTeal 一色の地に harborSand のフラット塗りのみ。
-   空(星・月)/ 中央の言葉とボタン / 海(全幅の水平線・帆船・海岸)の三層。 */
+/* ---- サインイン(航海中の海) ----
+   背景はタイマー中と同じ3D世界。認証UIだけを前面の薄い船室ガラスに載せる。 */
 
 /* 認証状態の確定待ち(起動時・OAuthリダイレクトからの復帰直後)。何も描かず
    真っ黒に見えていた区間を、世界観と同じ地色で埋める。 */
@@ -2452,9 +2451,56 @@ textarea {
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--harbor-teal);
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
+  isolation: isolate;
+}
+
+.harbor-signin.time-morning {
+  background: #e8b789;
+}
+
+.harbor-signin.time-day {
+  background: #77c6d7;
+}
+
+.harbor-signin.time-evening {
+  background: #b85f58;
+}
+
+.harbor-signin.time-night {
+  background: #123830;
+}
+
+.harbor-voyage-layer,
+.harbor-voyage-layer canvas,
+.harbor-voyage-shade {
+  position: absolute;
+  inset: 0;
+}
+
+.harbor-voyage-layer {
+  z-index: 0;
+  pointer-events: none;
+}
+
+.harbor-voyage-layer canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* 3Dは全面に見せつつ、文字の背後だけを静かに落とす。時間帯の色は残す。 */
+.harbor-voyage-shade {
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(7, 23, 21, 0.04) 0%,
+      rgba(7, 23, 21, 0.02) 46%,
+      rgba(7, 23, 21, 0.34) 100%
+    ),
+    linear-gradient(0deg, rgba(6, 18, 17, 0.26), transparent 48%);
 }
 
 .harbor-topbar {
@@ -2464,88 +2510,57 @@ textarea {
   margin: 0;
   font-size: 14px;
   letter-spacing: 1px;
-  color: color-mix(in srgb, var(--harbor-sand) 60%, transparent);
-  z-index: 2;
-}
-
-/* 空 */
-
-.harbor-star {
-  position: absolute;
-  border-radius: 999px;
-  background: var(--harbor-sand);
-  opacity: 0.3;
-  animation: harbor-twinkle 3.6s ease-in-out infinite alternate;
-}
-
-.harbor-star:nth-child(odd) {
-  animation-delay: -1.2s;
-}
-
-.harbor-star:nth-child(3n) {
-  animation-delay: -2.4s;
-}
-
-@keyframes harbor-twinkle {
-  from {
-    opacity: 0.14;
-  }
-  to {
-    opacity: 0.42;
-  }
-}
-
-/* 月。淡い暈(かさ)を伴って夜空に浮かぶ。暈は box-shadow の柔らかい環で、
-   グラデーション塗りは使わない(フラットの世界観を保つ)。 */
-.harbor-moon {
-  position: absolute;
-  top: 9%;
-  right: 14%;
-  width: clamp(40px, 5vw, 56px);
-  height: clamp(40px, 5vw, 56px);
-  border-radius: 50%;
-  background: var(--harbor-sand);
-  opacity: 0.85;
-  box-shadow:
-    0 0 0 10px color-mix(in srgb, var(--harbor-sand) 8%, transparent),
-    0 0 0 22px color-mix(in srgb, var(--harbor-sand) 4%, transparent),
-    0 0 60px 18px color-mix(in srgb, var(--harbor-sand) 12%, transparent);
-  animation: harbor-moonbreathe 7s ease-in-out infinite alternate;
-}
-
-@keyframes harbor-moonbreathe {
-  from {
-    opacity: 0.78;
-  }
-  to {
-    opacity: 0.92;
-  }
+  color: rgba(244, 241, 236, 0.72);
+  text-shadow: 0 1px 12px rgba(4, 18, 16, 0.4);
+  z-index: 3;
 }
 
 /* 中央の言葉とボタン */
 
 .harbor-content {
-  flex: 1 1 auto;
+  position: relative;
+  z-index: 2;
+  width: min(390px, calc(100% - 48px));
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin-left: auto;
+  margin-right: clamp(28px, 8vw, 132px);
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   text-align: center;
-  padding: 96px 24px 24px;
-  z-index: 1;
+  padding: 92px 32px 38px;
+  box-sizing: border-box;
+}
+
+.harbor-content::before {
+  content: "";
+  position: absolute;
+  inset: max(72px, 9vh) 0;
+  z-index: -1;
+  border: 1px solid rgba(234, 222, 189, 0.18);
+  border-radius: 30px;
+  background: rgba(10, 36, 32, 0.56);
+  box-shadow:
+    0 26px 80px rgba(3, 15, 14, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  -webkit-backdrop-filter: blur(16px) saturate(112%);
+  backdrop-filter: blur(16px) saturate(112%);
 }
 
 .harbor-enter {
-  font-size: clamp(25px, 4.5vw, 34px);
+  font-size: clamp(26px, 3vw, 34px);
   font-weight: 500;
-  line-height: 1.5;
-  color: var(--harbor-sand);
+  line-height: 1.45;
+  color: #f4f1ec;
   margin: 0;
+  text-shadow: 0 2px 20px rgba(4, 18, 16, 0.34);
 }
 
 .harbor-sync {
   font-size: 15px;
-  color: color-mix(in srgb, var(--harbor-sand) 58%, transparent);
+  color: rgba(244, 241, 236, 0.68);
   margin: 14px 0 0;
 }
 
@@ -2564,7 +2579,7 @@ textarea {
 }
 
 .harbor-actions {
-  width: min(340px, 100%);
+  width: 100%;
   margin-top: 40px;
   display: flex;
   flex-direction: column;
@@ -2624,7 +2639,7 @@ textarea {
   margin: 6px 0 0;
   font-size: 12.5px;
   line-height: 1.6;
-  color: color-mix(in srgb, var(--harbor-sand) 42%, transparent);
+  color: rgba(244, 241, 236, 0.52);
 }
 
 .harbor-error {
@@ -2633,117 +2648,73 @@ textarea {
   margin: 8px 0 0;
 }
 
-/* 海 */
-
-.harbor-sea {
-  position: relative;
-  flex: none;
-  height: clamp(220px, 38vh, 380px);
-}
-
-.harbor-horizon {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 40%;
-  height: 2px;
-  background: color-mix(in srgb, var(--harbor-sand) 25%, transparent);
-}
-
-/* 月光の道。月(右上)の真下、水平線から手前へ細く落ちて、端ほど淡く消える光。
-   単色の塗りに mask で減衰をかけ、板に見えないようにする(海面の反射)。 */
-.harbor-moonpath {
-  position: absolute;
-  top: 40%;
-  left: 86%;
-  width: clamp(52px, 7vw, 86px);
-  height: 58%;
-  transform: translateX(-50%);
-  background: var(--harbor-sand);
-  opacity: 0.16;
-  clip-path: polygon(46% 0, 54% 0, 82% 100%, 18% 100%);
-  -webkit-mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent);
-  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9), transparent);
-  pointer-events: none;
-  /* 海岸(手前の陸)より上に置いて、光の道が隠れないようにする。 */
-  z-index: 1;
-}
-
-.harbor-glint {
-  position: absolute;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--harbor-sand);
-}
-
-.harbor-glint-1 {
-  left: 12%;
-  width: 22%;
-  top: calc(40% + 34px);
-  opacity: 0.16;
-}
-
-.harbor-glint-2 {
-  left: 32%;
-  width: 10%;
-  top: calc(40% + 70px);
-  opacity: 0.1;
-}
-
-.harbor-glint-3 {
-  right: 18%;
-  width: 15%;
-  top: calc(40% + 52px);
-  opacity: 0.12;
-}
-
-.harbor-boat-wrap {
-  position: absolute;
-  left: 24%;
-  bottom: calc(60% - 2px);
-  width: clamp(60px, 8vw, 88px);
-  transform: translateX(-50%);
-}
-
-.harbor-boat {
-  animation: harbor-bob 2.4s ease-in-out infinite alternate;
-}
-
-.harbor-boat svg {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-
-@keyframes harbor-bob {
-  from {
-    transform: translateY(-2.5px) rotate(-1.2deg);
+@media (max-width: 720px) {
+  .harbor-voyage-shade {
+    background:
+      linear-gradient(0deg, rgba(5, 20, 18, 0.58) 0%, rgba(5, 20, 18, 0.12) 72%),
+      linear-gradient(90deg, rgba(5, 20, 18, 0.1), transparent);
   }
-  to {
-    transform: translateY(2.5px) rotate(1.2deg);
+
+  .harbor-topbar {
+    top: 22px;
+    left: 22px;
+  }
+
+  .harbor-content {
+    width: min(360px, calc(100% - 28px));
+    min-height: auto;
+    height: auto;
+    margin: 0 auto;
+    padding: 34px 24px 28px;
+    position: absolute;
+    left: 50%;
+    bottom: max(16px, env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+  }
+
+  .harbor-content::before {
+    inset: 0;
+    border-radius: 26px;
+    background: rgba(8, 34, 30, 0.62);
+    -webkit-backdrop-filter: blur(14px) saturate(110%);
+    backdrop-filter: blur(14px) saturate(110%);
+  }
+
+  .harbor-enter {
+    font-size: clamp(23px, 7vw, 29px);
+  }
+
+  .harbor-sync {
+    font-size: 14px;
+    margin-top: 9px;
+  }
+
+  .harbor-actions {
+    margin-top: 24px;
+    gap: 10px;
+  }
+
+  .harbor-signin-button {
+    height: 50px;
   }
 }
 
-/* 海岸は iOS と同じく「低く横に長い稜線」。高さを抑えて帆船と主役を分ける。 */
-.harbor-coast {
-  position: absolute;
-  right: 0;
-  bottom: calc(60% - 2px);
-  width: clamp(180px, 34vw, 420px);
-  height: 34%;
-}
+@media (max-height: 680px) {
+  .harbor-content {
+    padding-top: 24px;
+    padding-bottom: 20px;
+  }
 
-.harbor-coast svg {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
+  .harbor-enter {
+    font-size: 23px;
+  }
 
-@media (prefers-reduced-motion: reduce) {
-  .harbor-boat,
-  .harbor-star,
-  .harbor-moon {
-    animation: none;
+  .harbor-actions {
+    margin-top: 18px;
+  }
+
+  .harbor-note {
+    display: none;
   }
 }
 
