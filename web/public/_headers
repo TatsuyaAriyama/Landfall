@@ -43,5 +43,8 @@
 /models/navigator_main-v4.glb
   Cache-Control: public, max-age=31536000, immutable
 
+/models/navigator_main-v5.glb
+  Cache-Control: public, max-age=31536000, immutable
+
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
