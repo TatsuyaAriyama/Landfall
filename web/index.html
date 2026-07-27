@@ -2,6 +2,21 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (() => {
+        const host = window.location.hostname;
+        if (
+          host !== "landfall-studylog.com" &&
+          host !== "www.aftide.app"
+        ) {
+          return;
+        }
+
+        window.location.replace(
+          `https://aftide.app${window.location.pathname}${window.location.search}${window.location.hash}`,
+        );
+      })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <!-- iOS/iPadOSのホーム画面アイコン。iPad(152)・iPad Pro(167)・iPhone(180)が
