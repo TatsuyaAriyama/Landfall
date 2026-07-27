@@ -3528,6 +3528,256 @@ textarea {
   cursor: pointer;
 }
 
+/* 航海士のバッグ。コンパクト表示でも所持数を確認でき、没入時はHUDとして残る。 */
+.harbor-bag-button {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 7;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid color-mix(in srgb, #eadebd 24%, transparent);
+  border-radius: 999px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 70%, transparent);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.harbor-world.immersive .harbor-bag-button {
+  top: calc(12px + env(safe-area-inset-top));
+  left: 14px;
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.harbor-bag-button.open {
+  border-color: color-mix(in srgb, #f3c065 44%, transparent);
+  background: color-mix(in srgb, #1e5348 90%, transparent);
+}
+
+.harbor-bag-mark {
+  position: relative;
+  width: 15px;
+  height: 13px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px 3px 5px 5px;
+  opacity: 0.9;
+}
+
+.harbor-bag-mark::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: -6px;
+  width: 7px;
+  height: 6px;
+  border: 1.5px solid currentColor;
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+}
+
+.harbor-bag-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #123830;
+  background: var(--harbor-sand);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.harbor-bag-panel {
+  position: absolute;
+  left: 10px;
+  top: 56px;
+  z-index: 8;
+  width: min(340px, calc(100% - 20px));
+  padding: 13px;
+  color: var(--harbor-sand);
+  border: 1px solid color-mix(in srgb, #eadebd 25%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, #0b251f 93%, transparent);
+  box-shadow: 0 16px 44px rgba(3, 16, 13, 0.32);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.harbor-world.immersive .harbor-bag-panel {
+  left: 14px;
+  top: calc(62px + env(safe-area-inset-top));
+}
+
+.harbor-bag-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.harbor-bag-dismiss {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  margin: -5px -4px -5px 0;
+  border: 0;
+  border-radius: 999px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.harbor-bag-item {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.harbor-bag-item-art {
+  position: relative;
+  width: 64px;
+  height: 92px;
+  overflow: hidden;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 70% 24%, rgba(243, 192, 101, 0.18), transparent 30%),
+    #123830;
+}
+
+/* 竿・リール・糸を細線で描いた、バッグ内のアイテムシルエット。 */
+.harbor-bag-item-art::before {
+  content: "";
+  position: absolute;
+  width: 3px;
+  height: 88px;
+  left: 30px;
+  top: 2px;
+  border-radius: 999px;
+  background: linear-gradient(#d7bf8e, #7a3b22 58%, #4a1b0c 58%);
+  transform: rotate(20deg);
+  transform-origin: 50% 82%;
+}
+
+.harbor-bag-item-art::after {
+  content: "";
+  position: absolute;
+  left: 19px;
+  bottom: 20px;
+  width: 14px;
+  height: 14px;
+  border: 3px solid #f0997b;
+  border-radius: 50%;
+}
+
+.harbor-bag-item-art > span {
+  position: absolute;
+  left: 34px;
+  top: 10px;
+  width: 18px;
+  height: 62px;
+  border-right: 1px solid rgba(234, 222, 189, 0.58);
+  border-bottom: 1px solid rgba(234, 222, 189, 0.58);
+  border-radius: 0 0 12px 0;
+}
+
+.harbor-bag-item-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.harbor-equipped-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #123830;
+  background: #f3c065;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.harbor-bag-item-desc,
+.harbor-bag-empty {
+  margin: 0;
+  color: color-mix(in srgb, #eadebd 68%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.harbor-equip-button {
+  min-height: 34px;
+  margin-top: 9px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 999px;
+  color: #123830;
+  background: var(--harbor-sand);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.harbor-equip-button:disabled,
+.harbor-pickup-action:disabled {
+  opacity: 0.56;
+  cursor: wait;
+}
+
+.harbor-inventory-notice {
+  position: absolute;
+  left: 50%;
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  z-index: 9;
+  max-width: calc(100% - 96px);
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 999px;
+  color: #123830;
+  background: #f3c065;
+  box-shadow: 0 8px 30px rgba(3, 16, 13, 0.25);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: harbor-inventory-notice 2.6s ease both;
+}
+
+@keyframes harbor-inventory-notice {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  12%,
+  84% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 .harbor-walk-hint {
   position: absolute;
   top: calc(18px + env(safe-area-inset-top));
@@ -3557,7 +3807,8 @@ textarea {
   cursor: grabbing;
 }
 
-.harbor-board-action {
+.harbor-board-action,
+.harbor-pickup-action {
   position: absolute;
   top: calc(62px + env(safe-area-inset-top));
   left: 50%;
@@ -3577,7 +3828,8 @@ textarea {
   cursor: pointer;
 }
 
-.harbor-board-action:active {
+.harbor-board-action:active,
+.harbor-pickup-action:active {
   transform: translateX(-50%) scale(0.96);
 }
 
@@ -3667,6 +3919,14 @@ textarea {
 }
 
 @media (max-width: 700px), (pointer: coarse) and (max-width: 1000px) {
+  .harbor-world.immersive .harbor-bag-button {
+    top: calc(52px + env(safe-area-inset-top));
+  }
+
+  .harbor-world.immersive .harbor-bag-panel {
+    top: calc(102px + env(safe-area-inset-top));
+  }
+
   .harbor-walk-controls {
     display: block;
   }
@@ -3679,6 +3939,12 @@ textarea {
     font-size: 10px;
     text-align: left;
     white-space: normal;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harbor-inventory-notice {
+    animation-duration: 0.01s;
   }
 }
 

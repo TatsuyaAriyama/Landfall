@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
+import { useGLTF } from "@react-three/drei";
 import { navigatorHood } from "../boat";
 
 // 航海士フェニックス(プレイヤーキャラクター)。
@@ -381,7 +382,12 @@ export type PhoenixPose =
   | "point"
   | "stargaze"
   | "rest"
-  | "sit";
+  | "sit"
+  | "pickupRod"
+  | "equipRod"
+  | "holdRod"
+  | "walkRod"
+  | "stowRod";
 
 /// ポーズごとの基本値(振りの中心)。振動はこの上に足す。
 /// 全項目が減衰補間の対象なので、どのポーズからどのポーズへ切り替えても
@@ -514,7 +520,62 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
     sway: 0.45, breathAmp: 1.6, breathSpeed: 0.6, glow: 1.8,
     sit: 1,
   },
+  // 砂に置かれた道具へ目線から先に近づき、腰を折って左手を下ろす。
+  pickupRod: {
+    armRx: 0.2, armRz: 0.24, armLx: 0.42, armLz: -0.12,
+    lean: 0.42, wind: 0.62, headX: 0.46, scan: 0.01, scanSpeed: 0.12,
+    turn: 0,
+    sway: 0.08, breathAmp: 0.65, breathSpeed: 0.66, glow: 1.05,
+    sit: 0,
+  },
+  // 腰のバッグから道具を取り出す。視線→空いた左手→道具の順で動かす。
+  equipRod: {
+    armRx: 0.34, armRz: 0.36, armLx: -0.58, armLz: 0.34,
+    lean: 0.08, wind: 0.82, headX: 0.3, scan: 0.02, scanSpeed: 0.18,
+    turn: 0,
+    sway: 0.18, breathAmp: 0.75, breathSpeed: 0.72, glow: 1.25,
+    sit: 0,
+  },
+  // 釣竿を左手で支える待機姿勢。穂先が呼吸に合わせてわずかに揺れる。
+  holdRod: {
+    armRx: 0.04, armRz: 0.1, armLx: -1.12, armLz: -0.06,
+    lean: 0.035, wind: 1.0, headX: -0.08, scan: 0.08, scanSpeed: 0.24,
+    turn: 0,
+    sway: 0.36, breathAmp: 0.9, breathSpeed: 0.78, glow: 1.45,
+    sit: 0,
+  },
+  // 装備したまま歩く。竿を支える左腕は固定し、歩調は脚と右腕で見せる。
+  walkRod: {
+    armRx: 0, armRz: 0.12, armLx: -1.08, armLz: -0.05,
+    lean: 0.095, wind: 1.7, headX: -0.02, scan: 0.04, scanSpeed: 0.24,
+    turn: 0,
+    sway: 0.2, breathAmp: 1, breathSpeed: 0.85, glow: 1.45,
+    sit: 0,
+  },
+  // 釣竿をバッグへ戻す。装備時と同じ経路を逆に辿り、瞬間移動を避ける。
+  stowRod: {
+    armRx: 0.24, armRz: 0.3, armLx: -0.36, armLz: 0.42,
+    lean: 0.1, wind: 0.78, headX: 0.34, scan: 0.02, scanSpeed: 0.18,
+    turn: 0,
+    sway: 0.12, breathAmp: 0.72, breathSpeed: 0.7, glow: 1.2,
+    sit: 0,
+  },
 };
+
+const FISHING_ROD_URL = "/models/fishing_rod.glb";
+
+/// GLBの GripSocket を左手に合わせる。手首を返し、穂先は航海士の前上方へ向ける。
+function HeldFishingRod() {
+  const { scene } = useGLTF(FISHING_ROD_URL);
+  const model = useMemo(() => scene.clone(true), [scene]);
+  return (
+    <group position={[0, -0.28, 0]} rotation={[1.95, 0, -0.08]}>
+      <primitive object={model} />
+    </group>
+  );
+}
+
+useGLTF.preload(FISHING_ROD_URL);
 
 /// 小さな航海士。ローブの体積+燕尾のケープ+尖ったフード+提げたランタンで、
 /// 「夜の海を渡ってきた旅の相棒」を2.5頭身に凝縮する。
@@ -522,11 +583,14 @@ export default function PhoenixModel({
   animate = true,
   pose = "idle",
   hood,
+  fishingRod = false,
 }: {
   animate?: boolean;
   pose?: PhoenixPose;
   /// フードの形。省略時はこの端末で選ばれているものを使う。
   hood?: HoodShape;
+  /// 左手の GripSocket に釣竿を装着する。
+  fishingRod?: boolean;
 }) {
   // フードは指定が無ければ、この端末で選ばれている形を使う
   // (甲板・港・カードなど、呼び出し側が装いを知らない場所のため)。
@@ -607,7 +671,7 @@ export default function PhoenixModel({
     // マント: 布の波。歩行中は向かい風で強く靡く。
     updateCape(capeGeo, time, c.wind);
 
-    const walking = pose === "walk";
+    const walking = pose === "walk" || pose === "walkRod";
     const stride = 5.4; // 歩調(rad/s)
     const step = Math.sin(time * stride);
     // 座ったときに股関節が落ちる量。脚を前へ倒したときブーツが甲板に触れる高さ。
@@ -662,7 +726,10 @@ export default function PhoenixModel({
     if (armL.current) {
       const wave = pose === "hail" ? Math.sin(time * 7.2) * 0.3 : 0;
       armL.current.rotation.x =
-        c.armLx + (walking ? step * 0.32 : Math.sin(ph.breath + 1.1) * 0.025 * c.sway);
+        c.armLx +
+        (pose === "walk"
+          ? step * 0.32
+          : Math.sin(ph.breath + 1.1) * 0.025 * c.sway);
       armL.current.rotation.z = c.armLz + wave;
     }
     // ランタン: 腕の傾きを打ち消して常にほぼ鉛直に垂れる振り子。
@@ -864,6 +931,7 @@ export default function PhoenixModel({
             <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.1, 0]} />
             <mesh geometry={SLEEVE_CUFF_GEO} material={RUST_MAT} position={[0, -0.22, 0]} />
             <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
+            {fishingRod && <HeldFishingRod />}
           </group>
 
           {/* 右腕+ランタン: 「今日の灯」を提げる */}

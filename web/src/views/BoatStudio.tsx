@@ -19,6 +19,7 @@ import {
   totalMinutes,
   type BoatPart,
   type NavigatorHood,
+  type NavigatorPose,
 } from "../boat";
 import { pushProfileEverywhere } from "../harbor";
 import { lang, t, unlockAtLabel, type I18nKey } from "../i18n";
@@ -121,7 +122,7 @@ const HOODS: [NavigatorHood, I18nKey][] = [
   ["down", "hoodDown"],
 ];
 
-const POSES: [PhoenixPose, I18nKey][] = [
+const POSES: [NavigatorPose, I18nKey][] = [
   ["idle", "poseIdle"],
   ["walk", "poseWalk"],
   ["lookout", "poseLookout"],
@@ -146,8 +147,8 @@ export default function BoatStudio({ data }: { data: UserData }) {
     setHoodState(next);
     setNavigatorHood(next);
   };
-  const [pose, setPoseState] = useState<PhoenixPose>(() => navigatorPose());
-  const setPose = (next: PhoenixPose) => {
+  const [pose, setPoseState] = useState<NavigatorPose>(() => navigatorPose());
+  const setPose = (next: NavigatorPose) => {
     setPoseState(next);
     setNavigatorPose(next);
   };

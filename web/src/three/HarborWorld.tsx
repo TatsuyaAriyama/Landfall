@@ -39,6 +39,11 @@ import { demoLitMemberIds, isDemo } from "../demo";
 import { playStrike } from "../audio";
 import { lang, t, voyageRemainingLabel } from "../i18n";
 import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
+import {
+  loadNavigatorInventory,
+  saveNavigatorInventory,
+  type NavigatorInventory,
+} from "../inventory";
 
 // 港の「みんなの海」。参加メンバー全員の船が同じ桟橋へ帰り、
 // 灯台と広い砂地が迎える、まだ何もない拠点。
@@ -79,6 +84,8 @@ const HARBOR_FAR_POS = new THREE.Vector3(CAM_POS[0], CAM_POS[1], CAM_POS[2]);
 const HARBOR_FAR_TARGET = new THREE.Vector3(CAM_TARGET[0], CAM_TARGET[1], CAM_TARGET[2]);
 const HARBOR_DOLLY_SECONDS = 1.2;
 const HARBOR_PIER_URL = "/models/harbor_pier.glb";
+const FISHING_ROD_URL = "/models/fishing_rod.glb";
+type EquipmentAction = "pickup" | "equip" | "unequip" | null;
 function easeInOutCubic(v: number): number {
   return v < 0.5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2;
 }
@@ -104,6 +111,7 @@ function HarborPier({ x }: { x: number }) {
 }
 
 useGLTF.preload(HARBOR_PIER_URL);
+useGLTF.preload(FISHING_ROD_URL);
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
 const LANTERN_GEO = new THREE.SphereGeometry(0.16, 10, 8);
@@ -154,6 +162,40 @@ const HARBOR_ANCHOR_X = -3.65;
 const HARBOR_ANCHOR_Z = -2.35;
 const HARBOR_ROPE_X = 2.55;
 const HARBOR_ROPE_Z = -1.55;
+const HARBOR_FISHING_ROD_X = 0;
+const HARBOR_FISHING_ROD_Z = HARBOR_SAND_CENTER_Z;
+
+/// 初めて港へ来た航海士のため、何もない砂地の中央へ一本だけ置かれた釣竿。
+/// 道具そのものは浮かせず、足元の輪だけが静かに明滅して拾得物だと伝える。
+function HarborFishingRod({ animate }: { animate: boolean }) {
+  const { scene } = useGLTF(FISHING_ROD_URL);
+  const model = useMemo(() => scene.clone(true), [scene]);
+  const glow = useRef<THREE.MeshBasicMaterial>(null);
+
+  useFrame(({ clock }) => {
+    if (!animate || !glow.current) return;
+    glow.current.opacity = 0.2 + Math.sin(clock.elapsedTime * 1.8) * 0.07;
+  });
+
+  return (
+    <group position={[HARBOR_FISHING_ROD_X, HARBOR_SAND_TOP + 0.13, HARBOR_FISHING_ROD_Z]}>
+      <group rotation={[0, -0.35, 1.22]} scale={0.82}>
+        <primitive object={model} />
+      </group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.105, 0]}>
+        <ringGeometry args={[0.34, 0.47, 28]} />
+        <meshBasicMaterial
+          ref={glow}
+          color="#F3C065"
+          transparent
+          opacity={0.2}
+          depthWrite={false}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  );
+}
 
 function HarborRopeAndAnchor() {
   const metal = "#3C4140";
@@ -823,6 +865,8 @@ function MemberBoat({
   animate,
   arriving,
   showSailor,
+  fishingRod,
+  equipmentAction,
   onBoard,
 }: {
   berth: Berth;
@@ -830,6 +874,8 @@ function MemberBoat({
   animate: boolean;
   arriving: boolean;
   showSailor: boolean;
+  fishingRod: boolean;
+  equipmentAction: EquipmentAction;
   onBoard?: () => void;
 }) {
   const { member, phase } = berth;
@@ -911,7 +957,21 @@ function MemberBoat({
             乗船中だけここへ戻す。 */}
         {showSailor && (
           <group position={[0.45, 0.5, 0]} scale={1.15}>
-            <PhoenixModel animate={animate} pose={lit ? "raise" : "idle"} />
+            <PhoenixModel
+              animate={animate}
+              fishingRod={fishingRod}
+              pose={
+                equipmentAction === "equip"
+                  ? "equipRod"
+                  : equipmentAction === "unequip"
+                    ? "stowRod"
+                    : fishingRod
+                      ? "holdRod"
+                      : lit
+                        ? "raise"
+                        : "idle"
+              }
+            />
           </group>
         )}
         {/* 今日の灯: 船尾の短い掲灯柱+暖色のランタン(emissiveな小球のみ) */}
@@ -1001,7 +1061,11 @@ function HarborWalker({
   look,
   aboard,
   ownBerth,
+  fishingRod,
+  fishingRodAvailable,
+  equipmentAction,
   onNearOwnBoatChange,
+  onNearFishingRodChange,
 }: {
   active: boolean;
   animate: boolean;
@@ -1009,7 +1073,11 @@ function HarborWalker({
   look: HarborLookRef;
   aboard: boolean;
   ownBerth?: Berth;
+  fishingRod: boolean;
+  fishingRodAvailable: boolean;
+  equipmentAction: EquipmentAction;
   onNearOwnBoatChange: (near: boolean) => void;
+  onNearFishingRodChange: (near: boolean) => void;
 }) {
   const root = useRef<THREE.Group>(null);
   const position = useRef(WALK_START.clone());
@@ -1018,6 +1086,7 @@ function HarborWalker({
   const pressed = useRef(new Set<string>());
   const walkingRef = useRef(false);
   const nearBoatRef = useRef(false);
+  const nearFishingRodRef = useRef(false);
   const [walking, setWalking] = useState(false);
   const camera = useThree((state) => state.camera);
   const size = useThree((state) => state.size);
@@ -1048,6 +1117,10 @@ function HarborWalker({
       if (nearBoatRef.current) {
         nearBoatRef.current = false;
         onNearOwnBoatChange(false);
+      }
+      if (nearFishingRodRef.current) {
+        nearFishingRodRef.current = false;
+        onNearFishingRodChange(false);
       }
       return;
     }
@@ -1083,7 +1156,7 @@ function HarborWalker({
       window.removeEventListener("blur", release);
       release();
     };
-  }, [active, aboard, onNearOwnBoatChange]);
+  }, [active, aboard, onNearFishingRodChange, onNearOwnBoatChange]);
 
   useFrame((_, delta) => {
     if (!active || !root.current) return;
@@ -1142,6 +1215,17 @@ function HarborWalker({
       nearBoatRef.current = nearOwnBoat;
       onNearOwnBoatChange(nearOwnBoat);
     }
+    const nearFishingRod =
+      !aboard &&
+      fishingRodAvailable &&
+      Math.hypot(
+        position.current.x - HARBOR_FISHING_ROD_X,
+        position.current.z - HARBOR_FISHING_ROD_Z,
+      ) <= 0.9;
+    if (nearFishingRod !== nearFishingRodRef.current) {
+      nearFishingRodRef.current = nearFishingRod;
+      onNearFishingRodChange(nearFishingRod);
+    }
 
     root.current.position.copy(position.current);
     root.current.rotation.y = facing.current;
@@ -1165,9 +1249,24 @@ function HarborWalker({
     camera.lookAt(cameraTarget.current);
   });
 
+  const sailorPose =
+    equipmentAction === "pickup"
+      ? "pickupRod"
+      : equipmentAction === "equip"
+        ? "equipRod"
+        : equipmentAction === "unequip"
+          ? "stowRod"
+          : fishingRod
+            ? walking
+              ? "walkRod"
+              : "holdRod"
+            : walking
+              ? "walk"
+              : "idle";
+
   return (
     <group ref={root} position={WALK_START} scale={0.42} visible={!aboard}>
-      <PhoenixModel animate={animate} pose={walking ? "walk" : "idle"} />
+      <PhoenixModel animate={animate} pose={sailorPose} fishingRod={fishingRod} />
     </group>
   );
 }
@@ -1276,7 +1375,12 @@ function HarborSea({
   currentUid,
   ownBerth,
   aboard,
+  controlsLocked,
+  fishingRodOwned,
+  fishingRodVisible,
+  equipmentAction,
   onNearOwnBoatChange,
+  onNearFishingRodChange,
   onBoardOwnBoat,
 }: {
   roomName: string;
@@ -1305,7 +1409,12 @@ function HarborSea({
   currentUid: string;
   ownBerth?: Berth;
   aboard: boolean;
+  controlsLocked: boolean;
+  fishingRodOwned: boolean;
+  fishingRodVisible: boolean;
+  equipmentAction: EquipmentAction;
   onNearOwnBoatChange: (near: boolean) => void;
+  onNearFishingRodChange: (near: boolean) => void;
   onBoardOwnBoat: () => void;
 }) {
   const camera = useThree((s) => s.camera);
@@ -1418,15 +1527,20 @@ function HarborSea({
       />
       <Horizon />
       <HarborTown timeOfDay={timeOfDay} />
+      {!fishingRodOwned && <HarborFishingRod animate={animate} />}
       {immersive && (
         <HarborWalker
-          active={phase === "idle"}
+          active={phase === "idle" && !controlsLocked}
           animate={animate}
           input={walkInput}
           look={look}
           aboard={aboard}
           ownBerth={ownBerth}
+          fishingRod={fishingRodVisible}
+          fishingRodAvailable={!fishingRodOwned}
+          equipmentAction={equipmentAction}
           onNearOwnBoatChange={onNearOwnBoatChange}
+          onNearFishingRodChange={onNearFishingRodChange}
         />
       )}
       <Html
@@ -1473,6 +1587,8 @@ function HarborSea({
             animate={animate}
             arriving={arrivingMemberIds.has(berth.member.id)}
             showSailor={berth.member.id !== currentUid || !immersive || aboard}
+            fishingRod={berth.member.id === currentUid && fishingRodVisible}
+            equipmentAction={berth.member.id === currentUid ? equipmentAction : null}
             onBoard={
               immersive && !aboard && berth.member.id === currentUid
                 ? onBoardOwnBoat
@@ -1528,6 +1644,45 @@ export default function HarborWorld({
   const glRef = useRef<RootState | null>(null);
   const [flash, setFlash] = useState(false);
   const flashTimer = useRef<number | undefined>(undefined);
+  const [inventory, setInventory] = useState<NavigatorInventory>(() =>
+    loadNavigatorInventory(currentUid),
+  );
+  const inventoryUid = useRef(currentUid);
+  const [bagOpen, setBagOpen] = useState(false);
+  const [nearFishingRod, setNearFishingRod] = useState(false);
+  const [equipmentAction, setEquipmentAction] = useState<EquipmentAction>(null);
+  const equipmentTimers = useRef<number[]>([]);
+  const [inventoryNotice, setInventoryNotice] = useState("");
+  const noticeTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (inventoryUid.current === currentUid) return;
+    inventoryUid.current = currentUid;
+    setInventory(loadNavigatorInventory(currentUid));
+    setBagOpen(false);
+    setNearFishingRod(false);
+    setEquipmentAction(null);
+  }, [currentUid]);
+
+  useEffect(() => {
+    if (inventoryUid.current === currentUid) {
+      saveNavigatorInventory(currentUid, inventory);
+    }
+  }, [currentUid, inventory]);
+
+  useEffect(
+    () => () => {
+      equipmentTimers.current.forEach((id) => window.clearTimeout(id));
+      window.clearTimeout(noticeTimer.current);
+    },
+    [],
+  );
+
+  const showInventoryNotice = useCallback((message: string) => {
+    setInventoryNotice(message);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setInventoryNotice(""), 2600);
+  }, []);
 
   // ---- 没入(みんなの海に入る) ----
   const [immersive, setImmersive] = useState(false);
@@ -1538,6 +1693,71 @@ export default function HarborWorld({
   const setWalkInput = useCallback((next: HarborWalkInput) => {
     walkInput.current = next;
   }, []);
+  const fishingRodOwned = inventory.items.includes("fishingRod");
+  // 解除中は、手からバッグへ届くまでモデルを残す。
+  const fishingRodVisible =
+    inventory.equipped === "fishingRod" || equipmentAction === "unequip";
+
+  const pickUpFishingRod = useCallback(() => {
+    if (equipmentAction || fishingRodOwned || !nearFishingRod) return;
+    setWalkInput({ x: 0, z: 0 });
+    setEquipmentAction("pickup");
+    equipmentTimers.current.forEach((id) => window.clearTimeout(id));
+    equipmentTimers.current.length = 0;
+    equipmentTimers.current.push(
+      window.setTimeout(() => {
+        setInventory((current) =>
+          current.items.includes("fishingRod")
+            ? current
+            : { ...current, items: [...current.items, "fishingRod"] },
+        );
+        setNearFishingRod(false);
+        setBagOpen(true);
+        showInventoryNotice(t("fishingRodFound"));
+      }, animate ? 680 : 0),
+      window.setTimeout(() => setEquipmentAction(null), animate ? 1120 : 0),
+    );
+  }, [
+    animate,
+    equipmentAction,
+    fishingRodOwned,
+    nearFishingRod,
+    setWalkInput,
+    showInventoryNotice,
+  ]);
+
+  const toggleFishingRod = useCallback(() => {
+    if (equipmentAction || !fishingRodOwned) return;
+    setWalkInput({ x: 0, z: 0 });
+    equipmentTimers.current.forEach((id) => window.clearTimeout(id));
+    equipmentTimers.current.length = 0;
+    if (inventory.equipped === "fishingRod") {
+      setEquipmentAction("unequip");
+      equipmentTimers.current.push(
+        window.setTimeout(() => {
+          setInventory((current) => ({ ...current, equipped: null }));
+          showInventoryNotice(t("fishingRodUnequipped"));
+        }, animate ? 620 : 0),
+        window.setTimeout(() => setEquipmentAction(null), animate ? 1180 : 0),
+      );
+      return;
+    }
+    setEquipmentAction("equip");
+    equipmentTimers.current.push(
+      window.setTimeout(() => {
+        setInventory((current) => ({ ...current, equipped: "fishingRod" }));
+        showInventoryNotice(t("fishingRodEquipped"));
+      }, animate ? 360 : 0),
+      window.setTimeout(() => setEquipmentAction(null), animate ? 1180 : 0),
+    );
+  }, [
+    animate,
+    equipmentAction,
+    fishingRodOwned,
+    inventory.equipped,
+    setWalkInput,
+    showInventoryNotice,
+  ]);
   const look = useRef<HarborLookState>({ yaw: 0, pitch: 0.38 });
   const lookDrag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const enterWorld = useCallback(() => {
@@ -1617,7 +1837,9 @@ export default function HarborWorld({
   useEffect(() => {
     if (!immersive) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") requestClose();
+      if (e.key !== "Escape") return;
+      if (bagOpen) setBagOpen(false);
+      else requestClose();
     };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -1626,7 +1848,7 @@ export default function HarborWorld({
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [immersive, requestClose]);
+  }, [bagOpen, immersive, requestClose]);
 
   // ---- 共同航海: 進捗・海域・到着・一撃 ----
   const target = voyage?.targetMinutes ?? 0;
@@ -1919,7 +2141,12 @@ export default function HarborWorld({
             currentUid={currentUid}
             ownBerth={ownBerth}
             aboard={aboard}
+            controlsLocked={bagOpen || equipmentAction !== null}
+            fishingRodOwned={fishingRodOwned}
+            fishingRodVisible={fishingRodVisible}
+            equipmentAction={equipmentAction}
             onNearOwnBoatChange={setNearOwnBoat}
+            onNearFishingRodChange={setNearFishingRod}
             onBoardOwnBoat={boardOwnBoat}
           />
         </Canvas>
@@ -1934,8 +2161,14 @@ export default function HarborWorld({
               {t("close")}
             </button>
             <div className="harbor-walk-hint">{t("harborWalkHint")}</div>
-            {!aboard && <HarborWalkControls onInput={setWalkInput} />}
-            {phase === "idle" && ownBerth && (aboard || nearOwnBoat) && (
+            {!aboard && !bagOpen && equipmentAction === null && (
+              <HarborWalkControls onInput={setWalkInput} />
+            )}
+            {!bagOpen &&
+              !nearFishingRod &&
+              phase === "idle" &&
+              ownBerth &&
+              (aboard || nearOwnBoat) && (
               <button
                 type="button"
                 className="harbor-board-action"
@@ -1949,8 +2182,93 @@ export default function HarborWorld({
                 {t(aboard ? "harborLeaveBoat" : "harborBoardBoat")}
               </button>
             )}
+            {!bagOpen &&
+              !aboard &&
+              !fishingRodOwned &&
+              nearFishingRod &&
+              phase === "idle" && (
+                <button
+                  type="button"
+                  className="harbor-pickup-action"
+                  disabled={equipmentAction !== null}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={pickUpFishingRod}
+                >
+                  {t("pickUpFishingRod")}
+                </button>
+              )}
             {immersiveChat}
           </>
+        )}
+        <button
+          type="button"
+          className={`harbor-bag-button${bagOpen ? " open" : ""}`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => {
+            setWalkInput({ x: 0, z: 0 });
+            setBagOpen((open) => !open);
+          }}
+          aria-expanded={bagOpen}
+          aria-controls="harbor-navigator-bag"
+        >
+          <span className="harbor-bag-mark" aria-hidden="true" />
+          <span>{t("bag")}</span>
+          <span className="harbor-bag-count">{inventory.items.length}</span>
+        </button>
+        {bagOpen && (
+          <div
+            id="harbor-navigator-bag"
+            className="harbor-bag-panel"
+            role="dialog"
+            aria-label={t("bag")}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <div className="harbor-bag-heading">
+              <span>{t("bag")}</span>
+              <button
+                type="button"
+                className="harbor-bag-dismiss"
+                onClick={() => setBagOpen(false)}
+                aria-label={t("close")}
+              >
+                ×
+              </button>
+            </div>
+            {fishingRodOwned ? (
+              <div className="harbor-bag-item">
+                <div className="harbor-bag-item-art" aria-hidden="true">
+                  <span />
+                </div>
+                <div className="harbor-bag-item-copy">
+                  <div className="harbor-bag-item-title">
+                    {t("fishingRod")}
+                    {inventory.equipped === "fishingRod" && (
+                      <span className="harbor-equipped-badge">{t("equipped")}</span>
+                    )}
+                  </div>
+                  <div className="harbor-bag-item-desc">{t("fishingRodDesc")}</div>
+                  <button
+                    type="button"
+                    className="harbor-equip-button"
+                    onClick={toggleFishingRod}
+                    disabled={equipmentAction !== null}
+                  >
+                    {inventory.equipped === "fishingRod" ||
+                    equipmentAction === "unequip"
+                      ? t("unequip")
+                      : t("equip")}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="harbor-bag-empty">{t("bagEmpty")}</p>
+            )}
+          </div>
+        )}
+        {inventoryNotice && (
+          <div className="harbor-inventory-notice" role="status">
+            {inventoryNotice}
+          </div>
         )}
         {/* 航海の進捗(連続バー+海域の印+残り)。個人の内訳や順位は出さない。 */}
         {voyageActive && voyage && activeRoute && (
