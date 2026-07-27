@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { OrbitControls, Stars } from "@react-three/drei";
+import { OrbitControls, Stars, useGLTF } from "@react-three/drei";
 import { Moon, NIGHT_BG } from "./SeaParts";
 import PhoenixModel, { type PhoenixPose } from "./PhoenixModel";
 import PhoenixBird from "./PhoenixBird";
@@ -8,7 +8,8 @@ import PhoenixBird from "./PhoenixBird";
 // 航海士フェニックスの360度ビューア。URLハッシュ #phoenix で開く。
 // 背景は最小限(夜色+星+月)にして、中央のキャラクターだけを見せる。
 // ドラッグで自由に回せるほか、向きのプリセットで正面・横・背面へ一発移動。
-// 「航海士」=人型の生きた紋章(本命)、「海鳥」=保存している鳥型の別案。
+// 「Blender版」=正式な骨格・装備ソケット付きアセット、
+// 「コード版」=現在の全ポーズ対応モデル、「海鳥」=保存している鳥型の別案。
 
 const YAWS = [0, 90, 180, 270];
 
@@ -24,8 +25,18 @@ const POSES: { key: PhoenixPose; label: string }[] = [
   { key: "sit", label: "腰を下ろす" },
 ];
 
+const NAVIGATOR_MODEL_URL = "/models/navigator.glb";
+
+function BlenderNavigator() {
+  const { scene } = useGLTF(NAVIGATOR_MODEL_URL);
+  const model = useMemo(() => scene.clone(true), [scene]);
+  return <primitive object={model} />;
+}
+
+useGLTF.preload(NAVIGATOR_MODEL_URL);
+
 export default function PhoenixViewer() {
-  const [form, setForm] = useState<"hero" | "bird">("hero");
+  const [form, setForm] = useState<"blender" | "hero" | "bird">("blender");
   const [pose, setPose] = useState<PhoenixPose>("idle");
   const [yaw, setYaw] = useState(0);
   const [autoRotate, setAutoRotate] = useState(true);
@@ -41,7 +52,13 @@ export default function PhoenixViewer() {
         <Stars radius={42} depth={18} count={320} factor={2.0} saturation={0} fade speed={0.4} />
         <Moon position={[-8, 4.2, -14]} />
         <group rotation={[0, (yaw * Math.PI) / 180, 0]}>
-          {form === "hero" ? <PhoenixModel animate pose={pose} /> : <PhoenixBird animate />}
+          {form === "blender" ? (
+            <BlenderNavigator />
+          ) : form === "hero" ? (
+            <PhoenixModel animate pose={pose} />
+          ) : (
+            <PhoenixBird animate />
+          )}
         </group>
         <OrbitControls
           target={[0, 0.62, 0]}
@@ -60,10 +77,16 @@ export default function PhoenixViewer() {
       <div className="phoenix-viewer-ui">
         <div className="chip-row">
           <button
+            className={`chip${form === "blender" ? " selected" : ""}`}
+            onClick={() => setForm("blender")}
+          >
+            Blender版
+          </button>
+          <button
             className={`chip${form === "hero" ? " selected" : ""}`}
             onClick={() => setForm("hero")}
           >
-            航海士
+            コード版
           </button>
           <button
             className={`chip${form === "bird" ? " selected" : ""}`}
