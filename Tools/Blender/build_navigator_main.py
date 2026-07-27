@@ -17,7 +17,7 @@ from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[2]
 BLEND_PATH = ROOT / "Assets3D/source/navigator_main.blend"
-GLB_PATH = ROOT / "web/public/models/navigator_main-v4.glb"
+GLB_PATH = ROOT / "web/public/models/navigator_main-v5.glb"
 GLB_COMPAT_PATH = ROOT / "web/public/models/navigator_main.glb"
 USDZ_PATH = ROOT / "Landfall/Resources/navigator_main.usdz"
 RENDER_PATH = ROOT / "marketing/3d/navigator-main.png"
@@ -35,8 +35,8 @@ PALETTE = {
     "gold_light": "#E4C77F",
     "brown": "#3A2118",
     "brown_light": "#613827",
-    "face": "#05070D",
-    "eyes": "#FFF4D2",
+    "face": "#111524",
+    "eyes": "#F3E8C7",
 }
 
 
@@ -95,9 +95,9 @@ MATS = {
     "eyes": material(
         "LF_NavigatorEyes",
         PALETTE["eyes"],
-        0.5,
+        0.78,
         emission=PALETTE["eyes"],
-        emission_strength=1.2,
+        emission_strength=0.16,
     ),
 }
 
@@ -384,8 +384,9 @@ def curved_cape(
     return obj
 
 
-# Legs: roomy bloomers and grounded boots match the concept silhouette.
-for side, x in (("L", -0.145), ("R", 0.145)):
+# Legs: the small offset and unequal foot angles preserve the relaxed,
+# hand-drawn stance of the selected concept instead of a mirrored toy pose.
+for side, x in (("L", -0.15), ("R", 0.135)):
     leg = empty(f"leg{side}", (x, 0.0, 0.46), contact)
     cone(
         f"Trouser_{side}",
@@ -415,7 +416,7 @@ for side, x in (("L", -0.145), ("R", 0.145)):
         leg,
         0.032,
     )
-    boot.rotation_euler.z = 0.045 if side == "L" else -0.045
+    boot.rotation_euler.z = 0.075 if side == "L" else -0.025
 
 
 core = empty("core", parent=contact)
@@ -424,14 +425,14 @@ core = empty("core", parent=contact)
 prism_xz(
     "Coat",
     [
-        (-0.30, 0.37),
-        (-0.335, 0.43),
-        (-0.28, 0.64),
-        (-0.205, 0.88),
-        (0.205, 0.88),
-        (0.28, 0.64),
-        (0.335, 0.43),
-        (0.30, 0.37),
+        (-0.325, 0.35),
+        (-0.35, 0.43),
+        (-0.285, 0.65),
+        (-0.215, 0.89),
+        (0.195, 0.88),
+        (0.275, 0.63),
+        (0.32, 0.44),
+        (0.275, 0.37),
     ],
     -0.015,
     0.43,
@@ -448,12 +449,20 @@ prism_xz(
     core,
     0.02,
 )
-cylinder("Belt", (0, -0.005, 0.625), 0.278, 0.072, MATS["brown"], core, 24)
+prism_xz(
+    "Belt",
+    [(-0.285, 0.595), (0.285, 0.605), (0.282, 0.665), (-0.288, 0.655)],
+    -0.225,
+    0.035,
+    MATS["brown"],
+    core,
+    0.012,
+)
 
 # Front coat overlap and center seam keep the broad volume readable.
 prism_xz(
     "CoatFrontSeam",
-    [(-0.008, 0.39), (0.008, 0.39), (0.008, 0.61), (-0.008, 0.61)],
+    [(0.026, 0.38), (0.042, 0.38), (0.035, 0.61), (0.019, 0.61)],
     -0.239,
     0.008,
     MATS["coat_shadow"],
@@ -464,7 +473,7 @@ prism_xz(
 # Shoulder mantle under the rope collar.
 prism_xz(
     "ShoulderMantle",
-    [(-0.255, 0.76), (-0.205, 0.94), (0.205, 0.94), (0.255, 0.76), (0, 0.72)],
+    [(-0.27, 0.77), (-0.205, 0.95), (0.19, 0.94), (0.245, 0.77), (-0.025, 0.715)],
     -0.01,
     0.40,
     MATS["coat_light"],
@@ -478,13 +487,13 @@ cape_outline = [
     (-0.14, 0.06),
     (0.0, 0.15),
     (0.14, 0.06),
-    (0.54, -0.29),
-    (0.42, -0.38),
-    (0.11, -0.53),
-    (0.0, -0.72),
-    (-0.11, -0.53),
-    (-0.42, -0.38),
-    (-0.54, -0.29),
+    (0.51, -0.27),
+    (0.40, -0.37),
+    (0.10, -0.52),
+    (-0.025, -0.72),
+    (-0.13, -0.54),
+    (-0.44, -0.40),
+    (-0.57, -0.32),
 ]
 curved_cape("CompassCape", cape_outline, MATS["cape"], cape)
 for suffix, outline in (
@@ -522,16 +531,16 @@ for index in range(4):
 star_prism("CapeTailCompass", (0, -0.625), 0.036, 0.012, 0.18, 0.022, MATS["gold_light"], cape, points=4)
 
 
-# Hood/head pivot.  The point leans left like the selected concept.
+# Hood/head pivot.  The long swept peak is the concept's defining asymmetry.
 head = empty("head", (0, -0.005, 1.0), core)
 hood_profile = [
     (0.22, -0.055, 0.0),
-    (0.225, 0.04, -0.008),
-    (0.195, 0.16, -0.03),
-    (0.15, 0.28, -0.075),
-    (0.10, 0.39, -0.125),
-    (0.045, 0.49, -0.17),
-    (0.008, 0.56, -0.195),
+    (0.225, 0.04, -0.012),
+    (0.198, 0.16, -0.055),
+    (0.16, 0.28, -0.125),
+    (0.105, 0.39, -0.215),
+    (0.052, 0.49, -0.30),
+    (0.008, 0.58, -0.355),
 ]
 hood_verts: list[tuple[float, float, float]] = []
 hood_faces: list[tuple[int, ...]] = []
@@ -553,34 +562,36 @@ bevel(hood_obj, 0.006, 2)
 
 # A raised terracotta lip makes the black face read as an opening, not a plaque.
 opening_outer = [
-    (-0.145, 0.005),
-    (-0.14, 0.18),
-    (-0.095, 0.335),
-    (-0.02, 0.42),
-    (0.07, 0.36),
-    (0.135, 0.20),
-    (0.145, 0.005),
+    (-0.155, 0.005),
+    (-0.147, 0.19),
+    (-0.105, 0.34),
+    (-0.035, 0.425),
+    (0.062, 0.355),
+    (0.13, 0.205),
+    (0.142, 0.005),
 ]
 opening_inner = [
-    (-0.118, 0.025),
-    (-0.113, 0.175),
-    (-0.073, 0.305),
-    (-0.015, 0.365),
-    (0.053, 0.32),
-    (0.108, 0.18),
-    (0.118, 0.025),
+    (-0.126, 0.025),
+    (-0.12, 0.18),
+    (-0.08, 0.305),
+    (-0.027, 0.365),
+    (0.047, 0.31),
+    (0.103, 0.18),
+    (0.115, 0.025),
 ]
 prism_xz("HoodOpeningRim", opening_outer, -0.236, 0.028, MATS["coat_shadow"], head, 0.014)
 prism_xz("FaceVoid", opening_inner, -0.258, 0.025, MATS["face"], head, 0.014)
 for side in (-1, 1):
-    uv_sphere(
+    is_left = side < 0
+    cylinder(
         f"Eye_{'L' if side < 0 else 'R'}",
-        (side * 0.043 - 0.01, -0.282, 0.205),
-        (0.024, 0.015, 0.024),
+        ((-0.057 if is_left else 0.042), -0.282, 0.205 if is_left else 0.212),
+        0.019 if is_left else 0.022,
+        0.007,
         MATS["eyes"],
         head,
-        segments=14,
-        rings=9,
+        vertices=24,
+        rotation=(math.pi / 2, 0, 0),
     )
 
 # Rope collar: a visible braided arc across the chest, with side returns.
@@ -625,10 +636,10 @@ cylinder(
 )
 star_prism("CompassClaspStar", (0, 0.89), 0.052, 0.016, -0.327, 0.014, MATS["gold_light"], core)
 
-# Broad V-shaped pelerine from the concept, sitting under the clasp.
+# Broad, slightly off-centre V-shaped pelerine from the concept.
 prism_xz(
     "ChestPelerine",
-    [(-0.26, 0.87), (-0.17, 0.97), (0, 0.91), (0.17, 0.97), (0.26, 0.87), (0, 0.74)],
+    [(-0.27, 0.87), (-0.18, 0.98), (-0.025, 0.91), (0.16, 0.97), (0.25, 0.87), (-0.02, 0.74)],
     -0.235,
     0.024,
     MATS["coat_light"],
@@ -706,13 +717,15 @@ def make_arm(side: str, x: float) -> bpy.types.Object:
     return arm
 
 
-make_arm("L", -0.335)
-make_arm("R", 0.335)
+arm_l = make_arm("L", -0.335)
+arm_r = make_arm("R", 0.315)
+arm_l.rotation_euler.z = 0.055
+arm_r.rotation_euler.z = -0.135
 
 # Authoring metadata travels with the Blender source and GLB extras.
 root["asset_role"] = "main_navigator"
 root["design"] = "Polaris Wayfinder"
-root["version"] = 4
+root["version"] = 5
 root["cape_motion"] = "dense_vertex_cloth"
 root["has_lantern"] = False
 root["front_axis_gltf"] = "+Z"

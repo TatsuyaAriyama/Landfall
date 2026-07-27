@@ -8,7 +8,7 @@ import { useGLTF } from "@react-three/drei";
 // without rebuilding the character out of Three.js primitives.
 // Versioned filename is intentional: production CDNs and installed PWAs can
 // retain a same-URL GLB for hours even after the app shell has updated.
-const NAVIGATOR_URL = "/models/navigator_main-v4.glb";
+const NAVIGATOR_URL = "/models/navigator_main-v5.glb";
 const FISHING_ROD_URL = "/models/fishing_rod.glb";
 
 // Kept for compatibility with saved dress data.  The selected main-character
