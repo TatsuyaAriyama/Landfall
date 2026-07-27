@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   TILE_STYLES,
   TILE_SYMBOLS,
@@ -9,18 +9,37 @@ import {
   type StudyItem,
 } from "../types";
 import {
-  PCCS_HUES,
-  PCCS_TONES,
+  freeColor,
+  freeColorStyle,
+  freeColorToken,
+  nearestPccs,
+  parseFreeColorToken,
   parsePccsToken,
-  pccsColor,
-  pccsToken,
-  type PccsToneId,
+  pccsToFreeColor,
+  type FreeColorSelection,
 } from "../pccs";
 import { deleteItemPreservingHistory, saveItem, type UserData } from "../data";
 import { publishCurrentMonth } from "../harbor";
 import { TileSymbolSvg } from "../symbols";
 import { DialogHeader, Modal, askConfirm, showToast } from "../overlays";
 import { lang, t } from "../i18n";
+
+const LEGACY_SEA_POSITIONS: Record<string, FreeColorSelection> = {
+  midnight: { hue: 258, saturation: 0.65, value: 0.19 },
+  coral: { hue: 12, saturation: 0.48, value: 0.94 },
+  ink: { hue: 220, saturation: 0.05, value: 0.16 },
+  seaGreen: { hue: 160, saturation: 0.54, value: 0.79 },
+  violet: { hue: 244, saturation: 0.62, value: 0.72 },
+  sunYellow: { hue: 48, saturation: 0.70, value: 1 },
+};
+
+function seaPositionFromToken(token: string): FreeColorSelection {
+  const free = parseFreeColorToken(token);
+  if (free) return free;
+  const pccs = parsePccsToken(token);
+  if (pccs) return pccsToFreeColor(pccs);
+  return LEGACY_SEA_POSITIONS[token] ?? LEGACY_SEA_POSITIONS.midnight;
+}
 
 export function ItemEditor({
   uid,
@@ -37,10 +56,11 @@ export function ItemEditor({
 }) {
   const [name, setName] = useState(item?.name ?? "");
   const initialStyleToken = normalizeItemStyle(item?.styleToken ?? "midnight");
-  const initialPccs = parsePccsToken(initialStyleToken);
   const [styleToken, setStyleToken] = useState(initialStyleToken);
-  const [pccsTone, setPccsTone] = useState<PccsToneId>(initialPccs?.tone ?? "v");
-  const [pccsHue, setPccsHue] = useState(initialPccs?.hue ?? 2);
+  const [seaColor, setSeaColor] = useState<FreeColorSelection>(
+    seaPositionFromToken(initialStyleToken),
+  );
+  const activeColorPointer = useRef<number | null>(null);
   const [symbolToken, setSymbolToken] = useState(normalizeSymbol(item?.symbolToken ?? "compass"));
   const [working, setWorking] = useState(false);
   const orderedItems = [...data.items].sort(
@@ -131,17 +151,42 @@ export function ItemEditor({
   };
 
   const previewStyle = itemStyleColors(styleToken);
-  const selectedPccs = parsePccsToken(styleToken);
-  const selectedTone = PCCS_TONES.find((tone) => tone.id === pccsTone) ?? PCCS_TONES[0];
+  const customSelection = parseFreeColorToken(styleToken);
+  const pccsGuide = nearestPccs(seaColor);
+  const markerAngle = ((seaColor.hue - 90) * Math.PI) / 180;
+  const markerLeft = 50 + Math.cos(markerAngle) * seaColor.saturation * 43;
+  const markerTop = 50 + Math.sin(markerAngle) * seaColor.saturation * 43;
 
-  const choosePccsTone = (tone: PccsToneId) => {
-    setPccsTone(tone);
-    setStyleToken(pccsToken(tone, pccsHue));
+  const applySeaColor = (next: FreeColorSelection) => {
+    const normalized = {
+      hue: ((next.hue % 360) + 360) % 360,
+      saturation: Math.min(1, Math.max(0, next.saturation)),
+      value: Math.min(1, Math.max(0.18, next.value)),
+    };
+    setSeaColor(normalized);
+    setStyleToken(freeColorToken(normalized));
   };
 
-  const choosePccsHue = (hue: number) => {
-    setPccsHue(hue);
-    setStyleToken(pccsToken(pccsTone, hue));
+  const moveOnSeaChart = (
+    event: ReactPointerEvent<HTMLDivElement>,
+    allowIdle = false,
+  ) => {
+    if (!allowIdle && activeColorPointer.current !== event.pointerId) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const radius = Math.min(rect.width, rect.height) / 2;
+    const x = event.clientX - (rect.left + rect.width / 2);
+    const y = event.clientY - (rect.top + rect.height / 2);
+    const distance = Math.min(radius, Math.hypot(x, y));
+    const hue = ((Math.atan2(y, x) * 180) / Math.PI + 90 + 360) % 360;
+    applySeaColor({ ...seaColor, hue, saturation: distance / radius });
+  };
+
+  const releaseColorPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (activeColorPointer.current !== event.pointerId) return;
+    activeColorPointer.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   return (
@@ -184,15 +229,17 @@ export function ItemEditor({
             <span className="item-color-current-swatch" style={{ background: previewStyle.bg }} />
             <span>
               <strong>
-                {selectedPccs
-                  ? `PCCS ${selectedPccs.tone}${selectedPccs.hue}`
+                {customSelection
+                  ? lang === "ja"
+                    ? "彩りの海図"
+                    : "Color sea chart"
                   : lang === "ja"
                     ? "Aftide 基本色"
                     : "Aftide preset"}
               </strong>
               <small>
-                {selectedPccs
-                  ? `${lang === "ja" ? selectedTone.nameJa : selectedTone.nameEn} · H${selectedPccs.hue}`
+                {customSelection
+                  ? `${lang === "ja" ? "PCCS目安" : "PCCS guide"} ${pccsGuide.tone}${pccsGuide.hue}`
                   : lang === "ja"
                     ? "これまでの配色もそのまま使えます"
                     : "Existing colors remain available"}
@@ -200,10 +247,90 @@ export function ItemEditor({
             </span>
           </div>
 
-          <div className="item-color-subsection">
-            <span>{lang === "ja" ? "基本色" : "Presets"}</span>
+          <div className="color-sea-heading">
+            <span>{lang === "ja" ? "小舟を動かして色を探す" : "Move the boat to find a color"}</span>
+            <small>{lang === "ja" ? "中央ほど穏やか、外ほど鮮やか" : "Calm at the center, vivid at the edge"}</small>
           </div>
-          <div className="item-color-presets" role="group" aria-label={lang === "ja" ? "基本色" : "Presets"}>
+
+          <div
+            className="color-sea-chart"
+            role="slider"
+            tabIndex={0}
+            aria-label={lang === "ja" ? "彩りの海図" : "Color sea chart"}
+            aria-valuetext={`${Math.round(seaColor.hue)}°, ${Math.round(seaColor.saturation * 100)}%`}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              activeColorPointer.current = event.pointerId;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              moveOnSeaChart(event, true);
+            }}
+            onPointerMove={(event) => moveOnSeaChart(event)}
+            onPointerUp={releaseColorPointer}
+            onPointerCancel={releaseColorPointer}
+            onKeyDown={(event) => {
+              const hueStep = event.shiftKey ? 15 : 3;
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                applySeaColor({ ...seaColor, hue: seaColor.hue - hueStep });
+              } else if (event.key === "ArrowRight") {
+                event.preventDefault();
+                applySeaColor({ ...seaColor, hue: seaColor.hue + hueStep });
+              } else if (event.key === "ArrowUp") {
+                event.preventDefault();
+                applySeaColor({ ...seaColor, saturation: seaColor.saturation + 0.04 });
+              } else if (event.key === "ArrowDown") {
+                event.preventDefault();
+                applySeaColor({ ...seaColor, saturation: seaColor.saturation - 0.04 });
+              }
+            }}
+          >
+            <span className="color-sea-ring ring-one" />
+            <span className="color-sea-ring ring-two" />
+            <span className="color-sea-cross horizontal" />
+            <span className="color-sea-cross vertical" />
+            <span className="color-sea-compass north">N</span>
+            <span className="color-sea-compass east">E</span>
+            <span className="color-sea-compass south">S</span>
+            <span className="color-sea-compass west">W</span>
+            <span
+              className="color-sea-boat"
+              style={{
+                left: `${markerLeft}%`,
+                top: `${markerTop}%`,
+                color: freeColorStyle(seaColor).fg,
+                background: freeColor(seaColor),
+              }}
+            >
+              <span aria-hidden="true">▲</span>
+            </span>
+          </div>
+
+          <div className="color-light-control">
+            <div>
+              <span>{lang === "ja" ? "深海" : "Deep sea"}</span>
+              <strong>{lang === "ja" ? "海の光" : "Sea light"}</strong>
+              <span>{lang === "ja" ? "朝光" : "Morning light"}</span>
+            </div>
+            <input
+              type="range"
+              min="18"
+              max="100"
+              value={Math.round(seaColor.value * 100)}
+              style={{
+                background: `linear-gradient(90deg, ${freeColor({ ...seaColor, value: 0.18 })}, ${freeColor({ ...seaColor, value: 1 })})`,
+              }}
+              onChange={(event) =>
+                applySeaColor({ ...seaColor, value: Number(event.target.value) / 100 })
+              }
+              aria-label={lang === "ja" ? "海の光" : "Sea light"}
+            />
+          </div>
+
+          <div className="item-color-subsection">
+            <span>{lang === "ja" ? "港の定番色" : "Harbor colors"}</span>
+            <small>{lang === "ja" ? "迷った時はこちら" : "A quick safe choice"}</small>
+          </div>
+          <div className="item-color-presets" role="group" aria-label={lang === "ja" ? "港の定番色" : "Harbor colors"}>
             {TILE_STYLES.map((token) => {
               const colors = itemStyleColors(token);
               return (
@@ -211,60 +338,13 @@ export function ItemEditor({
                   key={token}
                   className={`swatch${styleToken === token ? " selected" : ""}`}
                   style={{ background: colors.bg }}
-                  onClick={() => setStyleToken(token)}
+                  onClick={() => {
+                    setStyleToken(token);
+                    setSeaColor(seaPositionFromToken(token));
+                  }}
                   aria-label={token}
                   aria-pressed={styleToken === token}
                 />
-              );
-            })}
-          </div>
-
-          <div className="item-color-subsection">
-            <span>PCCS {lang === "ja" ? "トーン" : "tone"}</span>
-            <small>{lang === "ja" ? "雰囲気を選ぶ" : "Choose a mood"}</small>
-          </div>
-          <div className="pccs-tone-strip" role="group" aria-label="PCCS tone">
-            {PCCS_TONES.map((tone) => (
-              <button
-                key={tone.id}
-                className={pccsTone === tone.id ? "selected" : ""}
-                onClick={() => choosePccsTone(tone.id)}
-                aria-pressed={pccsTone === tone.id}
-              >
-                <span
-                  className="pccs-tone-dot"
-                  style={{ background: pccsColor({ tone: tone.id, hue: pccsHue }) }}
-                />
-                <span>
-                  <strong>{tone.id}</strong>
-                  <small>{lang === "ja" ? tone.nameJa : tone.nameEn}</small>
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <div className="item-color-subsection">
-            <span>{lang === "ja" ? "24色相" : "24 hues"}</span>
-            <small>{lang === "ja" ? "色を選ぶ" : "Choose a hue"}</small>
-          </div>
-          <div className="pccs-hue-grid" role="group" aria-label="PCCS 24 hues">
-            {PCCS_HUES.map((hue) => {
-              const selected =
-                selectedPccs?.tone === pccsTone && selectedPccs.hue === hue.number;
-              const background = pccsColor({ tone: pccsTone, hue: hue.number });
-              return (
-                <button
-                  key={hue.number}
-                  className={selected ? "selected" : ""}
-                  style={{ background }}
-                  onClick={() => choosePccsHue(hue.number)}
-                  aria-label={`PCCS ${pccsTone}${hue.number}`}
-                  aria-pressed={selected}
-                >
-                  <span style={{ color: itemStyleColors(pccsToken(pccsTone, hue.number)).fg }}>
-                    {hue.number}
-                  </span>
-                </button>
               );
             })}
           </div>

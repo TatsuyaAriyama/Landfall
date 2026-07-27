@@ -147,6 +147,74 @@ struct PCCSSelection: Equatable {
     }
 }
 
+struct SeaColorSelection: Equatable {
+    let hue: Double
+    let saturation: Double
+    let brightness: Double
+
+    var token: String {
+        let h = Int(((hue.truncatingRemainder(dividingBy: 360)) + 360)
+            .truncatingRemainder(dividingBy: 360).rounded())
+        let s = Int((min(1, max(0, saturation)) * 100).rounded())
+        let b = Int((min(1, max(0.18, brightness)) * 100).rounded())
+        return String(format: "sea-%03d-%03d-%03d", h, s, b)
+    }
+
+    init(hue: Double, saturation: Double, brightness: Double) {
+        self.hue = ((hue.truncatingRemainder(dividingBy: 360)) + 360)
+            .truncatingRemainder(dividingBy: 360)
+        self.saturation = min(1, max(0, saturation))
+        self.brightness = min(1, max(0.18, brightness))
+    }
+
+    init?(token: String) {
+        let parts = token.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 4,
+              parts[0] == "sea",
+              let hue = Double(parts[1]),
+              let saturation = Double(parts[2]),
+              let brightness = Double(parts[3]),
+              hue >= 0, hue <= 359,
+              saturation >= 0, saturation <= 100,
+              brightness >= 18, brightness <= 100 else { return nil }
+        self.init(hue: hue, saturation: saturation / 100, brightness: brightness / 100)
+    }
+}
+
+enum SeaColorPalette {
+    static func background(_ selection: SeaColorSelection) -> Color {
+        Color(
+            hue: selection.hue / 360,
+            saturation: selection.saturation,
+            brightness: selection.brightness
+        )
+    }
+
+    static func foreground(_ selection: SeaColorSelection) -> Color {
+        let chroma = selection.brightness * selection.saturation
+        let section = selection.hue / 60
+        let x = chroma * (1 - abs(section.truncatingRemainder(dividingBy: 2) - 1))
+        let base: [Double]
+        switch section {
+        case ..<1: base = [chroma, x, 0]
+        case ..<2: base = [x, chroma, 0]
+        case ..<3: base = [0, chroma, x]
+        case ..<4: base = [0, x, chroma]
+        case ..<5: base = [x, 0, chroma]
+        default: base = [chroma, 0, x]
+        }
+        let offset = selection.brightness - chroma
+        let linear = base.map { channel -> Double in
+            let value = channel + offset
+            return value <= 0.04045
+                ? value / 12.92
+                : pow((value + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+        return luminance > 0.38 ? Color(hex: 0x141414) : Color(hex: 0xF4F1EC)
+    }
+}
+
 /// PCCSの24色相をsRGB表示向けに近似した色。Webと同じ角度を使う。
 enum PCCSPalette {
     static let hueDegrees: [Double] = [
@@ -172,6 +240,27 @@ enum PCCSPalette {
         }
         let luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
         return luminance > 0.38 ? Color(hex: 0x141414) : Color(hex: 0xF4F1EC)
+    }
+
+    static func nearest(to sea: SeaColorSelection) -> PCCSSelection {
+        var best = PCCSSelection(tone: .vivid, hue: 1)
+        var bestDistance = Double.greatestFiniteMagnitude
+        for tone in PCCSTone.allCases {
+            for hue in 1...24 {
+                let degrees = hueDegrees[hue - 1]
+                let rawHueDistance = abs(degrees - sea.hue)
+                let hueDistance = min(rawHueDistance, 360 - rawHueDistance) / 180
+                let distance =
+                    pow(hueDistance, 2)
+                    + pow(tone.saturation - sea.saturation, 2) * 0.7
+                    + pow(tone.brightness - sea.brightness, 2) * 0.7
+                if distance < bestDistance {
+                    bestDistance = distance
+                    best = PCCSSelection(tone: tone, hue: hue)
+                }
+            }
+        }
+        return best
     }
 
     private static func rgbValues(_ selection: PCCSSelection) -> [Double] {
@@ -202,6 +291,13 @@ struct ItemTileStyle {
     let foreground: Color
 
     static func from(_ token: String) -> ItemTileStyle {
+        if let selection = SeaColorSelection(token: token) {
+            return ItemTileStyle(
+                token: selection.token,
+                background: SeaColorPalette.background(selection),
+                foreground: SeaColorPalette.foreground(selection)
+            )
+        }
         if let selection = PCCSSelection(token: token) {
             return ItemTileStyle(
                 token: selection.token,

@@ -87,6 +87,13 @@
 "Choose a hue" = "色を選ぶ";
 "Aftide preset" = "Aftide 基本色";
 "Existing colors remain available" = "これまでの配色もそのまま使えます";
+"Color sea chart" = "彩りの海図";
+"PCCS guide %@" = "PCCS目安 %@";
+"Move the boat to find a color" = "小舟を動かして色を探す";
+"Calm at the center, vivid at the edge" = "中央ほど穏やか、外ほど鮮やか";
+"Deep sea" = "深海";
+"Sea light" = "海の光";
+"Morning light" = "朝光";
 "Vivid" = "鮮やか";
 "Bright" = "明るい";
 "Strong" = "強い";

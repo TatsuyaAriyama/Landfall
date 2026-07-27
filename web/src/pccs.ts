@@ -32,6 +32,12 @@ export interface PccsSelection {
   hue: number;
 }
 
+export interface FreeColorSelection {
+  hue: number;
+  saturation: number;
+  value: number;
+}
+
 export function pccsToken(tone: PccsToneId, hue: number): string {
   return `pccs-${tone}-${String(Math.min(24, Math.max(1, hue))).padStart(2, "0")}`;
 }
@@ -44,7 +50,7 @@ export function parsePccsToken(token: string): PccsSelection | null {
   return tone && hue >= 1 && hue <= 24 ? { tone, hue } : null;
 }
 
-function hsvToRgb(hue: number, saturation: number, value: number) {
+export function hsvToRgb(hue: number, saturation: number, value: number) {
   const chroma = value * saturation;
   const section = (((hue % 360) + 360) % 360) / 60;
   const x = chroma * (1 - Math.abs((section % 2) - 1));
@@ -59,7 +65,7 @@ function hsvToRgb(hue: number, saturation: number, value: number) {
   return [r1 + offset, g1 + offset, b1 + offset] as const;
 }
 
-function rgbToHex(rgb: readonly number[]): string {
+export function rgbToHex(rgb: readonly number[]): string {
   return `#${rgb
     .map((channel) => Math.round(channel * 255).toString(16).padStart(2, "0"))
     .join("")
@@ -88,4 +94,58 @@ export function readableForeground(background: string): string {
 export function pccsStyle(selection: PccsSelection) {
   const bg = pccsColor(selection);
   return { bg, fg: readableForeground(bg) };
+}
+
+export function pccsToFreeColor(selection: PccsSelection): FreeColorSelection {
+  const tone = PCCS_TONES.find((candidate) => candidate.id === selection.tone) ?? PCCS_TONES[0];
+  const hue = PCCS_HUES[selection.hue - 1] ?? PCCS_HUES[1];
+  return { hue: hue.degrees, saturation: tone.saturation, value: tone.value };
+}
+
+export function freeColorToken(selection: FreeColorSelection): string {
+  const hue = Math.round(((selection.hue % 360) + 360) % 360);
+  const saturation = Math.round(Math.min(1, Math.max(0, selection.saturation)) * 100);
+  const value = Math.round(Math.min(1, Math.max(0.18, selection.value)) * 100);
+  return `sea-${String(hue).padStart(3, "0")}-${String(saturation).padStart(3, "0")}-${String(value).padStart(3, "0")}`;
+}
+
+export function parseFreeColorToken(token: string): FreeColorSelection | null {
+  const match = /^sea-(\d{3})-(\d{3})-(\d{3})$/.exec(token);
+  if (!match) return null;
+  const hue = Number(match[1]);
+  const saturation = Number(match[2]);
+  const value = Number(match[3]);
+  if (hue > 359 || saturation > 100 || value < 18 || value > 100) return null;
+  return { hue, saturation: saturation / 100, value: value / 100 };
+}
+
+export function freeColor(selection: FreeColorSelection): string {
+  return rgbToHex(hsvToRgb(selection.hue, selection.saturation, selection.value));
+}
+
+export function freeColorStyle(selection: FreeColorSelection) {
+  const bg = freeColor(selection);
+  return { bg, fg: readableForeground(bg) };
+}
+
+export function nearestPccs(selection: FreeColorSelection): PccsSelection {
+  let best = { tone: PCCS_TONES[0].id, hue: 1 } as PccsSelection;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const tone of PCCS_TONES) {
+    for (const hue of PCCS_HUES) {
+      const hueDistance = Math.min(
+        Math.abs(hue.degrees - selection.hue),
+        360 - Math.abs(hue.degrees - selection.hue),
+      ) / 180;
+      const distance =
+        hueDistance ** 2 +
+        (tone.saturation - selection.saturation) ** 2 * 0.7 +
+        (tone.value - selection.value) ** 2 * 0.7;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = { tone: tone.id, hue: hue.number };
+      }
+    }
+  }
+  return best;
 }

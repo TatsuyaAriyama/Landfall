@@ -15,8 +15,11 @@ struct ItemEditorSheet: View {
 
     @State private var name = ""
     @State private var styleToken = TileStyle.midnight.rawValue
-    @State private var pccsTone: PCCSTone = .vivid
-    @State private var pccsHue = 2
+    @State private var seaColor = SeaColorSelection(
+        hue: 258,
+        saturation: 0.65,
+        brightness: 0.19
+    )
     @State private var symbol: TileSymbol = .compass
     @State private var photoData: Data?
     @State private var pickerItem: PhotosPickerItem?
@@ -68,27 +71,12 @@ struct ItemEditorSheet: View {
                     styleRow
                         .padding(.top, 10)
 
-                    HStack {
-                        sectionLabel("PCCS tone")
-                        Spacer()
-                        Text("Choose a mood")
-                            .font(LFFont.label(11))
-                            .foregroundStyle(LFColor.ink.opacity(0.42))
-                    }
-                    .padding(.top, 18)
-                    pccsToneRow
-                        .padding(.top, 8)
-
-                    HStack {
-                        sectionLabel("24 hues")
-                        Spacer()
-                        Text("Choose a hue")
-                            .font(LFFont.label(11))
-                            .foregroundStyle(LFColor.ink.opacity(0.42))
-                    }
-                    .padding(.top, 18)
-                    pccsHueGrid
-                        .padding(.top, 8)
+                    colorSeaHeading
+                        .padding(.top, 18)
+                    colorSeaChart
+                        .padding(.top, 12)
+                    seaLightControl
+                        .padding(.top, 16)
 
                     sectionLabel("Symbol")
                         .padding(.top, 20)
@@ -198,6 +186,7 @@ struct ItemEditorSheet: View {
             ForEach(TileStyle.itemCases) { candidate in
                 Button {
                     styleToken = candidate.rawValue
+                    seaColor = seaPosition(for: candidate)
                 } label: {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .fill(candidate.background)
@@ -228,11 +217,19 @@ struct ItemEditorSheet: View {
                 )
 
             VStack(alignment: .leading, spacing: 2) {
-                if let selection = PCCSSelection(token: styleToken) {
-                    Text("PCCS \(selection.tone.rawValue)\(selection.hue)")
+                if let selection = SeaColorSelection(token: styleToken) {
+                    let pccs = PCCSPalette.nearest(to: selection)
+                    Text("Color sea chart")
                         .font(LFFont.label(14))
                         .foregroundStyle(LFColor.ink)
-                    Text(selection.tone.displayName)
+                    Text("PCCS guide \(pccs.tone.rawValue)\(pccs.hue)")
+                        .font(LFFont.label(12))
+                        .foregroundStyle(LFColor.ink.opacity(0.52))
+                } else if let selection = PCCSSelection(token: styleToken) {
+                    Text("Color sea chart")
+                        .font(LFFont.label(14))
+                        .foregroundStyle(LFColor.ink)
+                    Text("PCCS guide \(selection.tone.rawValue)\(selection.hue)")
                         .font(LFFont.label(12))
                         .foregroundStyle(LFColor.ink.opacity(0.52))
                 } else {
@@ -252,88 +249,171 @@ struct ItemEditorSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    private var pccsToneRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(PCCSTone.allCases) { tone in
-                    let selection = PCCSSelection(tone: tone, hue: pccsHue)
-                    Button {
-                        pccsTone = tone
-                        styleToken = selection.token
-                        Haptics.tap(.light)
-                    } label: {
-                        HStack(spacing: 8) {
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(PCCSPalette.background(selection))
-                                .frame(width: 28, height: 28)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(tone.rawValue)
-                                    .font(LFFont.label(13))
-                                    .foregroundStyle(LFColor.ink)
-                                Text(tone.displayName)
-                                    .font(LFFont.label(10))
-                                    .foregroundStyle(LFColor.ink.opacity(0.5))
-                                    .lineLimit(1)
-                            }
-                        }
-                        .padding(.horizontal, 9)
-                        .frame(minWidth: 96, minHeight: 48, alignment: .leading)
-                        .background(LFColor.paper)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(
-                                    pccsTone == tone ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
-                                    lineWidth: pccsTone == tone ? 2 : 1
-                                )
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text("\(tone.displayName), \(tone.rawValue)"))
-                    .accessibilityAddTraits(pccsTone == tone ? .isSelected : [])
-                }
-            }
-            .padding(.vertical, 2)
+    private var colorSeaHeading: some View {
+        VStack(spacing: 2) {
+            Text("Move the boat to find a color")
+                .font(LFFont.label(14))
+                .foregroundStyle(LFColor.ink)
+            Text("Calm at the center, vivid at the edge")
+                .font(LFFont.label(11))
+                .foregroundStyle(LFColor.ink.opacity(0.48))
         }
+        .frame(maxWidth: .infinity)
     }
 
-    private var pccsHueGrid: some View {
-        LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6),
-            spacing: 8
-        ) {
-            ForEach(1...24, id: \.self) { hue in
-                let selection = PCCSSelection(tone: pccsTone, hue: hue)
-                let selected = PCCSSelection(token: styleToken) == selection
-                Button {
-                    pccsHue = hue
-                    styleToken = selection.token
-                    Haptics.tap(.light)
-                } label: {
-                    Text("\(hue)")
-                        .font(LFFont.label(10))
-                        .foregroundStyle(PCCSPalette.foreground(selection))
-                        .frame(maxWidth: .infinity)
-                        .aspectRatio(1, contentMode: .fit)
-                        .background(PCCSPalette.background(selection))
-                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                .strokeBorder(
-                                    selected ? LFColor.paper : LFColor.ink.opacity(0.08),
-                                    lineWidth: selected ? 2 : 1
-                                )
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                .strokeBorder(selected ? LFColor.returnOrange : .clear, lineWidth: 3)
-                                .padding(-3)
-                        )
+    private var colorSeaChart: some View {
+        GeometryReader { geo in
+            let size = min(geo.size.width, geo.size.height)
+            let radius = size / 2
+            let angle = (seaColor.hue - 90) * .pi / 180
+            let markerRadius = radius * seaColor.saturation * 0.86
+            ZStack {
+                AngularGradient(
+                    colors: [
+                        Color(red: 0.90, green: 0.12, blue: 0.26),
+                        Color(red: 0.94, green: 0.45, blue: 0.12),
+                        Color(red: 0.95, green: 0.85, blue: 0.13),
+                        Color(red: 0.29, green: 0.76, blue: 0.25),
+                        Color(red: 0.08, green: 0.70, blue: 0.68),
+                        Color(red: 0.15, green: 0.50, blue: 0.82),
+                        Color(red: 0.34, green: 0.25, blue: 0.76),
+                        Color(red: 0.75, green: 0.22, blue: 0.66),
+                        Color(red: 0.90, green: 0.12, blue: 0.26),
+                    ],
+                    center: .center,
+                    startAngle: .degrees(-90),
+                    endAngle: .degrees(270)
+                )
+                RadialGradient(
+                    colors: [.white, .white.opacity(0.76), .white.opacity(0)],
+                    center: .center,
+                    startRadius: 0,
+                    endRadius: radius * 0.88
+                )
+                Circle().stroke(.white.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
+                    .padding(size * 0.24)
+                Circle().stroke(.white.opacity(0.2), lineWidth: 1)
+                    .padding(size * 0.08)
+                Rectangle().fill(.white.opacity(0.25)).frame(width: 1, height: size * 0.84)
+                Rectangle().fill(.white.opacity(0.25)).frame(width: size * 0.84, height: 1)
+
+                ForEach([
+                    ("N", Alignment.top),
+                    ("E", Alignment.trailing),
+                    ("S", Alignment.bottom),
+                    ("W", Alignment.leading),
+                ], id: \.0) { point in
+                    Text(point.0)
+                        .font(LFFont.label(9))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: point.1)
+                        .padding(12)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("PCCS \(pccsTone.rawValue)\(hue)")
-                .accessibilityAddTraits(selected ? .isSelected : [])
+
+                ZStack {
+                    Circle()
+                        .fill(SeaColorPalette.background(seaColor))
+                    Circle()
+                        .strokeBorder(.white, lineWidth: 3)
+                    Image(systemName: "sailboat.fill")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(SeaColorPalette.foreground(seaColor))
+                }
+                .frame(width: 40, height: 40)
+                .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                .offset(
+                    x: cos(angle) * markerRadius,
+                    y: sin(angle) * markerRadius
+                )
             }
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(LFColor.harborSand.opacity(0.55), lineWidth: 2))
+            .shadow(color: LFColor.harborTeal.opacity(0.25), radius: 18, y: 10)
+            .contentShape(Circle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        updateSeaColor(at: value.location, size: size)
+                    }
+                    .onEnded { _ in Haptics.tap(.light) }
+            )
+            .accessibilityElement()
+            .accessibilityLabel("Color sea chart")
+            .accessibilityValue(
+                "\(Int(seaColor.hue.rounded())) degrees, \(Int((seaColor.saturation * 100).rounded())) percent"
+            )
+        }
+        .aspectRatio(1, contentMode: .fit)
+        .frame(maxWidth: 310)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var seaLightControl: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("Deep sea")
+                Spacer()
+                Text("Sea light").fontWeight(.semibold)
+                Spacer()
+                Text("Morning light")
+            }
+            .font(LFFont.label(10))
+            .foregroundStyle(LFColor.ink.opacity(0.52))
+
+            Slider(
+                value: Binding(
+                    get: { seaColor.brightness },
+                    set: { brightness in
+                        applySeaColor(
+                            SeaColorSelection(
+                                hue: seaColor.hue,
+                                saturation: seaColor.saturation,
+                                brightness: brightness
+                            )
+                        )
+                    }
+                ),
+                in: 0.18...1
+            )
+            .tint(SeaColorPalette.background(seaColor))
+            .accessibilityLabel("Sea light")
+        }
+        .padding(12)
+        .background(LFColor.harborTeal.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private func updateSeaColor(at point: CGPoint, size: CGFloat) {
+        let radius = size / 2
+        let x = point.x - radius
+        let y = point.y - radius
+        let distance = min(radius, hypot(x, y))
+        let hue = (atan2(y, x) * 180 / .pi + 90 + 360)
+            .truncatingRemainder(dividingBy: 360)
+        applySeaColor(
+            SeaColorSelection(
+                hue: hue,
+                saturation: Double(distance / radius),
+                brightness: seaColor.brightness
+            )
+        )
+    }
+
+    private func applySeaColor(_ selection: SeaColorSelection) {
+        seaColor = selection
+        styleToken = selection.token
+    }
+
+    private func seaPosition(for style: TileStyle) -> SeaColorSelection {
+        switch style {
+        case .midnight: SeaColorSelection(hue: 258, saturation: 0.65, brightness: 0.19)
+        case .coral: SeaColorSelection(hue: 12, saturation: 0.48, brightness: 0.94)
+        case .ink: SeaColorSelection(hue: 220, saturation: 0.05, brightness: 0.16)
+        case .seaGreen: SeaColorSelection(hue: 160, saturation: 0.54, brightness: 0.79)
+        case .violet: SeaColorSelection(hue: 244, saturation: 0.62, brightness: 0.72)
+        case .sunYellow: SeaColorSelection(hue: 48, saturation: 0.70, brightness: 1)
+        default: SeaColorSelection(hue: 165, saturation: 0.54, brightness: 0.55)
         }
     }
 
@@ -421,9 +501,16 @@ struct ItemEditorSheet: View {
         }
         name = existing.name
         styleToken = ItemTileStyle.from(existing.styleToken).token
-        if let selection = PCCSSelection(token: styleToken) {
-            pccsTone = selection.tone
-            pccsHue = selection.hue
+        if let selection = SeaColorSelection(token: styleToken) {
+            seaColor = selection
+        } else if let selection = PCCSSelection(token: styleToken) {
+            seaColor = SeaColorSelection(
+                hue: PCCSPalette.hueDegrees[selection.hue - 1],
+                saturation: selection.tone.saturation,
+                brightness: selection.tone.brightness
+            )
+        } else {
+            seaColor = seaPosition(for: TileStyle.from(styleToken))
         }
         symbol = TileSymbol.from(existing.symbolToken)
         photoData = existing.photoData
