@@ -3258,6 +3258,176 @@ textarea {
   color: var(--coral);
 }
 
+/* ---- 航海の完了 ----
+   保存が済んだ瞬間も海と船はそのまま残し、作業の記録だけを一枚の航海札として
+   浮かべる。カードは中央より少し下へ置き、上半分の水平線と航海を隠しすぎない。 */
+.voyaging-complete {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: end center;
+  padding:
+    max(96px, calc(env(safe-area-inset-top) + 72px))
+    16px
+    max(20px, calc(env(safe-area-inset-bottom) + 16px));
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to bottom,
+      transparent 22%,
+      color-mix(in srgb, #071c18 8%, transparent) 48%,
+      color-mix(in srgb, #071c18 24%, transparent) 100%
+    );
+}
+
+.voyaging-complete-card {
+  position: relative;
+  width: min(100%, 430px);
+  padding: 28px 24px 22px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: calc(var(--radius) + 4px);
+  text-align: center;
+  color: var(--ink);
+  background: color-mix(in srgb, #0d2a24 76%, transparent);
+  box-shadow: 0 24px 70px color-mix(in srgb, #071c18 34%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  pointer-events: auto;
+  animation: voyaging-complete-in 0.72s cubic-bezier(0.2, 0.75, 0.2, 1) both;
+}
+
+.voyaging-world.time-morning .voyaging-complete-card,
+.voyaging-world.time-day .voyaging-complete-card {
+  background: color-mix(in srgb, #edf7f2 82%, transparent);
+  box-shadow: 0 24px 70px color-mix(in srgb, #123b40 20%, transparent);
+}
+
+.voyaging-complete-line {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 76px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--return-orange);
+  transform: translateX(-50%) scaleX(0);
+  animation: voyaging-complete-line 0.55s 0.34s ease-out forwards;
+}
+
+.voyaging-complete-eyebrow,
+.voyaging-complete-label,
+.voyaging-complete-name,
+.voyaging-complete-note,
+.voyaging-complete-time {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.voyaging-complete-eyebrow {
+  margin-top: 0;
+  margin-bottom: 18px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: color-mix(in srgb, var(--ink) 62%, transparent);
+}
+
+.voyaging-complete-icon {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 16px;
+  overflow: hidden;
+  border-radius: 20px;
+  box-shadow: 0 8px 24px color-mix(in srgb, #071c18 22%, transparent);
+  animation: voyaging-complete-icon-in 0.62s 0.12s cubic-bezier(0.2, 0.9, 0.25, 1.25)
+    both;
+}
+
+.voyaging-complete-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.voyaging-complete-label {
+  margin-top: 0;
+  margin-bottom: 5px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--ink) 48%, transparent);
+}
+
+.voyaging-complete-name {
+  margin-top: 0;
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+  font-size: clamp(24px, 7vw, 34px);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.voyaging-complete-note {
+  max-width: 30em;
+  margin-top: 10px;
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--ink) 68%, transparent);
+}
+
+/* 学習時間はホームの記録と同じ、小さな帰帆色。 */
+.voyaging-complete-time {
+  margin-top: 12px;
+  margin-bottom: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--return-orange);
+}
+
+.voyaging-complete-home {
+  width: 100%;
+  margin-top: 22px;
+}
+
+@keyframes voyaging-complete-in {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes voyaging-complete-icon-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.72) rotate(-4deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0);
+  }
+}
+
+@keyframes voyaging-complete-line {
+  to {
+    transform: translateX(-50%) scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voyaging-complete-card,
+  .voyaging-complete-icon,
+  .voyaging-complete-line {
+    animation: none;
+  }
+}
+
 /* 浮きピルの「航海に戻る」部分(名前と時間そのものが入口)。 */
 .timer-back {
   display: flex;

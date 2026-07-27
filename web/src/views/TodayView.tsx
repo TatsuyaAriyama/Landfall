@@ -85,6 +85,14 @@ const MINUTE_ADDITIONS = [5, 15, 30, 60];
 // 前回記録した分数。次の記録ダイアログの初期値にする(いつも同じ長さの人の一手間を省く)。
 const LAST_MINUTES_KEY = "record.lastMinutes";
 
+interface VoyageCompletion {
+  /// 完了後も、航海中と同じ海・船の位置をそのまま見せるためのスナップショット。
+  timer: RunningTimer;
+  item: StudyItem;
+  minutes: number;
+  note?: string;
+}
+
 function lastUsedMinutes(): number | null {
   try {
     const n = Number(localStorage.getItem(LAST_MINUTES_KEY) ?? 0);
@@ -102,6 +110,8 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const [timer, setTimer] = useState<RunningTimer | null>(() => readTimer());
   // 航海の世界を開いているか。閉じても計測は続く(チップから戻れる)。
   const [voyaging, setVoyaging] = useState(false);
+  // 保存が成功した航海だけ、世界を閉じずに完了の一幕へ切り替える。
+  const [completion, setCompletion] = useState<VoyageCompletion | null>(null);
   const [saving, setSaving] = useState(false);
   // 「時間を手で入れる」で開くときの初期値(測った分)。
   const [prefillMinutes, setPrefillMinutes] = useState<number | null>(null);
@@ -133,6 +143,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
       breakStartedAt: null,
     };
     writeTimer(next);
+    setCompletion(null);
     setTimer(next);
     setRecording(null);
     setVoyaging(true);
@@ -154,6 +165,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
 
   const clearTimer = () => {
     eraseTimer();
+    setCompletion(null);
     setTimer(null);
     setVoyaging(false);
   };
@@ -190,9 +202,14 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     setSaving(true);
     try {
       const minutes = creditedMinutes(timer);
-      await recordSession(uid, { item, minutes, note: note.trim() || undefined }, data);
-      clearTimer();
-      showToast(t("recordedToast"));
+      const trimmedNote = note.trim() || undefined;
+      await recordSession(uid, { item, minutes, note: trimmedNote }, data);
+      // 書き込み成功後にだけローカルタイマーを消す。世界は閉じず、
+      // 走っていた海を背景に完了カードへ切り替える。
+      eraseTimer();
+      setCompletion({ timer, item, minutes, note: trimmedNote });
+      setTimer(null);
+      setVoyaging(true);
     } catch {
       // 失敗しても航海は続いている扱いにする。もう一度押せば記録できる。
       showToast(t("errGeneric"));
@@ -274,6 +291,22 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     month: "long",
     day: "numeric",
   }).format(today);
+  const activeItem = timer
+    ? data.items.find((item) => item.id === timer.itemId)
+    : completion?.item;
+  const worldTimer = timer ?? completion?.timer;
+  const worldCompletion = useMemo(
+    () =>
+      completion
+        ? {
+            minutes: completion.minutes,
+            note: completion.note,
+            styleToken: completion.item.styleToken,
+            symbolToken: completion.item.symbolToken,
+          }
+        : undefined,
+    [completion],
+  );
 
   return (
     <div>
@@ -358,9 +391,14 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         </>
       )}
 
-      {/* 航海中の世界。項目をタップした直後はこれが開く。 */}
-      {timer && voyaging && canUseWebGL() && (
-        <VoyagingErrorBoundary onFail={() => setVoyaging(false)}>
+      {/* 航海中の世界。記録後も同じ海を残し、完了の一幕だけを重ねる。 */}
+      {worldTimer && voyaging && canUseWebGL() && (
+        <VoyagingErrorBoundary
+          onFail={() => {
+            setVoyaging(false);
+            setCompletion(null);
+          }}
+        >
           <Suspense
             fallback={
               <div className="voyaging-world voyage-loading" role="status" aria-label={t("loading")}>
@@ -369,11 +407,18 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
             }
           >
             <VoyagingWorld
-              itemName={data.items.find((i) => i.id === timer.itemId)?.name ?? ""}
-              timer={timer}
+              itemName={activeItem?.name ?? ""}
+              timer={worldTimer}
               hasDestination={data.destinations.some((d) => !d.achievedAt)}
               saving={saving}
+              completion={worldCompletion}
               onFinish={(note) => void finishTimer(note)}
+              onHome={() => {
+                eraseTimer();
+                setCompletion(null);
+                setTimer(null);
+                setVoyaging(false);
+              }}
               onMinimize={() => setVoyaging(false)}
               onToggleMode={toggleMode}
               onManual={switchToManual}
