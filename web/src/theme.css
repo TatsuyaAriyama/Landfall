@@ -3833,6 +3833,137 @@ textarea {
   transform: translateX(-50%) scale(0.96);
 }
 
+/* エモート。画面下中央にまとめ、左のチャット・右の移動スティックを塞がない。 */
+.harbor-emote-dock {
+  position: absolute;
+  left: 50%;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  z-index: 7;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.harbor-emote-toggle {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 28%, transparent);
+  border-radius: 999px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 76%, transparent);
+  box-shadow: 0 10px 28px color-mix(in srgb, #071713 26%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.harbor-emote-toggle.open {
+  border-color: color-mix(in srgb, #f3c065 48%, transparent);
+  background: color-mix(in srgb, #1e5348 90%, transparent);
+}
+
+.harbor-emote-toggle-mark {
+  color: #f3c065;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.harbor-live-count {
+  min-width: 19px;
+  height: 19px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: #123830;
+  background: #5dcaa5;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.harbor-emote-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 48px;
+  width: min(430px, calc(100vw - 28px));
+  transform: translateX(-50%);
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 24%, transparent);
+  border-radius: 16px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0b251f 92%, transparent);
+  box-shadow: 0 16px 40px color-mix(in srgb, #071713 34%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.harbor-emote-live {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: color-mix(in srgb, var(--harbor-sand) 66%, transparent);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.harbor-emote-live > span,
+.harbor-live-sailor-name > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #5dcaa5;
+  box-shadow: 0 0 10px color-mix(in srgb, #5dcaa5 78%, transparent);
+}
+
+.harbor-emote-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.harbor-emote-options button {
+  min-width: 0;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 16%, transparent);
+  border-radius: 11px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #eadebd 8%, transparent);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.harbor-emote-options button > span {
+  color: #f3c065;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.harbor-emote-options button.selected {
+  color: #123830;
+  border-color: #f3c065;
+  background: #f3c065;
+}
+
+.harbor-emote-options button.selected > span {
+  color: #123830;
+}
+
 /* スマホ用のアナログスティック。PCでは常に非表示で、WASD/矢印だけを使う。 */
 .harbor-walk-controls {
   position: absolute;
@@ -3925,6 +4056,10 @@ textarea {
 
   .harbor-world.immersive .harbor-bag-panel {
     top: calc(102px + env(safe-area-inset-top));
+  }
+
+  .harbor-emote-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .harbor-walk-controls {
@@ -4084,6 +4219,22 @@ textarea {
   background: color-mix(in srgb, #123830 55%, transparent);
   border-radius: 999px;
   padding: 3px 10px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 陸上をリアルタイムで動いている仲間の名前。緑の点がライブ状態の印。 */
+.harbor-live-sailor-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, #5dcaa5 24%, transparent);
+  border-radius: 999px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #123830 68%, transparent);
+  font-size: 11px;
+  font-weight: 600;
   white-space: nowrap;
   pointer-events: none;
 }

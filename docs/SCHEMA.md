@@ -159,6 +159,22 @@ docID = 6文字の招待コード(コードが合鍵)。定員4人・参加は3�
 | `sessions` | array ≤1000 | `{ day: number, minutes: number, itemName: string, itemStyle: string, itemSymbol: string, note?: string }` |
 | `updatedAt` | timestamp | serverTimestamp |
 
+### `rooms/{code}/presence/{uid}` — 港内のリアルタイム状態
+
+港を開いている間だけ存在する一時ドキュメント。位置・向き・現在の仕草・乗船状態・
+釣竿装備を同じ港のメンバーへ同期する。履歴には使わず、クライアントは
+`updatedAt` が30秒以上古い状態を描画しない。書き込みと削除は本人のみ。
+
+| フィールド | 型 | 備考 |
+|---|---|---|
+| `x` / `z` | number | 港の歩行可能範囲内の座標 |
+| `yaw` | number | 航海士の向き。`-π...π` |
+| `pose` | string | idle / walk / 装備動作 / 港エモート |
+| `aboard` | bool | 自分の船へ乗っているか |
+| `fishingRod` | bool | 釣竿を手に持っているか |
+| `emoteSeq` | number(int) | 同じエモートを再実行するときの連番 |
+| `updatedAt` | timestamp | serverTimestamp。停止中も8秒ごとに更新 |
+
 ### `rooms/{code}/voyage/current` — 共同航海(単一ドキュメント)
 
 目的地までの時間を決めると `seed` から海図(3航路: 凪 calm / 嵐 squall / 深み deep)が

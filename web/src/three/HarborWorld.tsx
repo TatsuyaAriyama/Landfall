@@ -17,14 +17,19 @@ import {
 } from "@react-three/fiber";
 import { Html, Stars, useGLTF } from "@react-three/drei";
 import BoatModel from "./BoatModel";
-import PhoenixModel from "./PhoenixModel";
+import PhoenixModel, { type PhoenixPose } from "./PhoenixModel";
 import { Moon, Ripples, Sea, Sun } from "./SeaParts";
 import { Horizon } from "./VoyageScene";
 import { boatPartsFromIds } from "../boat";
 import {
   ROOM_MAX_MEMBERS,
+  clearHarborPresence,
   fetchMonth,
+  listenHarborPresence,
+  publishHarborPresence,
   type HarborMember,
+  type HarborPresence,
+  type HarborPresencePose,
   type HarborRoom,
   type HarborVoyage,
 } from "../harbor";
@@ -37,7 +42,7 @@ import {
 import { saveCanvas } from "../share";
 import { demoLitMemberIds, isDemo } from "../demo";
 import { playStrike } from "../audio";
-import { lang, t, voyageRemainingLabel } from "../i18n";
+import { lang, t, voyageRemainingLabel, type I18nKey } from "../i18n";
 import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 import {
   loadNavigatorInventory,
@@ -86,6 +91,32 @@ const HARBOR_DOLLY_SECONDS = 1.2;
 const HARBOR_PIER_URL = "/models/harbor_pier.glb";
 const FISHING_ROD_URL = "/models/fishing_rod.glb";
 type EquipmentAction = "pickup" | "equip" | "unequip" | null;
+type HarborEmotePose = Extract<PhoenixPose, "hail" | "raise" | "point" | "lookout">;
+
+const HARBOR_EMOTES: {
+  pose: HarborEmotePose;
+  label: I18nKey;
+  mark: string;
+}[] = [
+  { pose: "hail", label: "emoteWave", mark: "≋" },
+  { pose: "raise", label: "emoteLantern", mark: "✦" },
+  { pose: "point", label: "emotePoint", mark: "→" },
+  { pose: "lookout", label: "emoteLookout", mark: "⌁" },
+];
+
+function activeNavigatorPose(
+  equipmentAction: EquipmentAction,
+  emote: HarborEmotePose | null,
+  fishingRod: boolean,
+  walking: boolean,
+): HarborPresencePose {
+  if (equipmentAction === "pickup") return "pickupRod";
+  if (equipmentAction === "equip") return "equipRod";
+  if (equipmentAction === "unequip") return "stowRod";
+  if (emote) return emote;
+  if (fishingRod) return walking ? "walkRod" : "holdRod";
+  return walking ? "walk" : "idle";
+}
 function easeInOutCubic(v: number): number {
   return v < 0.5 ? 4 * v * v * v : 1 - Math.pow(-2 * v + 2, 3) / 2;
 }
@@ -866,7 +897,8 @@ function MemberBoat({
   arriving,
   showSailor,
   fishingRod,
-  equipmentAction,
+  sailorPose,
+  sailorKey,
   onBoard,
 }: {
   berth: Berth;
@@ -875,7 +907,8 @@ function MemberBoat({
   arriving: boolean;
   showSailor: boolean;
   fishingRod: boolean;
-  equipmentAction: EquipmentAction;
+  sailorPose: PhoenixPose;
+  sailorKey: number;
   onBoard?: () => void;
 }) {
   const { member, phase } = berth;
@@ -958,19 +991,10 @@ function MemberBoat({
         {showSailor && (
           <group position={[0.45, 0.5, 0]} scale={1.15}>
             <PhoenixModel
+              key={sailorKey}
               animate={animate}
               fishingRod={fishingRod}
-              pose={
-                equipmentAction === "equip"
-                  ? "equipRod"
-                  : equipmentAction === "unequip"
-                    ? "stowRod"
-                    : fishingRod
-                      ? "holdRod"
-                      : lit
-                        ? "raise"
-                        : "idle"
-              }
+              pose={sailorPose}
             />
           </group>
         )}
@@ -1051,6 +1075,14 @@ function canStandInHarbor(x: number, z: number): boolean {
   return true;
 }
 
+interface HarborWalkerTransform {
+  x: number;
+  z: number;
+  yaw: number;
+  walking: boolean;
+}
+type HarborPresencePayload = Omit<HarborPresence, "uid" | "updatedAt">;
+
 /// 没入時の航海士。WASD/矢印とスマホのスティックを同じ入力へまとめ、
 /// 砂地と三本の桟橋だけを歩く。入力は常にカメラ基準へ変換し、
 /// 障害物に沿って滑った時も「実際に進んだ方向」へ体を向ける。
@@ -1064,8 +1096,12 @@ function HarborWalker({
   fishingRod,
   fishingRodAvailable,
   equipmentAction,
+  emotePose,
+  emoteSeq,
   onNearOwnBoatChange,
   onNearFishingRodChange,
+  onTransformChange,
+  onMovementStart,
 }: {
   active: boolean;
   animate: boolean;
@@ -1076,8 +1112,12 @@ function HarborWalker({
   fishingRod: boolean;
   fishingRodAvailable: boolean;
   equipmentAction: EquipmentAction;
+  emotePose: HarborEmotePose | null;
+  emoteSeq: number;
   onNearOwnBoatChange: (near: boolean) => void;
   onNearFishingRodChange: (near: boolean) => void;
+  onTransformChange: (transform: HarborWalkerTransform) => void;
+  onMovementStart: () => void;
 }) {
   const root = useRef<THREE.Group>(null);
   const position = useRef(WALK_START.clone());
@@ -1087,6 +1127,13 @@ function HarborWalker({
   const walkingRef = useRef(false);
   const nearBoatRef = useRef(false);
   const nearFishingRodRef = useRef(false);
+  const lastReport = useRef<HarborWalkerTransform & { at: number }>({
+    x: Number.NaN,
+    z: Number.NaN,
+    yaw: Number.NaN,
+    walking: false,
+    at: -10,
+  });
   const [walking, setWalking] = useState(false);
   const camera = useThree((state) => state.camera);
   const size = useThree((state) => state.size);
@@ -1158,7 +1205,7 @@ function HarborWalker({
     };
   }, [active, aboard, onNearFishingRodChange, onNearOwnBoatChange]);
 
-  useFrame((_, delta) => {
+  useFrame(({ clock }, delta) => {
     if (!active || !root.current) return;
     const keys = pressed.current;
     const touch = input.current;
@@ -1199,6 +1246,7 @@ function HarborWalker({
     }
     const moving = Math.hypot(movedX, movedZ) > 0.00001;
     if (moving !== walkingRef.current) {
+      if (moving) onMovementStart();
       walkingRef.current = moving;
       setWalking(moving);
     }
@@ -1247,26 +1295,125 @@ function HarborWalker({
       focusZ - Math.cos(look.current.yaw) * 0.68,
     );
     camera.lookAt(cameraTarget.current);
+
+    // Firestore側の送信間引きに入れる前に、変化の無いフレームを落とす。
+    // 位置は補間されるので約12fpsの報告で十分滑らかに見える。
+    const previous = lastReport.current;
+    const now = clock.elapsedTime;
+    const changed =
+      Math.hypot(position.current.x - previous.x, position.current.z - previous.z) > 0.018 ||
+      Math.abs(Math.atan2(
+        Math.sin(facing.current - previous.yaw),
+        Math.cos(facing.current - previous.yaw),
+      )) > 0.025 ||
+      moving !== previous.walking;
+    if (changed || now - previous.at >= 1.5) {
+      const next = {
+        x: position.current.x,
+        z: position.current.z,
+        yaw: Math.atan2(Math.sin(facing.current), Math.cos(facing.current)),
+        walking: moving,
+        at: now,
+      };
+      lastReport.current = next;
+      onTransformChange(next);
+    }
   });
 
-  const sailorPose =
-    equipmentAction === "pickup"
-      ? "pickupRod"
-      : equipmentAction === "equip"
-        ? "equipRod"
-        : equipmentAction === "unequip"
-          ? "stowRod"
-          : fishingRod
-            ? walking
-              ? "walkRod"
-              : "holdRod"
-            : walking
-              ? "walk"
-              : "idle";
+  const sailorPose = activeNavigatorPose(
+    equipmentAction,
+    emotePose,
+    fishingRod,
+    walking,
+  );
 
   return (
     <group ref={root} position={WALK_START} scale={0.42} visible={!aboard}>
-      <PhoenixModel animate={animate} pose={sailorPose} fishingRod={fishingRod} />
+      <PhoenixModel
+        key={emoteSeq}
+        animate={animate}
+        pose={sailorPose}
+        fishingRod={fishingRod}
+      />
+    </group>
+  );
+}
+
+/// 別端末から届いた航海士。低頻度の座標更新をそのまま跳ばさず、
+/// 描画フレーム側で位置と最短角を補間して歩いて見せる。
+function RemoteHarborSailor({
+  presence,
+  member,
+  animate,
+}: {
+  presence: HarborPresence;
+  member: HarborMember;
+  animate: boolean;
+}) {
+  const root = useRef<THREE.Group>(null);
+  const initialized = useRef(false);
+  const target = useRef(new THREE.Vector3(presence.x, HARBOR_SAND_TOP, presence.z));
+  const targetYaw = useRef(presence.yaw);
+  const invalidate = useThree((state) => state.invalidate);
+
+  useEffect(() => {
+    target.current.set(presence.x, HARBOR_SAND_TOP, presence.z);
+    targetYaw.current = presence.yaw;
+  }, [presence.x, presence.yaw, presence.z]);
+
+  useLayoutEffect(() => {
+    const group = root.current;
+    if (!group) return;
+    if (!initialized.current || !animate) {
+      initialized.current = true;
+      group.position.set(presence.x, HARBOR_SAND_TOP, presence.z);
+      group.rotation.y = presence.yaw;
+      invalidate();
+    }
+  }, [animate, invalidate, presence.x, presence.yaw, presence.z]);
+
+  useFrame((_, delta) => {
+    const group = root.current;
+    if (!group || !animate) return;
+    group.position.x = THREE.MathUtils.damp(
+      group.position.x,
+      target.current.x,
+      10,
+      delta,
+    );
+    group.position.z = THREE.MathUtils.damp(
+      group.position.z,
+      target.current.z,
+      10,
+      delta,
+    );
+    const angle = Math.atan2(
+      Math.sin(targetYaw.current - group.rotation.y),
+      Math.cos(targetYaw.current - group.rotation.y),
+    );
+    group.rotation.y += angle * (1 - Math.exp(-delta * 12));
+  });
+
+  return (
+    <group ref={root} scale={0.42}>
+      <PhoenixModel
+        key={presence.emoteSeq}
+        animate={animate}
+        pose={presence.pose as PhoenixPose}
+        fishingRod={presence.fishingRod}
+      />
+      <Html
+        position={[0, 1.55, 0]}
+        center
+        distanceFactor={7}
+        zIndexRange={[2, 0]}
+        style={{ pointerEvents: "none" }}
+      >
+        <div className="harbor-live-sailor-name">
+          <span aria-hidden="true" />
+          {member.displayName}
+        </div>
+      </Html>
     </group>
   );
 }
@@ -1379,8 +1526,13 @@ function HarborSea({
   fishingRodOwned,
   fishingRodVisible,
   equipmentAction,
+  emotePose,
+  emoteSeq,
+  livePresence,
   onNearOwnBoatChange,
   onNearFishingRodChange,
+  onWalkerTransform,
+  onMovementStart,
   onBoardOwnBoat,
 }: {
   roomName: string;
@@ -1413,8 +1565,13 @@ function HarborSea({
   fishingRodOwned: boolean;
   fishingRodVisible: boolean;
   equipmentAction: EquipmentAction;
+  emotePose: HarborEmotePose | null;
+  emoteSeq: number;
+  livePresence: ReadonlyMap<string, HarborPresence>;
   onNearOwnBoatChange: (near: boolean) => void;
   onNearFishingRodChange: (near: boolean) => void;
+  onWalkerTransform: (transform: HarborWalkerTransform) => void;
+  onMovementStart: () => void;
   onBoardOwnBoat: () => void;
 }) {
   const camera = useThree((s) => s.camera);
@@ -1427,6 +1584,10 @@ function HarborSea({
   const dim = useRef(1);
   const arriveClock = useRef<number | null>(null);
   const light = SEA_LIGHT[timeOfDay];
+  const memberById = useMemo(
+    () => new Map(berths.map((berth) => [berth.member.id, berth.member])),
+    [berths],
+  );
 
   // 海域の中では海がわずかに暗く、潮目が進むごとに明るさが戻る。
   const dimTarget =
@@ -1539,10 +1700,25 @@ function HarborSea({
           fishingRod={fishingRodVisible}
           fishingRodAvailable={!fishingRodOwned}
           equipmentAction={equipmentAction}
+          emotePose={emotePose}
+          emoteSeq={emoteSeq}
           onNearOwnBoatChange={onNearOwnBoatChange}
           onNearFishingRodChange={onNearFishingRodChange}
+          onTransformChange={onWalkerTransform}
+          onMovementStart={onMovementStart}
         />
       )}
+      {Array.from(livePresence.values()).map((presence) => {
+        const member = memberById.get(presence.uid);
+        return member && !presence.aboard ? (
+          <RemoteHarborSailor
+            key={presence.uid}
+            presence={presence}
+            member={member}
+            animate={animate}
+          />
+        ) : null;
+      })}
       <Html
         position={[0.75, 2.35, -3.25]}
         center
@@ -1579,23 +1755,36 @@ function HarborSea({
       ))}
       {/* 船団。砂地の前へ固定し、帰港時だけ桟橋へわずかに寄せる。 */}
       <group ref={fleet}>
-        {berths.map((berth) => (
-          <MemberBoat
-            key={berth.member.id}
-            berth={berth}
-            lit={litIds.has(berth.member.id)}
-            animate={animate}
-            arriving={arrivingMemberIds.has(berth.member.id)}
-            showSailor={berth.member.id !== currentUid || !immersive || aboard}
-            fishingRod={berth.member.id === currentUid && fishingRodVisible}
-            equipmentAction={berth.member.id === currentUid ? equipmentAction : null}
-            onBoard={
-              immersive && !aboard && berth.member.id === currentUid
-                ? onBoardOwnBoat
-                : undefined
-            }
-          />
-        ))}
+        {berths.map((berth) => {
+          const isSelf = berth.member.id === currentUid;
+          const remote = isSelf ? undefined : livePresence.get(berth.member.id);
+          const rod = isSelf ? fishingRodVisible : Boolean(remote?.fishingRod);
+          const pose = isSelf
+            ? activeNavigatorPose(equipmentAction, emotePose, rod, false)
+            : remote?.aboard
+              ? (remote.pose as PhoenixPose)
+              : litIds.has(berth.member.id)
+                ? "raise"
+                : "idle";
+          return (
+            <MemberBoat
+              key={berth.member.id}
+              berth={berth}
+              lit={litIds.has(berth.member.id)}
+              animate={animate}
+              arriving={arrivingMemberIds.has(berth.member.id)}
+              showSailor={
+                isSelf ? !immersive || aboard : !remote || remote.aboard
+              }
+              fishingRod={rod}
+              sailorPose={pose}
+              sailorKey={isSelf ? emoteSeq : remote?.emoteSeq ?? 0}
+              onBoard={
+                immersive && !aboard && isSelf ? onBoardOwnBoat : undefined
+              }
+            />
+          );
+        })}
       </group>
       {/* コンパクト時、船以外(空・水面)をどこでもタップで世界へ入るための、
           見えない受け皿。中を向いた大球で、船・月より奥に置く(船のタップが
@@ -1652,6 +1841,10 @@ export default function HarborWorld({
   const [nearFishingRod, setNearFishingRod] = useState(false);
   const [equipmentAction, setEquipmentAction] = useState<EquipmentAction>(null);
   const equipmentTimers = useRef<number[]>([]);
+  const [emoteOpen, setEmoteOpen] = useState(false);
+  const [emotePose, setEmotePose] = useState<HarborEmotePose | null>(null);
+  const [emoteSeq, setEmoteSeq] = useState(0);
+  const emoteTimer = useRef<number | undefined>(undefined);
   const [inventoryNotice, setInventoryNotice] = useState("");
   const noticeTimer = useRef<number | undefined>(undefined);
 
@@ -1662,6 +1855,8 @@ export default function HarborWorld({
     setBagOpen(false);
     setNearFishingRod(false);
     setEquipmentAction(null);
+    setEmoteOpen(false);
+    setEmotePose(null);
   }, [currentUid]);
 
   useEffect(() => {
@@ -1673,6 +1868,7 @@ export default function HarborWorld({
   useEffect(
     () => () => {
       equipmentTimers.current.forEach((id) => window.clearTimeout(id));
+      window.clearTimeout(emoteTimer.current);
       window.clearTimeout(noticeTimer.current);
     },
     [],
@@ -1682,6 +1878,11 @@ export default function HarborWorld({
     setInventoryNotice(message);
     window.clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setInventoryNotice(""), 2600);
+  }, []);
+
+  const stopEmote = useCallback(() => {
+    window.clearTimeout(emoteTimer.current);
+    setEmotePose(null);
   }, []);
 
   // ---- 没入(みんなの海に入る) ----
@@ -1700,6 +1901,7 @@ export default function HarborWorld({
 
   const pickUpFishingRod = useCallback(() => {
     if (equipmentAction || fishingRodOwned || !nearFishingRod) return;
+    stopEmote();
     setWalkInput({ x: 0, z: 0 });
     setEquipmentAction("pickup");
     equipmentTimers.current.forEach((id) => window.clearTimeout(id));
@@ -1724,10 +1926,12 @@ export default function HarborWorld({
     nearFishingRod,
     setWalkInput,
     showInventoryNotice,
+    stopEmote,
   ]);
 
   const toggleFishingRod = useCallback(() => {
     if (equipmentAction || !fishingRodOwned) return;
+    stopEmote();
     setWalkInput({ x: 0, z: 0 });
     equipmentTimers.current.forEach((id) => window.clearTimeout(id));
     equipmentTimers.current.length = 0;
@@ -1757,7 +1961,143 @@ export default function HarborWorld({
     inventory.equipped,
     setWalkInput,
     showInventoryNotice,
+    stopEmote,
   ]);
+
+  const playEmote = useCallback(
+    (pose: HarborEmotePose) => {
+      if (equipmentAction) return;
+      setWalkInput({ x: 0, z: 0 });
+      window.clearTimeout(emoteTimer.current);
+      setEmotePose(pose);
+      setEmoteSeq((sequence) => (sequence + 1) % 2147483647);
+      setEmoteOpen(false);
+      emoteTimer.current = window.setTimeout(
+        () => setEmotePose(null),
+        animate ? 4200 : 1800,
+      );
+    },
+    [animate, equipmentAction, setWalkInput],
+  );
+
+  // ---- 同じ港にいる航海士のリアルタイム同期 ----
+  const [presenceRows, setPresenceRows] = useState<HarborPresence[]>([]);
+  const [presenceClock, setPresenceClock] = useState(0);
+  useEffect(() => {
+    if (isDemo) {
+      setPresenceRows([]);
+      return;
+    }
+    return listenHarborPresence(room.id, setPresenceRows);
+  }, [room.id]);
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => setPresenceClock((clock) => clock + 1),
+      5_000,
+    );
+    return () => window.clearInterval(timer);
+  }, []);
+  const livePresence = (() => {
+    void presenceClock;
+    const now = Date.now();
+    const memberIds = new Set(members.map((member) => member.id));
+    const result = new Map<string, HarborPresence>();
+    for (const presence of presenceRows) {
+      if (presence.uid === currentUid || !memberIds.has(presence.uid)) continue;
+      if (now - presence.updatedAt.getTime() > 30_000) continue;
+      result.set(presence.uid, presence);
+    }
+    return result;
+  })();
+
+  const walkerTransform = useRef<HarborWalkerTransform>({
+    x: WALK_START.x,
+    z: WALK_START.z,
+    yaw: Math.PI + WALKER_FRONT_YAW,
+    walking: false,
+  });
+  const pendingPresence = useRef<HarborPresencePayload | null>(null);
+  const presenceSendTimer = useRef<number | undefined>(undefined);
+  const lastPresenceWrite = useRef(0);
+  const flushPresence = useCallback(() => {
+    presenceSendTimer.current = undefined;
+    const next = pendingPresence.current;
+    pendingPresence.current = null;
+    if (!next || isDemo) return;
+    lastPresenceWrite.current = Date.now();
+    void publishHarborPresence(room.id, next).catch(() => {});
+  }, [room.id]);
+  const queuePresence = useCallback(
+    (next: HarborPresencePayload) => {
+      if (isDemo) return;
+      pendingPresence.current = next;
+      const wait = Math.max(0, 300 - (Date.now() - lastPresenceWrite.current));
+      if (wait === 0) {
+        window.clearTimeout(presenceSendTimer.current);
+        flushPresence();
+      } else if (presenceSendTimer.current === undefined) {
+        presenceSendTimer.current = window.setTimeout(flushPresence, wait);
+      }
+    },
+    [flushPresence],
+  );
+  const currentPresence = useCallback(
+    (transform = walkerTransform.current): HarborPresencePayload => ({
+      x: transform.x,
+      z: transform.z,
+      yaw: transform.yaw,
+      pose: activeNavigatorPose(
+        equipmentAction,
+        emotePose,
+        fishingRodVisible,
+        transform.walking && !aboard,
+      ),
+      aboard,
+      fishingRod: fishingRodVisible,
+      emoteSeq,
+    }),
+    [
+      aboard,
+      emotePose,
+      emoteSeq,
+      equipmentAction,
+      fishingRodVisible,
+    ],
+  );
+  const currentPresenceRef = useRef(currentPresence);
+  currentPresenceRef.current = currentPresence;
+  const handleWalkerTransform = useCallback(
+    (transform: HarborWalkerTransform) => {
+      walkerTransform.current = transform;
+      if (immersive && phase === "idle") {
+        queuePresence(currentPresence(transform));
+      }
+    },
+    [currentPresence, immersive, phase, queuePresence],
+  );
+
+  // 仕草・装備・乗降の変化は、座標が止まっていてもすぐ共有する。
+  useEffect(() => {
+    if (!immersive || phase !== "idle") return;
+    queuePresence(currentPresence());
+  }, [currentPresence, immersive, phase, queuePresence]);
+
+  // 停止中も短いハートビートを送り、通信断やタブ終了の残像を30秒以内に消す。
+  useEffect(() => {
+    if (!immersive || isDemo) return;
+    const heartbeat = window.setInterval(
+      () => queuePresence(currentPresenceRef.current()),
+      8_000,
+    );
+    return () => {
+      window.clearInterval(heartbeat);
+      window.clearTimeout(presenceSendTimer.current);
+      presenceSendTimer.current = undefined;
+      pendingPresence.current = null;
+      void clearHarborPresence(room.id).catch(() => {});
+    };
+  }, [immersive, queuePresence, room.id]);
+
   const look = useRef<HarborLookState>({ yaw: 0, pitch: 0.38 });
   const lookDrag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const enterWorld = useCallback(() => {
@@ -1775,6 +2115,7 @@ export default function HarborWorld({
   const requestClose = useCallback(() => {
     setWalkInput({ x: 0, z: 0 });
     setNearOwnBoat(false);
+    setEmoteOpen(false);
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setImmersive(false);
       setPhase("idle");
@@ -1790,7 +2131,9 @@ export default function HarborWorld({
     setPhase("idle");
     setAboard(false);
     setNearOwnBoat(false);
-  }, []);
+    setEmoteOpen(false);
+    stopEmote();
+  }, [stopEmote]);
   const boardOwnBoat = useCallback(() => {
     setWalkInput({ x: 0, z: 0 });
     setNearOwnBoat(false);
@@ -1839,6 +2182,7 @@ export default function HarborWorld({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (bagOpen) setBagOpen(false);
+      else if (emoteOpen) setEmoteOpen(false);
       else requestClose();
     };
     window.addEventListener("keydown", onKey);
@@ -1848,7 +2192,7 @@ export default function HarborWorld({
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [bagOpen, immersive, requestClose]);
+  }, [bagOpen, emoteOpen, immersive, requestClose]);
 
   // ---- 共同航海: 進捗・海域・到着・一撃 ----
   const target = voyage?.targetMinutes ?? 0;
@@ -2141,12 +2485,17 @@ export default function HarborWorld({
             currentUid={currentUid}
             ownBerth={ownBerth}
             aboard={aboard}
-            controlsLocked={bagOpen || equipmentAction !== null}
+            controlsLocked={bagOpen || emoteOpen || equipmentAction !== null}
             fishingRodOwned={fishingRodOwned}
             fishingRodVisible={fishingRodVisible}
             equipmentAction={equipmentAction}
+            emotePose={emotePose}
+            emoteSeq={emoteSeq}
+            livePresence={livePresence}
             onNearOwnBoatChange={setNearOwnBoat}
             onNearFishingRodChange={setNearFishingRod}
+            onWalkerTransform={handleWalkerTransform}
+            onMovementStart={stopEmote}
             onBoardOwnBoat={boardOwnBoat}
           />
         </Canvas>
@@ -2161,7 +2510,7 @@ export default function HarborWorld({
               {t("close")}
             </button>
             <div className="harbor-walk-hint">{t("harborWalkHint")}</div>
-            {!aboard && !bagOpen && equipmentAction === null && (
+            {!aboard && !bagOpen && !emoteOpen && equipmentAction === null && (
               <HarborWalkControls onInput={setWalkInput} />
             )}
             {!bagOpen &&
@@ -2197,6 +2546,54 @@ export default function HarborWorld({
                   {t("pickUpFishingRod")}
                 </button>
               )}
+            {!bagOpen && (
+              <div
+                className="harbor-emote-dock"
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                {emoteOpen && (
+                  <div className="harbor-emote-panel" role="group" aria-label={t("emotes")}>
+                    <div className="harbor-emote-live">
+                      <span aria-hidden="true" />
+                      {t("harborLive")}
+                    </div>
+                    <div className="harbor-emote-options">
+                      {HARBOR_EMOTES.map((emote) => (
+                        <button
+                          key={emote.pose}
+                          type="button"
+                          className={emotePose === emote.pose ? "selected" : ""}
+                          onClick={() => playEmote(emote.pose)}
+                          aria-pressed={emotePose === emote.pose}
+                        >
+                          <span aria-hidden="true">{emote.mark}</span>
+                          {t(emote.label)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className={`harbor-emote-toggle${emoteOpen ? " open" : ""}`}
+                  onClick={() => {
+                    setWalkInput({ x: 0, z: 0 });
+                    setEmoteOpen((open) => !open);
+                  }}
+                  aria-expanded={emoteOpen}
+                >
+                  <span className="harbor-emote-toggle-mark" aria-hidden="true">
+                    ≋
+                  </span>
+                  {t("emotes")}
+                  {livePresence.size > 0 && (
+                    <span className="harbor-live-count" aria-label={t("harborLive")}>
+                      {livePresence.size + 1}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
             {immersiveChat}
           </>
         )}
@@ -2206,6 +2603,7 @@ export default function HarborWorld({
           onPointerDown={(event) => event.stopPropagation()}
           onClick={() => {
             setWalkInput({ x: 0, z: 0 });
+            setEmoteOpen(false);
             setBagOpen((open) => !open);
           }}
           aria-expanded={bagOpen}

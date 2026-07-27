@@ -74,6 +74,35 @@ export interface HarborMember {
   boatFlag?: string;
 }
 
+// 港を開いている間だけ共有する、一時的な航海士の状態。
+// updatedAt が古いものは描画側で無視し、タブ終了時の削除に失敗しても残像を残さない。
+export const HARBOR_PRESENCE_POSES = [
+  "idle",
+  "walk",
+  "pickupRod",
+  "equipRod",
+  "holdRod",
+  "walkRod",
+  "stowRod",
+  "hail",
+  "raise",
+  "point",
+  "lookout",
+] as const;
+export type HarborPresencePose = (typeof HARBOR_PRESENCE_POSES)[number];
+
+export interface HarborPresence {
+  uid: string;
+  x: number;
+  z: number;
+  yaw: number;
+  pose: HarborPresencePose;
+  aboard: boolean;
+  fishingRod: boolean;
+  emoteSeq: number;
+  updatedAt: Date;
+}
+
 /// 航海のはじまり(yyyy-MM-dd)の読み取り。書式が違うもの・実在しない日は捨てる。
 export function parseSinceDay(value: unknown): string | undefined {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
@@ -407,6 +436,74 @@ export function listenMembers(
     (snap) => cb(membersFromDocs(snap.docs)),
     () => onError?.(),
   );
+}
+
+function presenceRef(roomId: string, memberId: string) {
+  return doc(db, "rooms", roomId, "presence", memberId);
+}
+
+/// 同じ友人港を開いている航海士の位置・向き・仕草を購読する。
+/// 最大4人の一時コレクションで、履歴や学習記録としては保存しない。
+export function listenHarborPresence(
+  roomId: string,
+  cb: (presence: HarborPresence[]) => void,
+): () => void {
+  return onSnapshot(
+    collection(db, "rooms", roomId, "presence"),
+    (snap) => {
+      cb(
+        snap.docs.flatMap((presenceDoc) => {
+          const value = presenceDoc.data();
+          const pose = value.pose;
+          if (
+            typeof pose !== "string" ||
+            !HARBOR_PRESENCE_POSES.includes(pose as HarborPresencePose)
+          ) {
+            return [];
+          }
+          return [{
+            uid: presenceDoc.id,
+            x: Number(value.x ?? 0),
+            z: Number(value.z ?? 0),
+            yaw: Number(value.yaw ?? 0),
+            pose: pose as HarborPresencePose,
+            aboard: value.aboard === true,
+            fishingRod: value.fishingRod === true,
+            emoteSeq:
+              typeof value.emoteSeq === "number" ? Math.max(0, value.emoteSeq) : 0,
+            updatedAt:
+              value.updatedAt instanceof Timestamp
+                ? value.updatedAt.toDate()
+                : new Date(0),
+          }];
+        }),
+      );
+    },
+    () => cb([]),
+  );
+}
+
+export async function publishHarborPresence(
+  roomId: string,
+  state: Omit<HarborPresence, "uid" | "updatedAt">,
+): Promise<void> {
+  const currentUid = uid();
+  await setDoc(presenceRef(roomId, currentUid), {
+    x: state.x,
+    z: state.z,
+    yaw: state.yaw,
+    pose: state.pose,
+    aboard: state.aboard,
+    fishingRod: state.fishingRod,
+    emoteSeq: Math.max(0, Math.floor(state.emoteSeq)),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function clearHarborPresence(roomId: string): Promise<void> {
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) return;
+  await deleteDoc(presenceRef(roomId, currentUid));
 }
 
 export async function fetchMonth(

@@ -239,6 +239,45 @@ service cloud.firestore {
           && request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.memberIds;
       }
 
+      // ---- 港にいる間だけの航海士プレゼンス ----
+      // 位置・向き・装備・現在の仕草だけを共有する一時データ。履歴は持たず、
+      // 書けるのは本人のドキュメントだけ。クライアントは古い updatedAt を描画しない。
+      match /presence/{memberId} {
+        allow read: if isMember();
+
+        allow create, update: if request.auth != null
+          && request.auth.uid == memberId
+          && isMember()
+          && request.resource.data.keys().hasAll([
+            'x', 'z', 'yaw', 'pose', 'aboard', 'fishingRod', 'emoteSeq', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'x', 'z', 'yaw', 'pose', 'aboard', 'fishingRod', 'emoteSeq', 'updatedAt'
+          ])
+          && request.resource.data.x is number
+          && request.resource.data.x >= -6.5
+          && request.resource.data.x <= 6.5
+          && request.resource.data.z is number
+          && request.resource.data.z >= -8.5
+          && request.resource.data.z <= 2.8
+          && request.resource.data.yaw is number
+          && request.resource.data.yaw >= -3.142
+          && request.resource.data.yaw <= 3.142
+          && request.resource.data.pose in [
+            'idle', 'walk', 'pickupRod', 'equipRod', 'holdRod', 'walkRod',
+            'stowRod', 'hail', 'raise', 'point', 'lookout'
+          ]
+          && request.resource.data.aboard is bool
+          && request.resource.data.fishingRod is bool
+          && request.resource.data.emoteSeq is int
+          && request.resource.data.emoteSeq >= 0
+          && request.resource.data.emoteSeq <= 2147483647
+          && request.resource.data.updatedAt == request.time;
+
+        // 港を閉じる／退港する際は、自分の残像だけ消せる。
+        allow delete: if request.auth != null && request.auth.uid == memberId;
+      }
+
       // ---- メンバーのプレイヤーカード ----
       match /members/{memberId} {
         // 読めるのは同じ港のメンバーだけ。
