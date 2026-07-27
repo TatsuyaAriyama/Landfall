@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Stars } from "@react-three/drei";
@@ -25,6 +25,7 @@ import { lockBodyScroll } from "../scrollLock";
 import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
 import { TileSymbolSvg } from "../symbols";
+import FlyingFishSchool from "./FlyingFish";
 
 // 作業中の世界。自分の船が現在の時間帯の海を走り、その上に経過時間が出る。
 // 「分数を入力する」のではなく、この航海そのものが記録になる。
@@ -172,6 +173,11 @@ function VoyagingSea({
       />
       <Horizon />
       <PassingSwells animate={animate} flow={resting ? RESTING_FLOW : 1} />
+      {/* トビウオは港内ではなく沖合にだけ出る。水面を泳いで加速し、
+          胸びれを開いて低く滑空してから再入水する。 */}
+      <Suspense fallback={null}>
+        <FlyingFishSchool animate={animate} />
+      </Suspense>
       {timeOfDay !== "night" && <Gulls flock={VOYAGING_GULLS} animate={animate} />}
       {/* 数分に一度、水平線の手前を他人の船の灯が渡っていく。
           既定の視線を横切る向きに置く(VIEW_YAW)。 */}
