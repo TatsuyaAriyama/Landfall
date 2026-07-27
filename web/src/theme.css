@@ -3800,6 +3800,74 @@ textarea {
   cursor: pointer;
 }
 
+/* 乗船中は個人タイマーと同じ沖合の画面。港名と「仲間と航海中」だけを
+   上辺に小さく残し、海と船団を主役にする。 */
+.harbor-sailing-status {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 4;
+  max-width: min(42vw, 360px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 15px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 20%, transparent);
+  border-radius: 999px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 54%, transparent);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.harbor-sailing-status strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+}
+
+.harbor-sailing-status > span {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--harbor-sand) 64%, transparent);
+}
+
+/* 船の上の名前。現在同じ港画面にいる仲間だけ、在室の緑灯を添える。 */
+.harbor-sailing-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 150px;
+  overflow: hidden;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--harbor-sand) 82%, transparent);
+  background: color-mix(in srgb, #0d2a24 56%, transparent);
+  font-size: 10px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 5px 15px color-mix(in srgb, #071713 20%, transparent);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.harbor-sailing-name.live > span {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5dcaa5;
+  box-shadow: 0 0 9px color-mix(in srgb, #5dcaa5 82%, transparent);
+}
+
 /* 航海士のバッグ。コンパクト表示でも所持数を確認でき、没入時はHUDとして残る。 */
 .harbor-bag-button {
   position: absolute;
@@ -4310,6 +4378,15 @@ textarea {
     font-size: 10px;
     text-align: left;
     white-space: normal;
+  }
+
+  .harbor-sailing-status {
+    max-width: calc(100vw - 228px);
+    padding: 6px 10px;
+  }
+
+  .harbor-sailing-status strong {
+    font-size: 11px;
   }
 }
 

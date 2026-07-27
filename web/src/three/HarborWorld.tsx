@@ -15,12 +15,14 @@ import {
   useThree,
   type RootState,
 } from "@react-three/fiber";
-import { Html, Stars, useGLTF } from "@react-three/drei";
+import { Html, OrbitControls, Stars, useGLTF } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel, { type PhoenixPose } from "./PhoenixModel";
-import { Moon, Ripples, Sea, Sun } from "./SeaParts";
-import { Horizon } from "./VoyageScene";
-import { boatPartsFromIds } from "../boat";
+import { Moon, PassingSwells, Ripples, Sea, Sun } from "./SeaParts";
+import { Horizon, Wake } from "./VoyageScene";
+import { boatPartsFromIds, boatProps } from "../boat";
+import { Gulls, type GullFlock } from "./Gulls";
+import PassingShip from "./PassingShip";
 import {
   ROOM_MAX_MEMBERS,
   clearHarborPresence,
@@ -83,6 +85,28 @@ export interface HarborWorldProps {
 
 const CAM_POS: [number, number, number] = [0.2, 3.1, 9.4];
 const CAM_TARGET: [number, number, number] = [0.45, 0.7, -1.25];
+// 個人タイマーの航海と同じ距離・画角。港で乗船したときは港町のカメラを
+// 使い回さず、この「船と水平線が同時に入る」構図へ切り替える。
+const HARBOR_SAIL_CAM_POS: [number, number, number] = [-5.6, 2.4, 8.6];
+const HARBOR_SAIL_CAM_TARGET: [number, number, number] = [0.8, 1.15, 0];
+const HARBOR_SAIL_FOV = 38;
+const HARBOR_SAIL_LIGHT_POS: Record<TimeOfDay, [number, number, number]> = {
+  morning: [-5.2, 1.7, -5.5],
+  day: [0.8, 5.1, -5.5],
+  evening: [5.4, 1.25, -5.5],
+  night: [5.1, 3.3, -5.5],
+};
+const HARBOR_SAIL_GULLS: GullFlock = [
+  { r: 4.5, y: 2.6, omega: 0.08, scale: 0.14, flap: 2.0, phase: 0.2 },
+  { r: 5.3, y: 3.2, omega: -0.055, scale: 0.12, flap: 1.6, phase: 2.1 },
+  { r: 4.0, y: 2.2, omega: 0.105, scale: 0.15, flap: 2.4, phase: 4.0 },
+  { r: 6.1, y: 2.8, omega: -0.045, scale: 0.11, flap: 1.8, phase: 5.5 },
+];
+const HARBOR_SAIL_LANES = [
+  { x: 1.4, z: -2.45, scale: 0.48 },
+  { x: -0.55, z: 2.5, scale: 0.44 },
+  { x: 3.55, z: -4.45, scale: 0.4 },
+] as const;
 
 // 没入(砂の拠点に入る)ときの遠景→近景ドリー。遠景はコンパクトの構図そのまま。
 type WorldPhase = "enter" | "idle" | "exit";
@@ -1572,6 +1596,222 @@ function HarborWalkControls({
   );
 }
 
+/// 共同航海の一隻。停泊用の MemberBoat と違い、航跡を引きながら同じ向きへ進む。
+/// 船の前後差は在室時間や作業量ではなく、単なる並走レーンとして固定する。
+function HarborSailingBoat({
+  member,
+  x,
+  z,
+  scale,
+  animate,
+  live,
+  fishingRod,
+  sailorPose,
+  sailorKey,
+  self,
+}: {
+  member?: HarborMember;
+  x: number;
+  z: number;
+  scale: number;
+  animate: boolean;
+  live: boolean;
+  fishingRod: boolean;
+  sailorPose: PhoenixPose;
+  sailorKey: number;
+  self: boolean;
+}) {
+  const parts = useMemo(
+    () =>
+      member
+        ? boatPartsFromIds({
+            boatSail: member.boatSail,
+            boatJib: member.boatJib,
+            boatHull: member.boatHull,
+            boatStripe: member.boatStripe,
+            boatFlag: member.boatFlag,
+          })
+        : boatProps(),
+    [member],
+  );
+  const root = useRef<THREE.Group>(null);
+  const phase = useMemo(() => {
+    const id = member?.id ?? "self";
+    let hash = 0;
+    for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+    return (hash % 628) / 100;
+  }, [member?.id]);
+
+  useLayoutEffect(() => {
+    root.current?.position.set(x, 0, z);
+  }, [x, z]);
+
+  useFrame(({ clock }) => {
+    if (!animate || !root.current) return;
+    const time = clock.elapsedTime;
+    root.current.position.x = x + Math.sin(time * 0.28 + phase) * 0.16;
+    root.current.position.y = Math.sin(time * 0.72 + phase) * 0.045;
+    root.current.rotation.z = Math.sin(time * 0.55 + phase * 1.4) * 0.018;
+  });
+
+  return (
+    <group ref={root} rotation={[0, 0.1, 0]} scale={scale}>
+      <Wake animate={animate} />
+      <BoatModel parts={parts} animate={animate} />
+      <group position={[0.88, 0.57, 0.22]} scale={0.62}>
+        <PhoenixModel
+          key={sailorKey}
+          animate={animate}
+          pose={sailorPose}
+          fishingRod={fishingRod}
+        />
+      </group>
+      <Html
+        position={[0.1, 1.48, 0]}
+        center
+        distanceFactor={8}
+        zIndexRange={[2, 0]}
+        style={{ pointerEvents: "none" }}
+      >
+        <div className={`harbor-sailing-name${live ? " live" : ""}`}>
+          {live && <span aria-hidden="true" />}
+          {self ? t("you") : member?.displayName ?? t("sailor")}
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+/// 港から船へ乗ったあとの沖合。個人タイマーと同じ海・光・画角の中で、
+/// 港の最大4隻が順位を作らず横並びに航行する。
+function HarborSailingSea({
+  currentUid,
+  members,
+  livePresence,
+  timeOfDay,
+  animate,
+  fishingRod,
+  ownPose,
+  ownPoseKey,
+}: {
+  currentUid: string;
+  members: HarborMember[];
+  livePresence: ReadonlyMap<string, HarborPresence>;
+  timeOfDay: TimeOfDay;
+  animate: boolean;
+  fishingRod: boolean;
+  ownPose: PhoenixPose;
+  ownPoseKey: number;
+}) {
+  const camera = useThree((state) => state.camera);
+  const invalidate = useThree((state) => state.invalidate);
+  const light = SEA_LIGHT[timeOfDay];
+  const lightPosition = HARBOR_SAIL_LIGHT_POS[timeOfDay];
+  const ownMember = members.find((member) => member.id === currentUid);
+  const companions = members
+    .filter((member) => member.id !== currentUid)
+    .slice(0, HARBOR_SAIL_LANES.length);
+
+  useLayoutEffect(() => {
+    camera.position.set(...HARBOR_SAIL_CAM_POS);
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.fov = HARBOR_SAIL_FOV;
+      camera.updateProjectionMatrix();
+    }
+    camera.lookAt(...HARBOR_SAIL_CAM_TARGET);
+    invalidate();
+  }, [camera, invalidate]);
+
+  return (
+    <>
+      <color attach="background" args={[light.sky]} />
+      <fog attach="fog" args={[light.fog, 12, 34]} />
+      <ambientLight color={light.ambient} intensity={timeOfDay === "day" ? 0.85 : 0.48} />
+      <directionalLight
+        color={light.keyLight}
+        intensity={timeOfDay === "day" ? 1.45 : 1.08}
+        position={[-6, 8, -5]}
+      />
+      <directionalLight color={light.fillLight} intensity={0.24} position={[5, 3, 6]} />
+      {light.stars > 0 && (
+        <Stars
+          radius={42}
+          depth={18}
+          count={light.stars}
+          factor={2}
+          saturation={0}
+          fade
+          speed={animate ? 0.5 : 0}
+        />
+      )}
+      <group position={lightPosition} scale={light.celestial === "moon" ? 0.4 : 0.72}>
+        {light.celestial === "moon" ? (
+          <Moon position={[0, 0, 0]} />
+        ) : (
+          <Sun position={[0, 0, 0]} color={light.reflection} />
+        )}
+      </group>
+      <Sea
+        moonX={lightPosition[0]}
+        animate={animate}
+        seaColor={light.sea}
+        deepColor={light.seaDeep}
+        lightColor={light.reflection}
+        reflection={timeOfDay === "day" ? 0.34 : 0.5}
+      />
+      <Horizon />
+      <PassingSwells animate={animate} flow={1} />
+      {timeOfDay !== "night" && <Gulls flock={HARBOR_SAIL_GULLS} animate={animate} />}
+      <group rotation={[0, 0.64, 0]}>
+        <PassingShip animate={animate} />
+      </group>
+
+      <HarborSailingBoat
+        member={ownMember}
+        x={0}
+        z={0}
+        scale={0.55}
+        animate={animate}
+        live
+        fishingRod={fishingRod}
+        sailorPose={ownPose}
+        sailorKey={ownPoseKey}
+        self
+      />
+      {companions.map((member, index) => {
+        const lane = HARBOR_SAIL_LANES[index];
+        const presence = livePresence.get(member.id);
+        return (
+          <HarborSailingBoat
+            key={member.id}
+            member={member}
+            x={lane.x}
+            z={lane.z}
+            scale={lane.scale}
+            animate={animate}
+            live={Boolean(presence)}
+            fishingRod={Boolean(presence?.fishingRod)}
+            sailorPose={
+              presence?.aboard ? (presence.pose as PhoenixPose) : "idle"
+            }
+            sailorKey={presence?.emoteSeq ?? 0}
+            self={false}
+          />
+        );
+      })}
+      <OrbitControls
+        target={HARBOR_SAIL_CAM_TARGET}
+        enablePan={false}
+        enableDamping={animate}
+        minDistance={4}
+        maxDistance={16}
+        minPolarAngle={Math.PI * 0.12}
+        maxPolarAngle={Math.PI * 0.49}
+      />
+    </>
+  );
+}
+
 /// シーン本体。時間帯の海+砂の拠点+停泊する船団+沖の航路の海域(海獣/嵐)。
 function HarborSea({
   roomName,
@@ -1688,6 +1928,11 @@ function HarborSea({
   // 固定の斜め視点(VoyageSceneと同じ作法)。スクロール中の帯なので
   // OrbitControlsは使わない — タッチ回転が縦スクロールを塞ぐため。
   useLayoutEffect(() => {
+    camera.position.set(...CAM_POS);
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.fov = 36;
+      camera.updateProjectionMatrix();
+    }
     camera.lookAt(CAM_TARGET[0], CAM_TARGET[1], CAM_TARGET[2]);
     invalidate();
   }, [camera, invalidate]);
@@ -1970,9 +2215,11 @@ export default function HarborWorld({
   }, []);
 
   // ---- 没入(みんなの海に入る) ----
-  const [immersive, setImmersive] = useState(false);
+  // プライベート港は「参加者とすでに航海している」景色から始める。
+  // 港町は消さず、船を降りたときに従来の島・桟橋へ戻れる二層構造にする。
+  const [immersive, setImmersive] = useState(true);
   const [phase, setPhase] = useState<WorldPhase>("idle");
-  const [aboard, setAboard] = useState(false);
+  const [aboard, setAboard] = useState(true);
   const [nearOwnBoat, setNearOwnBoat] = useState(false);
   const walkInput = useRef<HarborWalkInput>({ x: 0, z: 0 });
   const setWalkInput = useCallback((next: HarborWalkInput) => {
@@ -2230,9 +2477,18 @@ export default function HarborWorld({
     setNearOwnBoat(false);
     setAboard(true);
   }, [setWalkInput]);
+  const leaveSailing = useCallback(() => {
+    setWalkInput({ x: 0, z: 0 });
+    setBagOpen(false);
+    setEmoteOpen(false);
+    setAboard(false);
+    setNearOwnBoat(false);
+  }, [setWalkInput]);
   const beginLook = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!immersive || !(event.target instanceof HTMLCanvasElement)) return;
+      // 航海中の見渡し操作は OrbitControls に任せる。港町だけ、航海士を
+      // 中心にする独自カメラ操作を使う。
+      if (aboard || !immersive || !(event.target instanceof HTMLCanvasElement)) return;
       event.preventDefault();
       lookDrag.current = {
         pointerId: event.pointerId,
@@ -2241,7 +2497,7 @@ export default function HarborWorld({
       };
       event.currentTarget.setPointerCapture(event.pointerId);
     },
-    [immersive],
+    [aboard, immersive],
   );
   const moveLook = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = lookDrag.current;
@@ -2275,6 +2531,7 @@ export default function HarborWorld({
       if (bagOpen) setBagOpen(false);
       else if (emoteOpen) setEmoteOpen(false);
       else if (restingAtTent) setRestingAtTent(false);
+      else if (aboard) leaveSailing();
       else requestClose();
     };
     window.addEventListener("keydown", onKey);
@@ -2283,7 +2540,15 @@ export default function HarborWorld({
       window.removeEventListener("keydown", onKey);
       unlockScroll();
     };
-  }, [bagOpen, emoteOpen, immersive, requestClose, restingAtTent]);
+  }, [
+    aboard,
+    bagOpen,
+    emoteOpen,
+    immersive,
+    leaveSailing,
+    requestClose,
+    restingAtTent,
+  ]);
 
   // ---- 共同航海: 進捗・海域・到着・一撃 ----
   const target = voyage?.targetMinutes ?? 0;
@@ -2538,7 +2803,9 @@ export default function HarborWorld({
     <>
       <div
         ref={rootRef}
-        className={`harbor-world time-${timeOfDay}${immersive ? " immersive" : ""}`}
+        className={`harbor-world time-${timeOfDay}${immersive ? " immersive" : ""}${
+          aboard ? " sailing" : ""
+        }`}
         data-time-of-day={timeOfDay}
         onPointerDown={beginLook}
         onPointerMove={moveLook}
@@ -2553,46 +2820,64 @@ export default function HarborWorld({
             glRef.current = state;
           }}
         >
-          <HarborSea
-            roomName={room.name}
-            timeOfDay={timeOfDay}
-            berths={berths}
-            litIds={litIds}
-            arrivingMemberIds={arrivingMemberIds}
-            animate={animate}
-            encounter={encounterView}
-            advanceOn={arrived}
-            arriveFx={arriveStage === "fx"}
-            hitClock={hitClock}
-            bolts={bolts}
-            onBoltDone={(id) => setBolts((list) => list.filter((b) => b.id !== id))}
-            immersive={immersive}
-            phase={phase}
-            onEnterWorld={enterWorld}
-            onWorldEntered={handleWorldEntered}
-            onWorldExited={handleWorldExited}
-            walkInput={walkInput}
-            look={look}
-            currentUid={currentUid}
-            ownBerth={ownBerth}
-            aboard={aboard}
-            controlsLocked={
-              bagOpen || emoteOpen || equipmentAction !== null || restingAtTent
-            }
-            fishingRodOwned={fishingRodOwned}
-            fishingRodVisible={fishingRodVisible}
-            equipmentAction={equipmentAction}
-            emotePose={emotePose}
-            emoteSeq={emoteSeq}
-            restingAtTent={restingAtTent}
-            livePresence={livePresence}
-            onNearOwnBoatChange={setNearOwnBoat}
-            onNearFishingRodChange={setNearFishingRod}
-            onNearTentChange={setNearTent}
-            onWalkerTransform={handleWalkerTransform}
-            onMovementStart={stopEmote}
-            onBoardOwnBoat={boardOwnBoat}
-          />
+          {aboard ? (
+            <HarborSailingSea
+              currentUid={currentUid}
+              members={members}
+              livePresence={livePresence}
+              timeOfDay={timeOfDay}
+              animate={animate}
+              fishingRod={fishingRodVisible}
+              ownPose={activeNavigatorPose(
+                equipmentAction,
+                emotePose,
+                fishingRodVisible,
+                false,
+              )}
+              ownPoseKey={emoteSeq}
+            />
+          ) : (
+            <HarborSea
+              roomName={room.name}
+              timeOfDay={timeOfDay}
+              berths={berths}
+              litIds={litIds}
+              arrivingMemberIds={arrivingMemberIds}
+              animate={animate}
+              encounter={encounterView}
+              advanceOn={arrived}
+              arriveFx={arriveStage === "fx"}
+              hitClock={hitClock}
+              bolts={bolts}
+              onBoltDone={(id) => setBolts((list) => list.filter((b) => b.id !== id))}
+              immersive={immersive}
+              phase={phase}
+              onEnterWorld={enterWorld}
+              onWorldEntered={handleWorldEntered}
+              onWorldExited={handleWorldExited}
+              walkInput={walkInput}
+              look={look}
+              currentUid={currentUid}
+              ownBerth={ownBerth}
+              aboard={false}
+              controlsLocked={
+                bagOpen || emoteOpen || equipmentAction !== null || restingAtTent
+              }
+              fishingRodOwned={fishingRodOwned}
+              fishingRodVisible={fishingRodVisible}
+              equipmentAction={equipmentAction}
+              emotePose={emotePose}
+              emoteSeq={emoteSeq}
+              restingAtTent={restingAtTent}
+              livePresence={livePresence}
+              onNearOwnBoatChange={setNearOwnBoat}
+              onNearFishingRodChange={setNearFishingRod}
+              onNearTentChange={setNearTent}
+              onWalkerTransform={handleWalkerTransform}
+              onMovementStart={stopEmote}
+              onBoardOwnBoat={boardOwnBoat}
+            />
+          )}
         </Canvas>
         {/* コンパクト時の誘い。海(空・水面)をタップで世界へ入る。 */}
         {!immersive && (
@@ -2601,10 +2886,20 @@ export default function HarborWorld({
         {/* 没入時に世界から出るボタン。 */}
         {immersive && (
           <>
-            <button className="harbor-world-close" onClick={requestClose}>
-              {t("close")}
+            <button
+              className="harbor-world-close"
+              onClick={aboard ? leaveSailing : requestClose}
+            >
+              {t(aboard ? "harborReturnToIsland" : "close")}
             </button>
-            <div className="harbor-walk-hint">{t("harborWalkHint")}</div>
+            {aboard ? (
+              <div className="harbor-sailing-status">
+                <strong>{room.name}</strong>
+                <span>{t("harborSailingTogether")}</span>
+              </div>
+            ) : (
+              <div className="harbor-walk-hint">{t("harborWalkHint")}</div>
+            )}
             {!aboard &&
               !bagOpen &&
               !emoteOpen &&
@@ -2616,20 +2911,21 @@ export default function HarborWorld({
               !nearFishingRod &&
               phase === "idle" &&
               ownBerth &&
-              (aboard || nearOwnBoat) && (
-              <button
-                type="button"
-                className="harbor-board-action"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={() => {
-                  setWalkInput({ x: 0, z: 0 });
-                  setNearOwnBoat(false);
-                  setAboard((current) => !current);
-                }}
-              >
-                {t(aboard ? "harborLeaveBoat" : "harborBoardBoat")}
-              </button>
-            )}
+              !aboard &&
+              nearOwnBoat && (
+                <button
+                  type="button"
+                  className="harbor-board-action"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => {
+                    setWalkInput({ x: 0, z: 0 });
+                    setNearOwnBoat(false);
+                    setAboard(true);
+                  }}
+                >
+                  {t("harborBoardBoat")}
+                </button>
+              )}
             {!bagOpen &&
               !aboard &&
               !fishingRodOwned &&

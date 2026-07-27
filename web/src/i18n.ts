@@ -178,6 +178,8 @@ const ja = {
   harborWalkBack: "後ろへ歩く",
   harborBoardBoat: "船に乗る",
   harborLeaveBoat: "船を降りる",
+  harborReturnToIsland: "港へ戻る",
+  harborSailingTogether: "仲間の船と航海中",
   restInTent: "テントで休む",
   leaveTent: "テントの外へ出る",
 
@@ -574,6 +576,8 @@ const en: Record<I18nKey, string> = {
   harborWalkBack: "Walk back",
   harborBoardBoat: "Board your boat",
   harborLeaveBoat: "Step ashore",
+  harborReturnToIsland: "Return to harbor",
+  harborSailingTogether: "Sailing with your harbor",
   restInTent: "Rest in the tent",
   leaveTent: "Step outside",
 
