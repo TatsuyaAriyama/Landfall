@@ -401,31 +401,6 @@ textarea {
   }
 }
 
-.tile-edit {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  font-size: 15px;
-  line-height: 1;
-  /* 常に出す。以前はホバーでしか現れず、スマホでは項目の改名・配色変更・削除・
-     並び替えへの入口が一切無かった(タイルを押すと計測が始まってしまうため、
-     ここが唯一の入口)。@media (hover: none) で出す手もあるが、トラックパッド付き
-     iPad のように hover を持つと申告するタッチ端末で再び消えるので、条件を付けない。
-     主役のタイルより控えめな濃さにして、常時表示でも邪魔にならないようにする。 */
-  display: flex;
-  opacity: 0.72;
-  align-items: center;
-  justify-content: center;
-}
-
-.tile:hover .tile-edit,
-.tile-edit:hover {
-  opacity: 1;
-}
-
 .tile-add {
   aspect-ratio: 1;
   border-radius: var(--radius);
@@ -979,6 +954,42 @@ textarea {
   align-items: center;
   gap: 14px;
   width: 100%;
+}
+
+.settings-section-row {
+  min-height: 62px;
+}
+
+.settings-items-hint {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+}
+
+.settings-item-rows {
+  border-top: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.settings-item-row {
+  min-height: 64px;
+}
+
+.settings-item-row .row-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row-chevron {
+  flex: none;
+  margin-left: auto;
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+  color: color-mix(in srgb, var(--ink) 38%, transparent);
 }
 
 .row-tap {
@@ -1548,14 +1559,6 @@ textarea {
 
   .tile-today {
     font-size: 10.5px;
-  }
-
-  .tile-edit {
-    top: 5px;
-    right: 5px;
-    width: 26px;
-    height: 26px;
-    font-size: 13px;
   }
 
   .tile-add {
@@ -4740,22 +4743,6 @@ textarea {
   content: "";
   position: absolute;
   inset: -7px;
-}
-
-/* 項目の「…」。見た目は小さな丸のままに、当たり判定を44pxへ広げる。
-   項目の改名・配色変更・削除・並び替えへの唯一の入口なので、押し外すと
-   代わりにタイル(=計測開始)が反応してしまう。 */
-.tile-edit {
-  position: absolute;
-  touch-action: manipulation;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.tile-edit::after {
-  content: "";
-  position: absolute;
-  inset: -9px;
 }
 
 /* 繋がらなかったときの案内。文と再試行を縦に並べて中央へ。 */

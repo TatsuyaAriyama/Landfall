@@ -11,7 +11,7 @@ import {
 import { deleteItemPreservingHistory, saveItem, type UserData } from "../data";
 import { publishCurrentMonth } from "../harbor";
 import { TileSymbolSvg } from "../symbols";
-import { Modal, askConfirm, showToast } from "../overlays";
+import { DialogHeader, Modal, askConfirm, showToast } from "../overlays";
 import { t } from "../i18n";
 
 export function ItemEditor({
@@ -31,6 +31,12 @@ export function ItemEditor({
   const [styleToken, setStyleToken] = useState(normalizeStyle(item?.styleToken ?? "midnight"));
   const [symbolToken, setSymbolToken] = useState(normalizeSymbol(item?.symbolToken ?? "compass"));
   const [working, setWorking] = useState(false);
+  const orderedItems = [...data.items].sort(
+    (a, b) => a.sortOrder - b.sortOrder || a.createdAt.getTime() - b.createdAt.getTime(),
+  );
+  const itemIndex = item
+    ? orderedItems.findIndex((candidate) => candidate.id === item.id)
+    : -1;
 
   const trimmedName = trimAll(name);
   // 他の項目(自分自身は除く)と大小文字・前後空白(全角含む)を無視して同名かどうか。
@@ -47,27 +53,32 @@ export function ItemEditor({
     const trimmed = trimmedName.slice(0, 60);
     if (!trimmed || isDuplicateName || working) return;
     setWorking(true);
-    await saveItem(uid, {
-      id: item?.id,
-      name: trimmed,
-      styleToken,
-      symbolToken,
-      sortOrder: item?.sortOrder ?? nextSortOrder,
-      createdAt: item?.createdAt,
-    });
-    // 既存項目の名前・見た目の変更は、港へ共有済みの月間記録(非正規化された
-    // itemName/styleToken/symbolToken)にも必ず反映する。
-    if (item) {
-      await publishCurrentMonth({
-        items: data.items.map((i) =>
-          i.id === item.id ? { ...i, name: trimmed, styleToken, symbolToken } : i,
-        ),
-        sessions: data.sessions,
-        days: data.days,
-      }).catch(() => {});
+    try {
+      await saveItem(uid, {
+        id: item?.id,
+        name: trimmed,
+        styleToken,
+        symbolToken,
+        sortOrder: item?.sortOrder ?? nextSortOrder,
+        createdAt: item?.createdAt,
+      });
+      // 既存項目の名前・見た目の変更は、港へ共有済みの月間記録(非正規化された
+      // itemName/styleToken/symbolToken)にも必ず反映する。
+      if (item) {
+        await publishCurrentMonth({
+          items: data.items.map((i) =>
+            i.id === item.id ? { ...i, name: trimmed, styleToken, symbolToken } : i,
+          ),
+          sessions: data.sessions,
+          days: data.days,
+        }).catch(() => {});
+      }
+      showToast(t("savedToast"));
+      onClose();
+    } catch {
+      showToast(t("errGeneric"));
+      setWorking(false);
     }
-    showToast(t("savedToast"));
-    onClose();
   };
 
   const remove = async () => {
@@ -82,20 +93,29 @@ export function ItemEditor({
       return;
     }
     setWorking(true);
-    await deleteItemPreservingHistory(uid, item.id, data);
-    onClose();
+    try {
+      await deleteItemPreservingHistory(uid, item.id, data);
+      onClose();
+    } catch {
+      showToast(t("errGeneric"));
+      setWorking(false);
+    }
   };
 
   /// グリッドの並び替え。隣の項目と sortOrder を入れ替える。
   const move = async (dir: -1 | 1) => {
     if (!item || working) return;
-    const idx = data.items.findIndex((i) => i.id === item.id);
-    const target = data.items[idx + dir];
+    const target = orderedItems[itemIndex + dir];
     if (!target) return;
     setWorking(true);
-    await saveItem(uid, { ...item, id: item.id, sortOrder: target.sortOrder });
-    await saveItem(uid, { ...target, id: target.id, sortOrder: item.sortOrder });
-    onClose();
+    try {
+      await saveItem(uid, { ...item, id: item.id, sortOrder: target.sortOrder });
+      await saveItem(uid, { ...target, id: target.id, sortOrder: item.sortOrder });
+      onClose();
+    } catch {
+      showToast(t("errGeneric"));
+      setWorking(false);
+    }
   };
 
   const previewStyle = STYLE_COLORS[styleToken];
@@ -103,7 +123,7 @@ export function ItemEditor({
   return (
     <Modal onClose={onClose}>
       <>
-        <h2 className="dialog-title">{item ? t("editItem") : t("newItem")}</h2>
+        <DialogHeader title={item ? t("editItem") : t("newItem")} onBack={onClose} />
 
         {/* プレビュー: 選んだ色×シンボルが、そのまま今日の画面のタイルになる。 */}
         <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4 }}>
@@ -125,7 +145,9 @@ export function ItemEditor({
           onChange={(e) => setName(e.target.value)}
           placeholder={t("namePlaceholder")}
           maxLength={60}
-          autoFocus
+          // 既存項目を開いた瞬間にスマホのキーボードで色・シンボルが隠れないよう、
+          // 自動フォーカスは名前入力が主目的の新規作成だけにする。
+          autoFocus={!item}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.nativeEvent.isComposing && !saveDisabled) void save();
           }}
@@ -161,10 +183,18 @@ export function ItemEditor({
 
         {item && (
           <div className="chip-row" style={{ marginTop: 24 }}>
-            <button className="chip" onClick={() => move(-1)} disabled={working}>
+            <button
+              className="chip"
+              onClick={() => move(-1)}
+              disabled={working || itemIndex <= 0}
+            >
               ← {t("moveEarlier")}
             </button>
-            <button className="chip" onClick={() => move(1)} disabled={working}>
+            <button
+              className="chip"
+              onClick={() => move(1)}
+              disabled={working || itemIndex < 0 || itemIndex >= orderedItems.length - 1}
+            >
               {t("moveLater")} →
             </button>
           </div>

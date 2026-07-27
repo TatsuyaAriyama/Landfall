@@ -225,7 +225,7 @@ function Main({ uid }: { uid: string }) {
 
       {settingsOpen && (
         <Suspense fallback={<DialogLoading />}>
-          <SettingsDialog data={data} onClose={() => setSettingsOpen(false)} />
+          <SettingsDialog uid={uid} data={data} onClose={() => setSettingsOpen(false)} />
         </Suspense>
       )}
       <OfflineWatcher />

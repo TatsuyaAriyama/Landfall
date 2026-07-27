@@ -98,7 +98,6 @@ function lastUsedMinutes(): number | null {
 
 export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const [recording, setRecording] = useState<StudyItem | null>(null);
-  const [editing, setEditing] = useState<StudyItem | null>(null);
   const [creating, setCreating] = useState(false);
   const [timer, setTimer] = useState<RunningTimer | null>(() => readTimer());
   // 航海の世界を開いているか。閉じても計測は続く(チップから戻れる)。
@@ -316,18 +315,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
                   <span className="tile-today">{durationLabel(totalMin)}</span>
                 )}
               </span>
-              <span
-                className="tile-edit"
-                style={{ background: style.bg, color: style.fg }}
-                role="button"
-                aria-label={t("editItem")}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditing(item);
-                }}
-              >
-                …
-              </span>
             </button>
           );
         })}
@@ -431,10 +418,10 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           }}
         />
       )}
-      {(creating || editing) && (
+      {creating && (
         <ItemEditor
           uid={uid}
-          item={editing}
+          item={null}
           nextSortOrder={
             data.items.length === 0
               ? 0
@@ -443,7 +430,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           data={data}
           onClose={() => {
             setCreating(false);
-            setEditing(null);
           }}
         />
       )}
