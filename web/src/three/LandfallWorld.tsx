@@ -10,6 +10,7 @@ import { Gulls, type GullFlock } from "./Gulls";
 import { boatProps } from "../boat";
 import { durationLabel, t, tf } from "../i18n";
 import { useBackToClose } from "../backClose";
+import { lockBodyScroll } from "../scrollLock";
 
 // 着岸の世界。目的地に到達した瞬間に開く一幕。
 //
@@ -328,11 +329,10 @@ export default function LandfallWorld({ name, minutes, onClose }: LandfallWorldP
       if (e.key === "Escape" && words) onClose();
     };
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlockScroll = lockBodyScroll();
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
+      unlockScroll();
     };
   }, [onClose, words]);
 
