@@ -218,16 +218,19 @@ export function ItemEditor({
       <>
         <DialogHeader title={item ? t("editItem") : t("newItem")} onBack={onClose} />
 
-        {/* プレビュー: 選んだ色×シンボルが、そのまま今日の画面のタイルになる。 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4 }}>
+        {/* 色・シンボルの編集中も完成形を見失わない固定プレビュー。 */}
+        <div className="item-editor-sticky-preview">
           <div
             className="tile-art"
             style={{ background: previewStyle.bg, width: 52, aspectRatio: "1" }}
           >
             <TileSymbolSvg symbol={symbolToken} fg={previewStyle.fg} bg={previewStyle.bg} />
           </div>
-          <div className="tile-name-text" style={{ fontSize: 17 }}>
-            {trimmedName || t("namePlaceholder")}
+          <div className="item-editor-preview-copy" aria-live="polite">
+            <small>{lang === "ja" ? "仕上がり" : "Preview"}</small>
+            <div className="tile-name-text">
+              {trimmedName || (lang === "ja" ? "名前のない項目" : "Untitled item")}
+            </div>
           </div>
         </div>
 

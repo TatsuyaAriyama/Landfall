@@ -805,6 +805,51 @@ textarea {
   min-width: 72px;
 }
 
+.item-editor-sticky-preview {
+  position: sticky;
+  top: 46px;
+  z-index: 2;
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -12px -8px 18px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--harbor-sand) 26%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.home-ocean .item-editor-sticky-preview {
+  background: color-mix(in srgb, var(--home-glass) 94%, transparent);
+}
+
+.item-editor-sticky-preview .tile-art {
+  width: 46px !important;
+  flex: 0 0 46px;
+  border-radius: 12px;
+}
+
+.item-editor-preview-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.item-editor-preview-copy small {
+  font-size: 10px;
+  color: color-mix(in srgb, var(--ink) 48%, transparent);
+}
+
+.item-editor-preview-copy .tile-name-text {
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .field {
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);

@@ -27,74 +27,75 @@ struct ItemEditorSheet: View {
     @FocusState private var nameFocused: Bool
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, LFMetrics.cardPadding)
+                .padding(.top, 20)
+                .padding(.bottom, 10)
 
-                HStack {
-                    Spacer()
-                    previewTile
-                    Spacer()
-                }
-                .padding(.top, 24)
+            fixedPreviewBar
 
-                TextField("Name (e.g. Reading, Coding)", text: $name)
-                    .font(LFFont.label(16))
-                    .foregroundStyle(LFColor.ink)
-                    .tint(LFColor.ink)
-                    .focused($nameFocused)
-                    .submitLabel(.done)
-                    .onSubmit { if !saveDisabled { save() } }
-                    .padding(.horizontal, 18)
-                    .frame(height: 52)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(isDuplicateName ? LFColor.deepRust.opacity(0.6) : LFColor.ink.opacity(0.2), lineWidth: 1)
-                    )
-                    .padding(.top, 24)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    TextField("Name (e.g. Reading, Coding)", text: $name)
+                        .font(LFFont.label(16))
+                        .foregroundStyle(LFColor.ink)
+                        .tint(LFColor.ink)
+                        .focused($nameFocused)
+                        .submitLabel(.done)
+                        .onSubmit { if !saveDisabled { save() } }
+                        .padding(.horizontal, 18)
+                        .frame(height: 52)
+                        .background(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(isDuplicateName ? LFColor.deepRust.opacity(0.6) : LFColor.ink.opacity(0.2), lineWidth: 1)
+                        )
+                        .padding(.top, 22)
 
-                if isDuplicateName {
-                    Text("An item with this name already exists.")
-                        .font(LFFont.label(13))
-                        .foregroundStyle(LFColor.deepRust)
-                        .padding(.top, 8)
-                }
+                    if isDuplicateName {
+                        Text("An item with this name already exists.")
+                            .font(LFFont.label(13))
+                            .foregroundStyle(LFColor.deepRust)
+                            .padding(.top, 8)
+                    }
 
-                photoSection
-                    .padding(.top, 24)
-
-                if photoData == nil {
-                    sectionLabel("Color")
+                    photoSection
                         .padding(.top, 24)
-                    selectedColorSummary
-                        .padding(.top, 10)
 
-                    colorSeaHeading
-                        .padding(.top, 18)
-                    colorSeaChart
-                        .padding(.top, 12)
-                    seaLightControl
-                        .padding(.top, 16)
-                    harborSwatchHeading
-                        .padding(.top, 18)
-                    styleRow
-                        .padding(.top, 10)
+                    if photoData == nil {
+                        sectionLabel("Color")
+                            .padding(.top, 24)
+                        selectedColorSummary
+                            .padding(.top, 10)
 
-                    sectionLabel("Symbol")
-                        .padding(.top, 20)
-                    symbolRow
-                        .padding(.top, 10)
+                        colorSeaHeading
+                            .padding(.top, 18)
+                        colorSeaChart
+                            .padding(.top, 12)
+                        seaLightControl
+                            .padding(.top, 16)
+                        harborSwatchHeading
+                            .padding(.top, 18)
+                        styleRow
+                            .padding(.top, 10)
+
+                        sectionLabel("Symbol")
+                            .padding(.top, 20)
+                        symbolRow
+                            .padding(.top, 10)
+                    }
+
+                    saveButton
+                        .padding(.top, 32)
+
+                    if existing != nil {
+                        deleteButton
+                            .padding(.top, 16)
+                    }
                 }
-
-                saveButton
-                    .padding(.top, 32)
-
-                if existing != nil {
-                    deleteButton
-                        .padding(.top, 16)
-                }
+                .padding(.horizontal, LFMetrics.cardPadding)
+                .padding(.bottom, LFMetrics.cardPadding)
             }
-            .padding(LFMetrics.cardPadding)
         }
         .background(LFColor.paper)
         .presentationDetents([.large])
@@ -134,21 +135,54 @@ struct ItemEditorSheet: View {
         }
     }
 
-    private var previewTile: some View {
+    private var fixedPreviewBar: some View {
+        HStack(spacing: 12) {
+            previewTile(size: 52)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Preview")
+                    .font(LFFont.label(10))
+                    .foregroundStyle(LFColor.ink.opacity(0.48))
+                if trimmedName.isEmpty {
+                    Text("Untitled item")
+                        .foregroundStyle(LFColor.ink.opacity(0.5))
+                } else {
+                    Text(trimmedName)
+                        .foregroundStyle(LFColor.ink)
+                }
+            }
+            .font(LFFont.copy(15))
+            .lineLimit(1)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, LFMetrics.cardPadding)
+        .padding(.vertical, 9)
+        .background(LFColor.paper)
+        .overlay(alignment: .top) {
+            Rectangle().fill(LFColor.harborSand.opacity(0.2)).frame(height: 1)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(LFColor.harborSand.opacity(0.28)).frame(height: 1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func previewTile(size: CGFloat) -> some View {
         ZStack {
             if let data = photoData, let image = UIImage(data: data) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 96, height: 96)
+                    .frame(width: size, height: size)
             } else {
                 style.background
                 TileSymbolView(symbol: symbol, fg: style.foreground, bg: style.background)
-                    .frame(width: 60, height: 60)
+                    .frame(width: size * 0.64, height: size * 0.64)
             }
         }
-        .frame(width: 96, height: 96)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
     }
 
     private var style: ItemTileStyle {
