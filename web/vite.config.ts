@@ -7,8 +7,8 @@ export default defineConfig({
   build: {
     // Vite/Rolldownでは、動的import先だけが変わっても親チャンクのファイル名が
     // 据え置かれる場合がある。immutable配信された旧親チャンクとの混在を避けるため、
-    // 読書エモートを含む公開世代でも、旧航海士チャンクと混在しないよう
+    // スクロールロック修正版と旧全画面チャンクが混在しないよう、
     // 名前空間ごと更新する。
-    assetsDir: 'assets/stable-v4',
+    assetsDir: 'assets/stable-v5',
   },
 })

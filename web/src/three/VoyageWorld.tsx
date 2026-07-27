@@ -38,6 +38,7 @@ import { newUUID } from "../types";
 import { askConfirm, showToast } from "../overlays";
 import { t } from "../i18n";
 import { useBackToClose } from "../backClose";
+import { lockBodyScroll } from "../scrollLock";
 import { TAP_SLOP } from "./voyageConstants";
 import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 
@@ -665,11 +666,10 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
       if (e.key === "Escape") requestClose();
     };
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlockScroll = lockBodyScroll();
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
+      unlockScroll();
     };
   }, [requestClose]);
 

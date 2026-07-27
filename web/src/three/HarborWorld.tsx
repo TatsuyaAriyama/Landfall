@@ -49,6 +49,7 @@ import {
   saveNavigatorInventory,
   type NavigatorInventory,
 } from "../inventory";
+import { lockBodyScroll } from "../scrollLock";
 
 // 港の「みんなの海」。参加メンバー全員の船が同じ桟橋へ帰り、
 // 灯台と広い砂地が迎える、まだ何もない拠点。
@@ -2277,11 +2278,10 @@ export default function HarborWorld({
       else requestClose();
     };
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlockScroll = lockBodyScroll();
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
+      unlockScroll();
     };
   }, [bagOpen, emoteOpen, immersive, requestClose, restingAtTent]);
 

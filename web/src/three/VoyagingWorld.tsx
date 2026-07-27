@@ -21,6 +21,7 @@ import {
 import { clockLabel, elapsedSec, isOnBreak, pomoPhase, type RunningTimer } from "../timer";
 import { durationLabel, t } from "../i18n";
 import { useBackToClose } from "../backClose";
+import { lockBodyScroll } from "../scrollLock";
 import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
 import { TileSymbolSvg } from "../symbols";
@@ -319,11 +320,10 @@ export default function VoyagingWorld({
       if (e.key === "Escape") closeAction();
     };
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlockScroll = lockBodyScroll();
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
+      unlockScroll();
     };
   }, [closeAction]);
 

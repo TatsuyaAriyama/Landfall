@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { t } from "./i18n";
 import { useBackToClose } from "./backClose";
+import { lockBodyScroll } from "./scrollLock";
 
 // ダイアログとトーストの共通基盤。
 // - Modal: Esc で閉じる+表示中は背景スクロールを固定
@@ -17,11 +18,10 @@ export function Modal({ onClose, children }: { onClose: () => void; children: Re
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const unlockScroll = lockBodyScroll();
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
+      unlockScroll();
     };
   }, [onClose]);
 
