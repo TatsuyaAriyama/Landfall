@@ -3,10 +3,9 @@ import SwiftUI
 import UIKit
 
 // 航海士(プレイヤーキャラクター)。
-// 新しい Polaris Wayfinder は Blender の navigator_main.usdz が正本。
-// USDZ 内の名前付きピボットを SceneKit 側で動かし、待機/歩行/見張り/
-// 手振りなどの軽量なゲーム内ポーズを維持する。ランタンは持たない。
-// 旧手続きモデルは makeLegacyNavigatorNode と Assets3D/legacy に保存する。
+// 航海士はSceneKitの手続き生成モデルを正本として使う。
+// Blender版のUSDZは互換データとして残すが、ゲーム内では読み込まない。
+// 待機/歩行/手振りなどの軽量なポーズを維持し、ランタンは持たない。
 
 // MARK: - ベクトル小道具(このファイル内)
 
@@ -239,32 +238,7 @@ enum PhoenixNavigator {
     // MARK: 航海士の組み立て(名前付きピボット)
 
     static func makeNavigatorNode() -> SCNNode {
-        guard let source = SCNScene(named: "navigator_main.usdz"),
-              let imported = source.rootNode.childNode(withName: "Navigator_Main", recursively: true)?.clone()
-        else {
-            // The bundled USDZ is expected in production.  Keeping this fallback
-            // makes old project snapshots and development previews recoverable.
-            return makeLegacyNavigatorNode()
-        }
-
-        let root = SCNNode()
-        root.name = "navigator"
-        // After the USDZ Z-up → Y-up correction below, the face points +Z.
-        // Rotate it toward the shared game bow axis (+X).
-        root.eulerAngles.y = .pi / 2
-        #if DEBUG
-        if let y = ProcessInfo.processInfo.environment["LANDFALL_NAV_YAW"], let deg = Float(y) {
-            root.eulerAngles.y = deg * .pi / 180
-        }
-        #endif
-        imported.position = SCNVector3Zero
-        // Blender USDZ is stored Z-up even though SceneKit's world is Y-up.
-        // Rotate the imported asset once; named child pivots remain local and
-        // continue to animate on the expected SceneKit axes.
-        imported.eulerAngles.x = -.pi / 2
-        applyImportedCapeWind(to: imported)
-        root.addChildNode(imported)
-        return root
+        makeLegacyNavigatorNode()
     }
 
     /// 2026-07 まで使っていた SceneKit 手続きモデル。削除せず復旧用に保持する。
@@ -362,8 +336,8 @@ enum PhoenixNavigator {
         armL.eulerAngles.z = -0.14
         core.addChildNode(armL)
 
-        // 旧右腕 + ランタン(復旧用モデルにのみ残す)
-        let armR = makeArm(lantern: true)
+        // 右腕。採用デザインではランタンを持たせない。
+        let armR = makeArm(lantern: false)
         armR.name = "armR"
         armR.position = SCNVector3(0.14, 0.8, 0.01)
         armR.eulerAngles.z = 0.14
