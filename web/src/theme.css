@@ -769,7 +769,7 @@ textarea {
 .dialog-nav {
   position: sticky;
   top: -28px;
-  z-index: 3;
+  z-index: 6;
   display: grid;
   grid-template-columns: minmax(72px, 1fr) auto minmax(72px, 1fr);
   align-items: center;
@@ -808,21 +808,21 @@ textarea {
 .item-editor-sticky-preview {
   position: sticky;
   top: 46px;
-  z-index: 2;
+  z-index: 5;
   min-height: 62px;
   display: flex;
   align-items: center;
   gap: 12px;
   margin: -12px -8px 18px;
   padding: 8px 10px;
-  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  background: color-mix(in srgb, var(--paper) 99%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--harbor-sand) 26%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
 }
 
 .home-ocean .item-editor-sticky-preview {
-  background: color-mix(in srgb, var(--home-glass) 94%, transparent);
+  background: color-mix(in srgb, var(--home-glass) 99%, transparent);
 }
 
 .item-editor-sticky-preview .tile-art {
