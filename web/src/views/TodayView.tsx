@@ -581,9 +581,9 @@ function TimerChip({
 
   // 計測中はタブのタイトルにも時間を出す(別タブで作業していても進みが見える)。
   useEffect(() => {
-    document.title = `${phaseLabel ? `${phaseLabel} ` : ""}${display} · Landfall`;
+    document.title = `${phaseLabel ? `${phaseLabel} ` : ""}${display} · Aftide`;
     return () => {
-      document.title = "Landfall — Study Log";
+      document.title = "Aftide — Study Log";
     };
   }, [display, phaseLabel]);
 

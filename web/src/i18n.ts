@@ -4,8 +4,8 @@ import { storage } from "./storage";
 // 言語は設定(localStorage)→ブラウザ設定の順で決まる(ja 以外は英語)。
 
 const ja = {
-  appName: "Landfall",
-  wordmark: "Landfall-StudyLog",
+  appName: "Aftide",
+  wordmark: "Aftide",
   signInEnter: "サインインして、入港しましょう。",
   signInSync: "記録は、複数の端末で同期されます。",
   signInWithGoogle: "Googleで続ける",
@@ -420,8 +420,8 @@ const ja = {
 export type I18nKey = keyof typeof ja;
 
 const en: Record<I18nKey, string> = {
-  appName: "Landfall",
-  wordmark: "Landfall-StudyLog",
+  appName: "Aftide",
+  wordmark: "Aftide",
   signInEnter: "Sign in to enter the harbor.",
   signInSync: "Your record syncs across your devices.",
   signInWithGoogle: "Continue with Google",
@@ -932,8 +932,8 @@ export function noteCountLabel(n: number): string {
 /// 港の招待の共有文。コードと合わせてOSの共有シートへ渡す。
 export function inviteShareLine(name: string, code: string): string {
   return lang === "ja"
-    ? `Landfallの港「${name}」に招待されました。コード: ${code}`
-    : `You're invited to the harbor "${name}" on Landfall. Code: ${code}`;
+    ? `Aftideの港「${name}」に招待されました。コード: ${code}`
+    : `You're invited to the harbor "${name}" on Aftide. Code: ${code}`;
 }
 
 /// 共同航海の残り表示。「あと◯時間」(1時間未満は分)。

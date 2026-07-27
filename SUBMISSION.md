@@ -1,6 +1,6 @@
 # App Store 提出チェックリスト
 
-Landfall を App Store に提出するための手順と、記載が必要な項目のまとめ。
+Aftide を App Store に提出するための手順と、記載が必要な項目のまとめ。
 署名・アップロード・ストア掲載情報の入力は Apple ID 認証が必要なため、**あなた自身が**行う必要があります(Claude では代行不可)。
 
 ## ✅ プロジェクト側で対応済み
@@ -32,7 +32,7 @@ Landfall を App Store に提出するための手順と、記載が必要な項
 https://appstoreconnect.apple.com で新規アプリを作成し、以下を入力:
 
 - **Primary Language**: English (U.S.)
-- **Name**: Landfall(重複時は要調整)/ **Bundle ID**: com.tatsuyaariyama.Landfall / **SKU**: 任意
+- **Name**: Aftide / **Bundle ID**: com.tatsuyaariyama.Landfall / **SKU**: 任意
 - **Category**: Productivity(第2カテゴリは任意で Education など)
 - **Age Rating**: 質問票に回答 → 本アプリは該当項目なしで **4+** 見込み
 - **App Privacy**: ⚠️ **「Data Not Collected」は誤り。** STORE_METADATA.md の「App Privacy」節の通り、

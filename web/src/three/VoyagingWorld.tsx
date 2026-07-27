@@ -282,10 +282,10 @@ export default function VoyagingWorld({
   // タイトルにも出す。タブが後ろにいても進み具合が分かる。
   useEffect(() => {
     document.title = completion
-      ? `${durationLabel(completion.minutes)} · ${itemName} · Landfall`
-      : `${display} · ${itemName} · Landfall`;
+      ? `${durationLabel(completion.minutes)} · ${itemName} · Aftide`
+      : `${display} · ${itemName} · Aftide`;
     return () => {
-      document.title = "Landfall — Study Log";
+      document.title = "Aftide — Study Log";
     };
   }, [completion, display, itemName]);
 

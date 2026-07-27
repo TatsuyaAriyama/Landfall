@@ -36,7 +36,7 @@ function brand(ctx: CanvasRenderingContext2D, color: string) {
   ctx.fillStyle = color;
   ctx.font = `400 26px ${FONT}`;
   ctx.textAlign = "left";
-  ctx.fillText("Landfall-StudyLog", PAD, H - 56);
+  ctx.fillText("Aftide", PAD, H - 56);
 }
 
 function stat(

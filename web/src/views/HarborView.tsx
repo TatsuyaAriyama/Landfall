@@ -977,7 +977,7 @@ function RoomDetail({
 
   // 招待をOSの共有シートで送る(対応ブラウザのみ表示)。
   const shareInvite = () => {
-    const inviteUrl = new URL("https://landfall-studylog.com");
+    const inviteUrl = new URL("https://aftide.app");
     inviteUrl.searchParams.set("invite", room.id);
     inviteUrl.hash = "harbor";
     void navigator

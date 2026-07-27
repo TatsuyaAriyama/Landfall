@@ -60,7 +60,7 @@ struct InvitePassCard: View {
 
             Spacer(minLength: 20)
 
-            Text(verbatim: "Landfall-StudyLog")
+            Text(verbatim: "Aftide")
                 .font(LFFont.labelFixed(13))
                 .foregroundStyle(LFColor.harborSand.opacity(0.4))
         }

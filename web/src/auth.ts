@@ -13,7 +13,7 @@ import { appleProvider, auth, googleProvider } from "./firebase";
 //
 // かつては「モバイル Safari はポップアップが塞がれやすいのでリダイレクト」が定石だったが、
 // Safari 16.1+ / Chrome の Storage Partitioning により、認証ドメイン
-// (*.firebaseapp.com)と自サイト(landfall-studylog.com)が別オリジンの場合、
+// (*.firebaseapp.com)と自サイト(aftide.app)が別オリジンの場合、
 // リダイレクトで戻ってきても認証状態を引き継げなくなった。
 // 結果、Googleのログイン画面までは進むのに、戻ると未サインインのまま——という
 // 「iPhone/iPadでログインできない」症状になる(Firebase 公式も既知の制約として、

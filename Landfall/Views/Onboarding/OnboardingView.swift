@@ -113,7 +113,7 @@ struct OnboardingPage {
     static let all: [OnboardingPage] = [
         OnboardingPage(
             headline: "Learning breaks off.",
-            subline: "Landfall is built on that. Pausing is part of the voyage.",
+            subline: "Aftide is built on that. Pausing is part of the voyage.",
             motif: AnyView(BrokenTraceMotif())
         ),
         OnboardingPage(

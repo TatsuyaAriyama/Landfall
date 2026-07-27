@@ -1,4 +1,4 @@
-# Landfall art direction
+# Aftide art direction
 
 ## Decorative flags
 

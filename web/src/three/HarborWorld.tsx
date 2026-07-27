@@ -2934,7 +2934,7 @@ export default function HarborWorld({
     state.gl.render(state.scene, state.camera);
     ctx.drawImage(src, 0, 0);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    void downloadCanvas(out, `landfall-harbor-${stamp}.png`);
+    void downloadCanvas(out, `aftide-harbor-${stamp}.png`);
   };
 
   return (

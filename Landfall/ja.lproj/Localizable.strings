@@ -1,4 +1,4 @@
-/* Landfall — 日本語ローカライズ。キーは英語ソース文字列(コード内リテラル)。 */
+/* Aftide — 日本語ローカライズ。キーは英語ソース文字列(コード内リテラル)。 */
 
 /* サインイン */
 "Sign in to enter the harbor." = "サインインして、入港しましょう。";
@@ -16,7 +16,7 @@
 "Next" = "次へ";
 "Begin" = "始める";
 "Learning breaks off." = "学びは、途切れるもの。";
-"Landfall is built on that. Pausing is part of the voyage." = "だからLandfallは、途切れる前提で作りました。休むのも、航海のうちです。";
+"Aftide is built on that. Pausing is part of the voyage." = "だからAftideは、途切れる前提で作りました。休むのも、航海のうちです。";
 "Rest stands as tall as study." = "休んだ日も、学んだ日と同じ大きさ。";
 "No ranks. No streaks. Nothing to keep unbroken." = "順位も、連続記録もありません。途切れさせない努力は、いりません。";
 "What matters is that you return." = "大事なのは、戻ってこられること。";
@@ -119,7 +119,7 @@
 "Save this card" = "このカードで行く";
 /* 使い始めた日。%@ = その日(「2025年3月14日」) */
 "Sailing since %@" = "%@から航海中";
-"Come sail with me in \"%@\" on Landfall. Harbor code: %@" = "Landfallの港「%@」で、一緒に学びませんか。招待コード: %@";
+"Come sail with me in \"%@\" on Aftide. Harbor code: %@" = "Aftideの港「%@」で、一緒に学びませんか。招待コード: %@";
 
 /* 港 */
 "Harbor" = "港";

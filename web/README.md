@@ -1,9 +1,9 @@
-# Landfall Web
+# Aftide Web
 
 iOS 版と同じ Firebase(landfall---study-log)につながる Web 版。
 同じアカウントでサインインすると、記録がリアルタイムに双方向同期される。
 
-- 公開URL: **https://landfall-studylog.com**
+- 公開URL: **https://aftide.app**
 - ホスティング: **Cloudflare Pages**(認証・データベースは Firebase のまま。ホスティングだけ Cloudflare)
 
 ## 開発
@@ -59,7 +59,7 @@ VITE_FB_API_KEY, VITE_FB_AUTH_DOMAIN, VITE_FB_PROJECT_ID, VITE_FB_STORAGE_BUCKET
 VITE_FB_APP_CHECK_SITE_KEY
 ```
 
-カスタムドメイン: Pages プロジェクト → Custom domains → `landfall-studylog.com` を追加(同一 Cloudflare アカウントなので CNAME と SSL は自動)。
+カスタムドメイン: Pages プロジェクト → Custom domains → `aftide.app` を追加(同一 Cloudflare アカウントなので DNS と SSL は自動)。
 
 > **メンバーカードに項目を足したときは、先に Firestore ルールを流す。**
 > `rooms|publicHarbors/{id}/members/{uid}` のルールは `keys().hasOnly([...])` で
@@ -72,7 +72,7 @@ VITE_FB_APP_CHECK_SITE_KEY
 1. **Firebase コンソールでウェブアプリを登録**
    プロジェクトの設定 → アプリを追加 → ウェブ。表示された `appId` を `web/.env.local`(開発用)と Cloudflare Pages の環境変数 `VITE_FB_APP_ID`(本番用)の両方に入れる。
 2. **Auth の承認済みドメイン**
-   Authentication → Settings → Authorized domains に **`landfall-studylog.com`** を追加。
+   Authentication → Settings → Authorized domains に **`aftide.app`** を追加。
    iPad/iPhone の Safari はリダイレクト方式でサインインするため、**このドメインが無いとモバイルでログインできない**。必ず追加すること。
 3. **Firestore ルールのデプロイ**(未実施なら)
    `firebase deploy --only firestore:rules`

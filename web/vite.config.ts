@@ -9,6 +9,6 @@ export default defineConfig({
     // 据え置かれる場合がある。immutable配信された旧親チャンクとの混在を避けるため、
     // 起動復旧版と旧全画面チャンクが混在しないよう、
     // 名前空間ごと更新する。
-    assetsDir: 'assets/stable-v6',
+    assetsDir: 'assets/stable-v7',
   },
 })

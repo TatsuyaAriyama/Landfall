@@ -1,4 +1,4 @@
-# Landfall Firestore スキーマ(iOS / Web 共通の契約)
+# Aftide Firestore スキーマ(iOS / Web 共通の契約)
 
 このファイルが **スキーマの正典**。iOS(Swift)と Web(TypeScript)はコードを共有できないため、
 コレクション構造・フィールド型・docID 規約・上限値はここに合わせる。

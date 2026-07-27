@@ -228,11 +228,11 @@ struct DayShareSheet: View {
     }
     #endif
 
-    /// 「Landfall-2026-07-18.png」形式。
+    /// 「Aftide-2026-07-18.png」形式。
     static func fileName(for date: Date) -> String {
         let comps = Calendar.current.dateComponents([.year, .month, .day], from: date)
         return String(
-            format: "Landfall-%04d-%02d-%02d.png",
+            format: "Aftide-%04d-%02d-%02d.png",
             comps.year ?? 0, comps.month ?? 0, comps.day ?? 0
         )
     }

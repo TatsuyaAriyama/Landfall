@@ -172,7 +172,7 @@ struct LandfallWidget: Widget {
         StaticConfiguration(kind: "LandfallWidget", provider: Provider()) { entry in
             LandfallWidgetView(entry: entry)
         }
-        .configurationDisplayName("Landfall")
+        .configurationDisplayName("Aftide")
         .description("今月の学んだ日・休んだ日を同じ大きさで。")
         .supportedFamilies([
             .systemSmall, .systemMedium,

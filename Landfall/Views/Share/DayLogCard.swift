@@ -245,7 +245,7 @@ struct DayLogCard: View {
                 .padding(.top, log.entries.isEmpty ? 24 : 20)
             }
 
-            Text(verbatim: "Landfall-StudyLog")
+            Text(verbatim: "Aftide")
                 .font(LFFont.labelFixed(12))
                 .foregroundStyle(theme.landInk.opacity(0.5))
                 .padding(.top, log.isRestDay && log.comment == nil ? 22 : 26)

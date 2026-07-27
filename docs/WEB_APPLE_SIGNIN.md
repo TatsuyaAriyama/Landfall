@@ -14,7 +14,7 @@ Web の実装(`src/firebase.ts` の `appleProvider` / `src/auth.ts` の `signInW
    (例: `com.tatsuyaariyama.Landfall.web`)。
 3. 作った Services ID を開き **Sign In with Apple** を有効化 → **Configure**:
    - **Primary App ID**: 手順1の App ID
-   - **Domains and Subdomains**: `landfall-studylog.com`
+   - **Domains and Subdomains**: `aftide.app`
      (Firebase の authDomain も必要な場合がある: `<project>.firebaseapp.com`)
    - **Return URLs**: `https://<project>.firebaseapp.com/__/auth/handler`
      ※ 正確な値は Firebase コンソールの Apple プロバイダ設定画面に表示される
@@ -31,15 +31,15 @@ Authentication → Sign-in method → **Apple** を有効化し、以下を入�
 - **Key ID**
 - **Private key**: ダウンロードした `.p8` の中身
 
-保存後、**承認済みドメイン**に `landfall-studylog.com` が入っていることを確認
+保存後、**承認済みドメイン**に `aftide.app` が入っていることを確認
 (既に Google 用に追加済みのはず)。
 
 ## 3. 確認
 
-1. `https://landfall-studylog.com` を開き「Appleで続ける」を押す。
+1. `https://aftide.app` を開き「Appleで続ける」を押す。
 2. Apple のログイン画面 → 許可 → アプリに戻ってサインイン完了。
 3. 初回は「メールを非公開」を選べる(リレーアドレスが発行される)。
-   Landfall はメールアドレスを表示・利用しないので、どちらでも支障はない。
+   Aftide はメールアドレスを表示・利用しないので、どちらでも支障はない。
 
 ## メモ
 

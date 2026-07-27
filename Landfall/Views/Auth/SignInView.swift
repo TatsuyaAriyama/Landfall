@@ -18,7 +18,7 @@ struct SignInView: View {
                 harborScene
                     .frame(height: 300)
 
-                Text(verbatim: "Landfall-StudyLog")
+                Text(verbatim: "Aftide")
                     .font(LFFont.copy(30))
                     .foregroundStyle(LFColor.harborSand)
                     .padding(.top, 36)

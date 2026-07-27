@@ -8,8 +8,8 @@
 > (下の「App Privacy」節に正しい回答を記載)。説明文の該当箇所も本ファイルで是正済み。
 
 ## App Name / アプリ名
-- EN: `Landfall`
-- JA: `Landfall`
+- EN: `Aftide`
+- JA: `Aftide`
 
 ## Subtitle(30文字以内)/ サブタイトル
 - EN: `Study log. Rest included.`  (25 chars)
@@ -20,16 +20,16 @@
 - Secondary: Education(教育)— 任意
 
 ## Promotional Text(170文字以内、随時更新可)/ プロモーションテキスト
-- EN: `Landfall doesn't hide the days you rested — it counts them, right next to the days you studied. No streaks. No guilt. Just your comeback power.`
+- EN: `Aftide doesn't hide the days you rested — it counts them, right next to the days you studied. No streaks. No guilt. Just your comeback power.`
 - JA: `休んだ日を隠さない学習ログ。連続日数は測らない。評価するのは「戻ってくる力」だけ。月末には、その月ぜんぶが4枚のカードになる。`
 
 ## Description / 説明文
 
 ### EN
 ```
-Landfall is a study log that never hides the days you rested.
+Aftide is a study log that never hides the days you rested.
 
-Most habit apps punish you for stopping. Landfall doesn't. It puts the days you rested right next to the days you studied — same size, same weight, no shame. What it measures instead is your comeback power: how you return after a gap, not how long you can avoid one.
+Most habit apps punish you for stopping. Aftide doesn't. It puts the days you rested right next to the days you studied — same size, same weight, no shame. What it measures instead is your comeback power: how you return after a gap, not how long you can avoid one.
 
 HOME
 Add the things you're working on — a book, a language, an exam, a side project — as simple tiles. Tap one to start a timer or log a length of time, with an optional note about what you did.
@@ -38,7 +38,7 @@ TRACE
 See your month as a single line: a skyline of the days you showed up, gaps where you rested, and a quiet marker every time you came back. Tap any day to revisit exactly what you logged.
 
 WRAPPED
-At the end of each month, Landfall turns the whole month into four cards: the facts (days studied, days rested, and the fact that you never once quit), the story of your longest gap, a comeback "type" built from your own pattern, and a one-page trace of everything. Share any card as an image.
+At the end of each month, Aftide turns the whole month into four cards: the facts (days studied, days rested, and the fact that you never once quit), the story of your longest gap, a comeback "type" built from your own pattern, and a one-page trace of everything. Share any card as an image.
 
 HARBOR (optional)
 Sign in to sync your records across your devices, and to open a small "harbor" with friends. In a harbor you can see each other's days — never ranked, never compared, everyone the same size.
@@ -48,14 +48,14 @@ No streak counters. No "don't break the chain." No nagging notifications. No lea
 
 Your records live on your device. Signing in is optional and only powers sync and harbors.
 
-Landfall is for anyone who has ever quit a habit app out of guilt. This one keeps the door open instead.
+Aftide is for anyone who has ever quit a habit app out of guilt. This one keeps the door open instead.
 ```
 
 ### JA
 ```
-Landfallは、休んだ日を隠さない学習ログです。
+Aftideは、休んだ日を隠さない学習ログです。
 
-多くの習慣アプリは「止まること」を罰します。Landfallはそうしません。休んだ日を、学んだ日とまったく同じ大きさ・同じ重さで並べます。恥じることは何もありません。代わりに見つめるのは「再開力」— どれだけ長く続けたかではなく、どれだけ戻ってこられたか。
+多くの習慣アプリは「止まること」を罰します。Aftideはそうしません。休んだ日を、学んだ日とまったく同じ大きさ・同じ重さで並べます。恥じることは何もありません。代わりに見つめるのは「再開力」— どれだけ長く続けたかではなく、どれだけ戻ってこられたか。
 
 ■ ホーム
 取り組んでいること(本、語学、資格、サイドプロジェクトなど)をタイルとして追加。タップしてタイマーで計測するか、時間を選んで記録します。任意でひとことメモも添えられます。
@@ -74,7 +74,7 @@ Landfallは、休んだ日を隠さない学習ログです。
 
 記録はあなたの端末の中にあります。サインインは任意で、同期と港のためだけに使います。
 
-罪悪感で習慣アプリをやめてしまったことがある人へ。Landfallは、扉を閉じません。
+罪悪感で習慣アプリをやめてしまったことがある人へ。Aftideは、扉を閉じません。
 ```
 
 ## Keywords(100文字以内、カンマ区切り、スペース節約)/ キーワード
@@ -86,8 +86,8 @@ Landfallは、休んだ日を隠さない学習ログです。
 ## What's New
 
 ### v1.0(初回)
-- EN: `Landfall v1.0 — Home, Trace, and Wrapped. Your first Wrapped arrives at the end of your first month.`
-- JA: `Landfall v1.0 — ホーム・軌跡・Wrapped。最初のWrappedは、記録した月の終わりに届きます。`
+- EN: `Aftide v1.0 — Home, Trace, and Wrapped. Your first Wrapped arrives at the end of your first month.`
+- JA: `Aftide v1.0 — ホーム・軌跡・Wrapped。最初のWrappedは、記録した月の終わりに届きます。`
 
 ### 次のアップデート(v1.0 承認後に提出。ローカル main に実装済み)
 > v1.0 以降に積んだもの一式(同期・ダークモード・ウィジェット・通知・共有カード・港の磨き込み・

@@ -23,22 +23,23 @@ enum LandfallLink {
     static let appStoreID: String? = nil            // 例: "6612345678"
     static let isPubliclyAvailable = false          // 配信開始後に true
 
-    /// アプリの入口。公開後は App Store のページ、それまでは nil(QR/URLを描かない)。
+    /// アプリの入口。Web版と招待コード入力へいつでも辿れる正規ドメイン。
     static let site: URL? = {
         #if DEBUG
-        // 動作確認用: LANDFALL_SITE=https://… で行き先を差し替えられる。
-        if let raw = ProcessInfo.processInfo.environment["LANDFALL_SITE"],
+        // 動作確認用: AFTIDE_SITE=https://… で行き先を差し替えられる。
+        if let raw = ProcessInfo.processInfo.environment["AFTIDE_SITE"]
+            ?? ProcessInfo.processInfo.environment["LANDFALL_SITE"],
            let url = URL(string: raw) {
             return url
         }
         #endif
-        guard isPubliclyAvailable, let id = appStoreID, !id.isEmpty else { return nil }
-        return URL(string: "https://apps.apple.com/app/id\(id)")
+        return URL(string: "https://aftide.app")
     }()
 
     /// アプリが入っている端末で直接開くためのカスタムURLスキーム。
     /// ドメインもApp Store IDも要らないので、これは今日から使える。
-    static let scheme = "landfall"
+    static let scheme = "aftide"
+    static let legacyScheme = "landfall"
 
     // MARK: - 導線があるか
 
@@ -64,9 +65,10 @@ enum LandfallLink {
         URL(string: "\(scheme)://join?code=\(normalize(code))")!
     }
 
-    /// 受け取ったURLから港のコードを取り出す。landfall://join?code=XXXXXX と https://…/j/XXXXXX の両方。
+    /// 受け取ったURLから港のコードを取り出す。aftide://join?code=XXXXXX と
+    /// 旧landfall://、https://…/j/XXXXXX のすべてを受け付ける。
     static func joinCode(from url: URL) -> String? {
-        if url.scheme == scheme, url.host == "join" {
+        if (url.scheme == scheme || url.scheme == legacyScheme), url.host == "join" {
             let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "code" })?.value
             return code.map(normalize).flatMap { $0.isEmpty ? nil : $0 }

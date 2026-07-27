@@ -19,7 +19,7 @@ private func adaptiveColor(light: UInt, dark: UInt) -> Color {
     })
 }
 
-/// Landfall パレット。グラデーション・影は使わない。
+/// Aftide パレット。グラデーション・影は使わない。
 /// ink / paper は明暗に追従する意味色(地＝paper、文字/線＝ink)。ボタンは ink 地 + paper 文字で自然に反転する。
 /// ブランド色(harborTeal, coral, midnight, sunYellow ...)は固定。航海誌カードは固定デザインのため常にライトで描く。
 enum LFColor {
@@ -36,9 +36,9 @@ enum LFColor {
     static let violet = Color(hex: 0x534AB7)       // カード3ピル枠線
     static let returnOrange = Color(hex: 0xF5822A) // 帰還マーカー
     // アプリアイコン(Landfall図案)専用色
-    static let harborTeal = Color(hex: 0x184A40)   // Landfall アイコン背景(既定)
-    static let harborSand = Color(hex: 0xEADEBD)   // Landfall アイコン前景(帆と陸)
-    static let emberGold = Color(hex: 0xF3C065)    // Landfall 暖色版の前景
+    static let harborTeal = Color(hex: 0x184A40)   // Aftide アイコン背景(既定)
+    static let harborSand = Color(hex: 0xEADEBD)   // Aftide アイコン前景(帆と陸)
+    static let emberGold = Color(hex: 0xF3C065)    // Aftide 暖色版の前景
 }
 
 /// 外観(ライト/ダーク)。言語設定と同じく、端末設定に関わらずアプリ内で切り替えられる。
@@ -139,7 +139,7 @@ struct CardBrandmark: View {
     @Environment(\.lfFixedType) private var fixedType
 
     var body: some View {
-        Text(verbatim: "Landfall-StudyLog")
+        Text(verbatim: "Aftide")
             .font(LFFont.label(13, fixed: fixedType))
             .foregroundStyle(color.opacity(0.4))
     }

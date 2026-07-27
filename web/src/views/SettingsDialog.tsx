@@ -163,7 +163,7 @@ export function SettingsDialog({
         null,
         2,
       ),
-      `landfall-${new Date().toISOString().slice(0, 10)}.json`,
+      `aftide-${new Date().toISOString().slice(0, 10)}.json`,
       "application/json",
     );
   };
@@ -183,7 +183,7 @@ export function SettingsDialog({
       );
     download(
       `\ufeff${["date,item,minutes,note", ...rows].join("\n")}`,
-      `landfall-sessions-${new Date().toISOString().slice(0, 10)}.csv`,
+      `aftide-sessions-${new Date().toISOString().slice(0, 10)}.csv`,
       "text/csv;charset=utf-8",
     );
   };
@@ -195,7 +195,7 @@ export function SettingsDialog({
       .map((log) => [log.id, esc(log.body), log.updatedAt.toISOString()].join(","));
     download(
       `\ufeff${["date,body,updatedAt", ...rows].join("\n")}`,
-      `landfall-voyage-logs-${new Date().toISOString().slice(0, 10)}.csv`,
+      `aftide-voyage-logs-${new Date().toISOString().slice(0, 10)}.csv`,
       "text/csv;charset=utf-8",
     );
   };
