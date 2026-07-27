@@ -3940,7 +3940,7 @@ textarea {
   bottom: calc(58px + env(safe-area-inset-bottom));
   z-index: 7;
   display: grid;
-  grid-template-columns: 42px auto 42px;
+  grid-template-columns: 42px 58px 42px;
   align-items: center;
   gap: 5px;
   padding: 5px;
@@ -3976,11 +3976,25 @@ textarea {
   background: #f3c065;
 }
 
-.harbor-sailing-controls > span {
-  padding-inline: 4px;
-  color: color-mix(in srgb, var(--harbor-sand) 70%, transparent);
-  font-size: 10px;
-  letter-spacing: 0.04em;
+.harbor-sailing-position {
+  position: relative;
+  width: 50px;
+  height: 4px;
+  margin-inline: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--harbor-sand) 22%, transparent);
+}
+
+.harbor-sailing-position > i {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: #f3c065;
+  box-shadow: 0 0 10px color-mix(in srgb, #f3c065 55%, transparent);
+  transition: left 120ms ease-out;
 }
 
 .harbor-world.sailing .harbor-emote-dock {
@@ -4549,11 +4563,12 @@ textarea {
   .harbor-sailing-controls {
     right: 10px;
     bottom: calc(62px + env(safe-area-inset-bottom));
-    grid-template-columns: 44px 44px;
+    grid-template-columns: 44px 46px 44px;
   }
 
-  .harbor-sailing-controls > span {
-    display: none;
+  .harbor-sailing-position {
+    width: 40px;
+    margin-inline: 3px;
   }
 }
 

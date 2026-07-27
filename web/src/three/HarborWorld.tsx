@@ -113,8 +113,8 @@ const HARBOR_SAIL_LANES = [
   { x: -0.55, z: 2.5, scale: 0.44 },
   { x: 3.55, z: -4.45, scale: 0.4 },
 ] as const;
-const HARBOR_SAIL_MAX_OFFSET = 0.55;
-const HARBOR_SAIL_STEP = 0.09;
+const HARBOR_SAIL_MAX_OFFSET = 0.75;
+const HARBOR_SAIL_STEP = 0.12;
 
 // 没入(砂の拠点に入る)ときの遠景→近景ドリー。遠景はコンパクトの構図そのまま。
 type WorldPhase = "enter" | "idle" | "exit";
@@ -1615,8 +1615,10 @@ function HarborWalkControls({
 
 function HarborSailingControls({
   onSteer,
+  position,
 }: {
   onSteer: (direction: -1 | 1) => void;
+  position: number;
 }) {
   const repeatTimer = useRef<number | undefined>(undefined);
   const stop = useCallback(() => {
@@ -1631,9 +1633,15 @@ function HarborSailingControls({
   ) => {
     event.preventDefault();
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
     stop();
+    // iOSの一部バージョンではbuttonのpointer captureが例外になることがある。
+    // 操船を先に確定し、captureは長押し継続の補助としてだけ試す。
     onSteer(direction);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // 一度のタップ移動はすでに反映済み。clickへ重ねて送らない。
+    }
     repeatTimer.current = window.setInterval(() => onSteer(direction), 80);
   };
   const release = (event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -1664,7 +1672,14 @@ function HarborSailingControls({
       >
         ←
       </button>
-      <span>{t("harborSailingSteer")}</span>
+      <span className="harbor-sailing-position" aria-hidden="true">
+        <i
+          style={{
+            left: `${((position + HARBOR_SAIL_MAX_OFFSET) /
+              (HARBOR_SAIL_MAX_OFFSET * 2)) * 100}%`,
+          }}
+        />
+      </span>
       <button
         type="button"
         aria-label={t("harborSteerRight")}
@@ -3023,7 +3038,7 @@ export default function HarborWorld({
                   <span>{t("harborSailingTogether")}</span>
                 </div>
                 {!bagOpen && !emoteOpen && (
-                  <HarborSailingControls onSteer={steerBoat} />
+                  <HarborSailingControls onSteer={steerBoat} position={sailX} />
                 )}
               </>
             ) : (

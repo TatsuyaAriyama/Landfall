@@ -473,7 +473,7 @@ export function listenHarborPresence(
             yaw: Number(value.yaw ?? 0),
             pose: pose as HarborPresencePose,
             aboard: value.aboard === true,
-            sailX: Math.max(-0.55, Math.min(0.55, Number(value.sailX ?? 0))),
+            sailX: Math.max(-0.75, Math.min(0.75, Number(value.sailX ?? 0))),
             fishingRod: value.fishingRod === true,
             emoteSeq:
               typeof value.emoteSeq === "number" ? Math.max(0, value.emoteSeq) : 0,
@@ -500,7 +500,7 @@ export async function publishHarborPresence(
     yaw: state.yaw,
     pose: state.pose,
     aboard: state.aboard,
-    sailX: Math.max(-0.55, Math.min(0.55, state.sailX)),
+    sailX: Math.max(-0.75, Math.min(0.75, state.sailX)),
     fishingRod: state.fishingRod,
     emoteSeq: Math.max(0, Math.floor(state.emoteSeq)),
     updatedAt: serverTimestamp(),
