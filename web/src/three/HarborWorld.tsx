@@ -113,6 +113,8 @@ const HARBOR_SAIL_LANES = [
   { x: -0.55, z: 2.5, scale: 0.44 },
   { x: 3.55, z: -4.45, scale: 0.4 },
 ] as const;
+const HARBOR_SAIL_MAX_OFFSET = 0.55;
+const HARBOR_SAIL_STEP = 0.09;
 
 // 没入(砂の拠点に入る)ときの遠景→近景ドリー。遠景はコンパクトの構図そのまま。
 type WorldPhase = "enter" | "idle" | "exit";
@@ -1611,6 +1613,75 @@ function HarborWalkControls({
   );
 }
 
+function HarborSailingControls({
+  onSteer,
+}: {
+  onSteer: (direction: -1 | 1) => void;
+}) {
+  const repeatTimer = useRef<number | undefined>(undefined);
+  const stop = useCallback(() => {
+    window.clearInterval(repeatTimer.current);
+    repeatTimer.current = undefined;
+  }, []);
+  useEffect(() => stop, [stop]);
+
+  const start = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    direction: -1 | 1,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    stop();
+    onSteer(direction);
+    repeatTimer.current = window.setInterval(() => onSteer(direction), 80);
+  };
+  const release = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    stop();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  return (
+    <div
+      className="harbor-sailing-controls"
+      role="group"
+      aria-label={t("harborSailingControls")}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <button
+        type="button"
+        aria-label={t("harborSteerLeft")}
+        onPointerDown={(event) => start(event, -1)}
+        onPointerUp={release}
+        onPointerCancel={release}
+        onLostPointerCapture={stop}
+        onClick={(event) => {
+          if (event.detail === 0) onSteer(-1);
+        }}
+      >
+        ←
+      </button>
+      <span>{t("harborSailingSteer")}</span>
+      <button
+        type="button"
+        aria-label={t("harborSteerRight")}
+        onPointerDown={(event) => start(event, 1)}
+        onPointerUp={release}
+        onPointerCancel={release}
+        onLostPointerCapture={stop}
+        onClick={(event) => {
+          if (event.detail === 0) onSteer(1);
+        }}
+      >
+        →
+      </button>
+    </div>
+  );
+}
+
 /// 共同航海の一隻。停泊用の MemberBoat と違い、航跡を引きながら同じ向きへ進む。
 /// 船の前後差は在室時間や作業量ではなく、単なる並走レーンとして固定する。
 function HarborSailingBoat({
@@ -1650,6 +1721,7 @@ function HarborSailingBoat({
     [member],
   );
   const root = useRef<THREE.Group>(null);
+  const initialPosition = useRef<[number, number, number]>([x, 0, z]);
   const phase = useMemo(() => {
     const id = member?.id ?? "self";
     let hash = 0;
@@ -1657,20 +1729,31 @@ function HarborSailingBoat({
     return (hash % 628) / 100;
   }, [member?.id]);
 
-  useLayoutEffect(() => {
-    root.current?.position.set(x, 0, z);
-  }, [x, z]);
-
-  useFrame(({ clock }) => {
-    if (!animate || !root.current) return;
+  useFrame(({ clock }, delta) => {
+    if (!root.current) return;
+    if (!animate) {
+      root.current.position.set(x, 0, z);
+      root.current.rotation.z = 0;
+      return;
+    }
     const time = clock.elapsedTime;
-    root.current.position.x = x + Math.sin(time * 0.28 + phase) * 0.16;
+    root.current.position.x = THREE.MathUtils.damp(
+      root.current.position.x,
+      x + Math.sin(time * 0.28 + phase) * 0.16,
+      8,
+      delta,
+    );
     root.current.position.y = Math.sin(time * 0.72 + phase) * 0.045;
     root.current.rotation.z = Math.sin(time * 0.55 + phase * 1.4) * 0.018;
   });
 
   return (
-    <group ref={root} rotation={[0, 0.1, 0]} scale={scale}>
+    <group
+      ref={root}
+      position={initialPosition.current}
+      rotation={[0, 0.1, 0]}
+      scale={scale}
+    >
       <Wake animate={animate} />
       <BoatModel parts={parts} animate={animate} />
       <group position={[0.88, 0.57, 0.22]} scale={0.62}>
@@ -1708,6 +1791,7 @@ function HarborSailingSea({
   fishingRod,
   ownPose,
   ownPoseKey,
+  ownSailX,
 }: {
   currentUid: string;
   members: HarborMember[];
@@ -1717,6 +1801,7 @@ function HarborSailingSea({
   fishingRod: boolean;
   ownPose: PhoenixPose;
   ownPoseKey: number;
+  ownSailX: number;
 }) {
   const camera = useThree((state) => state.camera);
   const invalidate = useThree((state) => state.invalidate);
@@ -1783,7 +1868,7 @@ function HarborSailingSea({
 
       <HarborSailingBoat
         member={ownMember}
-        x={0}
+        x={ownSailX}
         z={0}
         scale={0.55}
         animate={animate}
@@ -1800,7 +1885,7 @@ function HarborSailingSea({
           <HarborSailingBoat
             key={member.id}
             member={member}
-            x={lane.x}
+            x={lane.x + (presence?.sailX ?? 0)}
             z={lane.z}
             scale={lane.scale}
             animate={animate}
@@ -2235,6 +2320,7 @@ export default function HarborWorld({
   const [immersive, setImmersive] = useState(true);
   const [phase, setPhase] = useState<WorldPhase>("idle");
   const [aboard, setAboard] = useState(true);
+  const [sailX, setSailX] = useState(0);
   const [nearOwnBoat, setNearOwnBoat] = useState(false);
   const [walkControlSettings, setWalkControlSettings] = useState(
     loadHarborControlSettings,
@@ -2242,6 +2328,15 @@ export default function HarborWorld({
   const walkInput = useRef<HarborWalkInput>({ x: 0, z: 0 });
   const setWalkInput = useCallback((next: HarborWalkInput) => {
     walkInput.current = next;
+  }, []);
+  const steerBoat = useCallback((direction: -1 | 1) => {
+    setSailX((current) =>
+      THREE.MathUtils.clamp(
+        current + direction * HARBOR_SAIL_STEP,
+        -HARBOR_SAIL_MAX_OFFSET,
+        HARBOR_SAIL_MAX_OFFSET,
+      ),
+    );
   }, []);
   useEffect(() => {
     const syncSettings = (event: Event) => {
@@ -2411,6 +2506,7 @@ export default function HarborWorld({
         restingAtTent,
       ),
       aboard,
+      sailX,
       fishingRod: fishingRodVisible,
       emoteSeq,
     }),
@@ -2421,6 +2517,7 @@ export default function HarborWorld({
       equipmentAction,
       fishingRodVisible,
       restingAtTent,
+      sailX,
     ],
   );
   const currentPresenceRef = useRef(currentPresence);
@@ -2502,12 +2599,14 @@ export default function HarborWorld({
   const boardOwnBoat = useCallback(() => {
     setWalkInput({ x: 0, z: 0 });
     setNearOwnBoat(false);
+    setSailX(0);
     setAboard(true);
   }, [setWalkInput]);
   const leaveSailing = useCallback(() => {
     setWalkInput({ x: 0, z: 0 });
     setBagOpen(false);
     setEmoteOpen(false);
+    setSailX(0);
     setAboard(false);
     setNearOwnBoat(false);
   }, [setWalkInput]);
@@ -2576,6 +2675,22 @@ export default function HarborWorld({
     requestClose,
     restingAtTent,
   ]);
+
+  // 共同航海中はA/Dと左右キーでも、固定レーンの中だけ少し操船できる。
+  useEffect(() => {
+    if (!immersive || !aboard || bagOpen || emoteOpen) return;
+    const onSteerKey = (event: KeyboardEvent) => {
+      if (event.code === "KeyA" || event.code === "ArrowLeft") {
+        event.preventDefault();
+        steerBoat(-1);
+      } else if (event.code === "KeyD" || event.code === "ArrowRight") {
+        event.preventDefault();
+        steerBoat(1);
+      }
+    };
+    window.addEventListener("keydown", onSteerKey);
+    return () => window.removeEventListener("keydown", onSteerKey);
+  }, [aboard, bagOpen, emoteOpen, immersive, steerBoat]);
 
   // ---- 共同航海: 進捗・海域・到着・一撃 ----
   const target = voyage?.targetMinutes ?? 0;
@@ -2843,6 +2958,7 @@ export default function HarborWorld({
                 false,
               )}
               ownPoseKey={emoteSeq}
+              ownSailX={sailX}
             />
           ) : (
             <HarborSea
@@ -2901,10 +3017,15 @@ export default function HarborWorld({
               {t(aboard ? "harborReturnToIsland" : "close")}
             </button>
             {aboard ? (
-              <div className="harbor-sailing-status">
-                <strong>{room.name}</strong>
-                <span>{t("harborSailingTogether")}</span>
-              </div>
+              <>
+                <div className="harbor-sailing-status">
+                  <strong>{room.name}</strong>
+                  <span>{t("harborSailingTogether")}</span>
+                </div>
+                {!bagOpen && !emoteOpen && (
+                  <HarborSailingControls onSteer={steerBoat} />
+                )}
+              </>
             ) : (
               <div className="harbor-walk-hint">{t("harborWalkHint")}</div>
             )}

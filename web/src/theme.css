@@ -3934,6 +3934,59 @@ textarea {
   color: color-mix(in srgb, var(--harbor-sand) 64%, transparent);
 }
 
+.harbor-sailing-controls {
+  position: absolute;
+  right: 14px;
+  bottom: calc(58px + env(safe-area-inset-bottom));
+  z-index: 7;
+  display: grid;
+  grid-template-columns: 42px auto 42px;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 24%, transparent);
+  border-radius: 999px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 72%, transparent);
+  box-shadow: 0 10px 28px color-mix(in srgb, #071713 24%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  touch-action: none;
+  user-select: none;
+}
+
+.harbor-sailing-controls button {
+  width: 42px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: #123830;
+  background: color-mix(in srgb, var(--harbor-sand) 88%, transparent);
+  font: inherit;
+  font-size: 18px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.harbor-sailing-controls button:active {
+  transform: scale(0.92);
+  background: #f3c065;
+}
+
+.harbor-sailing-controls > span {
+  padding-inline: 4px;
+  color: color-mix(in srgb, var(--harbor-sand) 70%, transparent);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.harbor-world.sailing .harbor-emote-dock {
+  bottom: calc(12px + env(safe-area-inset-bottom));
+}
+
 /* 船の上の名前。現在同じ港画面にいる仲間だけ、在室の緑灯を添える。 */
 .harbor-sailing-name {
   display: inline-flex;
@@ -4491,6 +4544,16 @@ textarea {
 
   .harbor-sailing-status strong {
     font-size: 11px;
+  }
+
+  .harbor-sailing-controls {
+    right: 10px;
+    bottom: calc(62px + env(safe-area-inset-bottom));
+    grid-template-columns: 44px 44px;
+  }
+
+  .harbor-sailing-controls > span {
+    display: none;
   }
 }
 
