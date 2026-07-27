@@ -883,22 +883,20 @@ textarea {
 
 .item-color-current {
   min-height: 58px;
-  padding: 9px 12px;
+  padding: 10px 2px;
   display: flex;
   align-items: center;
   gap: 12px;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--harbor-sand) 32%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--harbor-sand) 32%, transparent);
 }
 
 .item-color-current-swatch {
   width: 40px;
   height: 40px;
   flex: 0 0 40px;
-  border-radius: 12px;
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--ink) 10%, transparent),
-    0 2px 8px color-mix(in srgb, var(--ink) 8%, transparent);
+  border-radius: 5px 9px 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 44%, transparent);
 }
 
 .item-color-current > span:last-child {
@@ -909,7 +907,7 @@ textarea {
 
 .item-color-current strong {
   font-size: 14px;
-  letter-spacing: 0.01em;
+  font-weight: 500;
 }
 
 .item-color-current small,
@@ -923,14 +921,14 @@ textarea {
 }
 
 .item-color-subsection {
-  margin-top: 3px;
+  margin-top: 5px;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
   font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-weight: 500;
+  letter-spacing: 0.03em;
 }
 
 .item-color-subsection small {
@@ -948,17 +946,25 @@ textarea {
 .item-color-presets .swatch {
   width: 42px;
   height: 42px;
+  border-radius: 5px 9px 5px 8px;
+}
+
+.item-color-presets .swatch.selected {
+  border: 2px solid var(--ink);
+  outline: 2px solid var(--return-orange);
+  outline-offset: 2px;
 }
 
 .color-sea-heading {
   display: grid;
-  gap: 2px;
-  text-align: center;
+  gap: 3px;
+  padding-inline: 2px;
+  text-align: left;
 }
 
 .color-sea-heading > span {
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 500;
 }
 
 .color-sea-heading small {
@@ -968,42 +974,62 @@ textarea {
 
 .color-sea-chart {
   position: relative;
-  width: min(100%, 310px);
-  margin: 2px auto 4px;
+  width: min(calc(100% - 14px), 304px);
+  margin: 8px auto 10px;
   aspect-ratio: 1;
   border-radius: 50%;
   overflow: hidden;
   touch-action: none;
-  cursor: crosshair;
+  cursor: grab;
   outline: none;
   background:
-    radial-gradient(circle, rgb(255 255 255 / 0.98) 0%, rgb(255 255 255 / 0.72) 18%, transparent 72%),
+    radial-gradient(circle, rgb(246 237 210 / 0.96) 0%, rgb(246 237 210 / 0.7) 18%, transparent 71%),
     conic-gradient(
       from -90deg,
-      #e51f42,
-      #ef4b26,
-      #f6a51c,
-      #f2dc20,
-      #77c83d,
-      #18b678,
-      #16b8b2,
-      #258fd1,
-      #4355c5,
-      #793ec1,
-      #be38a7,
-      #e51f42
+      #c93c4e,
+      #d96a3d,
+      #d99a42,
+      #c4b94c,
+      #6a9f58,
+      #3e9570,
+      #3d9692,
+      #4b7e9d,
+      #59649b,
+      #7a5594,
+      #a14e7d,
+      #c93c4e
     );
   box-shadow:
-    0 0 0 7px color-mix(in srgb, var(--harbor-teal) 88%, var(--ink)),
-    0 0 0 9px color-mix(in srgb, var(--harbor-sand) 50%, transparent),
-    0 18px 35px color-mix(in srgb, var(--harbor-teal) 28%, transparent);
+    inset 0 0 0 2px color-mix(in srgb, var(--harbor-sand) 70%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--harbor-teal) 92%, var(--ink)),
+    0 0 0 7px color-mix(in srgb, var(--harbor-sand) 66%, transparent);
+}
+
+.color-sea-chart::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    repeating-linear-gradient(
+      14deg,
+      transparent 0 7px,
+      rgb(66 48 29 / 0.04) 7px 8px
+    ),
+    repeating-linear-gradient(
+      101deg,
+      transparent 0 13px,
+      rgb(255 249 226 / 0.05) 13px 14px
+    );
+  mix-blend-mode: multiply;
+  pointer-events: none;
 }
 
 .color-sea-chart:focus-visible {
   box-shadow:
-    0 0 0 7px color-mix(in srgb, var(--harbor-teal) 88%, var(--ink)),
-    0 0 0 11px var(--return-orange),
-    0 18px 35px color-mix(in srgb, var(--harbor-teal) 28%, transparent);
+    inset 0 0 0 2px color-mix(in srgb, var(--harbor-sand) 70%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--harbor-teal) 92%, var(--ink)),
+    0 0 0 8px var(--return-orange);
 }
 
 .color-sea-ring,
@@ -1015,14 +1041,14 @@ textarea {
 
 .color-sea-ring {
   inset: 24%;
-  border: 1px dashed rgb(255 255 255 / 0.42);
+  border: 1px dashed rgb(61 51 36 / 0.32);
   border-radius: 50%;
 }
 
 .color-sea-ring.ring-two {
   inset: 8%;
   border-style: solid;
-  border-color: rgb(255 255 255 / 0.18);
+  border-color: rgb(61 51 36 / 0.17);
 }
 
 .color-sea-cross.horizontal {
@@ -1042,10 +1068,10 @@ textarea {
 .color-sea-compass {
   position: absolute;
   z-index: 2;
-  font-size: 9px;
-  font-weight: 800;
-  color: rgb(255 255 255 / 0.86);
-  text-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+  font-size: 10px;
+  font-weight: 500;
+  color: rgb(45 38 28 / 0.72);
+  text-shadow: 0 1px 0 rgb(255 249 226 / 0.45);
   pointer-events: none;
 }
 
@@ -1057,33 +1083,79 @@ textarea {
 .color-sea-boat {
   position: absolute;
   z-index: 3;
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border: 3px solid #fff;
-  border-radius: 50%;
+  width: 58px;
+  height: 52px;
   transform: translate(-50%, -50%);
-  box-shadow:
-    0 3px 12px rgb(0 0 0 / 0.3),
-    0 0 0 2px rgb(13 42 36 / 0.42);
+  filter: drop-shadow(0 3px 2px rgb(24 20 14 / 0.34));
   pointer-events: none;
 }
 
-.color-sea-boat span {
-  font-size: 15px;
-  line-height: 1;
-  transform: rotate(8deg);
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.18);
+.color-skiff {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.color-skiff-wake {
+  fill: none;
+  stroke: rgb(249 241 215 / 0.8);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.color-skiff-rigging,
+.color-skiff-boom,
+.color-skiff-gunwale,
+.color-skiff-bowsprit {
+  fill: none;
+  stroke: #49301f;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.color-skiff-rigging {
+  stroke-width: 1.5;
+}
+
+.color-skiff-boom,
+.color-skiff-gunwale {
+  stroke-width: 2;
+}
+
+.color-skiff-bowsprit {
+  stroke-width: 2.5;
+}
+
+.color-skiff-sail {
+  stroke: #f7ebcf;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.color-skiff-sail-jib {
+  opacity: 0.86;
+}
+
+.color-skiff-hull {
+  fill: #75462e;
+  stroke: #382519;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.color-skiff-port {
+  fill: #f1c36d;
+  stroke: #382519;
+  stroke-width: 0.8;
 }
 
 .color-light-control {
   display: grid;
-  gap: 7px;
-  margin-top: 3px;
-  padding: 10px 12px 12px;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--harbor-teal) 8%, transparent);
+  gap: 9px;
+  margin-top: 5px;
+  padding: 11px 2px 13px;
+  border-top: 1px solid color-mix(in srgb, var(--harbor-sand) 28%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--harbor-sand) 28%, transparent);
 }
 
 .color-light-control > div {
@@ -1096,6 +1168,7 @@ textarea {
 
 .color-light-control > div strong {
   font-size: 12px;
+  font-weight: 500;
   color: color-mix(in srgb, var(--ink) 72%, transparent);
 }
 
@@ -1114,22 +1187,20 @@ textarea {
 }
 
 .color-light-control input[type="range"]::-webkit-slider-thumb {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   appearance: none;
-  border: 3px solid #fff;
+  border: 2px solid var(--harbor-sand);
   border-radius: 50%;
-  background: var(--harbor-sand);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.28);
+  background: var(--harbor-teal);
 }
 
 .color-light-control input[type="range"]::-moz-range-thumb {
-  width: 24px;
-  height: 24px;
-  border: 3px solid #fff;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--harbor-sand);
   border-radius: 50%;
-  background: var(--harbor-sand);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.28);
+  background: var(--harbor-teal);
 }
 
 .pccs-tone-strip {

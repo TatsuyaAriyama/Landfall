@@ -10,9 +10,7 @@ import {
 } from "../types";
 import {
   freeColor,
-  freeColorStyle,
   freeColorToken,
-  nearestPccs,
   parseFreeColorToken,
   parsePccsToken,
   pccsToFreeColor,
@@ -39,6 +37,31 @@ function seaPositionFromToken(token: string): FreeColorSelection {
   const pccs = parsePccsToken(token);
   if (pccs) return pccsToFreeColor(pccs);
   return LEGACY_SEA_POSITIONS[token] ?? LEGACY_SEA_POSITIONS.midnight;
+}
+
+function ColorSkiff({ sailColor }: { sailColor: string }) {
+  return (
+    <svg className="color-skiff" viewBox="0 0 72 64" aria-hidden="true">
+      <path className="color-skiff-wake" d="M9 57c12 3 42 3 54 0M17 61c10 2 28 2 38 0" />
+      <path className="color-skiff-rigging" d="M36 9 14 43M36 9l23 34M36 12v34" />
+      <path
+        className="color-skiff-sail color-skiff-sail-main"
+        style={{ fill: sailColor }}
+        d="M40 14c9 5 16 15 18 27H40Z"
+      />
+      <path
+        className="color-skiff-sail color-skiff-sail-jib"
+        style={{ fill: sailColor }}
+        d="M32 18c-7 6-13 14-16 23h16Z"
+      />
+      <path className="color-skiff-boom" d="M35 42h25" />
+      <path className="color-skiff-hull" d="M10 43h53l-8 14H21c-5-3-8-8-11-14Z" />
+      <path className="color-skiff-gunwale" d="M11 43h51" />
+      <path className="color-skiff-bowsprit" d="m60 43 7-4" />
+      <circle className="color-skiff-port" cx="28" cy="49" r="1.7" />
+      <circle className="color-skiff-port" cx="42" cy="49" r="1.7" />
+    </svg>
+  );
 }
 
 export function ItemEditor({
@@ -151,11 +174,12 @@ export function ItemEditor({
   };
 
   const previewStyle = itemStyleColors(styleToken);
-  const customSelection = parseFreeColorToken(styleToken);
-  const pccsGuide = nearestPccs(seaColor);
+  const usesSeaChart = Boolean(
+    parseFreeColorToken(styleToken) || parsePccsToken(styleToken),
+  );
   const markerAngle = ((seaColor.hue - 90) * Math.PI) / 180;
-  const markerLeft = 50 + Math.cos(markerAngle) * seaColor.saturation * 43;
-  const markerTop = 50 + Math.sin(markerAngle) * seaColor.saturation * 43;
+  const markerLeft = 50 + Math.cos(markerAngle) * seaColor.saturation * 41;
+  const markerTop = 50 + Math.sin(markerAngle) * seaColor.saturation * 41;
 
   const applySeaColor = (next: FreeColorSelection) => {
     const normalized = {
@@ -229,34 +253,30 @@ export function ItemEditor({
             <span className="item-color-current-swatch" style={{ background: previewStyle.bg }} />
             <span>
               <strong>
-                {customSelection
-                  ? lang === "ja"
-                    ? "彩りの海図"
-                    : "Color sea chart"
-                  : lang === "ja"
-                    ? "Aftide 基本色"
-                    : "Aftide preset"}
+                {lang === "ja" ? "選んだ色" : "Selected color"}
               </strong>
               <small>
-                {customSelection
-                  ? `${lang === "ja" ? "PCCS目安" : "PCCS guide"} ${pccsGuide.tone}${pccsGuide.hue}`
+                {usesSeaChart
+                  ? lang === "ja"
+                    ? "色の海図から調色"
+                    : "Mixed on the color chart"
                   : lang === "ja"
-                    ? "これまでの配色もそのまま使えます"
-                    : "Existing colors remain available"}
+                    ? "港の色見本から選択"
+                    : "Chosen from the harbor swatches"}
               </small>
             </span>
           </div>
 
           <div className="color-sea-heading">
-            <span>{lang === "ja" ? "小舟を動かして色を探す" : "Move the boat to find a color"}</span>
-            <small>{lang === "ja" ? "中央ほど穏やか、外ほど鮮やか" : "Calm at the center, vivid at the edge"}</small>
+            <span>{lang === "ja" ? "小舟を動かして色を選ぶ" : "Sail the skiff to choose a color"}</span>
+            <small>{lang === "ja" ? "中央は淡く、外海ほど鮮やか" : "Pale inshore, vivid out at sea"}</small>
           </div>
 
           <div
             className="color-sea-chart"
             role="slider"
             tabIndex={0}
-            aria-label={lang === "ja" ? "彩りの海図" : "Color sea chart"}
+            aria-label={lang === "ja" ? "色の海図" : "Color chart"}
             aria-valuetext={`${Math.round(seaColor.hue)}°, ${Math.round(seaColor.saturation * 100)}%`}
             onPointerDown={(event) => {
               event.preventDefault();
@@ -288,28 +308,26 @@ export function ItemEditor({
             <span className="color-sea-ring ring-two" />
             <span className="color-sea-cross horizontal" />
             <span className="color-sea-cross vertical" />
-            <span className="color-sea-compass north">N</span>
-            <span className="color-sea-compass east">E</span>
-            <span className="color-sea-compass south">S</span>
-            <span className="color-sea-compass west">W</span>
+            <span className="color-sea-compass north">{lang === "ja" ? "北" : "N"}</span>
+            <span className="color-sea-compass east">{lang === "ja" ? "東" : "E"}</span>
+            <span className="color-sea-compass south">{lang === "ja" ? "南" : "S"}</span>
+            <span className="color-sea-compass west">{lang === "ja" ? "西" : "W"}</span>
             <span
               className="color-sea-boat"
               style={{
                 left: `${markerLeft}%`,
                 top: `${markerTop}%`,
-                color: freeColorStyle(seaColor).fg,
-                background: freeColor(seaColor),
               }}
             >
-              <span aria-hidden="true">▲</span>
+              <ColorSkiff sailColor={freeColor(seaColor)} />
             </span>
           </div>
 
           <div className="color-light-control">
             <div>
-              <span>{lang === "ja" ? "深海" : "Deep sea"}</span>
-              <strong>{lang === "ja" ? "海の光" : "Sea light"}</strong>
-              <span>{lang === "ja" ? "朝光" : "Morning light"}</span>
+              <span>{lang === "ja" ? "夜" : "Night"}</span>
+              <strong>{lang === "ja" ? "光の加減" : "Light"}</strong>
+              <span>{lang === "ja" ? "昼" : "Day"}</span>
             </div>
             <input
               type="range"
@@ -322,15 +340,15 @@ export function ItemEditor({
               onChange={(event) =>
                 applySeaColor({ ...seaColor, value: Number(event.target.value) / 100 })
               }
-              aria-label={lang === "ja" ? "海の光" : "Sea light"}
+              aria-label={lang === "ja" ? "光の加減" : "Light"}
             />
           </div>
 
           <div className="item-color-subsection">
-            <span>{lang === "ja" ? "港の定番色" : "Harbor colors"}</span>
-            <small>{lang === "ja" ? "迷った時はこちら" : "A quick safe choice"}</small>
+            <span>{lang === "ja" ? "港の色見本" : "Harbor swatches"}</span>
+            <small>{lang === "ja" ? "六つの染料" : "Six ready-mixed colors"}</small>
           </div>
-          <div className="item-color-presets" role="group" aria-label={lang === "ja" ? "港の定番色" : "Harbor colors"}>
+          <div className="item-color-presets" role="group" aria-label={lang === "ja" ? "港の色見本" : "Harbor swatches"}>
             {TILE_STYLES.map((token) => {
               const colors = itemStyleColors(token);
               return (

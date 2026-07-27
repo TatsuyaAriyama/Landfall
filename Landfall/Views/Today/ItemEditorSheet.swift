@@ -68,8 +68,6 @@ struct ItemEditorSheet: View {
                         .padding(.top, 24)
                     selectedColorSummary
                         .padding(.top, 10)
-                    styleRow
-                        .padding(.top, 10)
 
                     colorSeaHeading
                         .padding(.top, 18)
@@ -77,6 +75,10 @@ struct ItemEditorSheet: View {
                         .padding(.top, 12)
                     seaLightControl
                         .padding(.top, 16)
+                    harborSwatchHeading
+                        .padding(.top, 18)
+                    styleRow
+                        .padding(.top, 10)
 
                     sectionLabel("Symbol")
                         .padding(.top, 20)
@@ -217,48 +219,52 @@ struct ItemEditorSheet: View {
                 )
 
             VStack(alignment: .leading, spacing: 2) {
-                if let selection = SeaColorSelection(token: styleToken) {
-                    let pccs = PCCSPalette.nearest(to: selection)
-                    Text("Color sea chart")
-                        .font(LFFont.label(14))
-                        .foregroundStyle(LFColor.ink)
-                    Text("PCCS guide \(pccs.tone.rawValue)\(pccs.hue)")
-                        .font(LFFont.label(12))
-                        .foregroundStyle(LFColor.ink.opacity(0.52))
-                } else if let selection = PCCSSelection(token: styleToken) {
-                    Text("Color sea chart")
-                        .font(LFFont.label(14))
-                        .foregroundStyle(LFColor.ink)
-                    Text("PCCS guide \(selection.tone.rawValue)\(selection.hue)")
-                        .font(LFFont.label(12))
-                        .foregroundStyle(LFColor.ink.opacity(0.52))
-                } else {
-                    Text("Aftide preset")
-                        .font(LFFont.label(14))
-                        .foregroundStyle(LFColor.ink)
-                    Text("Existing colors remain available")
-                        .font(LFFont.label(12))
-                        .foregroundStyle(LFColor.ink.opacity(0.52))
-                }
+                Text("Selected color")
+                    .font(LFFont.copy(14))
+                    .foregroundStyle(LFColor.ink)
+                Text(
+                    SeaColorSelection(token: styleToken) != nil
+                        || PCCSSelection(token: styleToken) != nil
+                        ? "Mixed on the color chart"
+                        : "Chosen from the harbor swatches"
+                )
+                .font(LFFont.label(12))
+                .foregroundStyle(LFColor.ink.opacity(0.52))
             }
             Spacer()
         }
-        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(minHeight: 58)
-        .background(LFColor.ink.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(alignment: .top) {
+            Rectangle().fill(LFColor.harborSand.opacity(0.25)).frame(height: 1)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(LFColor.harborSand.opacity(0.25)).frame(height: 1)
+        }
     }
 
     private var colorSeaHeading: some View {
-        VStack(spacing: 2) {
-            Text("Move the boat to find a color")
-                .font(LFFont.label(14))
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Sail the skiff to choose a color")
+                .font(LFFont.copy(14))
                 .foregroundStyle(LFColor.ink)
-            Text("Calm at the center, vivid at the edge")
+            Text("Pale inshore, vivid out at sea")
                 .font(LFFont.label(11))
                 .foregroundStyle(LFColor.ink.opacity(0.48))
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var harborSwatchHeading: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Harbor swatches")
+                .font(LFFont.copy(12))
+                .foregroundStyle(LFColor.ink)
+            Spacer()
+            Text("Six ready-mixed colors")
+                .font(LFFont.label(11))
+                .foregroundStyle(LFColor.ink.opacity(0.48))
+        }
     }
 
     private var colorSeaChart: some View {
@@ -266,61 +272,57 @@ struct ItemEditorSheet: View {
             let size = min(geo.size.width, geo.size.height)
             let radius = size / 2
             let angle = (seaColor.hue - 90) * .pi / 180
-            let markerRadius = radius * seaColor.saturation * 0.86
+            let markerRadius = radius * seaColor.saturation * 0.82
             ZStack {
                 AngularGradient(
                     colors: [
-                        Color(red: 0.90, green: 0.12, blue: 0.26),
-                        Color(red: 0.94, green: 0.45, blue: 0.12),
-                        Color(red: 0.95, green: 0.85, blue: 0.13),
-                        Color(red: 0.29, green: 0.76, blue: 0.25),
-                        Color(red: 0.08, green: 0.70, blue: 0.68),
-                        Color(red: 0.15, green: 0.50, blue: 0.82),
-                        Color(red: 0.34, green: 0.25, blue: 0.76),
-                        Color(red: 0.75, green: 0.22, blue: 0.66),
-                        Color(red: 0.90, green: 0.12, blue: 0.26),
+                        Color(red: 0.79, green: 0.24, blue: 0.31),
+                        Color(red: 0.85, green: 0.42, blue: 0.24),
+                        Color(red: 0.85, green: 0.60, blue: 0.26),
+                        Color(red: 0.42, green: 0.62, blue: 0.35),
+                        Color(red: 0.24, green: 0.58, blue: 0.44),
+                        Color(red: 0.30, green: 0.49, blue: 0.62),
+                        Color(red: 0.35, green: 0.39, blue: 0.61),
+                        Color(red: 0.48, green: 0.33, blue: 0.58),
+                        Color(red: 0.63, green: 0.31, blue: 0.49),
+                        Color(red: 0.79, green: 0.24, blue: 0.31),
                     ],
                     center: .center,
                     startAngle: .degrees(-90),
                     endAngle: .degrees(270)
                 )
                 RadialGradient(
-                    colors: [.white, .white.opacity(0.76), .white.opacity(0)],
+                    colors: [
+                        Color(red: 0.96, green: 0.93, blue: 0.82),
+                        Color(red: 0.96, green: 0.93, blue: 0.82).opacity(0.72),
+                        .clear,
+                    ],
                     center: .center,
                     startRadius: 0,
                     endRadius: radius * 0.88
                 )
-                Circle().stroke(.white.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
+                Circle().stroke(LFColor.deepRust.opacity(0.24), style: StrokeStyle(lineWidth: 1, dash: [5, 5]))
                     .padding(size * 0.24)
-                Circle().stroke(.white.opacity(0.2), lineWidth: 1)
+                Circle().stroke(LFColor.deepRust.opacity(0.14), lineWidth: 1)
                     .padding(size * 0.08)
-                Rectangle().fill(.white.opacity(0.25)).frame(width: 1, height: size * 0.84)
-                Rectangle().fill(.white.opacity(0.25)).frame(width: size * 0.84, height: 1)
+                Rectangle().fill(LFColor.deepRust.opacity(0.18)).frame(width: 1, height: size * 0.84)
+                Rectangle().fill(LFColor.deepRust.opacity(0.18)).frame(width: size * 0.84, height: 1)
 
                 ForEach([
-                    ("N", Alignment.top),
-                    ("E", Alignment.trailing),
-                    ("S", Alignment.bottom),
-                    ("W", Alignment.leading),
+                    ("North", Alignment.top),
+                    ("East", Alignment.trailing),
+                    ("South", Alignment.bottom),
+                    ("West", Alignment.leading),
                 ], id: \.0) { point in
-                    Text(point.0)
+                    Text(LocalizedStringKey(point.0))
                         .font(LFFont.label(9))
-                        .foregroundStyle(.white.opacity(0.9))
+                        .foregroundStyle(LFColor.deepRust.opacity(0.68))
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: point.1)
                         .padding(12)
                 }
 
-                ZStack {
-                    Circle()
-                        .fill(SeaColorPalette.background(seaColor))
-                    Circle()
-                        .strokeBorder(.white, lineWidth: 3)
-                    Image(systemName: "sailboat.fill")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(SeaColorPalette.foreground(seaColor))
-                }
-                .frame(width: 40, height: 40)
-                .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                HarborSkiffMarker(sailColor: SeaColorPalette.background(seaColor))
+                .frame(width: 58, height: 52)
                 .offset(
                     x: cos(angle) * markerRadius,
                     y: sin(angle) * markerRadius
@@ -328,8 +330,8 @@ struct ItemEditorSheet: View {
             }
             .frame(width: size, height: size)
             .clipShape(Circle())
-            .overlay(Circle().stroke(LFColor.harborSand.opacity(0.55), lineWidth: 2))
-            .shadow(color: LFColor.harborTeal.opacity(0.25), radius: 18, y: 10)
+            .overlay(Circle().stroke(LFColor.harborSand.opacity(0.68), lineWidth: 2))
+            .overlay(Circle().inset(by: 4).stroke(LFColor.harborTeal.opacity(0.8), lineWidth: 3))
             .contentShape(Circle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -339,7 +341,7 @@ struct ItemEditorSheet: View {
                     .onEnded { _ in Haptics.tap(.light) }
             )
             .accessibilityElement()
-            .accessibilityLabel("Color sea chart")
+            .accessibilityLabel("Color chart")
             .accessibilityValue(
                 "\(Int(seaColor.hue.rounded())) degrees, \(Int((seaColor.saturation * 100).rounded())) percent"
             )
@@ -352,11 +354,11 @@ struct ItemEditorSheet: View {
     private var seaLightControl: some View {
         VStack(spacing: 8) {
             HStack {
-                Text("Deep sea")
+                Text("Night")
                 Spacer()
-                Text("Sea light").fontWeight(.semibold)
+                Text("Light")
                 Spacer()
-                Text("Morning light")
+                Text("Day")
             }
             .font(LFFont.label(10))
             .foregroundStyle(LFColor.ink.opacity(0.52))
@@ -377,11 +379,15 @@ struct ItemEditorSheet: View {
                 in: 0.18...1
             )
             .tint(SeaColorPalette.background(seaColor))
-            .accessibilityLabel("Sea light")
+            .accessibilityLabel("Light")
         }
-        .padding(12)
-        .background(LFColor.harborTeal.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.vertical, 12)
+        .overlay(alignment: .top) {
+            Rectangle().fill(LFColor.harborSand.opacity(0.22)).frame(height: 1)
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(LFColor.harborSand.opacity(0.22)).frame(height: 1)
+        }
     }
 
     private func updateSeaColor(at point: CGPoint, size: CGFloat) {
@@ -576,5 +582,136 @@ struct ItemEditorSheet: View {
             image.draw(in: CGRect(origin: .zero, size: size))
         }
         return resized.jpegData(compressionQuality: 0.85)
+    }
+}
+
+private struct HarborSkiffMarker: View {
+    let sailColor: Color
+
+    var body: some View {
+        ZStack {
+            Ellipse()
+                .stroke(Color(red: 0.98, green: 0.94, blue: 0.82).opacity(0.78), lineWidth: 1.5)
+                .frame(width: 44, height: 8)
+                .offset(y: 20)
+
+            SkiffRigShape()
+                .stroke(
+                    Color(red: 0.28, green: 0.18, blue: 0.12),
+                    style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round)
+                )
+
+            SkiffMainSailShape()
+                .fill(sailColor)
+                .overlay(
+                    SkiffMainSailShape()
+                        .stroke(Color(red: 0.97, green: 0.92, blue: 0.81), lineWidth: 1.6)
+                )
+
+            SkiffJibShape()
+                .fill(sailColor.opacity(0.86))
+                .overlay(
+                    SkiffJibShape()
+                        .stroke(Color(red: 0.97, green: 0.92, blue: 0.81), lineWidth: 1.6)
+                )
+
+            SkiffHullShape()
+                .fill(Color(red: 0.46, green: 0.27, blue: 0.17))
+                .overlay(
+                    SkiffHullShape()
+                        .stroke(Color(red: 0.22, green: 0.14, blue: 0.09), lineWidth: 1.7)
+                )
+
+            SkiffDeckShape()
+                .stroke(
+                    Color(red: 0.22, green: 0.14, blue: 0.09),
+                    style: StrokeStyle(lineWidth: 1.7, lineCap: .round)
+                )
+
+            HStack(spacing: 7) {
+                Circle()
+                Circle()
+            }
+            .foregroundStyle(Color(red: 0.95, green: 0.73, blue: 0.38))
+            .frame(width: 17, height: 2.6)
+            .offset(x: -2, y: 15)
+        }
+        .shadow(color: .black.opacity(0.24), radius: 1.5, y: 2)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct SkiffMainSailShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.width * 0.55, y: rect.height * 0.13))
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.82, y: rect.height * 0.64),
+            control1: CGPoint(x: rect.width * 0.70, y: rect.height * 0.25),
+            control2: CGPoint(x: rect.width * 0.80, y: rect.height * 0.47)
+        )
+        path.addLine(to: CGPoint(x: rect.width * 0.55, y: rect.height * 0.64))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct SkiffJibShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.width * 0.44, y: rect.height * 0.20))
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.19, y: rect.height * 0.64),
+            control1: CGPoint(x: rect.width * 0.32, y: rect.height * 0.33),
+            control2: CGPoint(x: rect.width * 0.23, y: rect.height * 0.49)
+        )
+        path.addLine(to: CGPoint(x: rect.width * 0.44, y: rect.height * 0.64))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct SkiffHullShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.width * 0.12, y: rect.height * 0.66))
+        path.addLine(to: CGPoint(x: rect.width * 0.88, y: rect.height * 0.66))
+        path.addLine(to: CGPoint(x: rect.width * 0.76, y: rect.height * 0.88))
+        path.addLine(to: CGPoint(x: rect.width * 0.31, y: rect.height * 0.88))
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.12, y: rect.height * 0.66),
+            control1: CGPoint(x: rect.width * 0.21, y: rect.height * 0.84),
+            control2: CGPoint(x: rect.width * 0.15, y: rect.height * 0.74)
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct SkiffRigShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let mastTop = CGPoint(x: rect.width * 0.50, y: rect.height * 0.06)
+        let mastFoot = CGPoint(x: rect.width * 0.50, y: rect.height * 0.68)
+        path.move(to: mastTop)
+        path.addLine(to: mastFoot)
+        path.move(to: mastTop)
+        path.addLine(to: CGPoint(x: rect.width * 0.16, y: rect.height * 0.66))
+        path.move(to: mastTop)
+        path.addLine(to: CGPoint(x: rect.width * 0.84, y: rect.height * 0.66))
+        path.move(to: CGPoint(x: rect.width * 0.49, y: rect.height * 0.64))
+        path.addLine(to: CGPoint(x: rect.width * 0.85, y: rect.height * 0.64))
+        path.move(to: CGPoint(x: rect.width * 0.84, y: rect.height * 0.66))
+        path.addLine(to: CGPoint(x: rect.width * 0.95, y: rect.height * 0.60))
+        return path
+    }
+}
+
+private struct SkiffDeckShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.width * 0.13, y: rect.height * 0.66))
+        path.addLine(to: CGPoint(x: rect.width * 0.87, y: rect.height * 0.66))
+        return path
     }
 }
