@@ -1914,7 +1914,6 @@ export default function HarborWorld({
             : { ...current, items: [...current.items, "fishingRod"] },
         );
         setNearFishingRod(false);
-        setBagOpen(true);
         showInventoryNotice(t("fishingRodFound"));
       }, animate ? 680 : 0),
       window.setTimeout(() => setEquipmentAction(null), animate ? 1120 : 0),
@@ -2634,9 +2633,12 @@ export default function HarborWorld({
             </div>
             {fishingRodOwned ? (
               <div className="harbor-bag-item">
-                <div className="harbor-bag-item-art" aria-hidden="true">
-                  <span />
-                </div>
+                <img
+                  className="harbor-bag-item-art"
+                  src="/images/fishing-rod.png"
+                  alt=""
+                  aria-hidden="true"
+                />
                 <div className="harbor-bag-item-copy">
                   <div className="harbor-bag-item-title">
                     {t("fishingRod")}

@@ -3652,50 +3652,12 @@ textarea {
 }
 
 .harbor-bag-item-art {
-  position: relative;
   width: 64px;
   height: 92px;
-  overflow: hidden;
+  display: block;
+  object-fit: cover;
   border-radius: 12px;
-  background:
-    radial-gradient(circle at 70% 24%, rgba(243, 192, 101, 0.18), transparent 30%),
-    #123830;
-}
-
-/* 竿・リール・糸を細線で描いた、バッグ内のアイテムシルエット。 */
-.harbor-bag-item-art::before {
-  content: "";
-  position: absolute;
-  width: 3px;
-  height: 88px;
-  left: 30px;
-  top: 2px;
-  border-radius: 999px;
-  background: linear-gradient(#d7bf8e, #7a3b22 58%, #4a1b0c 58%);
-  transform: rotate(20deg);
-  transform-origin: 50% 82%;
-}
-
-.harbor-bag-item-art::after {
-  content: "";
-  position: absolute;
-  left: 19px;
-  bottom: 20px;
-  width: 14px;
-  height: 14px;
-  border: 3px solid #f0997b;
-  border-radius: 50%;
-}
-
-.harbor-bag-item-art > span {
-  position: absolute;
-  left: 34px;
-  top: 10px;
-  width: 18px;
-  height: 62px;
-  border-right: 1px solid rgba(234, 222, 189, 0.58);
-  border-bottom: 1px solid rgba(234, 222, 189, 0.58);
-  border-radius: 0 0 12px 0;
+  background: #123830;
 }
 
 .harbor-bag-item-title {
