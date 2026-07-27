@@ -2754,14 +2754,80 @@ textarea {
 
 /* ---- 目的地の3D航海シーン(1件目のカード) ---- */
 
-/* 世界の読込中の幕。夜の海と同じ色で、素早く読めた場合は何も見えない(80ms遅延)。 */
+/* 世界の読込中の幕。低速回線でも故障に見えず、いつでもホームへ戻れる。 */
 .voyage-world-loading {
   position: fixed;
   inset: 0;
   z-index: 9;
   background: #123830;
+  color: #f4f1ec;
   opacity: 0;
   animation: voyage-loading-in 0.18s ease-out 0.08s forwards;
+}
+
+.voyage-world-loading-close {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  right: 16px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid rgb(244 241 236 / 32%);
+  border-radius: 999px;
+  color: inherit;
+  background: rgb(13 42 36 / 62%);
+}
+
+.voyage-world-loading-status {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transform: translate(-50%, -50%);
+  font-size: 14px;
+  color: rgb(244 241 236 / 72%);
+}
+
+.voyage-world-loading-status > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sun-yellow);
+  animation: voyage-loading-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voyage-loading-pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.72);
+  }
+}
+
+.voyage-world-failure {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.voyage-world-failure-card {
+  width: min(100%, 380px);
+  padding: 24px;
+  border: 1px solid rgb(244 241 236 / 18%);
+  border-radius: var(--radius);
+  text-align: center;
+  background: rgb(13 42 36 / 82%);
+}
+
+.voyage-world-failure-card p {
+  margin: 0 0 18px;
+  line-height: 1.7;
+  color: rgb(244 241 236 / 78%);
+}
+
+.voyage-world-failure-card .quiet-button {
+  margin-top: 10px;
+  color: inherit;
 }
 
 @keyframes voyage-loading-in {

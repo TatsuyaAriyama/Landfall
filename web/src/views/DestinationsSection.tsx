@@ -62,6 +62,40 @@ class VoyageErrorBoundary extends Component<
   }
 }
 
+function VoyageWorldLoading({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="voyage-world-loading" role="status" aria-label={t("loading")}>
+      <button
+        type="button"
+        className="voyage-world-loading-close"
+        onClick={onClose}
+      >
+        {t("close")}
+      </button>
+      <div className="voyage-world-loading-status">
+        <span aria-hidden="true" />
+        {t("loading")}
+      </div>
+    </div>
+  );
+}
+
+function VoyageWorldFailure({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="voyage-world-loading voyage-world-failure" role="alert">
+      <div className="voyage-world-failure-card">
+        <p>{t("render3dFailed")}</p>
+        <button type="button" className="primary-button" onClick={() => location.reload()}>
+          {t("retry")}
+        </button>
+        <button type="button" className="quiet-button" onClick={onClose}>
+          {t("close")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /// 残り表示(「あと3時間20分」「あと12日」)。2D/3Dカードで共通。
 function remainingLabel(progress: DestinationProgress): string {
   if (progress.remainingMinutes !== undefined) {
@@ -195,11 +229,9 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
           描画失敗時は幕をタップで閉じられる(旧ダイアログは廃止)。 */}
       {world && (
         <VoyageErrorBoundary
-          fallback={
-            <div className="voyage-world-loading" onClick={() => setWorld(null)} />
-          }
+          fallback={<VoyageWorldFailure onClose={() => setWorld(null)} />}
         >
-          <Suspense fallback={<div className="voyage-world-loading" />}>
+          <Suspense fallback={<VoyageWorldLoading onClose={() => setWorld(null)} />}>
             <VoyageWorld
               dest={world.dest}
               data={data}

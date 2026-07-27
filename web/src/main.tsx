@@ -25,7 +25,7 @@ if (!import.meta.env.DEV && window.location.hash === "#demo") {
 
 // Service Worker廃止前に失敗したメインJSのHTTPキャッシュとURLを分離する。
 // 今後の障害調査でも、表示中の配信世代をDOMから確認できる。
-const APP_BUILD = "2026-07-27-signin-3d-voyage-v1";
+const APP_BUILD = "2026-07-27-destination-recovery-v2";
 document.documentElement.dataset.appBuild = APP_BUILD;
 
 // キーボード/ピッカーで実際に見えている高さを :root に流す(全階層のCSSが参照する)。
@@ -70,7 +70,10 @@ function failedAssetUrl(error: unknown): string | null {
 /// デプロイ直後、CDNのHTMLと分割JSが一瞬だけ別世代になる場合がある。
 /// 失敗したJSが実際に取得可能になるまで短く待ち、HTTPキャッシュを正常な応答で
 /// 更新してから再読込する。即時再読込だけだと、同じ404を繰り返してしまう。
-async function recoverTransientLoad(error: unknown): Promise<boolean> {
+async function recoverTransientLoad(
+  error: unknown,
+  waitForAsset = true,
+): Promise<boolean> {
   const url = new URL(location.href);
   const sameBuild = url.searchParams.get("recover") === APP_BUILD;
   const previousTry = sameBuild ? Number(url.searchParams.get("recoverTry") ?? "0") : 0;
@@ -78,7 +81,7 @@ async function recoverTransientLoad(error: unknown): Promise<boolean> {
 
   root.innerHTML = '<div class="harbor-loading"></div>';
   const assetUrl = failedAssetUrl(error);
-  if (assetUrl) {
+  if (waitForAsset && assetUrl) {
     for (const delay of [500, 1200, 2500]) {
       await wait(delay);
       try {
@@ -98,10 +101,45 @@ async function recoverTransientLoad(error: unknown): Promise<boolean> {
 
 function clearRecoveryUrl() {
   const url = new URL(location.href);
-  if (url.searchParams.get("recover") !== APP_BUILD) return;
+  if (!url.searchParams.has("recover") && !url.searchParams.has("recoverTry")) return;
   url.searchParams.delete("recover");
   url.searchParams.delete("recoverTry");
   history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+// 目的地・港・航海などは、最初に押した時だけ分割JSを読む。公開更新前から
+// 開きっぱなしのタブでは、その旧ファイルが配信先から消えていることがある。
+// Viteが投げる専用イベントを起動失敗と同じ復旧経路へ渡し、新しいHTMLとJSへ
+// 一度だけ自動更新する。短時間に繰り返す場合は無限再読込を止め、手動案内へ落とす。
+function installLazyLoadRecovery() {
+  let recovering = false;
+  window.addEventListener("vite:preloadError", (event) => {
+    event.preventDefault();
+    if (recovering) return;
+    recovering = true;
+
+    const storageKey = `landfall.lazy-recovery.${APP_BUILD}`;
+    let previous = 0;
+    try {
+      previous = Number(sessionStorage.getItem(storageKey) ?? "0");
+    } catch {
+      // sessionStorageを拒否するブラウザでも、URL側の回数制限で復旧を続ける。
+    }
+    if (Date.now() - previous < 60_000) {
+      renderFatalError();
+      return;
+    }
+    try {
+      sessionStorage.setItem(storageKey, String(Date.now()));
+    } catch {
+      // 保存できなくても、復旧そのものは止めない。
+    }
+
+    const payload = (event as Event & { payload?: unknown }).payload;
+    void recoverTransientLoad(payload, false).then((recovered) => {
+      if (!recovered) renderFatalError();
+    });
+  });
 }
 
 try {
@@ -112,6 +150,9 @@ try {
       <App />
     </StrictMode>,
   );
+  // 初回のApp読込は外側のtry/catchへ任せる。ここより前に監視すると、
+  // preventDefaultによって起動エラーがundefinedへ変わり、原因URLを失ってしまう。
+  installLazyLoadRecovery();
 } catch (error) {
   // 表示用には詳細を出さないが、端末上の診断で原因を区別できるようDOMへ控える。
   // 値は例外名だけに絞り、設定値やURLなどを露出させない。

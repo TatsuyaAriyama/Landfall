@@ -897,7 +897,9 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
         />
       </Canvas>
 
-      <div className={`voyage-world-ui${phase === "idle" && !uiHidden ? "" : " hidden"}`}>
+      {/* 入場アニメ中も入力欄と「閉じる」は先に使えるようにする。描画完了を
+          待たないと出口まで消える構造は、低速端末で故障に見えるため。 */}
+      <div className={`voyage-world-ui${phase === "exit" || uiHidden ? " hidden" : ""}`}>
         <div className="voyage-world-top">
           <input
             className="field voyage-world-name"
