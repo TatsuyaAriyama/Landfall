@@ -78,7 +78,9 @@ function SailorStage({
   hood: NavigatorHood;
   animate: boolean;
 }) {
-  const [autoRotate, setAutoRotate] = useState(true);
+  // Open on the authored front view. Automatic orbit made the new navigator
+  // appear edge-on before the user could inspect it.
+  const [autoRotate, setAutoRotate] = useState(false);
   return (
     <>
       <color attach="background" args={[NIGHT_BG]} />
@@ -98,15 +100,15 @@ function SailorStage({
       <Moon position={[-8.5, 5.6, -14]} />
       <Sea moonX={-8.5} animate={animate} />
       <Ripples animate={animate} />
-      <group scale={0.95}>
+      <group rotation={[0, -Math.PI / 2, 0]} scale={1.36}>
         <PhoenixModel animate={animate} pose={pose} hood={hood} />
       </group>
       <OrbitControls
-        target={[0, 0.62, 0]}
+        target={[0, 0.8, 0]}
         enablePan={false}
         enableDamping
-        minDistance={1.8}
-        maxDistance={7}
+        minDistance={1.45}
+        maxDistance={5}
         minPolarAngle={Math.PI * 0.14}
         maxPolarAngle={Math.PI * 0.56}
         autoRotate={autoRotate && animate}
@@ -195,7 +197,7 @@ export default function BoatStudio({ data }: { data: UserData }) {
           camera={
             mode === "boat"
               ? { position: [3.1, 1.7, 4.3], fov: 40 }
-              : { position: [1.7, 1.35, 3.4], fov: 40 }
+              : { position: [0.72, 1.25, 2.25], fov: 36 }
           }
         >
           {mode === "boat" ? (
