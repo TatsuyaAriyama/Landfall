@@ -247,7 +247,6 @@ export default function BoatStudio({ data }: { data: UserData }) {
           ["jib", "jibLabel"],
           ["hull", "hullLabel"],
           ["stripe", "stripeLabel"],
-          ["flag", "flagLabel"],
         ] as [BoatPart, I18nKey][]
       ).map(([part, labelKey]) => (
         <div key={part}>

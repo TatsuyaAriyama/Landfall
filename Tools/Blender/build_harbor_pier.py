@@ -363,20 +363,6 @@ for index, height in enumerate((0.18, 0.37, 0.56)):
         6,
     )
 
-# A small return-orange pennant at the shore end anchors it to Landfall's palette.
-beam("Pennant_Mast", (-0.61, 0.27, 0.75), (-0.61, 0.27, 1.65), 0.025, MATERIALS["wood"], 6)
-mesh = bpy.data.meshes.new("Pier_Pennant_Mesh")
-mesh.from_pydata(
-    [(-0.61, 0.27, 1.62), (-0.61, 0.27, 1.34), (-0.12, 0.27, 1.50)],
-    [],
-    [(0, 1, 2)],
-)
-mesh.materials.append(MATERIALS["orange"])
-pennant = bpy.data.objects.new("Pier_Pennant", mesh)
-bpy.context.collection.objects.link(pennant)
-pennant.parent = root
-asset_objects.append(pennant)
-
 # Preview sea and shore rocks are deliberately not exported.
 sea_material = mat("PREVIEW_Sea", COLORS["sea"], 0.72)
 bpy.ops.mesh.primitive_plane_add(size=24, location=(0, 2.0, -0.01))

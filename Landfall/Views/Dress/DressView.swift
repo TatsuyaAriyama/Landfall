@@ -1,7 +1,7 @@
 import SwiftUI
 import SwiftData
 
-/// 装い。夜の海に浮かぶ自分の船を3Dで眺めながら、帆・ジブ・船体・ライン・旗を着せ替える。
+/// 装い。夜の海に浮かぶ自分の船を3Dで眺めながら、帆・ジブ・船体・ラインを着せ替える。
 /// 選択肢は累計時間(または共同航海の戦利品)で解放される(Web BoatStudio 完全移植)。
 struct DressView: View {
     @Query private var sessions: [StudySession]
@@ -27,7 +27,6 @@ struct DressView: View {
             BoatCustomization.select(.jib, "seaGreen")
             BoatCustomization.select(.hull, "coral")
             BoatCustomization.select(.stripe, "returnOrange")
-            BoatCustomization.select(.flag, "kraken")
         }
         if ProcessInfo.processInfo.environment["LANDFALL_DRESS_NAV"] != nil { return .navigator }
         #endif
@@ -156,7 +155,7 @@ struct DressView: View {
         .padding(.top, 20)
     }
 
-    /// 色を持つ選択肢は丸スウォッチ、色を持たない(なし・旗)ものはテキストチップ。
+    /// 色を持つ選択肢は丸スウォッチ、色を持たない「なし」はテキストチップ。
     @ViewBuilder
     private func optionButton(_ part: BoatPart, _ option: BoatOption) -> some View {
         let unlocked = option.isUnlocked(totalMinutes: totalMinutes)
@@ -207,13 +206,10 @@ struct DressView: View {
         PublicHarborService.shared.pushProfile()
     }
 
-    /// 色を持たない選択肢の表示名(なし・旗の種類)。
+    /// 色を持たない選択肢の表示名。
     private func optionLabel(_ id: String) -> LocalizedStringKey {
         switch id {
         case "none": return "None"
-        case "pennant": return "Pennant"
-        case "swallow": return "Swallow"
-        case "kraken": return "Kraken"
         default: return LocalizedStringKey(id)
         }
     }

@@ -4,7 +4,7 @@ import type { BoatParts } from "./symbols";
 // 船のカスタマイズ。累計時間(全期間)で選べる部位が増えていく。
 // ストリークではなく累計なので、休んでも失われない。選択はローカル保存。
 
-export type BoatPart = "sail" | "jib" | "hull" | "stripe" | "flag";
+export type BoatPart = "sail" | "jib" | "hull" | "stripe";
 
 export interface BoatOption {
   id: string;
@@ -35,17 +35,12 @@ export const BOAT_OPTIONS: Record<BoatPart, BoatOption[]> = {
     { id: "sand", color: "#EADEBD", unlockMinutes: 0 },
     { id: "coral", color: "#F0997B", unlockMinutes: 30 * 60 },
     { id: "deepRust", color: "#7A3B22", unlockMinutes: 60 * 60 },
+    { id: "abyss", color: "#1A1130", unlockMinutes: 0, lootKey: "loot.krakenFlag" },
   ],
   stripe: [
     { id: "none", unlockMinutes: 0 },
     { id: "returnOrange", color: "#F5822A", unlockMinutes: 20 * 60 },
     { id: "deepRust", color: "#4A1B0C", unlockMinutes: 45 * 60 },
-  ],
-  flag: [
-    { id: "none", unlockMinutes: 0 },
-    { id: "pennant", unlockMinutes: 15 * 60 },
-    { id: "swallow", unlockMinutes: 40 * 60 },
-    { id: "kraken", unlockMinutes: 0, lootKey: "loot.krakenFlag" },
   ],
 };
 
@@ -148,7 +143,6 @@ export function boatProps(): BoatParts {
     jib: color("jib"),
     hull: color("hull"),
     stripe: color("stripe") ?? "none",
-    flag: boatPartId("flag"),
   };
 }
 
@@ -163,7 +157,6 @@ export function boatShareData(): Record<string, string> {
     boatJib: boatPartId("jib"),
     boatHull: boatPartId("hull"),
     boatStripe: boatPartId("stripe"),
-    boatFlag: boatPartId("flag"),
   };
 }
 
@@ -183,6 +176,5 @@ export function boatPartsFromIds(ids: {
     jib: pick("jib", ids.boatJib).color,
     hull: pick("hull", ids.boatHull).color,
     stripe: pick("stripe", ids.boatStripe).color ?? "none",
-    flag: pick("flag", ids.boatFlag).id,
   };
 }

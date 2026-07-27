@@ -2,11 +2,11 @@ import Foundation
 import SwiftUI
 
 // 船のカスタマイズ。Web boat.ts の完全移植。累計時間(全期間)で部位が解放される。
-// 一部(moonlight帆・kraken旗)は共同航海の戦利品(loot)で解放。選択はローカル保存。
+// 一部(moonlight帆・深海色の船体)は共同航海の戦利品(loot)で解放。選択はローカル保存。
 
-/// カスタムできる部位。帆・前帆(ジブ)・船体・喫水ライン・旗。
+/// カスタムできる部位。帆・前帆(ジブ)・船体・喫水ライン。
 enum BoatPart: String, CaseIterable, Identifiable {
-    case sail, jib, hull, stripe, flag
+    case sail, jib, hull, stripe
     var id: String { rawValue }
     var storageKey: String { "boat.\(rawValue)" }
 
@@ -16,7 +16,6 @@ enum BoatPart: String, CaseIterable, Identifiable {
         case .jib: "Jib"
         case .hull: "Hull"
         case .stripe: "Stripe"
-        case .flag: "Flag"
         }
     }
 
@@ -45,6 +44,7 @@ enum BoatPart: String, CaseIterable, Identifiable {
                 BoatOption(id: "sand", hex: 0xEADEBD, unlockMinutes: 0),
                 BoatOption(id: "coral", hex: 0xF0997B, unlockMinutes: 30 * 60),
                 BoatOption(id: "deepRust", hex: 0x7A3B22, unlockMinutes: 60 * 60),
+                BoatOption(id: "abyss", hex: 0x1A1130, unlockMinutes: 0, lootKey: .krakenFlag),
             ]
         case .stripe:
             return [
@@ -52,20 +52,13 @@ enum BoatPart: String, CaseIterable, Identifiable {
                 BoatOption(id: "returnOrange", hex: 0xF5822A, unlockMinutes: 20 * 60),
                 BoatOption(id: "deepRust", hex: 0x4A1B0C, unlockMinutes: 45 * 60),
             ]
-        case .flag:
-            return [
-                BoatOption(id: "none", hex: nil, unlockMinutes: 0),
-                BoatOption(id: "pennant", hex: nil, unlockMinutes: 15 * 60),
-                BoatOption(id: "swallow", hex: nil, unlockMinutes: 40 * 60),
-                BoatOption(id: "kraken", hex: nil, unlockMinutes: 0, lootKey: .krakenFlag),
-            ]
         }
     }
 }
 
 struct BoatOption: Identifiable {
     let id: String
-    /// 色を持つ部位のみ(none 系・旗は nil)。
+    /// 色を持つ部位のみ(none 系は nil)。
     let hex: UInt?
     /// 解放に要する累計時間(分)。0 は最初から。
     let unlockMinutes: Int
@@ -116,20 +109,18 @@ enum LootStore {
 
 // MARK: - 3D の船に渡す見た目一式
 
-/// 3D の船に渡す色/形一式。stripe は nil で「なし」、flag は id 文字列。
+/// 3D の船に渡す色/形一式。stripe は nil で「なし」。
 struct BoatParts {
     var sail: UIColor
     var jib: UIColor
     var hull: UIColor
     var stripe: UIColor?          // nil = none
-    var flag: String              // "none" | "pennant" | "swallow" | "kraken"
 
     static let `default` = BoatParts(
         sail: UIColor(rgb: 0xEADEBD),
         jib: UIColor(rgb: 0xEADEBD),
         hull: UIColor(rgb: 0xEADEBD),
-        stripe: nil,
-        flag: "none"
+        stripe: nil
     )
 }
 
@@ -157,8 +148,7 @@ enum BoatCustomization {
             sail: uiColor(.sail) ?? BoatParts.default.sail,
             jib: uiColor(.jib) ?? BoatParts.default.jib,
             hull: uiColor(.hull) ?? BoatParts.default.hull,
-            stripe: uiColor(.stripe),
-            flag: selectedID(.flag)
+            stripe: uiColor(.stripe)
         )
     }
 
@@ -170,7 +160,6 @@ enum BoatCustomization {
             "boatJib": selectedID(.jib),
             "boatHull": selectedID(.hull),
             "boatStripe": selectedID(.stripe),
-            "boatFlag": selectedID(.flag),
         ]
     }
 
@@ -184,8 +173,7 @@ enum BoatCustomization {
             sail: pick(.sail, "boatSail").uiColor ?? BoatParts.default.sail,
             jib: pick(.jib, "boatJib").uiColor ?? BoatParts.default.jib,
             hull: pick(.hull, "boatHull").uiColor ?? BoatParts.default.hull,
-            stripe: pick(.stripe, "boatStripe").uiColor,
-            flag: pick(.flag, "boatFlag").id
+            stripe: pick(.stripe, "boatStripe").uiColor
         )
     }
 }

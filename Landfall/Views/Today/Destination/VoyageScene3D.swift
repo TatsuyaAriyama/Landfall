@@ -296,35 +296,6 @@ enum VoyageSceneKit {
         return shape
     }
 
-    /// 旗(pennant/swallow/kraken)の平面形。Web makeFlagGeometry(ShapeGeometry)相当。
-    private static func makeFlagGeometry(kind: String, color: UIColor) -> SCNGeometry {
-        let s = UIBezierPath()
-        switch kind {
-        case "pennant":
-            s.move(to: CGPoint(x: 0, y: 0))
-            s.addLine(to: CGPoint(x: 0, y: 0.22))
-            s.addLine(to: CGPoint(x: -0.5, y: 0.11))
-        case "swallow":
-            s.move(to: CGPoint(x: 0, y: 0))
-            s.addLine(to: CGPoint(x: 0, y: 0.22))
-            s.addLine(to: CGPoint(x: -0.52, y: 0.22))
-            s.addLine(to: CGPoint(x: -0.33, y: 0.11))
-            s.addLine(to: CGPoint(x: -0.52, y: 0))
-        default: // kraken: 触腕を思わせる、曲線の二叉
-            s.move(to: CGPoint(x: 0, y: 0))
-            s.addLine(to: CGPoint(x: 0, y: 0.22))
-            s.addQuadCurve(to: CGPoint(x: -0.56, y: 0.21), controlPoint: CGPoint(x: -0.36, y: 0.28))
-            s.addQuadCurve(to: CGPoint(x: -0.27, y: 0.11), controlPoint: CGPoint(x: -0.36, y: 0.16))
-            s.addQuadCurve(to: CGPoint(x: -0.56, y: 0.01), controlPoint: CGPoint(x: -0.36, y: 0.06))
-            s.addQuadCurve(to: CGPoint(x: 0, y: 0), controlPoint: CGPoint(x: -0.36, y: -0.06))
-        }
-        s.close()
-        s.flatness = 0.01
-        let shape = SCNShape(path: s, extrusionDepth: 0)
-        shape.firstMaterial = litMaterial(color, roughness: 0.9, doubleSided: true)
-        return shape
-    }
-
     /// 三角帆。まっすぐなラフ+湾曲したリーチ+中央の膨らみ(Web makeSailGeometry と同式)。
     private static func makeSailGeometry(
         width: Float, height: Float, bulge: Float, shear: Float, color: UIColor
@@ -428,35 +399,7 @@ enum VoyageSceneKit {
             model.addChildNode(stripeNode)
         }
 
-        // 旗(マスト頂ではためく)。none 以外のとき。
-        if ["pennant", "swallow", "kraken"].contains(parts.flag) {
-            let flagColor = flagColorFor(parts.flag)
-            let flagGroup = SCNNode()
-            flagGroup.name = "boatFlag"
-            flagGroup.position = SCNVector3(0.1, 2.34, 0)
-            let flagNode = SCNNode(geometry: makeFlagGeometry(kind: parts.flag, color: flagColor))
-            flagGroup.addChildNode(flagNode)
-            // 海獣の旗には returnOrange の小さな目を添える(2Dの図案と同じ)。
-            if parts.flag == "kraken" {
-                let eye = SCNShape(path: UIBezierPath(ovalIn: CGRect(x: -0.028, y: -0.028, width: 0.056, height: 0.056)), extrusionDepth: 0)
-                eye.firstMaterial = unlitMaterial(UIColor(rgb: 0xF5822A))
-                let eyeNode = SCNNode(geometry: eye)
-                eyeNode.position = SCNVector3(-0.12, 0.11, 0.002)
-                flagGroup.addChildNode(eyeNode)
-            }
-            model.addChildNode(flagGroup)
-        }
-
         return model
-    }
-
-    /// 旗の配色(Web FLAG_COLORS)。
-    static func flagColorFor(_ flag: String) -> UIColor {
-        switch flag {
-        case "pennant": return UIColor(rgb: 0xF5822A)  // returnOrange
-        case "swallow": return UIColor(rgb: 0xF0997B)  // coral
-        default: return UIColor(rgb: 0x1A1130)          // kraken = midnight
-        }
     }
 
     // MARK: - 波紋・航跡(Web Ripples / Wake)
@@ -1006,10 +949,6 @@ final class VoyageAnimator: NSObject, SCNSceneRendererDelegate {
             bob.eulerAngles.z = sin(t * 0.6) * 0.03
             bob.eulerAngles.x = sin(t * 0.5 + 1.2) * 0.015
         }
-        // 旗のはためき(Web flagGroup rot.y = sin(t*5.2)*0.22)。再構築されうるので毎回探す。
-        if let flag = bob?.childNode(withName: "boatFlag", recursively: true) {
-            flag.eulerAngles.y = sin(t * 5.2) * 0.22
-        }
         // 制覇した島の旗も、同じ風になびかせる(島ごとに位相をずらす)。
         for (i, node) in scene.rootNode.childNodes.enumerated()
         where node.name?.hasPrefix("step_") == true {
@@ -1046,7 +985,7 @@ func voyageStepsKey(_ steps: [VoyageStep]) -> String {
     steps.map { $0.doneAt.map { String(Int($0.timeIntervalSince1970)) } ?? "-" }.joined(separator: ",")
 }
 
-/// 目的地の3Dビュー。ratio で船が進み、steps で島に旗が立つ。
+/// 目的地の3Dビュー。ratio で船が進み、steps で島の達成状態が変わる。
 struct VoyageSceneView: UIViewRepresentable {
     var ratio: Double
     var steps: [VoyageStep]
@@ -1136,7 +1075,7 @@ struct BoatSceneView: UIViewRepresentable {
 
     private var key: String {
         let stripe = parts.stripe?.hashValue ?? 0
-        return "\(parts.sail.hashValue)|\(parts.jib.hashValue)|\(parts.hull.hashValue)|\(stripe)|\(parts.flag)"
+        return "\(parts.sail.hashValue)|\(parts.jib.hashValue)|\(parts.hull.hashValue)|\(stripe)"
     }
 
     final class Coordinator {

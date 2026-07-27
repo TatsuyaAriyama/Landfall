@@ -18,11 +18,12 @@ COLORS = {
     "night": "#123830",
     "sea": "#1E5348",
     "sand": "#EADEBD",
-    "canvas": "#7A4528",
-    "canvas_dark": "#4A1B0C",
-    "canvas_light": "#A66A3F",
-    "wood": "#5A2A15",
-    "rope": "#DCCFA9",
+    "fly": "#3E756B",
+    "fly_dark": "#244C46",
+    "inner": "#D7C8A4",
+    "floor": "#202A2D",
+    "metal": "#A8B4B3",
+    "rope": "#C8D5CF",
     "bed": "#1A1130",
     "ember": "#F3C065",
     "orange": "#F5822A",
@@ -40,6 +41,7 @@ def material(
     roughness: float = 0.9,
     emission: str | None = None,
     strength: float = 0,
+    metallic: float = 0,
 ) -> bpy.types.Material:
     value = bpy.data.materials.new(name)
     value.diffuse_color = rgba(color)
@@ -47,6 +49,7 @@ def material(
     bsdf = value.node_tree.nodes["Principled BSDF"]
     bsdf.inputs["Base Color"].default_value = rgba(color)
     bsdf.inputs["Roughness"].default_value = roughness
+    bsdf.inputs["Metallic"].default_value = metallic
     if emission:
         bsdf.inputs["Emission Color"].default_value = rgba(emission)
         bsdf.inputs["Emission Strength"].default_value = strength
@@ -54,14 +57,15 @@ def material(
 
 
 MATS = {
-    "canvas": material("LF_TentCanvas", COLORS["canvas"], 0.96),
-    "canvas_dark": material("LF_TentCanvasDark", COLORS["canvas_dark"], 0.94),
-    "canvas_light": material("LF_TentCanvasSunworn", COLORS["canvas_light"], 0.96),
-    "wood": material("LF_TentWood", COLORS["wood"], 0.9),
-    "rope": material("LF_TentRope", COLORS["rope"], 1),
-    "sand": material("LF_TentGroundsheet", COLORS["sand"], 0.98),
+    "fly": material("LF_TentRipstopFly", COLORS["fly"], 0.62),
+    "fly_dark": material("LF_TentReinforcedFly", COLORS["fly_dark"], 0.7),
+    "inner": material("LF_TentBreathableInner", COLORS["inner"], 0.86),
+    "floor": material("LF_TentWaterproofFloor", COLORS["floor"], 0.48),
+    "metal": material("LF_TentAluminumPole", COLORS["metal"], 0.28, metallic=0.78),
+    "rope": material("LF_TentReflectiveCord", COLORS["rope"], 0.72),
+    "sand": material("PREVIEW_SandMaterial", COLORS["sand"], 0.98),
     "bed": material("LF_TentBedroll", COLORS["bed"], 0.96),
-    "orange": material("LF_TentOrange", COLORS["orange"], 0.88),
+    "orange": material("LF_TentZipperPull", COLORS["orange"], 0.7),
     "glow": material("LF_TentGlow", COLORS["ember"], 0.4, COLORS["ember"], 4.5),
 }
 
@@ -135,60 +139,82 @@ def beam(
 
 
 # The entrance is at local -Y, which becomes +Z in Three.js after Y-up export.
-front, back, half_width, ridge = -0.82, 0.82, 1.02, 1.42
-mesh(
-    "Tent_LeftCanvas",
-    [(-half_width, front, 0), (0, front, ridge), (0, back, ridge), (-half_width, back, 0)],
-    [(0, 1, 2, 3)],
-    MATS["canvas"],
-)
-mesh(
-    "Tent_RightCanvas",
-    [(0, front, ridge), (half_width, front, 0), (half_width, back, 0), (0, back, ridge)],
-    [(0, 1, 2, 3)],
-    MATS["canvas_light"],
-)
-mesh(
-    "Tent_BackCanvas",
-    [(-half_width, back, 0), (half_width, back, 0), (0, back, ridge)],
-    [(0, 1, 2)],
-    MATS["canvas_dark"],
-)
+# A low, rounded tunnel silhouette and external aluminum arches keep it clearly
+# contemporary camping equipment rather than an A-frame or shrine-like structure.
+front, back = -0.86, 0.9
+cross_section = [
+    (-1.12, 0.08),
+    (-0.94, 0.68),
+    (-0.55, 1.12),
+    (0.0, 1.32),
+    (0.55, 1.12),
+    (0.94, 0.68),
+    (1.12, 0.08),
+]
+for index in range(len(cross_section) - 1):
+    x0, z0 = cross_section[index]
+    x1, z1 = cross_section[index + 1]
+    mesh(
+        f"Tent_RipstopPanel_{index + 1}",
+        [(x0, front, z0), (x1, front, z1), (x1, back, z1), (x0, back, z0)],
+        [(0, 1, 2, 3)],
+        MATS["fly_dark" if index in (0, 5) else "fly"],
+    )
 
-# Rolled entrance flaps leave an unmistakable opening instead of a painted doorway.
-beam("Tent_LeftFlap", (-0.92, front - 0.015, 0.04), (-0.08, front - 0.015, 1.33), 0.055, MATS["canvas_dark"])
-beam("Tent_RightFlap", (0.92, front - 0.015, 0.04), (0.08, front - 0.015, 1.33), 0.055, MATS["canvas"])
+# Closed rear inner wall; the front stays physically open so the navigator can enter.
+rear_center = (0, back + 0.004, 0.12)
+for index in range(len(cross_section) - 1):
+    x0, z0 = cross_section[index]
+    x1, z1 = cross_section[index + 1]
+    mesh(
+        f"Tent_RearInner_{index + 1}",
+        [rear_center, (x0, back + 0.004, z0), (x1, back + 0.004, z1)],
+        [(0, 1, 2)],
+        MATS["inner"],
+    )
 
-# Ridge, A-frame poles, guy ropes, and stakes make the structure feel usable.
-beam("Tent_RidgePole", (0, front - 0.14, ridge + 0.03), (0, back + 0.18, ridge + 0.03), 0.035, MATS["wood"])
-for side, x in (("L", -half_width), ("R", half_width)):
-    beam(f"Tent_FrontPole_{side}", (x, front - 0.03, 0), (0, front - 0.03, ridge + 0.03), 0.038, MATS["wood"])
-    beam(f"Tent_BackPole_{side}", (x, back + 0.03, 0), (0, back + 0.03, ridge + 0.03), 0.038, MATS["wood"])
+# Rolled breathable inner doors frame a broad rounded opening.
+beam("Tent_LeftDoorRoll", (-0.58, front - 0.02, 0.12), (-0.25, front - 0.02, 0.94), 0.045, MATS["inner"])
+beam("Tent_RightDoorRoll", (0.58, front - 0.02, 0.12), (0.25, front - 0.02, 0.94), 0.045, MATS["inner"])
+beam("Tent_DoorCanopy", (-0.25, front - 0.02, 0.94), (0.25, front - 0.02, 0.94), 0.035, MATS["fly_dark"])
+
+# Two segmented aluminum arches show a different material and construction system.
+for arch_name, y in (("Front", front - 0.035), ("Rear", back + 0.035)):
+    for index in range(len(cross_section) - 1):
+        x0, z0 = cross_section[index]
+        x1, z1 = cross_section[index + 1]
+        beam(
+            f"Tent_{arch_name}Aluminum_{index + 1}",
+            (x0, y, z0),
+            (x1, y, z1),
+            0.025,
+            MATS["metal"],
+        )
+beam("Tent_RoofSpreader", (0, front - 0.05, 1.34), (0, back + 0.06, 1.34), 0.022, MATS["metal"])
+
+# Reflective guy cords and metal pegs replace wooden ropes and stakes.
 for index, (a, b) in enumerate(
     [
-        ((-0.96, front, 0.52), (-1.42, front - 0.42, 0.04)),
-        ((0.96, front, 0.52), (1.42, front - 0.42, 0.04)),
-        ((-0.96, back, 0.52), (-1.42, back + 0.42, 0.04)),
-        ((0.96, back, 0.52), (1.42, back + 0.42, 0.04)),
+        ((-0.94, front, 0.56), (-1.42, front - 0.42, 0.04)),
+        ((0.94, front, 0.56), (1.42, front - 0.42, 0.04)),
+        ((-0.94, back, 0.56), (-1.42, back + 0.42, 0.04)),
+        ((0.94, back, 0.56), (1.42, back + 0.42, 0.04)),
     ]
 ):
     beam(f"Tent_GuyRope_{index + 1}", a, b, 0.009, MATS["rope"])
-    beam(f"Tent_Stake_{index + 1}", (b[0], b[1], 0), (b[0], b[1], 0.16), 0.025, MATS["wood"])
+    beam(f"Tent_Stake_{index + 1}", (b[0], b[1], 0), (b[0], b[1], 0.15), 0.02, MATS["metal"])
 
-# A groundsheet and bedroll give entering the tent a purpose: this is a place to rest.
-cube("Tent_Groundsheet", (0, 0.05, 0.025), (0.77, 0.7, 0.025), MATS["sand"])
+# Bathtub floor, inner groundsheet, and bedroll remain visibly separate materials.
+cube("Tent_WaterproofFloor", (0, 0.06, 0.04), (0.88, 0.72, 0.04), MATS["floor"])
+cube("Tent_InnerGroundsheet", (0, 0.09, 0.085), (0.73, 0.62, 0.018), MATS["inner"])
 cube("Tent_Bedroll", (0.34, 0.18, 0.14), (0.3, 0.49, 0.11), MATS["bed"], (0, 0, 0.04))
 beam("Tent_BedrollTie", (0.02, 0.18, 0.26), (0.66, 0.18, 0.26), 0.018, MATS["rope"])
 
-# Warm entrance lantern and a tiny return-orange pennant tie the tent to Landfall.
-beam("Tent_LanternHook", (-0.42, front - 0.03, 0.74), (-0.42, front - 0.03, 1.08), 0.018, MATS["wood"])
-cube("Tent_LanternBody", (-0.42, front - 0.05, 0.65), (0.09, 0.07, 0.12), MATS["glow"])
-mesh(
-    "Tent_Pennant",
-    [(0.02, back, 1.44), (0.02, back, 1.7), (0.45, back, 1.56)],
-    [(0, 1, 2)],
-    MATS["orange"],
-)
+# A clipped camp lantern and orange zipper pulls add function without any flags.
+beam("Tent_LanternClip", (-0.38, front - 0.04, 0.84), (-0.38, front - 0.04, 1.02), 0.014, MATS["metal"])
+cube("Tent_LanternBody", (-0.38, front - 0.05, 0.72), (0.08, 0.065, 0.1), MATS["glow"])
+beam("Tent_LeftZipperPull", (-0.25, front - 0.035, 0.43), (-0.31, front - 0.035, 0.35), 0.012, MATS["orange"])
+beam("Tent_RightZipperPull", (0.25, front - 0.035, 0.43), (0.31, front - 0.035, 0.35), 0.012, MATS["orange"])
 
 
 def look_at(obj: bpy.types.Object, target: tuple[float, float, float]) -> None:

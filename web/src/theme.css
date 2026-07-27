@@ -1811,7 +1811,7 @@ textarea {
   flex: none;
 }
 
-/* ---- 船のアニメーション(浮遊・旗のなびき・航跡・プレビュー) ---- */
+/* ---- 船のアニメーション(浮遊・航跡・プレビュー) ---- */
 
 .boat-anim {
   animation: boat-float 3.2s ease-in-out infinite alternate;
@@ -1830,21 +1830,6 @@ textarea {
   }
   to {
     transform: translateY(2.5px) rotate(1.8deg);
-  }
-}
-
-.boat-flag {
-  animation: flag-flutter 1.6s ease-in-out infinite alternate;
-  transform-box: fill-box;
-  transform-origin: left center;
-}
-
-@keyframes flag-flutter {
-  from {
-    transform: skewY(-5deg);
-  }
-  to {
-    transform: skewY(5deg);
   }
 }
 
@@ -1922,7 +1907,6 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   .boat-anim,
-  .boat-flag,
   .dest-boat::before,
   .dest-boat::after,
   .boat-stage-star {
