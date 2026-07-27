@@ -30,7 +30,7 @@ import { TileSymbolSvg } from "../symbols";
 import { ItemEditor } from "./ItemEditor";
 import { DestinationsSection } from "./DestinationsSection";
 import { Modal, askConfirm, showToast } from "../overlays";
-import { durationLabel, lang, t } from "../i18n";
+import { durationLabel, lang, t, tf } from "../i18n";
 import {
   clockLabel,
   creditedMinutes,
@@ -39,6 +39,7 @@ import {
   eraseTimer,
   isOnBreak,
   pomoPhase,
+  pomoWorkedSec,
   readTimer,
   startBreak,
   writeTimer,
@@ -79,14 +80,18 @@ class VoyagingErrorBoundary extends Component<
   }
 }
 
-const MINUTE_PRESETS = [15, 30, 45, 60, 90];
+const MINUTE_ADDITIONS = [5, 15, 30, 60];
 
 // 前回記録した分数。次の記録ダイアログの初期値にする(いつも同じ長さの人の一手間を省く)。
 const LAST_MINUTES_KEY = "record.lastMinutes";
 
 function lastUsedMinutes(): number | null {
-  const n = Number(localStorage.getItem(LAST_MINUTES_KEY) ?? 0);
-  return Number.isFinite(n) && n >= 1 && n <= 6000 ? n : null;
+  try {
+    const n = Number(localStorage.getItem(LAST_MINUTES_KEY) ?? 0);
+    return Number.isFinite(n) && n >= 1 && n <= 6000 ? n : null;
+  } catch {
+    return null;
+  }
 }
 
 // 計測の状態は timer.ts に集約(航海中の世界と共有する)。
@@ -201,7 +206,12 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const switchToManual = () => {
     if (!timer) return;
     const item = data.items.find((i) => i.id === timer.itemId);
-    const minutes = creditedMinutes(timer);
+    // 通常の計測確定は0分の記録を避けるため最低1分にするが、手入力へ移る時は
+    // 実測が1分未満なら0分から始める。ここで1分を足すと「+30分」を2回押して
+    // 61分になり、加算入力の直感を壊す。
+    const elapsed = elapsedSec(timer);
+    const worked = timer.mode === "pomo" ? pomoWorkedSec(elapsed) : elapsed;
+    const minutes = Math.min(Math.max(0, Math.round(worked / 60)), 6000);
     clearTimer();
     if (item) {
       setPrefillMinutes(minutes);
@@ -621,19 +631,54 @@ function RecordDialog({
   initialMinutes?: number | null;
   onClose: () => void;
 }) {
-  const [minutes, setMinutes] = useState(() => initialMinutes ?? lastUsedMinutes() ?? 30);
+  const previousMinutes = useMemo(lastUsedMinutes, []);
+  const [minuteState, setMinuteState] = useState(() => ({
+    minutes: Math.min(6000, Math.max(0, initialMinutes ?? 0)),
+    history: [] as number[],
+  }));
+  const minutes = minuteState.minutes;
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
   const style = STYLE_COLORS[normalizeStyle(item.styleToken)];
+
+  const changeMinutes = (next: (current: number) => number) => {
+    setMinuteState((state) => {
+      const minutes = Math.min(6000, Math.max(0, Math.round(next(state.minutes))));
+      if (minutes === state.minutes) return state;
+      return {
+        minutes,
+        // 誤タップをすぐ戻せるだけで十分なので、履歴は直近12操作に限る。
+        history: [...state.history.slice(-11), state.minutes],
+      };
+    });
+  };
+  const undoMinutes = () => {
+    setMinuteState((state) => {
+      const previous = state.history.at(-1);
+      return previous === undefined
+        ? state
+        : { minutes: previous, history: state.history.slice(0, -1) };
+    });
+  };
 
   const save = async () => {
     if (working || minutes <= 0) return;
     setWorking(true);
     const clamped = Math.min(minutes, 6000);
-    localStorage.setItem(LAST_MINUTES_KEY, String(clamped));
-    await recordSession(uid, { item, minutes: clamped, note }, data);
-    showToast(t("recordedToast"));
-    onClose();
+    try {
+      try {
+        localStorage.setItem(LAST_MINUTES_KEY, String(clamped));
+      } catch {
+        // 保存領域を拒否するブラウザでも、今回の記録は続ける。
+      }
+      await recordSession(uid, { item, minutes: clamped, note: note.trim() || undefined }, data);
+      showToast(t("recordedToast"));
+      onClose();
+    } catch {
+      showToast(t("errGeneric"));
+    } finally {
+      setWorking(false);
+    }
   };
 
   return (
@@ -658,7 +703,7 @@ function RecordDialog({
         <div className="stepper-row">
           <button
             className="minus-button stepper-button"
-            onClick={() => setMinutes((m) => Math.max(5, Math.floor((m - 1) / 5) * 5))}
+            onClick={() => changeMinutes((m) => Math.max(0, Math.ceil(m / 5) * 5 - 5))}
             aria-label="-5"
           >
             −
@@ -673,7 +718,7 @@ function RecordDialog({
               onFocus={(e) => e.target.select()}
               onChange={(e) => {
                 const n = Number(e.target.value.replace(/[^0-9]/g, ""));
-                setMinutes(Number.isFinite(n) ? Math.min(n, 6000) : 0);
+                changeMinutes(() => (Number.isFinite(n) ? n : 0));
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) void save();
@@ -684,25 +729,54 @@ function RecordDialog({
           </span>
           <button
             className="minus-button stepper-button"
-            onClick={() => setMinutes((m) => Math.min(6000, Math.floor(m / 5) * 5 + 5))}
+            onClick={() => changeMinutes((m) => Math.floor(m / 5) * 5 + 5)}
             aria-label="+5"
           >
             +
           </button>
         </div>
-        {/* 分だけだと1時間を超えたときに読み取れない(90と出ても1時間30分だと
-            すぐ分からない)。打ち込みは分のままが速いので、読み方だけ添える。 */}
-        {minutes >= 60 && <p className="stepper-reading">{durationLabel(minutes)}</p>}
-        <div className="chip-row" style={{ justifyContent: "center", marginTop: 14 }}>
-          {MINUTE_PRESETS.map((m) => (
+        <p className="stepper-reading">
+          {tf(t("manualTimeTotal"), { time: durationLabel(minutes) })}
+        </p>
+        <p className="manual-time-hint">{t("manualTimeAddHint")}</p>
+        <div className="minute-additions">
+          {MINUTE_ADDITIONS.map((m) => (
             <button
               key={m}
-              className={`chip${minutes === m ? " selected" : ""}`}
-              onClick={() => setMinutes(m)}
+              className="chip"
+              onClick={() => changeMinutes((current) => current + m)}
+              disabled={minutes >= 6000}
             >
-              {durationLabel(m)}
+              +{durationLabel(m)}
             </button>
           ))}
+        </div>
+        <div className="manual-time-actions">
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={undoMinutes}
+            disabled={minuteState.history.length === 0}
+          >
+            {t("undo")}
+          </button>
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={() => changeMinutes(() => 0)}
+            disabled={minutes === 0}
+          >
+            {t("clear")}
+          </button>
+          {previousMinutes !== null && previousMinutes !== minutes && (
+            <button
+              type="button"
+              className="quiet-button"
+              onClick={() => changeMinutes(() => previousMinutes)}
+            >
+              {tf(t("previousTime"), { time: durationLabel(previousMinutes) })}
+            </button>
+          )}
         </div>
 
         <p className="section-label">{t("noteOptional")}</p>

@@ -4658,6 +4658,51 @@ textarea {
   color: var(--return-orange);
 }
 
+.manual-time-hint {
+  margin: 18px 0 9px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--ink) 48%, transparent);
+}
+
+.minute-additions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.minute-additions .chip {
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.minute-additions .chip:active:not(:disabled) {
+  transform: translateY(1px);
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
+.manual-time-actions {
+  min-height: 42px;
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 12px;
+}
+
+.manual-time-actions .quiet-button {
+  min-height: 38px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+}
+
+.manual-time-actions .quiet-button:disabled {
+  opacity: 0.28;
+}
+
 /* 狭い画面のピル。操作が4つ(音・休憩・終了・✕)あると一行には収まらず、
    右端の✕から順にはみ出す。名前と時計を一行目に回して二段にする —
    どれかを削るより、少し背の高い小さなカードになるほうが理に適っている。 */
