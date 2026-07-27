@@ -46,6 +46,18 @@ const SettingsDialog = lazy(() =>
 );
 
 function preloadTab(tab: Tab) {
+  const connection = (
+    navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+    }
+  ).connection;
+  if (
+    connection?.saveData ||
+    connection?.effectiveType === "slow-2g" ||
+    connection?.effectiveType === "2g"
+  ) {
+    return;
+  }
   if (tab === "trace") void loadTraceView();
   if (tab === "logbook") void loadLogbookView();
   if (tab === "boat") void loadBoatStudio();
@@ -54,10 +66,13 @@ function preloadTab(tab: Tab) {
 
 function ViewLoading() {
   return (
-    <div className="view-loading" role="status" aria-label={t("loading")}>
-      <span />
-      <span />
-      <span />
+    <div className="view-loading" role="status">
+      <div aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+      <p>{t("loadingSeaChart")}</p>
     </div>
   );
 }
@@ -84,7 +99,12 @@ class TabErrorBoundary extends Component<
   }
   render() {
     return this.state.failed ? (
-      <p className="empty-note">{t("render3dFailed")}</p>
+      <div className="load-failed">
+        <p className="empty-note">{t("render3dFailed")}</p>
+        <button className="chip" onClick={() => this.setState({ failed: false })}>
+          {t("retry3d")}
+        </button>
+      </div>
     ) : (
       this.props.children
     );
@@ -145,10 +165,32 @@ function Main({ uid }: { uid: string }) {
     [],
   );
 
+  useEffect(() => {
+    const colors = {
+      morning: "#d9e8dd",
+      day: "#a9deeb",
+      evening: "#a85552",
+      night: "#0b2927",
+    };
+    let meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.name = "theme-color";
+      document.head.append(meta);
+    }
+    meta.content = colors[timeOfDay];
+  }, [timeOfDay]);
+
   const setTab = (next: Tab) => {
     preloadTab(next);
     setTabState(next);
     if (!isDemo) history.replaceState(null, "", `#${next}`);
+    window.requestAnimationFrame(() => {
+      window.scrollTo({
+        top: 0,
+        behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      });
+    });
   };
 
   return (
@@ -157,6 +199,9 @@ function Main({ uid }: { uid: string }) {
       data-time-of-day={timeOfDay}
       data-tab={tab}
     >
+      <a className="skip-link" href="#main-content">
+        {t("skipToContent")}
+      </a>
       <header className="topbar">
         <span className="brand">
           <BrandMark size={28} />
@@ -168,6 +213,8 @@ function Main({ uid }: { uid: string }) {
           onFocus={() => void loadSettingsDialog()}
           onTouchStart={() => void loadSettingsDialog()}
           onClick={() => setSettingsOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={settingsOpen}
         >
           {t("settings")}
         </button>
@@ -175,7 +222,7 @@ function Main({ uid }: { uid: string }) {
 
       {/* タブ。航海の語彙のアイコン+水平線のような選択インジケータ。
           モバイルでは画面下のタブバー(アイコン+小ラベルの縦積み)になる。 */}
-      <nav className="tabs">
+      <nav className="tabs" aria-label={t("mainNavigation")}>
         {TAB_ITEMS.map(({ key, label, symbol }) => (
           <button
             key={key}
@@ -194,8 +241,13 @@ function Main({ uid }: { uid: string }) {
         ))}
       </nav>
 
-      <Suspense fallback={<ViewLoading />}>
-        {data.failed ? (
+      <span className="sr-only" role="status" aria-live="polite">
+        {t("tabChanged").replace("{tab}", t(TAB_ITEMS.find((item) => item.key === tab)!.label))}
+      </span>
+
+      <main id="main-content" tabIndex={-1}>
+        <Suspense fallback={<ViewLoading />}>
+          {data.failed ? (
           /* 繋がらないまま終わったときは、理由と次の一手を出す。
              「読み込み中…」のまま放置すると、直せるのに直せないと思われる。 */
           <div className="load-failed">
@@ -220,8 +272,9 @@ function Main({ uid }: { uid: string }) {
           </TabErrorBoundary>
         ) : (
           <HarborView uid={uid} data={data} inviteCode={inviteCode} />
-        )}
-      </Suspense>
+          )}
+        </Suspense>
+      </main>
 
       {settingsOpen && (
         <Suspense fallback={<DialogLoading />}>

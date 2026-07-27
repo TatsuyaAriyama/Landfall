@@ -762,6 +762,7 @@ function RoomDetail({
   const [members, setMembers] = useState<HarborMember[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState(false);
   const [arrivingMemberIds, setArrivingMemberIds] = useState<ReadonlySet<string>>(
     new Set(),
@@ -940,7 +941,8 @@ function RoomDetail({
 
   const send = async () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || sending) return;
+    setSending(true);
     setDraft("");
     // 送信後もフォーカスを保ち、続けて書けるようにする。
     const focused =
@@ -954,6 +956,8 @@ function RoomDetail({
       // 書いた言葉を消さない — 入力欄へ戻して再送できるようにする。
       setDraft(text);
       showToast(t("errGeneric"));
+    } finally {
+      setSending(false);
     }
   };
 
@@ -1087,7 +1091,14 @@ function RoomDetail({
                       ))
                     )}
                   </div>
-                  <div className="harbor-world-chat-mini-input">
+                  <form
+                    className="harbor-world-chat-mini-input"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void send();
+                    }}
+                    aria-busy={sending}
+                  >
                     <input
                       ref={compactInputRef}
                       value={draft}
@@ -1095,19 +1106,12 @@ function RoomDetail({
                       placeholder={t("chatPlaceholder")}
                       aria-label={t("chatPlaceholder")}
                       maxLength={500}
-                      onKeyDown={(event) => {
-                        if (
-                          event.key === "Enter" &&
-                          !event.nativeEvent.isComposing
-                        ) {
-                          void send();
-                        }
-                      }}
                     />
-                    <button onClick={send} disabled={!draft.trim()}>
+                    <span className="chat-count" aria-live="polite">{draft.length}/500</span>
+                    <button type="submit" disabled={!draft.trim() || sending}>
                       {t("send")}
                     </button>
-                  </div>
+                  </form>
                 </section>
               }
             />
@@ -1197,7 +1201,14 @@ function RoomDetail({
         })}
         <div ref={endRef} />
       </div>
-      <div className="chat-input">
+      <form
+        className="chat-input"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+        aria-busy={sending}
+      >
         <input
           ref={inputRef}
           className="field"
@@ -1205,14 +1216,13 @@ function RoomDetail({
           onChange={(e) => setDraft(e.target.value)}
           placeholder={t("chatPlaceholder")}
           maxLength={500}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) void send();
-          }}
+          aria-label={t("chatPlaceholder")}
         />
-        <button className="chip" onClick={send} disabled={!draft.trim()}>
+        <span className="chat-count" aria-live="polite">{draft.length}/500</span>
+        <button className="chip" type="submit" disabled={!draft.trim() || sending}>
           {t("send")}
         </button>
-      </div>
+      </form>
 
       <div style={{ marginTop: 28 }}>
         <button className="quiet-button danger-text" onClick={leave}>

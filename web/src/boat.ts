@@ -1,5 +1,6 @@
 import type { StudySession } from "./types";
 import type { BoatParts } from "./symbols";
+import { storage } from "./storage";
 
 // 船のカスタマイズ。累計時間(全期間)で選べる部位が増えていく。
 // ストリークではなく累計なので、休んでも失われない。選択はローカル保存。
@@ -56,14 +57,14 @@ const LEGACY_LOOT_KEY = "loot.harborTrial";
 
 export function hasLoot(key: LootKey): boolean {
   return (
-    localStorage.getItem(key) === "1" || localStorage.getItem(LEGACY_LOOT_KEY) === "1"
+    storage.get(key) === "1" || storage.get(LEGACY_LOOT_KEY) === "1"
   );
 }
 
 /// 戦利品を解放する。新規に解放されたときだけ true(トースト表示の判定に使う)。
 export function grantLoot(key: LootKey): boolean {
   if (hasLoot(key)) return false;
-  localStorage.setItem(key, "1");
+  storage.set(key, "1");
   return true;
 }
 
@@ -77,14 +78,14 @@ export function totalMinutes(sessions: StudySession[]): number {
 }
 
 export function boatPartId(part: BoatPart): string {
-  const saved = localStorage.getItem(KEY(part));
+  const saved = storage.get(KEY(part));
   return BOAT_OPTIONS[part].some((o) => o.id === saved) && saved
     ? saved
     : BOAT_OPTIONS[part][0].id;
 }
 
 export function setBoatPart(part: BoatPart, id: string) {
-  localStorage.setItem(KEY(part), id);
+  storage.set(KEY(part), id);
 }
 
 // ---- 航海士の仕草 ----
@@ -108,7 +109,7 @@ const POSES = [
 export type NavigatorPose = (typeof POSES)[number];
 
 export function navigatorPose(): NavigatorPose {
-  const saved = localStorage.getItem(POSE_KEY);
+  const saved = storage.get(POSE_KEY);
   return (POSES as readonly string[]).includes(saved ?? "")
     ? (saved as NavigatorPose)
     : "idle";
@@ -121,18 +122,18 @@ const HOODS = ["peak", "down"] as const;
 export type NavigatorHood = (typeof HOODS)[number];
 
 export function navigatorHood(): NavigatorHood {
-  const saved = localStorage.getItem(HOOD_KEY);
+  const saved = storage.get(HOOD_KEY);
   return (HOODS as readonly string[]).includes(saved ?? "")
     ? (saved as NavigatorHood)
     : "peak";
 }
 
 export function setNavigatorHood(hood: NavigatorHood) {
-  localStorage.setItem(HOOD_KEY, hood);
+  storage.set(HOOD_KEY, hood);
 }
 
 export function setNavigatorPose(pose: NavigatorPose) {
-  localStorage.setItem(POSE_KEY, pose);
+  storage.set(POSE_KEY, pose);
 }
 
 /// BoatSvg / BoatGroup にそのまま渡せる、いまの船の見た目一式。

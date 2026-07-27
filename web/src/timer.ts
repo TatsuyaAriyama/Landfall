@@ -4,6 +4,8 @@
 // 控えるのは「はじめた時刻」だけ。経過は常に現在時刻との差から求めるので、
 // 再読込しても、タブを閉じていた間も、時間は失われない。
 
+import { storage } from "./storage";
+
 const TIMER_ITEM_KEY = "timer.itemId";
 const TIMER_START_KEY = "timer.startedAt";
 const TIMER_MODE_KEY = "timer.mode";
@@ -27,12 +29,12 @@ export interface RunningTimer {
 }
 
 export function readTimer(): RunningTimer | null {
-  const itemId = localStorage.getItem(TIMER_ITEM_KEY);
-  const startedAt = Number(localStorage.getItem(TIMER_START_KEY) ?? 0);
-  const mode: TimerMode = localStorage.getItem(TIMER_MODE_KEY) === "pomo" ? "pomo" : "free";
+  const itemId = storage.get(TIMER_ITEM_KEY);
+  const startedAt = Number(storage.get(TIMER_START_KEY) ?? 0);
+  const mode: TimerMode = storage.get(TIMER_MODE_KEY) === "pomo" ? "pomo" : "free";
   // 休憩の欄が無い航海(この機能より前から走っているもの)は、休んでいない扱い。
-  const breakMs = Number(localStorage.getItem(TIMER_BREAK_MS_KEY) ?? 0);
-  const breakAt = Number(localStorage.getItem(TIMER_BREAK_AT_KEY) ?? 0);
+  const breakMs = Number(storage.get(TIMER_BREAK_MS_KEY) ?? 0);
+  const breakAt = Number(storage.get(TIMER_BREAK_AT_KEY) ?? 0);
   return itemId && startedAt > 0
     ? {
         itemId,
@@ -45,23 +47,23 @@ export function readTimer(): RunningTimer | null {
 }
 
 export function writeTimer(t: RunningTimer): void {
-  localStorage.setItem(TIMER_ITEM_KEY, t.itemId);
-  localStorage.setItem(TIMER_START_KEY, String(t.startedAt));
-  localStorage.setItem(TIMER_MODE_KEY, t.mode);
-  localStorage.setItem(TIMER_BREAK_MS_KEY, String(Math.max(0, Math.round(t.breakMs))));
+  storage.set(TIMER_ITEM_KEY, t.itemId);
+  storage.set(TIMER_START_KEY, String(t.startedAt));
+  storage.set(TIMER_MODE_KEY, t.mode);
+  storage.set(TIMER_BREAK_MS_KEY, String(Math.max(0, Math.round(t.breakMs))));
   if (t.breakStartedAt) {
-    localStorage.setItem(TIMER_BREAK_AT_KEY, String(t.breakStartedAt));
+    storage.set(TIMER_BREAK_AT_KEY, String(t.breakStartedAt));
   } else {
-    localStorage.removeItem(TIMER_BREAK_AT_KEY);
+    storage.remove(TIMER_BREAK_AT_KEY);
   }
 }
 
 export function eraseTimer(): void {
-  localStorage.removeItem(TIMER_ITEM_KEY);
-  localStorage.removeItem(TIMER_START_KEY);
-  localStorage.removeItem(TIMER_MODE_KEY);
-  localStorage.removeItem(TIMER_BREAK_MS_KEY);
-  localStorage.removeItem(TIMER_BREAK_AT_KEY);
+  storage.remove(TIMER_ITEM_KEY);
+  storage.remove(TIMER_START_KEY);
+  storage.remove(TIMER_MODE_KEY);
+  storage.remove(TIMER_BREAK_MS_KEY);
+  storage.remove(TIMER_BREAK_AT_KEY);
 }
 
 /// いま休憩中か(錨を下ろしているか)。

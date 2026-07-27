@@ -18,6 +18,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import { storage } from "./storage";
 import { auth, db } from "./firebase";
 import { PlayerProfile } from "./profile";
 import { serviceStartDay } from "./since";
@@ -319,13 +320,13 @@ export async function fetchPublicJoined(): Promise<Set<string>> {
     ).catch(() => null);
     if (snap?.exists()) found.add(harbor.slug);
   }
-  localStorage.setItem(JOINED_CACHE_KEY, JSON.stringify([...found].sort()));
+  storage.set(JOINED_CACHE_KEY, JSON.stringify([...found].sort()));
   return found;
 }
 
 export function cachedPublicJoined(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(JOINED_CACHE_KEY) ?? "[]") as string[]);
+    return new Set(JSON.parse(storage.get(JOINED_CACHE_KEY) ?? "[]") as string[]);
   } catch {
     return new Set();
   }
@@ -335,7 +336,7 @@ export async function joinPublic(slug: string, data: PublishSource): Promise<voi
   await joinedSetup("publicHarbors", slug, data);
   const joined = cachedPublicJoined();
   joined.add(slug);
-  localStorage.setItem(JOINED_CACHE_KEY, JSON.stringify([...joined].sort()));
+  storage.set(JOINED_CACHE_KEY, JSON.stringify([...joined].sort()));
 }
 
 export async function leavePublic(slug: string): Promise<void> {
@@ -346,7 +347,7 @@ export async function leavePublic(slug: string): Promise<void> {
   await deleteDoc(memberRef).catch(() => {});
   const joined = cachedPublicJoined();
   joined.delete(slug);
-  localStorage.setItem(JOINED_CACHE_KEY, JSON.stringify([...joined].sort()));
+  storage.set(JOINED_CACHE_KEY, JSON.stringify([...joined].sort()));
 }
 
 export async function leaveAllPublic(): Promise<void> {

@@ -6,6 +6,7 @@ import { lang, t, yearChartTitle } from "../i18n";
 import { deleteDestination } from "../destinations";
 import { askConfirm } from "../overlays";
 import { dayId } from "../types";
+import { storage } from "../storage";
 
 // 航海誌。月ごとの共有カードではなく、一日ごとに自由な言葉を残す「航海日録」。
 // 作業記録がない日も書けるため、StudyDay とは独立した voyageLogs に保存する。
@@ -58,7 +59,10 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
   const [archiveYear, setArchiveYear] = useState(() => new Date().getFullYear());
   const selectedDate = dateFromId(selectedId);
   const entry = data.voyageLogs.find((log) => log.id === selectedId);
-  const [draft, setDraft] = useState(entry?.body ?? "");
+  const draftKey = `voyage-log.draft.${uid}.${selectedId}`;
+  const [draft, setDraft] = useState(
+    () => storage.sessionGet(`voyage-log.draft.${uid}.${selectedId}`) ?? entry?.body ?? "",
+  );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
@@ -74,10 +78,10 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
   );
 
   useEffect(() => {
-    setDraft(entry?.body ?? "");
+    setDraft(storage.sessionGet(draftKey) ?? entry?.body ?? "");
     setSaved(false);
     setSaveFailed(false);
-  }, [entry?.body, selectedId]);
+  }, [draftKey, entry?.body]);
 
   const sessions = data.sessions.filter((session) => dayId(session.date) === selectedId);
   const totalMinutes = sessions.reduce((sum, session) => sum + session.minutes, 0);
@@ -105,6 +109,7 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
     setSaveFailed(false);
     try {
       await saveVoyageLog(uid, selectedDate, draft);
+      storage.sessionRemove(draftKey);
       setSaved(true);
     } catch {
       setSaveFailed(true);
@@ -133,6 +138,7 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
     setSaveFailed(false);
     try {
       await saveVoyageLog(uid, selectedDate, "");
+      storage.sessionRemove(draftKey);
       setDraft("");
       setSaved(true);
     } catch {
@@ -166,19 +172,32 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
         {itemNames.length > 0 && <small>{itemNames.join(" · ")}</small>}
       </div>
 
+      <label className="sr-only" htmlFor="voyage-journal-body">
+        {t("voyageJournalPrompt")}
+      </label>
       <textarea
+        id="voyage-journal-body"
         className="voyage-journal-field"
         value={draft}
         maxLength={260}
         placeholder={t("voyageJournalPrompt")}
         onChange={(event) => {
-          setDraft(event.target.value);
+          const next = event.target.value;
+          setDraft(next);
+          if (next === (entry?.body ?? "")) storage.sessionRemove(draftKey);
+          else storage.sessionSet(draftKey, next);
           setSaved(false);
           setSaveFailed(false);
         }}
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+            event.preventDefault();
+            void save();
+          }
+        }}
       />
       <div className="voyage-journal-actions">
-        <span>
+        <span aria-live="polite">
           {saveFailed
             ? t("voyageJournalSaveFailed")
             : saved
@@ -204,6 +223,9 @@ function VoyageJournal({ uid, data }: { uid: string; data: UserData }) {
           </button>
         </div>
       </div>
+      {draft !== (entry?.body ?? "") && draft.length > 0 && !saved && (
+        <p className="field-meta">{t("voyageJournalDraft")}</p>
+      )}
 
       <p className="section-label voyage-journal-recent-label">{t("voyageJournalRecent")}</p>
       {data.voyageLogs.length === 0 ? (

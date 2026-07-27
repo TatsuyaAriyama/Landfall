@@ -1,4 +1,6 @@
 // 最小限の i18n。iOS と同じく辞書キーで引く。
+import { storage } from "./storage";
+
 // 言語は設定(localStorage)→ブラウザ設定の順で決まる(ja 以外は英語)。
 
 const ja = {
@@ -21,9 +23,14 @@ const ja = {
   signOut: "サインアウト",
   signOutConfirm: "サインアウトしますか。記録は同期済みなので消えません。",
   loading: "読み込み中…",
+  loadingSeaChart: "海図をひらいています…",
+  skipToContent: "本文へ移動",
+  mainNavigation: "主な航路",
+  tabChanged: "{tab}を開きました",
   loadFailed: "記録に繋がりませんでした。電波の届くところで、もう一度お試しください。",
   retry: "もう一度試す",
   render3dFailed: "この端末では3Dを表示できませんでした。少し時間をおいて開き直してください。",
+  retry3d: "海を描き直す",
   items: "作業項目",
   addItem: "項目を追加",
   newItem: "新しい項目",
@@ -73,6 +80,7 @@ const ja = {
   prevMonth: "前の月",
   nextMonth: "次の月",
   searchNotes: "ひとことを検索",
+  clearSearch: "検索をクリア",
   noNotes: "ひとことは、まだありません。記録に一言添えると、ここに集まります。",
   dayNote: "この日の振り返り",
   dayNotePlaceholder: "この日の振り返り",
@@ -305,6 +313,7 @@ const ja = {
   voyageJournalPrompt: "今日の海は、どんな様子でしたか。",
   voyageJournalSave: "航海記を残す",
   voyageJournalSaved: "航海誌に記しました。",
+  voyageJournalDraft: "書きかけは、この端末に一時保存されています。",
   voyageJournalSaveFailed: "記せませんでした。もう一度お試しください。",
   voyageJournalEmpty: "航海記は、まだありません。",
   voyageJournalEmptyYear: "この年の航海記は、まだありません。",
@@ -413,9 +422,14 @@ const en: Record<I18nKey, string> = {
   signOut: "Sign out",
   signOutConfirm: "Sign out? Your records are synced and will not be lost.",
   loading: "Loading…",
+  loadingSeaChart: "Opening the chart…",
+  skipToContent: "Skip to content",
+  mainNavigation: "Main navigation",
+  tabChanged: "Opened {tab}",
   loadFailed: "Couldn't reach your records. Check your connection and try again.",
   retry: "Try again",
   render3dFailed: "Couldn't draw the 3D view on this device. Try reopening in a moment.",
+  retry3d: "Redraw the sea",
   items: "Items",
   addItem: "Add an item",
   newItem: "New item",
@@ -464,6 +478,7 @@ const en: Record<I18nKey, string> = {
   nextMonth: "Next month",
   indexTab: "Index",
   searchNotes: "Search notes",
+  clearSearch: "Clear search",
   noNotes: "No notes yet. Add a word to a record and it gathers here.",
   dayNote: "Reflections on this day",
   dayNotePlaceholder: "Reflections on this day",
@@ -690,6 +705,7 @@ const en: Record<I18nKey, string> = {
   voyageJournalPrompt: "What were the waters like today?",
   voyageJournalSave: "Add to the logbook",
   voyageJournalSaved: "Added to your Logbook.",
+  voyageJournalDraft: "Your unfinished entry is temporarily saved on this device.",
   voyageJournalSaveFailed: "Could not save. Please try again.",
   voyageJournalEmpty: "No daily entries yet.",
   voyageJournalEmptyYear: "No daily entries in this year.",
@@ -776,8 +792,7 @@ const en: Record<I18nKey, string> = {
 export const LANGUAGE_KEY = "appLanguage";
 
 function resolveLang(): "ja" | "en" {
-  const saved =
-    typeof localStorage !== "undefined" ? localStorage.getItem(LANGUAGE_KEY) : null;
+  const saved = typeof window !== "undefined" ? storage.get(LANGUAGE_KEY) : null;
   if (saved === "ja" || saved === "en") return saved;
   return typeof navigator !== "undefined" && navigator.language.startsWith("ja")
     ? "ja"
@@ -785,6 +800,7 @@ function resolveLang(): "ja" | "en" {
 }
 
 export const lang: "ja" | "en" = resolveLang();
+if (typeof document !== "undefined") document.documentElement.lang = lang;
 
 const dict = lang === "ja" ? ja : en;
 

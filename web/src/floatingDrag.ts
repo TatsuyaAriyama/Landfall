@@ -7,6 +7,7 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { storage } from "./storage";
 
 interface Position {
   left: number;
@@ -30,7 +31,7 @@ const MOVE_THRESHOLD = 5;
 
 function readSaved(key: string): SavedPosition | null {
   try {
-    const value = JSON.parse(localStorage.getItem(key) ?? "null") as Partial<SavedPosition> | null;
+    const value = JSON.parse(storage.get(key) ?? "null") as Partial<SavedPosition> | null;
     if (
       value &&
       Number.isFinite(value.xRatio) &&
@@ -159,11 +160,7 @@ export function useFloatingDrag(storageKey: string) {
       xRatio: (current.left + rect.width / 2) / window.innerWidth,
       yRatio: (current.top + rect.height / 2) / window.innerHeight,
     };
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(saved));
-    } catch {
-      // 保存できないブラウザーでも、その場のドラッグは使える。
-    }
+    storage.set(storageKey, JSON.stringify(saved));
   }, [storageKey]);
 
   const cancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {

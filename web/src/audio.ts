@@ -1,3 +1,5 @@
+import { storage } from "./storage";
+
 // 計測中のBGM。すべてWebAudioでの生成音(音源ファイル不使用・権利問題なし)。
 // - waves: 低くフィルタした波の音。ゆっくり満ち引きする
 // - piano: 6/8拍子のオリジナル・ノクターン。分散和音と旋律が波の上を進む
@@ -8,12 +10,12 @@ export type SoundMode = "off" | "waves" | "piano";
 const PREF_KEY = "timer.sound";
 
 export function soundPref(): SoundMode {
-  const v = localStorage.getItem(PREF_KEY);
+  const v = storage.get(PREF_KEY);
   return v === "waves" || v === "piano" ? v : "off";
 }
 
 export function setSoundPref(mode: SoundMode) {
-  localStorage.setItem(PREF_KEY, mode);
+  storage.set(PREF_KEY, mode);
 }
 
 let ctx: AudioContext | null = null;

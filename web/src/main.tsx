@@ -2,15 +2,12 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./theme.css";
 import { watchViewport } from "./viewport";
+import { storage } from "./storage";
 
 // 海の時間帯が外観を決めるため、旧版のライト/ダーク選択は廃止した。
 // 保存済みのライト設定で文字色だけ古いままになるのを防ぎ、単一テーマへ移行する。
 // 保存領域を拒否するプライベートブラウズでも、ここで起動を止めない。
-try {
-  localStorage.removeItem("appTheme");
-} catch {
-  // テーマ値が残っても、直後にDOM属性を外すため表示は継続できる。
-}
+storage.remove("appTheme");
 document.documentElement.removeAttribute("data-theme");
 
 // デザイン確認用の #demo は開発環境だけで使う。本番端末に以前の確認URLが

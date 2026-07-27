@@ -8,6 +8,7 @@ import { LANGUAGE_KEY, t, tf } from "../i18n";
 import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
 import { TileSymbolSvg } from "../symbols";
 import { ItemEditor } from "./ItemEditor";
+import { storage } from "../storage";
 
 /// 設定。言語・データ・アカウント。
 export function SettingsDialog({
@@ -19,7 +20,7 @@ export function SettingsDialog({
   data: UserData;
   onClose: () => void;
 }) {
-  const [language, setLanguage] = useState(localStorage.getItem(LANGUAGE_KEY) ?? "system");
+  const [language, setLanguage] = useState(storage.get(LANGUAGE_KEY) ?? "system");
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState<"main" | "items">("main");
@@ -50,7 +51,7 @@ export function SettingsDialog({
         null,
         2,
       ),
-      "landfall-export.json",
+      `landfall-${new Date().toISOString().slice(0, 10)}.json`,
       "application/json",
     );
   };
@@ -69,9 +70,9 @@ export function SettingsDialog({
         ].join(","),
       );
     download(
-      ["date,item,minutes,note", ...rows].join("\n"),
-      "landfall-sessions.csv",
-      "text/csv",
+      `\ufeff${["date,item,minutes,note", ...rows].join("\n")}`,
+      `landfall-sessions-${new Date().toISOString().slice(0, 10)}.csv`,
+      "text/csv;charset=utf-8",
     );
   };
 
@@ -81,16 +82,16 @@ export function SettingsDialog({
       .sort((a, b) => a.date.getTime() - b.date.getTime())
       .map((log) => [log.id, esc(log.body), log.updatedAt.toISOString()].join(","));
     download(
-      ["date,body,updatedAt", ...rows].join("\n"),
-      "landfall-voyage-logs.csv",
-      "text/csv",
+      `\ufeff${["date,body,updatedAt", ...rows].join("\n")}`,
+      `landfall-voyage-logs-${new Date().toISOString().slice(0, 10)}.csv`,
+      "text/csv;charset=utf-8",
     );
   };
 
   const pickLanguage = (value: string) => {
     setLanguage(value);
-    if (value === "system") localStorage.removeItem(LANGUAGE_KEY);
-    else localStorage.setItem(LANGUAGE_KEY, value);
+    if (value === "system") storage.remove(LANGUAGE_KEY);
+    else storage.set(LANGUAGE_KEY, value);
     // 言語辞書はモジュール読み込み時に決まるので、再読込で反映する。
     window.location.reload();
   };

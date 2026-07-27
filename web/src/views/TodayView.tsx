@@ -30,6 +30,7 @@ import { TileSymbolSvg } from "../symbols";
 import { ItemEditor } from "./ItemEditor";
 import { DestinationsSection } from "./DestinationsSection";
 import { Modal, askConfirm, showToast } from "../overlays";
+import { storage } from "../storage";
 import { durationLabel, lang, t, tf } from "../i18n";
 import {
   clockLabel,
@@ -95,7 +96,7 @@ interface VoyageCompletion {
 
 function lastUsedMinutes(): number | null {
   try {
-    const n = Number(localStorage.getItem(LAST_MINUTES_KEY) ?? 0);
+    const n = Number(storage.get(LAST_MINUTES_KEY) ?? 0);
     return Number.isFinite(n) && n >= 1 && n <= 6000 ? n : null;
   } catch {
     return null;
@@ -622,7 +623,12 @@ function TimerChip({
         </span>
         <span className="timer-elapsed">{display}</span>
       </button>
-      <button className="timer-sound" data-no-floating-drag onClick={cycleSound}>
+      <button
+        className="timer-sound"
+        data-no-floating-drag
+        onClick={cycleSound}
+        aria-label={soundLabel}
+      >
         {soundLabel}
       </button>
       {/* 休憩。世界を閉じて実際に作業しているときこそ要る操作なので、
@@ -631,6 +637,7 @@ function TimerChip({
         className={`timer-break${resting ? " on" : ""}`}
         data-no-floating-drag
         onClick={onToggleBreak}
+        aria-pressed={resting}
       >
         {resting ? t("endBreakShort") : t("takeBreakShort")}
       </button>
@@ -641,7 +648,7 @@ function TimerChip({
         className="timer-discard"
         data-no-floating-drag
         onClick={onDiscard}
-        aria-label="discard"
+        aria-label={t("discardVoyage")}
       >
         ✕
       </button>
@@ -697,11 +704,7 @@ function RecordDialog({
     setWorking(true);
     const clamped = Math.min(minutes, 6000);
     try {
-      try {
-        localStorage.setItem(LAST_MINUTES_KEY, String(clamped));
-      } catch {
-        // 保存領域を拒否するブラウザでも、今回の記録は続ける。
-      }
+      storage.set(LAST_MINUTES_KEY, String(clamped));
       await recordSession(uid, { item, minutes: clamped, note: note.trim() || undefined }, data);
       showToast(t("recordedToast"));
       onClose();
@@ -810,8 +813,11 @@ function RecordDialog({
           )}
         </div>
 
-        <p className="section-label">{t("noteOptional")}</p>
+        <label className="section-label" htmlFor="record-note">
+          {t("noteOptional")}
+        </label>
         <input
+          id="record-note"
           className="field"
           value={note}
           onChange={(e) => setNote(e.target.value)}
@@ -821,6 +827,9 @@ function RecordDialog({
             if (e.key === "Enter" && !e.nativeEvent.isComposing) void save();
           }}
         />
+        <p className="field-meta" aria-live="polite">
+          {note.length} / 120
+        </p>
 
         <div style={{ height: 28 }} />
         <button className="primary-button" onClick={save} disabled={working || minutes <= 0}>

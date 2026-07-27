@@ -1,6 +1,7 @@
 import { boatShareData } from "./boat";
 import { t } from "./i18n";
 import { dayId, trimAll } from "./types";
+import { storage } from "./storage";
 
 // プレイヤープロフィール。iOS と同じくローカル先行(localStorage)。
 // 港に入っているときだけメンバー情報として共有される。
@@ -12,16 +13,16 @@ const RESOLVE_KEY = "player.resolve";
 
 export const PlayerProfile = {
   get name(): string {
-    return trimAll(localStorage.getItem(NAME_KEY) ?? "");
+    return trimAll(storage.get(NAME_KEY) ?? "");
   },
   get styleToken(): string {
-    return localStorage.getItem(STYLE_KEY) ?? "midnight";
+    return storage.get(STYLE_KEY) ?? "midnight";
   },
   get symbolToken(): string {
-    return localStorage.getItem(SYMBOL_KEY) ?? "phoenix";
+    return storage.get(SYMBOL_KEY) ?? "phoenix";
   },
   get resolve(): string {
-    return trimAll(localStorage.getItem(RESOLVE_KEY) ?? "");
+    return trimAll(storage.get(RESOLVE_KEY) ?? "");
   },
 
   /// 表示名。未設定なら「船乗り」。
@@ -30,10 +31,10 @@ export const PlayerProfile = {
   },
 
   save(data: { name: string; styleToken: string; symbolToken: string; resolve: string }) {
-    localStorage.setItem(NAME_KEY, trimAll(data.name));
-    localStorage.setItem(STYLE_KEY, data.styleToken);
-    localStorage.setItem(SYMBOL_KEY, data.symbolToken);
-    localStorage.setItem(RESOLVE_KEY, trimAll(data.resolve));
+    storage.set(NAME_KEY, trimAll(data.name));
+    storage.set(STYLE_KEY, data.styleToken);
+    storage.set(SYMBOL_KEY, data.symbolToken);
+    storage.set(RESOLVE_KEY, trimAll(data.resolve));
   },
 
   /// 港(プライベート/パブリック共通)のメンバードキュメントに書くプロフィール一式。

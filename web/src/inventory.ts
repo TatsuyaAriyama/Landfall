@@ -1,5 +1,6 @@
 // 航海士のバッグと装備。items を増やせば、港で見つけた道具を同じ契約で追加できる。
 // 共有学習記録ではなくプレイヤー個人のゲーム状態なので、アカウント別に端末へ保存する。
+import { storage } from "./storage";
 
 export const EQUIPMENT_IDS = ["fishingRod"] as const;
 export type EquipmentId = (typeof EQUIPMENT_IDS)[number];
@@ -25,7 +26,7 @@ function isEquipmentId(value: unknown): value is EquipmentId {
 export function loadNavigatorInventory(uid: string): NavigatorInventory {
   if (typeof window === "undefined") return { ...EMPTY_INVENTORY };
   try {
-    const raw = window.localStorage.getItem(storageKey(uid));
+    const raw = storage.get(storageKey(uid));
     if (!raw) return { ...EMPTY_INVENTORY };
     const parsed = JSON.parse(raw) as { items?: unknown; equipped?: unknown };
     const items = Array.isArray(parsed.items)
@@ -46,9 +47,5 @@ export function saveNavigatorInventory(
   inventory: NavigatorInventory,
 ): void {
   if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(storageKey(uid), JSON.stringify(inventory));
-  } catch {
-    // ストレージを使えない環境でも、このセッション中の state では遊び続けられる。
-  }
+  storage.set(storageKey(uid), JSON.stringify(inventory));
 }
