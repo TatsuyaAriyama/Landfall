@@ -2,11 +2,11 @@ import SceneKit
 import SwiftUI
 import UIKit
 
-// 航海士(プレイヤーキャラクター)。
-// 新しい Polaris Wayfinder は Blender の navigator_main.usdz が正本。
-// USDZ 内の名前付きピボットを SceneKit 側で動かし、待機/歩行/見張り/
-// 手振りなどの軽量なゲーム内ポーズを維持する。ランタンは持たない。
-// 旧手続きモデルは makeLegacyNavigatorNode と Assets3D/legacy に保存する。
+// 航海士(プレイヤーキャラクター)。Web版 PhoenixModel.tsx の忠実移植。
+// ローブの体積 + 燕尾のケープ(布の格子) + 尖ったフード + 提げたランタン。
+// 世界(船・島)が低ポリ・フラットなのに対し、キャラクターだけは高解像度の
+// スムースシェーディングで「生きもの」を際立たせる。ポーズ: 待機/歩く/掲げる/手を振る。
+// 原点=接地点(足元 y=0)、前方=+X、全高≈1.35。
 
 // MARK: - ベクトル小道具(このファイル内)
 
@@ -202,73 +202,9 @@ enum PhoenixNavigator {
         mesh(capeVerts(time: time, wind: wind), capeIndices, material: capeMat)
     }
 
-    /// Imported Blender cape wind.  All cape meshes share cape-local Blender
-    /// coordinates, so cloth, stitches, star and metal tips travel together.
-    private static let importedCapeWindShader = """
-    #pragma arguments
-    float capeWind;
-    #pragma body
-    float x = _geometry.position.x;
-    float z = _geometry.position.z;
-    float falloff = clamp((0.12 - z) / 0.84, 0.0, 1.0);
-    float flutter = pow(falloff, 1.38) * capeWind;
-    float travelling = sin(scn_frame.time * 2.05 - z * 8.2 + x * 3.8);
-    float crosswind = sin(scn_frame.time * 1.31 + x * 8.5 + z * 2.7);
-    _geometry.position.x += crosswind * 0.008 * flutter;
-    _geometry.position.y += (travelling * 0.048 + crosswind * 0.022) * flutter;
-    _geometry.position.z += sin(scn_frame.time * 1.47 + x * 5.4) * 0.008 * flutter;
-    """
-
-    private static func applyImportedCapeWind(to imported: SCNNode) {
-        guard let cape = imported.childNode(withName: "cape", recursively: true) else { return }
-        cape.enumerateChildNodes { node, _ in
-            guard let geometry = node.geometry?.copy() as? SCNGeometry else { return }
-            geometry.materials = geometry.materials.map { source in
-                let material = (source.copy() as? SCNMaterial) ?? source
-                var modifiers = material.shaderModifiers ?? [:]
-                modifiers[.geometry] = importedCapeWindShader
-                material.shaderModifiers = modifiers
-                material.isDoubleSided = true
-                material.setValue(NSNumber(value: 1.0), forKey: "capeWind")
-                return material
-            }
-            node.geometry = geometry
-        }
-    }
-
     // MARK: 航海士の組み立て(名前付きピボット)
 
     static func makeNavigatorNode() -> SCNNode {
-        guard let source = SCNScene(named: "navigator_main.usdz"),
-              let imported = source.rootNode.childNode(withName: "Navigator_Main", recursively: true)?.clone()
-        else {
-            // The bundled USDZ is expected in production.  Keeping this fallback
-            // makes old project snapshots and development previews recoverable.
-            return makeLegacyNavigatorNode()
-        }
-
-        let root = SCNNode()
-        root.name = "navigator"
-        // After the USDZ Z-up → Y-up correction below, the face points +Z.
-        // Rotate it toward the shared game bow axis (+X).
-        root.eulerAngles.y = .pi / 2
-        #if DEBUG
-        if let y = ProcessInfo.processInfo.environment["LANDFALL_NAV_YAW"], let deg = Float(y) {
-            root.eulerAngles.y = deg * .pi / 180
-        }
-        #endif
-        imported.position = SCNVector3Zero
-        // Blender USDZ is stored Z-up even though SceneKit's world is Y-up.
-        // Rotate the imported asset once; named child pivots remain local and
-        // continue to animate on the expected SceneKit axes.
-        imported.eulerAngles.x = -.pi / 2
-        applyImportedCapeWind(to: imported)
-        root.addChildNode(imported)
-        return root
-    }
-
-    /// 2026-07 まで使っていた SceneKit 手続きモデル。削除せず復旧用に保持する。
-    private static func makeLegacyNavigatorNode() -> SCNNode {
         let root = SCNNode()
         root.name = "navigator"
         // 正面 +Z で組む。Web PhoenixModel は +π/2 だが、SceneKit と three.js は同じ +Y
@@ -330,7 +266,7 @@ enum PhoenixNavigator {
         scarf.eulerAngles.x = .pi / 2 + 0.08
         core.addChildNode(scarf)
 
-        // 旧マント(復旧用)
+        // マント(布の格子。毎フレーム波打つ)
         let cape = SCNNode(geometry: makeCapeGeometry(time: 0, wind: 1))
         cape.name = "cape"
         cape.position = SCNVector3(0, 0.93, -0.04)
@@ -362,7 +298,7 @@ enum PhoenixNavigator {
         armL.eulerAngles.z = -0.14
         core.addChildNode(armL)
 
-        // 旧右腕 + ランタン(復旧用モデルにのみ残す)
+        // 右腕 + ランタン(今日の灯を提げる)
         let armR = makeArm(lantern: true)
         armR.name = "armR"
         armR.position = SCNVector3(0.14, 0.8, 0.01)
@@ -512,7 +448,6 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private weak var lantern: SCNNode?
     private weak var cape: SCNNode?
     private weak var glowMat: SCNMaterial?
-    private var capeMaterials: [SCNMaterial] = []
     private var rippleNodes: [SCNNode] = []
 
     // ポーズ基本角の現在値(POSE_BASE へ減衰補間)
@@ -532,11 +467,6 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         lantern = nav.childNode(withName: "lantern", recursively: true)
         cape = nav.childNode(withName: "cape", recursively: true)
         glowMat = nav.childNode(withName: "lanternGlow", recursively: true)?.geometry?.firstMaterial
-        capeMaterials.removeAll(keepingCapacity: true)
-        cape?.enumerateChildNodes { [weak self] node, _ in
-            guard let self, let geometry = node.geometry else { return }
-            self.capeMaterials.append(contentsOf: geometry.materials)
-        }
         rippleNodes = (0..<3).compactMap { scene.rootNode.childNode(withName: "ripple\($0)", recursively: true) }
     }
 
@@ -570,14 +500,8 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         lean = damp(lean, base.lean, 6, dt)
         wind = damp(wind, base.wind, 4, dt)
 
-        // 肩は留めたまま、裾ほど大きく二つの波が伝わる布の動き。
-        if let cape {
-            cape.eulerAngles.x = -0.012 * wind + sin(t * 0.74) * 0.008
-            cape.eulerAngles.z = sin(t * 0.58) * 0.006 * wind
-        }
-        for material in capeMaterials {
-            material.setValue(NSNumber(value: wind), forKey: "capeWind")
-        }
+        // マント: 布の波(頂点を書き直す)
+        if let cape { cape.geometry = PhoenixNavigator.makeCapeGeometry(time: t, wind: wind) }
 
         let walking = pose == .walk
         let stride: Float = 5.4
