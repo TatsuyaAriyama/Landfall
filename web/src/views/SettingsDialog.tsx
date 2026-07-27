@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 import { deleteEverything } from "../harbor";
@@ -9,6 +9,118 @@ import { STYLE_COLORS, normalizeStyle, normalizeSymbol } from "../types";
 import { TileSymbolSvg } from "../symbols";
 import { ItemEditor } from "./ItemEditor";
 import { storage } from "../storage";
+import {
+  DEFAULT_HARBOR_CONTROL_SETTINGS,
+  HARBOR_CONTROL_SIZE_MAX,
+  HARBOR_CONTROL_SIZE_MIN,
+  loadHarborControlSettings,
+  saveHarborControlSettings,
+  type HarborControlSettings,
+} from "../harborControls";
+
+function HarborControlEditor({ onBack }: { onBack: () => void }) {
+  const [settings, setSettings] = useState(loadHarborControlSettings);
+  const activePointer = useRef<number | null>(null);
+
+  const update = (next: HarborControlSettings) => {
+    const saved = saveHarborControlSettings(next);
+    setSettings(saved);
+  };
+
+  const moveControl = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    update({
+      ...settings,
+      x: ((event.clientX - rect.left) / rect.width) * 100,
+      y: ((event.clientY - rect.top) / rect.height) * 100,
+    });
+  };
+
+  const release = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (activePointer.current !== event.pointerId) return;
+    activePointer.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const previewSize = 34 + ((settings.size - HARBOR_CONTROL_SIZE_MIN) / (
+    HARBOR_CONTROL_SIZE_MAX - HARBOR_CONTROL_SIZE_MIN
+  )) * 20;
+
+  return (
+    <Modal onClose={onBack}>
+      <>
+        <DialogHeader title={t("harborControlsSettings")} onBack={onBack} />
+        <p className="settings-items-hint">{t("harborControlsSettingsHint")}</p>
+        <div
+          className="harbor-control-editor-preview"
+          role="application"
+          aria-label={t("harborControlsPlacement")}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            activePointer.current = event.pointerId;
+            event.currentTarget.setPointerCapture(event.pointerId);
+            moveControl(event);
+          }}
+          onPointerMove={(event) => {
+            if (activePointer.current !== event.pointerId) return;
+            event.preventDefault();
+            moveControl(event);
+          }}
+          onPointerUp={release}
+          onPointerCancel={release}
+        >
+          <div className="harbor-control-editor-horizon" aria-hidden="true" />
+          <div
+            className="harbor-control-editor-stick"
+            aria-hidden="true"
+            style={{
+              left: `${settings.x}%`,
+              top: `${settings.y}%`,
+              width: previewSize,
+              height: previewSize,
+            }}
+          >
+            <span />
+          </div>
+          <span className="harbor-control-editor-drag-hint">
+            {t("harborControlsDrag")}
+          </span>
+        </div>
+
+        <label className="harbor-control-size-field">
+          <span>
+            <strong>{t("harborControlsSize")}</strong>
+            <output>{settings.size}px</output>
+          </span>
+          <input
+            type="range"
+            min={HARBOR_CONTROL_SIZE_MIN}
+            max={HARBOR_CONTROL_SIZE_MAX}
+            step={2}
+            value={settings.size}
+            onChange={(event) =>
+              update({ ...settings, size: Number(event.currentTarget.value) })
+            }
+          />
+          <span className="harbor-control-size-labels" aria-hidden="true">
+            <span>{t("small")}</span>
+            <span>{t("large")}</span>
+          </span>
+        </label>
+
+        <button
+          type="button"
+          className="quiet-button harbor-control-reset"
+          onClick={() => update(DEFAULT_HARBOR_CONTROL_SETTINGS)}
+        >
+          {t("restoreDefault")}
+        </button>
+      </>
+    </Modal>
+  );
+}
 
 /// 設定。言語・データ・アカウント。
 export function SettingsDialog({
@@ -23,7 +135,7 @@ export function SettingsDialog({
   const [language, setLanguage] = useState(storage.get(LANGUAGE_KEY) ?? "system");
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState<"main" | "items">("main");
+  const [page, setPage] = useState<"main" | "items" | "harborControls">("main");
   // undefined=一覧、null=新規、string=その項目を編集。
   const [editingItemId, setEditingItemId] = useState<string | null | undefined>();
 
@@ -195,6 +307,10 @@ export function SettingsDialog({
     );
   }
 
+  if (page === "harborControls") {
+    return <HarborControlEditor onBack={() => setPage("main")} />;
+  }
+
   return (
     <Modal onClose={onClose}>
       <>
@@ -219,6 +335,21 @@ export function SettingsDialog({
               <div className="row-sub">
                 {tf(t("workItemsCount"), { count: data.items.length })}
               </div>
+            </div>
+            <span className="settings-row-chevron" aria-hidden="true">›</span>
+          </button>
+        </div>
+
+        <p className="section-label">{t("harborSection")}</p>
+        <div className="rows">
+          <button
+            type="button"
+            className="row row-button settings-section-row"
+            onClick={() => setPage("harborControls")}
+          >
+            <div className="row-main">
+              <div className="row-title">{t("harborControlsSettings")}</div>
+              <div className="row-sub">{t("harborControlsSettingsSummary")}</div>
             </div>
             <span className="settings-row-chevron" aria-hidden="true">›</span>
           </button>

@@ -1030,6 +1030,101 @@ textarea {
   color: color-mix(in srgb, var(--ink) 38%, transparent);
 }
 
+.harbor-control-editor-preview {
+  position: relative;
+  height: min(42vh, 310px);
+  min-height: 230px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #eadebd 24%, transparent);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 76% 18%, rgba(243, 192, 101, 0.52) 0 2px, transparent 3px),
+    linear-gradient(#173f47 0 44%, #174a4d 45% 47%, #0d3438 48% 100%);
+  box-shadow: inset 0 0 42px rgba(5, 26, 29, 0.35);
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.harbor-control-editor-horizon {
+  position: absolute;
+  left: -12%;
+  right: -12%;
+  top: 47%;
+  height: 18%;
+  border-radius: 50%;
+  border-top: 1px solid rgba(234, 222, 189, 0.2);
+  background: rgba(83, 142, 136, 0.1);
+}
+
+.harbor-control-editor-stick {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(234, 222, 189, 0.42);
+  border-radius: 50%;
+  background: rgba(13, 42, 36, 0.76);
+  box-shadow: 0 10px 24px rgba(3, 16, 13, 0.32);
+  pointer-events: none;
+}
+
+.harbor-control-editor-stick > span {
+  width: 40%;
+  height: 40%;
+  border-radius: 50%;
+  background: color-mix(in srgb, #eadebd 82%, #123830);
+  box-shadow: 0 4px 10px rgba(3, 16, 13, 0.32);
+}
+
+.harbor-control-editor-drag-hint {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: rgba(234, 222, 189, 0.76);
+  background: rgba(7, 30, 28, 0.48);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.harbor-control-size-field {
+  display: block;
+  margin-top: 22px;
+}
+
+.harbor-control-size-field > span:first-child,
+.harbor-control-size-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.harbor-control-size-field output {
+  color: color-mix(in srgb, var(--ink) 52%, transparent);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.harbor-control-size-field input {
+  width: 100%;
+  margin: 14px 0 5px;
+  accent-color: var(--return-orange);
+}
+
+.harbor-control-size-labels {
+  color: color-mix(in srgb, var(--ink) 48%, transparent);
+  font-size: 11px;
+}
+
+.harbor-control-reset {
+  width: 100%;
+  margin-top: 22px;
+}
+
 .row-tap {
   flex: 1;
   min-width: 0;
@@ -4271,11 +4366,20 @@ textarea {
 /* スマホ用のアナログスティック。PCでは常に非表示で、WASD/矢印だけを使う。 */
 .harbor-walk-controls {
   position: absolute;
-  right: 16px;
-  bottom: calc(190px + env(safe-area-inset-bottom));
+  left: clamp(
+    calc(var(--harbor-control-size, 142px) / 2 + 10px),
+    var(--harbor-control-x, 82%),
+    calc(100% - var(--harbor-control-size, 142px) / 2 - 10px)
+  );
+  top: clamp(
+    calc(var(--harbor-control-size, 142px) / 2 + env(safe-area-inset-top) + 10px),
+    var(--harbor-control-y, 68%),
+    calc(100% - var(--harbor-control-size, 142px) / 2 - env(safe-area-inset-bottom) - 10px)
+  );
   z-index: 5;
-  width: 142px;
-  height: 142px;
+  width: var(--harbor-control-size, 142px);
+  height: var(--harbor-control-size, 142px);
+  transform: translate(-50%, -50%);
   display: none;
   border: 1px solid color-mix(in srgb, var(--harbor-sand) 20%, transparent);
   border-radius: 50%;
@@ -4298,31 +4402,31 @@ textarea {
 
 .harbor-walk-controls .direction {
   position: absolute;
-  font-size: 13px;
+  font-size: calc(var(--harbor-control-size, 142px) * 0.092);
   line-height: 1;
   pointer-events: none;
 }
 
 .harbor-walk-controls .up {
-  top: 11px;
+  top: 7.7%;
   left: 50%;
   transform: translateX(-50%);
 }
 
 .harbor-walk-controls .left {
   top: 50%;
-  left: 12px;
+  left: 8.4%;
   transform: translateY(-50%);
 }
 
 .harbor-walk-controls .right {
   top: 50%;
-  right: 12px;
+  right: 8.4%;
   transform: translateY(-50%);
 }
 
 .harbor-walk-controls .down {
-  bottom: 11px;
+  bottom: 7.7%;
   left: 50%;
   transform: translateX(-50%);
 }
@@ -4331,9 +4435,9 @@ textarea {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 56px;
-  height: 56px;
-  margin: -28px 0 0 -28px;
+  width: 39.4%;
+  height: 39.4%;
+  margin: -19.7% 0 0 -19.7%;
   display: grid;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--harbor-sand) 36%, transparent);
@@ -4347,8 +4451,8 @@ textarea {
 }
 
 .harbor-walk-controls .joystick-knob span {
-  width: 13px;
-  height: 13px;
+  width: 23%;
+  height: 23%;
   border-radius: 50%;
   background: color-mix(in srgb, #123830 72%, transparent);
 }

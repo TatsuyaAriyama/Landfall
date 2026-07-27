@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import * as THREE from "three";
@@ -52,6 +53,11 @@ import {
   type NavigatorInventory,
 } from "../inventory";
 import { lockBodyScroll } from "../scrollLock";
+import {
+  HARBOR_CONTROL_SETTINGS_EVENT,
+  loadHarborControlSettings,
+  type HarborControlSettings,
+} from "../harborControls";
 
 // 港の「みんなの海」。参加メンバー全員の船が同じ桟橋へ帰り、
 // 灯台と広い砂地が迎える、まだ何もない拠点。
@@ -1518,8 +1524,10 @@ function RemoteHarborSailor({
 
 function HarborWalkControls({
   onInput,
+  settings,
 }: {
   onInput: (input: HarborWalkInput) => void;
+  settings: HarborControlSettings;
 }) {
   const activePointer = useRef<number | null>(null);
   const [knob, setKnob] = useState({ x: 0, y: 0 });
@@ -1556,6 +1564,13 @@ function HarborWalkControls({
   return (
     <div
       className="harbor-walk-controls"
+      style={
+        {
+          "--harbor-control-x": `${settings.x}%`,
+          "--harbor-control-y": `${settings.y}%`,
+          "--harbor-control-size": `${settings.size}px`,
+        } as CSSProperties
+      }
       role="group"
       aria-label={t("harborWalkControls")}
       onPointerDown={(event) => {
@@ -2221,9 +2236,21 @@ export default function HarborWorld({
   const [phase, setPhase] = useState<WorldPhase>("idle");
   const [aboard, setAboard] = useState(true);
   const [nearOwnBoat, setNearOwnBoat] = useState(false);
+  const [walkControlSettings, setWalkControlSettings] = useState(
+    loadHarborControlSettings,
+  );
   const walkInput = useRef<HarborWalkInput>({ x: 0, z: 0 });
   const setWalkInput = useCallback((next: HarborWalkInput) => {
     walkInput.current = next;
+  }, []);
+  useEffect(() => {
+    const syncSettings = (event: Event) => {
+      const detail = (event as CustomEvent<HarborControlSettings>).detail;
+      setWalkControlSettings(detail ?? loadHarborControlSettings());
+    };
+    window.addEventListener(HARBOR_CONTROL_SETTINGS_EVENT, syncSettings);
+    return () =>
+      window.removeEventListener(HARBOR_CONTROL_SETTINGS_EVENT, syncSettings);
   }, []);
   const fishingRodOwned = inventory.items.includes("fishingRod");
   // 解除中は、手からバッグへ届くまでモデルを残す。
@@ -2905,7 +2932,10 @@ export default function HarborWorld({
               !emoteOpen &&
               equipmentAction === null &&
               !restingAtTent && (
-              <HarborWalkControls onInput={setWalkInput} />
+              <HarborWalkControls
+                onInput={setWalkInput}
+                settings={walkControlSettings}
+              />
             )}
             {!bagOpen &&
               !nearFishingRod &&
