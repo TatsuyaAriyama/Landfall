@@ -23,6 +23,7 @@ COLORS = {
     "rust_deep": "#4A1B0C",
     "midnight": "#1A1130",
     "lantern": "#F3C065",
+    "eye": "#FFD890",
     "brass": "#D5B56D",
 }
 
@@ -64,10 +65,10 @@ MATS = {
     "brass": material("LF_NavigatorBrass", COLORS["brass"], 0.42, metallic=0.64),
     "eye": material(
         "LF_NavigatorEyeGlow",
-        COLORS["sand"],
+        COLORS["eye"],
         0.62,
-        emission=COLORS["sand"],
-        strength=1.35,
+        emission=COLORS["eye"],
+        strength=0.72,
     ),
     "lantern": material(
         "LF_NavigatorLanternGlow",
@@ -261,7 +262,7 @@ def open_hood(name: str, mat: bpy.types.Material) -> bpy.types.Object:
     ]
     segments = 22
     front = -math.pi / 2
-    gap = 0.68
+    gap = 0.58
     start = front + gap / 2
     span = math.pi * 2 - gap
     vertices: list[tuple[float, float, float]] = []
@@ -479,8 +480,8 @@ for side, x in (("L", -0.17), ("R", 0.17)):
 hood = open_hood("Navigator_PeakedHood", MATS["coral"])
 face = sphere(
     "Navigator_ShadowFace",
-    (0, -0.035, 1.07),
-    (0.09, 0.055, 0.105),
+    (0, -0.005, 1.07),
+    (0.086, 0.05, 0.095),
     MATS["midnight"],
     segments=18,
     rings=12,
@@ -488,8 +489,8 @@ face = sphere(
 for side, x in (("L", -0.032), ("R", 0.032)):
     eye = sphere(
         f"Navigator_Eye.{side}",
-        (x, -0.091, 1.085),
-        (0.016, 0.011, 0.016),
+        (x * 0.88, -0.058, 1.086),
+        (0.014, 0.007, 0.009),
         MATS["eye"],
         segments=12,
         rings=8,
