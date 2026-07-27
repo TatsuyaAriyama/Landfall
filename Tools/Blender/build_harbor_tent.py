@@ -24,7 +24,8 @@ COLORS = {
     "floor": "#202A2D",
     "metal": "#A8B4B3",
     "rope": "#C8D5CF",
-    "bed": "#1A1130",
+    "sleeping_bag": "#101416",
+    "sleeping_bag_detail": "#252B2E",
     "ember": "#F3C065",
     "orange": "#F5822A",
 }
@@ -64,7 +65,12 @@ MATS = {
     "metal": material("LF_TentAluminumPole", COLORS["metal"], 0.28, metallic=0.78),
     "rope": material("LF_TentReflectiveCord", COLORS["rope"], 0.72),
     "sand": material("PREVIEW_SandMaterial", COLORS["sand"], 0.98),
-    "bed": material("LF_TentBedroll", COLORS["bed"], 0.96),
+    "sleeping_bag": material("LF_TentSleepingBagShell", COLORS["sleeping_bag"], 0.9),
+    "sleeping_bag_detail": material(
+        "LF_TentSleepingBagDetail",
+        COLORS["sleeping_bag_detail"],
+        0.84,
+    ),
     "orange": material("LF_TentZipperPull", COLORS["orange"], 0.7),
     "glow": material("LF_TentGlow", COLORS["ember"], 0.4, COLORS["ember"], 4.5),
 }
@@ -111,6 +117,40 @@ def cube(
     rotation: tuple[float, float, float] = (0, 0, 0),
 ) -> bpy.types.Object:
     bpy.ops.mesh.primitive_cube_add(location=location, rotation=rotation)
+    obj = keep(bpy.context.object, name, mat)
+    obj.scale = scale
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    return obj
+
+
+def rounded_cube(
+    name: str,
+    location: tuple[float, float, float],
+    scale: tuple[float, float, float],
+    mat: bpy.types.Material,
+    rotation: tuple[float, float, float] = (0, 0, 0),
+    bevel: float = 0.08,
+) -> bpy.types.Object:
+    obj = cube(name, location, scale, mat, rotation)
+    modifier = obj.modifiers.new(name=f"{name}_SoftEdges", type="BEVEL")
+    modifier.width = bevel
+    modifier.segments = 3
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=modifier.name)
+    return obj
+
+
+def sphere(
+    name: str,
+    location: tuple[float, float, float],
+    scale: tuple[float, float, float],
+    mat: bpy.types.Material,
+) -> bpy.types.Object:
+    bpy.ops.mesh.primitive_uv_sphere_add(
+        segments=16,
+        ring_count=8,
+        location=location,
+    )
     obj = keep(bpy.context.object, name, mat)
     obj.scale = scale
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
@@ -204,11 +244,49 @@ for index, (a, b) in enumerate(
     beam(f"Tent_GuyRope_{index + 1}", a, b, 0.009, MATS["rope"])
     beam(f"Tent_Stake_{index + 1}", (b[0], b[1], 0), (b[0], b[1], 0.15), 0.02, MATS["metal"])
 
-# Bathtub floor, inner groundsheet, and bedroll remain visibly separate materials.
+# Bathtub floor, inner groundsheet, and a practical black sleeping bag remain
+# visibly separate materials. The sleeping bag stays unrolled and ready to use.
 cube("Tent_WaterproofFloor", (0, 0.06, 0.04), (0.88, 0.72, 0.04), MATS["floor"])
 cube("Tent_InnerGroundsheet", (0, 0.09, 0.085), (0.73, 0.62, 0.018), MATS["inner"])
-cube("Tent_Bedroll", (0.34, 0.18, 0.14), (0.3, 0.49, 0.11), MATS["bed"], (0, 0, 0.04))
-beam("Tent_BedrollTie", (0.02, 0.18, 0.26), (0.66, 0.18, 0.26), 0.018, MATS["rope"])
+rounded_cube(
+    "Tent_BlackSleepingBag",
+    (0.28, 0.13, 0.18),
+    (0.34, 0.52, 0.095),
+    MATS["sleeping_bag"],
+    (0, 0, 0.035),
+    0.1,
+)
+# Raised hood and its darker face opening make the form read as a sleeping bag,
+# rather than a rectangular bedroll.
+sphere(
+    "Tent_SleepingBagHood",
+    (0.3, 0.59, 0.23),
+    (0.33, 0.24, 0.12),
+    MATS["sleeping_bag"],
+)
+sphere(
+    "Tent_SleepingBagHoodOpening",
+    (0.3, 0.56, 0.33),
+    (0.19, 0.13, 0.018),
+    MATS["sleeping_bag_detail"],
+)
+# Subtle quilt channels and a side zipper provide enough material definition
+# for the black form to remain readable inside the shaded tent.
+for index, y in enumerate((-0.2, 0.03, 0.26)):
+    beam(
+        f"Tent_SleepingBagQuilt_{index + 1}",
+        (-0.02, y, 0.285),
+        (0.58, y, 0.285),
+        0.008,
+        MATS["sleeping_bag_detail"],
+    )
+beam(
+    "Tent_SleepingBagZipper",
+    (0.6, -0.28, 0.245),
+    (0.62, 0.42, 0.26),
+    0.009,
+    MATS["sleeping_bag_detail"],
+)
 
 # A clipped camp lantern and orange zipper pulls add function without any flags.
 beam("Tent_LanternClip", (-0.38, front - 0.04, 0.84), (-0.38, front - 0.04, 1.02), 0.014, MATS["metal"])
