@@ -30,7 +30,7 @@ private func damp(_ cur: Float, _ target: Float, _ lambda: Float, _ dt: Float) -
 // MARK: - ポーズ
 
 enum PhoenixPose: String, CaseIterable, Identifiable {
-    case idle, walk, raise, hail
+    case idle, walk, raise, hail, read
     var id: String { rawValue }
     var title: LocalizedStringKey {
         switch self {
@@ -38,6 +38,7 @@ enum PhoenixPose: String, CaseIterable, Identifiable {
         case .walk: "Walk"
         case .raise: "Raise"
         case .hail: "Wave"
+        case .read: "Read"
         }
     }
 
@@ -55,14 +56,26 @@ enum PhoenixPose: String, CaseIterable, Identifiable {
 }
 
 private struct PoseBase {
-    var armRx: Float, armRz: Float, armLx: Float, armLz: Float, lean: Float, wind: Float
+    var armRx: Float, armRz: Float, armLx: Float, armLz: Float
+    var lean: Float, wind: Float, headX: Float, sit: Float
 }
 private func poseBase(_ p: PhoenixPose) -> PoseBase {
     switch p {
-    case .idle:  return PoseBase(armRx: 0, armRz: 0.14, armLx: 0, armLz: -0.14, lean: 0, wind: 1)
-    case .walk:  return PoseBase(armRx: 0, armRz: 0.12, armLx: 0, armLz: -0.12, lean: 0.09, wind: 1.7)
-    case .raise: return PoseBase(armRx: -2.35, armRz: 0.06, armLx: 0, armLz: -0.16, lean: -0.04, wind: 1.15)
-    case .hail:  return PoseBase(armRx: 0, armRz: 0.14, armLx: 0, armLz: -2.55, lean: 0, wind: 1.1)
+    case .idle:
+        return PoseBase(armRx: 0, armRz: 0.14, armLx: 0, armLz: -0.14,
+                        lean: 0, wind: 1, headX: 0, sit: 0)
+    case .walk:
+        return PoseBase(armRx: 0, armRz: 0.12, armLx: 0, armLz: -0.12,
+                        lean: 0.09, wind: 1.7, headX: 0, sit: 0)
+    case .raise:
+        return PoseBase(armRx: -2.35, armRz: 0.06, armLx: 0, armLz: -0.16,
+                        lean: -0.04, wind: 1.15, headX: -0.14, sit: 0)
+    case .hail:
+        return PoseBase(armRx: 0, armRz: 0.14, armLx: 0, armLz: -2.55,
+                        lean: 0, wind: 1.1, headX: 0, sit: 0)
+    case .read:
+        return PoseBase(armRx: -0.92, armRz: -0.18, armLx: -0.92, armLz: 0.18,
+                        lean: 0.13, wind: 0.62, headX: 0.4, sit: 1)
     }
 }
 
@@ -343,8 +356,51 @@ enum PhoenixNavigator {
         armR.eulerAngles.z = 0.14
         core.addChildNode(armR)
 
+        // 読書中に膝の上で広げる本。通常時はアニメータが隠しておく。
+        core.addChildNode(makeOpenBookNode())
+
         root.addChildNode(core)
         return root
+    }
+
+    private static func makeOpenBookNode() -> SCNNode {
+        let book = SCNNode()
+        book.name = "openBook"
+        book.position = SCNVector3(0, 0.6, 0.29)
+        book.eulerAngles.x = 0.56
+        book.opacity = 0
+
+        for side: Float in [-1, 1] {
+            let half = SCNNode()
+            half.position = SCNVector3(side * 0.09, 0, 0)
+            half.eulerAngles.z = side * 0.14
+
+            let cover = SCNBox(width: 0.18, height: 0.014, length: 0.235, chamferRadius: 0.006)
+            cover.firstMaterial = rustDeepMat
+            let coverNode = SCNNode(geometry: cover)
+            coverNode.position.y = -0.014
+            half.addChildNode(coverNode)
+
+            let page = SCNBox(width: 0.17, height: 0.012, length: 0.22, chamferRadius: 0.004)
+            page.firstMaterial = sandMat
+            half.addChildNode(SCNNode(geometry: page))
+
+            for z: Float in [-0.065, -0.025, 0.015, 0.055] {
+                let line = SCNBox(width: 0.09, height: 0.005, length: 0.009, chamferRadius: 0.002)
+                line.firstMaterial = faceMat
+                let lineNode = SCNNode(geometry: line)
+                lineNode.position = SCNVector3(side * 0.012, 0.009, z)
+                half.addChildNode(lineNode)
+            }
+            book.addChildNode(half)
+        }
+
+        let spine = SCNBox(width: 0.018, height: 0.025, length: 0.235, chamferRadius: 0.004)
+        spine.firstMaterial = rustMat
+        let spineNode = SCNNode(geometry: spine)
+        spineNode.position.y = -0.008
+        book.addChildNode(spineNode)
+        return book
     }
 
     private static func makeArm(lantern hasLantern: Bool) -> SCNNode {
@@ -483,6 +539,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private weak var armL: SCNNode?
     private weak var legR: SCNNode?
     private weak var legL: SCNNode?
+    private weak var book: SCNNode?
     private weak var lantern: SCNNode?
     private weak var cape: SCNNode?
     private weak var glowMat: SCNMaterial?
@@ -492,7 +549,8 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     // ポーズ基本角の現在値(POSE_BASE へ減衰補間)
     private var armRx: Float = 0, armRz: Float = 0.14
     private var armLx: Float = 0, armLz: Float = -0.14
-    private var lean: Float = 0, wind: Float = 1
+    private var lean: Float = 0, wind: Float = 1, headX: Float = 0, sit: Float = 0
+    private var bookAmount: Float = 0
 
     private func bind(_ scene: SCNScene) {
         boundScene = scene
@@ -503,6 +561,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         armL = nav.childNode(withName: "armL", recursively: true)
         legR = nav.childNode(withName: "legR", recursively: true)
         legL = nav.childNode(withName: "legL", recursively: true)
+        book = nav.childNode(withName: "openBook", recursively: true)
         lantern = nav.childNode(withName: "lantern", recursively: true)
         cape = nav.childNode(withName: "cape", recursively: true)
         glowMat = nav.childNode(withName: "lanternGlow", recursively: true)?.geometry?.firstMaterial
@@ -543,6 +602,9 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         armLz = damp(armLz, base.armLz, 6, dt)
         lean = damp(lean, base.lean, 6, dt)
         wind = damp(wind, base.wind, 4, dt)
+        headX = damp(headX, base.headX, 4, dt)
+        sit = damp(sit, base.sit, 1.5, dt)
+        bookAmount = damp(bookAmount, pose == .read ? 1 : 0, 7, dt)
 
         // 肩は留めたまま、裾ほど大きく二つの波が伝わる布の動き。
         if let cape {
@@ -559,20 +621,28 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
 
         // 体: 待機は呼吸、歩行は歩調の弾み
         if let core {
-            core.position.y = walking ? abs(cos(t * stride)) * 0.035 : sin(t * 0.85) * 0.018
+            core.position.y = (walking ? abs(cos(t * stride)) * 0.035 : sin(t * 0.85) * 0.018) - sit * 0.3
             core.eulerAngles.x = lean + sin(t * 0.85 + 0.9) * 0.01
             core.eulerAngles.z = walking ? step * 0.03 : 0
         }
         // 首: 見渡し。掲げ(raise)は灯を見上げる
         if let head {
             head.eulerAngles.y = sin(t * 0.3) * (walking ? 0.05 : 0.14)
-            head.eulerAngles.x = pose == .raise ? -0.14 : 0
+            head.eulerAngles.x = headX
             head.eulerAngles.z = sin(t * 0.85 + 2.1) * 0.02
         }
-        // 脚: 歩行は股関節から交互に振る
+        // 脚: 読書中は腰を落とし、少し曲げて左右へ開く。
         let legSwing: Float = walking ? 0.55 : 0
-        if let legR { legR.eulerAngles.x = damp(legR.eulerAngles.x, step * legSwing, 10, dt) }
-        if let legL { legL.eulerAngles.x = damp(legL.eulerAngles.x, -step * legSwing, 10, dt) }
+        if let legR {
+            legR.position.y = 0.42 - sit * 0.3
+            legR.eulerAngles.x = damp(legR.eulerAngles.x, step * legSwing - sit * 0.82, 10, dt)
+            legR.eulerAngles.z = damp(legR.eulerAngles.z, sit * 0.42, 8, dt)
+        }
+        if let legL {
+            legL.position.y = 0.42 - sit * 0.3
+            legL.eulerAngles.x = damp(legL.eulerAngles.x, -step * legSwing - sit * 0.82, 10, dt)
+            legL.eulerAngles.z = damp(legL.eulerAngles.z, -sit * 0.42, 8, dt)
+        }
 
         // 腕: 基本角 + ポーズごとの振動
         let armSwing: Float = walking ? -step * 0.32 : sin(t * 0.85 + 0.4) * 0.03
@@ -584,6 +654,11 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
             let wave: Float = pose == .hail ? sin(t * 7.2) * 0.3 : 0
             armL.eulerAngles.x = armLx + (walking ? step * 0.32 : sin(t * 0.85 + 1.1) * 0.025)
             armL.eulerAngles.z = armLz + wave
+        }
+        if let book {
+            book.opacity = CGFloat(bookAmount)
+            let scale = 0.88 + bookAmount * 0.12
+            book.scale = SCNVector3(scale, scale, scale)
         }
         // ランタン: 腕の傾きを打ち消して常にほぼ鉛直に垂れる振り子
         if let lantern {
@@ -623,6 +698,10 @@ struct PhoenixNavigatorView: UIViewRepresentable {
         animator.pose = pose
         view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
         view.delegate = animator
+        if reduceMotion, let scene = view.scene {
+            animator.bindIfNeeded(scene)
+            animator.step(t: 0, dt: 10)
+        }
         // 360度見渡しは「航海士の胴の中心」を軸に回す(Web OrbitControls target=[0,0.62,0])。
         // target を設定しないと海の円盤を含む重心で回ってしまう。
         let cc = view.defaultCameraController
@@ -637,5 +716,9 @@ struct PhoenixNavigatorView: UIViewRepresentable {
 
     func updateUIView(_ view: SCNView, context: Context) {
         context.coordinator.pose = pose
+        if !context.coordinator.animate, let scene = view.scene {
+            context.coordinator.bindIfNeeded(scene)
+            context.coordinator.step(t: 0, dt: 10)
+        }
     }
 }

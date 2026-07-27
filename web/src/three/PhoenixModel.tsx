@@ -344,6 +344,53 @@ const EYE_MAT = new THREE.MeshStandardMaterial({
   emissiveIntensity: 0.85,
   fog: false,
 });
+
+// ---- 読書の本 ----
+// 旧航海士の丸い造形に合わせ、表紙・紙・文字だけで読める小さな開き本にする。
+// 左右のページを少し持ち上げたV字にして、正面からも「開いている」と分かる。
+const BOOK_COVER_GEO = new THREE.BoxGeometry(0.18, 0.014, 0.235);
+const BOOK_PAGE_GEO = new THREE.BoxGeometry(0.17, 0.012, 0.22);
+const BOOK_SPINE_GEO = new THREE.BoxGeometry(0.018, 0.025, 0.235);
+const BOOK_LINE_GEO = new THREE.BoxGeometry(0.09, 0.005, 0.009);
+const BOOK_PAGE_MAT = new THREE.MeshStandardMaterial({
+  color: SAND,
+  roughness: 0.95,
+});
+const BOOK_INK_MAT = new THREE.MeshStandardMaterial({
+  color: MIDNIGHT,
+  roughness: 0.9,
+});
+
+function OpenBook() {
+  return (
+    <group position={[0, 0.6, 0.29]} rotation={[0.56, 0, 0]}>
+      {([-1, 1] as const).map((side) => (
+        <group
+          key={side}
+          position={[side * 0.09, 0, 0]}
+          rotation={[0, 0, side * 0.14]}
+        >
+          <mesh
+            geometry={BOOK_COVER_GEO}
+            material={RUST_DEEP_MAT}
+            position={[0, -0.014, 0]}
+          />
+          <mesh geometry={BOOK_PAGE_GEO} material={BOOK_PAGE_MAT} />
+          {[-0.065, -0.025, 0.015, 0.055].map((z) => (
+            <mesh
+              key={z}
+              geometry={BOOK_LINE_GEO}
+              material={BOOK_INK_MAT}
+              position={[side * 0.012, 0.009, z]}
+            />
+          ))}
+        </group>
+      ))}
+      <mesh geometry={BOOK_SPINE_GEO} material={RUST_MAT} position={[0, -0.008, 0]} />
+    </group>
+  );
+}
+
 /// キャラクターのポーズ。ゲーム側から切り替えると、減衰補間でなめらかに遷移する。
 ///  - idle:     待機。呼吸と見渡し
 ///  - walk:     歩行(その場)。移動そのものはゲーム側が position を動かす
@@ -354,6 +401,7 @@ const EYE_MAT = new THREE.MeshStandardMaterial({
 ///  - rest:     灯を両手で囲んで一息つく(休んだ日も、航海のうち)
 ///  - lookout:  体ごと向きを変えて辺りを見渡す(見張り)
 ///  - sit:      甲板に腰を下ろす(休憩。立ち座りだけは遅く補間される)
+///  - read:     甲板に腰を下ろし、膝の上で本を広げて読む
 export type PhoenixPose =
   | "idle"
   | "walk"
@@ -364,6 +412,7 @@ export type PhoenixPose =
   | "stargaze"
   | "rest"
   | "sit"
+  | "read"
   | "pickupRod"
   | "equipRod"
   | "holdRod"
@@ -501,6 +550,15 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
     sway: 0.45, breathAmp: 1.6, breathSpeed: 0.6, glow: 1.8,
     sit: 1,
   },
+  // 読書: 甲板に腰を下ろし、膝の上で本を広げる。
+  // 両腕は本の外側へ添え、顔はページへ。呼吸とマントだけが静かに動く。
+  read: {
+    armRx: -0.92, armRz: -0.18, armLx: -0.92, armLz: 0.18,
+    lean: 0.13, wind: 0.62, headX: 0.4, scan: 0.025, scanSpeed: 0.14,
+    turn: 0,
+    sway: 0.22, breathAmp: 1.15, breathSpeed: 0.55, glow: 1.2,
+    sit: 1,
+  },
   // 砂に置かれた道具へ目線から先に近づき、腰を折って左手を下ろす。
   pickupRod: {
     armRx: 0.2, armRz: 0.24, armLx: 0.42, armLz: -0.12,
@@ -616,7 +674,7 @@ export default function PhoenixModel({
     const c = cur.current;
     // 立ち座りをまたぐ持ち替えかどうかを、ポーズが変わった瞬間に決める。
     if (pose !== lastPose.current) {
-      heavy.current = pose === "sit" || lastPose.current === "sit";
+      heavy.current = target.sit > 0.5 || POSE_BASE[lastPose.current].sit > 0.5;
       lastPose.current = pose;
     }
     // ポーズの基本値へなめらかに寄せる(切替の瞬間に跳ねない)。
@@ -680,7 +738,9 @@ export default function PhoenixModel({
     // (一本の脚なので膝は折らない — 甲板に脚を投げ出して座る姿になる)。
     // それ以外は接地に戻す。
     const legSwing = walking ? 0.55 : 0;
-    const legSit = -SIT_SPREAD * c.sit;
+    // 読書は脚を投げ出さず、少し曲げて左右へ開く。ページの下に靴底が
+    // 正面を向いて並ぶのを避け、落ち着いて腰を据えた輪郭にする。
+    const legSit = -(pose === "read" ? 0.82 : SIT_SPREAD) * c.sit;
     for (const [leg, sign] of [
       [legR, 1],
       [legL, -1],
@@ -691,6 +751,12 @@ export default function PhoenixModel({
         leg.current.rotation.x,
         sign * step * legSwing + legSit,
         10,
+        delta,
+      );
+      leg.current.rotation.z = THREE.MathUtils.damp(
+        leg.current.rotation.z,
+        pose === "read" ? sign * 0.42 : 0,
+        8,
         delta,
       );
     }
@@ -910,6 +976,9 @@ export default function PhoenixModel({
             <mesh geometry={SLEEVE_CUFF_GEO} material={RUST_MAT} position={[0, -0.22, 0]} />
             <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
           </group>
+
+          {/* 読書中だけ膝の上へ現れる開き本。体と一緒に座り、呼吸にも追従する。 */}
+          {pose === "read" && <OpenBook />}
         </group>
       </group>
     </group>
