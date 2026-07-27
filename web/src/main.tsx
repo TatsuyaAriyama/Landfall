@@ -22,13 +22,19 @@ if (!import.meta.env.DEV && window.location.hash === "#demo") {
 
 // Service Worker廃止前に失敗したメインJSのHTTPキャッシュとURLを分離する。
 // 今後の障害調査でも、表示中の配信世代をDOMから確認できる。
-const APP_BUILD = "2026-07-27-scroll-lock-v1";
+const APP_BUILD = "2026-07-27-launch-recovery-v2";
 document.documentElement.dataset.appBuild = APP_BUILD;
 
 // キーボード/ピッカーで実際に見えている高さを :root に流す(全階層のCSSが参照する)。
 watchViewport();
 
 const root = document.getElementById("root")!;
+
+// App本体と認証ライブラリは分割して読み込むため、回線や端末によってはReactが
+// マウントされるまで少し間が空く。ここを空のままにすると正常な読込中でも
+// 「起動しない」ように見えるため、最初のimportより前に必ず海の灯りを置く。
+root.innerHTML =
+  '<div class="harbor-loading" role="status" aria-label="読み込み中"></div>';
 
 /// 起動そのものが失敗した場合の最後の安全網。CSSの地色が暗いため、
 /// 何もマウントされないと「真っ黒で再読込しても変わらない」ように見える。
