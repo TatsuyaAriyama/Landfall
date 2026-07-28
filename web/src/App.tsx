@@ -200,6 +200,14 @@ function Main({ uid }: { uid: string }) {
     });
   };
 
+  const closeVoyagePass = () => {
+    setVoyagePassOpen(false);
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("voyage-pass")) return;
+    url.searchParams.delete("voyage-pass");
+    history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  };
+
   return (
     <div
       className={`shell home-ocean time-${timeOfDay}`}
@@ -223,7 +231,9 @@ function Main({ uid }: { uid: string }) {
             aria-haspopup="dialog"
             aria-expanded={voyagePassOpen}
           >
-            <span aria-hidden="true">◇</span>
+            <span className="voyage-pass-entry-mark" aria-hidden="true">
+              <TileSymbolSvg symbol="compass" fg="#ffd84d" bg="#2c2a28" />
+            </span>
             {t("voyagePass")}
           </button>
           <button
@@ -303,7 +313,7 @@ function Main({ uid }: { uid: string }) {
       )}
       {voyagePassOpen && (
         <Suspense fallback={<DialogLoading />}>
-          <VoyagePassDialog onClose={() => setVoyagePassOpen(false)} />
+          <VoyagePassDialog onClose={closeVoyagePass} />
         </Suspense>
       )}
       <OfflineWatcher />

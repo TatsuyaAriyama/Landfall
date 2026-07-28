@@ -394,6 +394,8 @@ const ja = {
   voyagePassOpening: "海図を開いています…",
   voyagePassEnding: "現在の請求期間が終わるまで利用できます。",
   voyagePassError: "航海証のページを開けませんでした。少し時間をおいてお試しください。",
+  voyagePassAcquired: "航海証を手に入れた",
+  voyagePassContinue: "航海を続ける",
   exportVoyageLogsCSV: "航海日録をCSVで書き出す",
 
   // 航海誌
@@ -817,6 +819,8 @@ const en: Record<I18nKey, string> = {
   voyagePassOpening: "Opening the chart…",
   voyagePassEnding: "Access continues until the end of the current billing period.",
   voyagePassError: "We could not open Voyage Pass billing. Please try again shortly.",
+  voyagePassAcquired: "Voyage Pass aboard",
+  voyagePassContinue: "Continue the voyage",
   exportVoyageLogsCSV: "Export Daily Logs as CSV",
 
   logbook: "Logbook",

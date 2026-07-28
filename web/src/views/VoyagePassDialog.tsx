@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useVoyagePass, openVoyagePassPortal, startVoyagePassCheckout } from "../billing";
 import { t } from "../i18n";
 import { DialogHeader, Modal } from "../overlays";
@@ -8,6 +8,15 @@ export function VoyagePassDialog({ onClose }: { onClose: () => void }) {
   const pass = useVoyagePass();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
+  const [acquired, setAcquired] = useState(false);
+  const checkoutSucceeded =
+    new URLSearchParams(window.location.search).get("voyage-pass") === "success";
+  const acquisitionPreview =
+    import.meta.env.DEV && window.location.hash === "#demo" && checkoutSucceeded;
+
+  useEffect(() => {
+    if (checkoutSucceeded && (pass.active || acquisitionPreview)) setAcquired(true);
+  }, [acquisitionPreview, checkoutSucceeded, pass.active]);
 
   const openBilling = async () => {
     if (busy || pass.loading) return;
@@ -20,6 +29,22 @@ export function VoyagePassDialog({ onClose }: { onClose: () => void }) {
       setError(true);
     }
   };
+
+  if (acquired) {
+    return (
+      <Modal onClose={onClose}>
+        <div className="voyage-pass-acquired" role="status" aria-live="polite">
+          <div className="voyage-pass-emblem" aria-hidden="true">
+            <TileSymbolSvg symbol="compass" fg="#ffd84d" bg="#2c2a28" />
+          </div>
+          <p>{t("voyagePassAcquired")}</p>
+          <button className="chip voyage-pass-continue" onClick={onClose}>
+            {t("voyagePassContinue")}
+          </button>
+        </div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal onClose={onClose}>

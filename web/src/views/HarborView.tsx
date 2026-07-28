@@ -70,6 +70,7 @@ import {
   tf,
 } from "../i18n";
 import { serviceStartDay } from "../since";
+import { useVoyagePass } from "../billing";
 
 // three.js を含む「みんなの海」は重いので、プライベートの港を開いたときだけ読み込む。
 const HarborWorld = lazy(() => import("../three/HarborWorld"));
@@ -166,6 +167,7 @@ export function HarborView({
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileTick, setProfileTick] = useState(0);
   const [pendingInvite, setPendingInvite] = useState(inviteCode);
+  const voyagePass = useVoyagePass();
 
   const reload = useCallback(async () => {
     // デモ(#demo)はFirestoreに触れず、見本の港をひとつ見せる。
@@ -278,6 +280,7 @@ export function HarborView({
         setEditingProfile(false);
         setProfileTick((n) => n + 1);
       }}
+      hasVoyagePass={voyagePass.active}
     />
   );
 }
@@ -296,6 +299,7 @@ function HarborRoot({
   inviteCode,
   onInviteHandled,
   onCloseProfile,
+  hasVoyagePass,
 }: {
   rooms: HarborRoom[];
   publicJoined: Set<string>;
@@ -308,6 +312,7 @@ function HarborRoot({
   inviteCode?: string;
   onInviteHandled: () => void;
   onCloseProfile: () => void;
+  hasVoyagePass: boolean;
 }) {
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(() => Boolean(inviteCode));
@@ -329,7 +334,14 @@ function HarborRoot({
           size={56}
         />
         <div className="player-card-texts">
-          <div className="player-card-name">{PlayerProfile.displayName}</div>
+          <div className="player-card-name-row">
+            <div className="player-card-name">{PlayerProfile.displayName}</div>
+            {hasVoyagePass && (
+              <span className="player-card-pass" aria-label={t("voyagePass")}>
+                <TileSymbolSvg symbol="compass" fg="#ffd84d" bg="#2c2a28" />
+              </span>
+            )}
+          </div>
           {PlayerProfile.resolve && (
             <div className="player-card-resolve">{PlayerProfile.resolve}</div>
           )}
