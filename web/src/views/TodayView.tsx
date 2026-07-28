@@ -312,7 +312,14 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     <div>
       <header className="today-dateline">
         <span className="today-weekday">{weekday}</span>
-        <h1 className="today-date">{monthDay}</h1>
+        <div className="today-title-row">
+          <h1 className="today-date">{monthDay}</h1>
+          {todayTotal > 0 && (
+            <span className="today-total">
+              {tf(t("todayTotalLabel"), { time: durationLabel(todayTotal) })}
+            </span>
+          )}
+        </div>
       </header>
 
       <DestinationsSection uid={uid} data={data} />
@@ -364,9 +371,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         <>
           <p className="section-label">
             {t("todaysLog")}
-            {todayTotal > 0 && (
-              <span className="section-label-sub"> · {durationLabel(todayTotal)}</span>
-            )}
           </p>
           <div className="rows">
             {todaySessions.map((s) => (

@@ -20,6 +20,14 @@ enum LF {
         return formatter.string(from: TimeInterval(minutes * 60)) ?? "\(minutes)m"
     }
 
+    /// 今日の日付に添える小さな合計表示。
+    static func todayTotal(minutes: Int) -> String {
+        let value = duration(minutes: minutes)
+        return appLocale.language.languageCode?.identifier == "ja"
+            ? "合計 \(value)"
+            : "Total \(value)"
+    }
+
     // MARK: - 日付
 
     /// 「7月14日」/ "Jul 14"。

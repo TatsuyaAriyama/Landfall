@@ -419,7 +419,7 @@ textarea {
   border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
 }
 
-.home-ocean .today-date {
+.home-ocean .today-title-row {
   border-bottom-color: color-mix(in srgb, var(--return-orange) 48%, transparent);
 }
 
@@ -565,8 +565,25 @@ textarea {
   font-weight: 500;
   letter-spacing: 0.5px;
   margin: 0;
+}
+
+.today-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 11px;
   padding-bottom: 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--return-orange) 22%, transparent);
+}
+
+.today-total {
+  flex: none;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: var(--return-orange);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .page-sub {

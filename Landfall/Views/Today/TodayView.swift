@@ -29,10 +29,18 @@ struct TodayView: View {
                 LFColor.paper.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    Text(LF.dayWithWeekday(today))
-                        .font(LFFont.copy(20))
-                        .foregroundStyle(LFColor.ink)
-                        .padding(.top, 32)
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(LF.dayWithWeekday(today))
+                            .font(LFFont.copy(20))
+                            .foregroundStyle(LFColor.ink)
+                        if todaysTotalMinutes > 0 {
+                            Text(LF.todayTotal(minutes: todaysTotalMinutes))
+                                .font(LFFont.label(12))
+                                .foregroundStyle(LFColor.returnOrange)
+                                .monospacedDigit()
+                        }
+                    }
+                    .padding(.top, 32)
 
                     ScrollView {
                         DestinationCard(destination: activeDestination, sessions: sessions) {
@@ -249,6 +257,10 @@ struct TodayView: View {
             .sorted { $0.date < $1.date }
     }
 
+    private var todaysTotalMinutes: Int {
+        todaysSessions.reduce(0) { $0 + $1.minutes }
+    }
+
     /// 項目ごとの総作業時間(全期間・分)。タイルの小さなバッジに使う。
     private var totalByItem: [UUID: Int] {
         var map: [UUID: Int] = [:]
@@ -262,16 +274,11 @@ struct TodayView: View {
     private var todayLogSection: some View {
         let todays = todaysSessions
         if !todays.isEmpty {
-            let total = todays.reduce(0) { $0 + $1.minutes }
             HStack(spacing: 0) {
                 Text("Today's log")
                     .font(LFFont.label(13))
                     .tracking(1)
                     .foregroundStyle(LFColor.ink.opacity(0.5))
-                Text(" · \(LF.duration(minutes: total))")
-                    .font(LFFont.label(13))
-                    .foregroundStyle(LFColor.ink.opacity(0.38))
-                    .monospacedDigit()
                 Spacer()
                 // 今日ぶんを1枚にして持ち出す(iOSの持ち出し機能はここに残す)。
                 Button {
