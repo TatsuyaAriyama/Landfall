@@ -186,10 +186,25 @@ service cloud.firestore {
         allow delete: if isOwner();
       }
 
+      // Stripe Webhook（管理SDK）だけが書き込み、本人は状態の読み取りだけできる。
+      match /entitlements/{entitlementId} {
+        allow read: if isOwner();
+        allow write: if false;
+      }
+
       // 新しい個人コレクションは、ルールとスキーマを同時に追加するまで閉じる。
       match /{document=**} {
         allow read, write: if false;
       }
+    }
+
+    // Stripeの顧客対応表とWebhook処理履歴は管理SDK専用。
+    match /billingCustomers/{userId} {
+      allow read, write: if false;
+    }
+
+    match /stripeEvents/{eventId} {
+      allow read, write: if false;
     }
 
     // ---- 港(ルーム) ----

@@ -379,6 +379,25 @@ const ja = {
   dataSection: "データ",
   exportJSON: "JSONで書き出す",
   exportCSV: "CSVで書き出す",
+  voyagePass: "航海証",
+  voyagePassPrice: "月額 ¥490",
+  voyagePassDescription:
+    "季節の海域や航海士の装いなど、Aftideの世界をさらに広げるための航海証です。",
+  voyagePassKicker: "海の向こう側へ",
+  voyagePassIntro: "いつもの航海を、もう少し遠くまで。",
+  voyagePassWelcomeBack: "航海証とともに、次の海へ。",
+  voyagePassBenefitSeas: "季節とともに移ろう、特別な海域",
+  voyagePassBenefitNavigator: "航海士と船の、特別な装い",
+  voyagePassBenefitReport: "一年の歩みを深く読める航海報告",
+  voyagePassReassurance:
+    "月額490円。支払いや解約はいつでもStripeの安全なページで管理できます。",
+  voyagePassActive: "有効",
+  voyagePassActiveDescription: "航海証を携えています。Aftideの特別な海域を航行できます。",
+  voyagePassGet: "航海証を手に入れる",
+  voyagePassManage: "航海証を管理する",
+  voyagePassOpening: "海図を開いています…",
+  voyagePassEnding: "現在の請求期間が終わるまで利用できます。",
+  voyagePassError: "航海証のページを開けませんでした。少し時間をおいてお試しください。",
   exportVoyageLogsCSV: "航海日録をCSVで書き出す",
 
   // 航海誌
@@ -786,6 +805,26 @@ const en: Record<I18nKey, string> = {
   dataSection: "Data",
   exportJSON: "Export as JSON",
   exportCSV: "Export as CSV",
+  voyagePass: "Voyage Pass",
+  voyagePassPrice: "¥490 / month",
+  voyagePassDescription:
+    "Your pass to seasonal seas, navigator attire, and more of the Aftide world.",
+  voyagePassKicker: "Beyond the horizon",
+  voyagePassIntro: "Let your everyday voyage carry you farther.",
+  voyagePassWelcomeBack: "Your Voyage Pass is ready for the next sea.",
+  voyagePassBenefitSeas: "Special waters that change with the seasons",
+  voyagePassBenefitNavigator: "Distinctive attire for your navigator and boat",
+  voyagePassBenefitReport: "Deeper voyage reports across your year",
+  voyagePassReassurance:
+    "¥490 per month. Manage payment or cancel anytime on Stripe's secure page.",
+  voyagePassActive: "Active",
+  voyagePassActiveDescription:
+    "Your Voyage Pass is aboard. Special waters of Aftide are open to you.",
+  voyagePassGet: "Get the Voyage Pass",
+  voyagePassManage: "Manage Voyage Pass",
+  voyagePassOpening: "Opening the chart…",
+  voyagePassEnding: "Access continues until the end of the current billing period.",
+  voyagePassError: "We could not open Voyage Pass billing. Please try again shortly.",
   exportVoyageLogsCSV: "Export Daily Logs as CSV",
 
   logbook: "Logbook",

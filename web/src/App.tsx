@@ -30,6 +30,7 @@ const loadLogbookView = () => import("./views/LogbookView");
 const loadBoatStudio = () => import("./views/BoatStudio");
 const loadHarborView = () => import("./views/HarborView");
 const loadSettingsDialog = () => import("./views/SettingsDialog");
+const loadVoyagePassDialog = () => import("./views/VoyagePassDialog");
 
 const TraceView = lazy(() =>
   loadTraceView().then(({ TraceView: view }) => ({ default: view })),
@@ -43,6 +44,9 @@ const HarborView = lazy(() =>
 );
 const SettingsDialog = lazy(() =>
   loadSettingsDialog().then(({ SettingsDialog: view }) => ({ default: view })),
+);
+const VoyagePassDialog = lazy(() =>
+  loadVoyagePassDialog().then(({ VoyagePassDialog: view }) => ({ default: view })),
 );
 
 function preloadTab(tab: Tab) {
@@ -150,6 +154,9 @@ function Main({ uid }: { uid: string }) {
   const [tab, setTabState] = useState<Tab>(() => initialTab());
   const [inviteCode] = useState(() => initialInviteCode());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [voyagePassOpen, setVoyagePassOpen] = useState(() =>
+    new URLSearchParams(window.location.search).has("voyage-pass"),
+  );
   const timeOfDay = useTimeOfDay();
   const live = useUserData(uid, !isDemo);
   const data = isDemo ? demoData() : live;
@@ -207,17 +214,30 @@ function Main({ uid }: { uid: string }) {
           <BrandMark size={28} />
           {t("appName")}
         </span>
-        <button
-          className="quiet-button"
-          onPointerEnter={() => void loadSettingsDialog()}
-          onFocus={() => void loadSettingsDialog()}
-          onTouchStart={() => void loadSettingsDialog()}
-          onClick={() => setSettingsOpen(true)}
-          aria-haspopup="dialog"
-          aria-expanded={settingsOpen}
-        >
-          {t("settings")}
-        </button>
+        <div className="topbar-actions">
+          <button
+            className="voyage-pass-entry"
+            onPointerEnter={() => void loadVoyagePassDialog()}
+            onFocus={() => void loadVoyagePassDialog()}
+            onClick={() => setVoyagePassOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={voyagePassOpen}
+          >
+            <span aria-hidden="true">◇</span>
+            {t("voyagePass")}
+          </button>
+          <button
+            className="quiet-button"
+            onPointerEnter={() => void loadSettingsDialog()}
+            onFocus={() => void loadSettingsDialog()}
+            onTouchStart={() => void loadSettingsDialog()}
+            onClick={() => setSettingsOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={settingsOpen}
+          >
+            {t("settings")}
+          </button>
+        </div>
       </header>
 
       {/* タブ。航海の語彙のアイコン+水平線のような選択インジケータ。
@@ -279,6 +299,11 @@ function Main({ uid }: { uid: string }) {
       {settingsOpen && (
         <Suspense fallback={<DialogLoading />}>
           <SettingsDialog uid={uid} data={data} onClose={() => setSettingsOpen(false)} />
+        </Suspense>
+      )}
+      {voyagePassOpen && (
+        <Suspense fallback={<DialogLoading />}>
+          <VoyagePassDialog onClose={() => setVoyagePassOpen(false)} />
         </Suspense>
       )}
       <OfflineWatcher />

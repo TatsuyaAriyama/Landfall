@@ -22,6 +22,136 @@
   color-scheme: dark;
 }
 
+/* ---- 航海証 / Voyage Pass ---- */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.voyage-pass-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 10px;
+  color: var(--return-orange);
+  font-size: 13px;
+  letter-spacing: 0.2px;
+}
+
+.voyage-pass-entry span {
+  font-size: 16px;
+}
+
+.voyage-pass-intro {
+  margin: 2px 0 22px;
+}
+
+.voyage-pass-kicker {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--return-orange);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.voyage-pass-intro h2 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.voyage-pass-intro ul {
+  display: grid;
+  gap: 9px;
+  margin: 20px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--ink) 72%, transparent);
+}
+
+.voyage-pass-intro li {
+  position: relative;
+  padding-left: 20px;
+}
+
+.voyage-pass-intro li::before {
+  content: "◇";
+  position: absolute;
+  left: 0;
+  color: var(--return-orange);
+}
+
+.voyage-pass-card {
+  display: flex;
+  gap: 14px;
+  padding: 17px;
+  border: 1px solid color-mix(in srgb, var(--return-orange) 30%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--return-orange) 6%, var(--paper));
+}
+
+.voyage-pass-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  color: var(--return-orange);
+  border: 1px solid color-mix(in srgb, var(--return-orange) 45%, transparent);
+  font-size: 21px;
+}
+
+.voyage-pass-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.voyage-pass-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.voyage-pass-copy p {
+  margin: 7px 0 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--ink) 68%, transparent);
+}
+
+.voyage-pass-copy .voyage-pass-note {
+  color: var(--return-orange);
+}
+
+.voyage-pass-action {
+  margin-top: 13px;
+}
+
+.voyage-pass-reassurance {
+  margin: 14px 4px 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--ink) 50%, transparent);
+}
+
+@media (max-width: 430px) {
+  .voyage-pass-entry {
+    padding-inline: 6px;
+    font-size: 12px;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
