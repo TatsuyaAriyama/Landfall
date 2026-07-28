@@ -319,9 +319,10 @@ textarea {
 /* ---- レイアウト ---- */
 
 .shell {
-  max-width: 680px;
+  width: 100%;
+  max-width: none;
   margin: 0 auto;
-  padding: 0 24px 96px;
+  padding: 0 clamp(24px, 4vw, 72px) 96px;
 }
 
 /* 通常画面はすべて、現地時刻の海を一枚の共通背景として持つ。
@@ -5960,6 +5961,42 @@ textarea {
 
   .timer-name {
     max-width: 52vw;
+  }
+}
+
+/* ---- PC: スマホ幅の一枚板に閉じ込めず、海と情報を画面全体へ広げる ---- */
+
+@media (min-width: 901px) {
+  .shell {
+    min-height: 100dvh;
+    padding-bottom: 72px;
+  }
+
+  .topbar {
+    padding-top: 24px;
+  }
+
+  .tabs {
+    gap: clamp(28px, 2.6vw, 52px);
+    padding-bottom: 28px;
+  }
+
+  #main-content {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* 空き幅を列数へ変換する。項目が少ない場合も auto-fill の空列が残るため、
+     一枚だけが巨大なスマホタイルのように引き伸ばされない。 */
+  .tile-grid {
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    gap: clamp(18px, 1.5vw, 28px);
+  }
+
+  /* 港へ入る前の景色もPCでは横長の窓として見せる。没入時は従来どおり全画面。 */
+  .harbor-world:not(.immersive),
+  .harbor-world-fallback {
+    height: clamp(400px, 56vh, 620px);
   }
 }
 
