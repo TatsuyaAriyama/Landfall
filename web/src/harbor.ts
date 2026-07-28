@@ -4,6 +4,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  documentId,
   getDoc,
   getDocs,
   limit,
@@ -451,10 +452,15 @@ function presenceRef(roomId: string, memberId: string) {
 /// 最大4人の一時コレクションで、履歴や学習記録としては保存しない。
 export function listenHarborPresence(
   roomId: string,
+  currentUid: string,
   cb: (presence: HarborPresence[]) => void,
 ): () => void {
   return onSnapshot(
-    collection(db, "rooms", roomId, "presence"),
+    query(
+      collection(db, "rooms", roomId, "presence"),
+      where(documentId(), "!=", currentUid),
+      limit(ROOM_MAX_MEMBERS - 1),
+    ),
     (snap) => {
       cb(
         snap.docs.flatMap((presenceDoc) => {

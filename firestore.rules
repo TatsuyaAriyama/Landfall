@@ -258,10 +258,12 @@ service cloud.firestore {
           && request.auth.uid == memberId
           && isMember()
           && request.resource.data.keys().hasAll([
-            'x', 'z', 'yaw', 'pose', 'aboard', 'fishingRod', 'emoteSeq', 'updatedAt'
+            'x', 'z', 'yaw', 'pose', 'aboard', 'sailX',
+            'fishingRod', 'emoteSeq', 'updatedAt'
           ])
           && request.resource.data.keys().hasOnly([
-            'x', 'z', 'yaw', 'pose', 'aboard', 'fishingRod', 'emoteSeq', 'updatedAt'
+            'x', 'z', 'yaw', 'pose', 'aboard', 'sailX',
+            'fishingRod', 'emoteSeq', 'updatedAt'
           ])
           && request.resource.data.x is number
           && request.resource.data.x >= -6.5
@@ -277,6 +279,9 @@ service cloud.firestore {
             'stowRod', 'hail', 'raise', 'point', 'lookout', 'rest'
           ]
           && request.resource.data.aboard is bool
+          && request.resource.data.sailX is number
+          && request.resource.data.sailX >= -0.75
+          && request.resource.data.sailX <= 0.75
           && request.resource.data.fishingRod is bool
           && request.resource.data.emoteSeq is int
           && request.resource.data.emoteSeq >= 0

@@ -1162,6 +1162,47 @@ interface HarborWalkerTransform {
   walking: boolean;
 }
 type HarborPresencePayload = Omit<HarborPresence, "uid" | "updatedAt">;
+type HarborPresencePriority = "movement" | "immediate" | "heartbeat";
+
+// 位置は受信側で補間するため、毎フレーム送る必要はない。微小な揺れも捨てて
+// Firestore の書き込みと、同室全員に発生する読み取りの両方を抑える。
+const HARBOR_PRESENCE_MOVE_INTERVAL_MS = 1_000;
+const HARBOR_PRESENCE_HEARTBEAT_MS = 15_000;
+const HARBOR_PRESENCE_STALE_MS = 40_000;
+const HARBOR_PRESENCE_POSITION_EPSILON = 0.06;
+const HARBOR_PRESENCE_YAW_EPSILON = 0.08;
+const HARBOR_PRESENCE_SAIL_EPSILON = 0.04;
+
+function presenceStatusChanged(
+  previous: HarborPresencePayload,
+  next: HarborPresencePayload,
+): boolean {
+  return (
+    previous.pose !== next.pose ||
+    previous.aboard !== next.aboard ||
+    previous.fishingRod !== next.fishingRod ||
+    previous.emoteSeq !== next.emoteSeq
+  );
+}
+
+function presenceMovementChanged(
+  previous: HarborPresencePayload,
+  next: HarborPresencePayload,
+): boolean {
+  const yawDelta = Math.abs(
+    Math.atan2(
+      Math.sin(next.yaw - previous.yaw),
+      Math.cos(next.yaw - previous.yaw),
+    ),
+  );
+  return (
+    presenceStatusChanged(previous, next) ||
+    Math.hypot(next.x - previous.x, next.z - previous.z) >=
+      HARBOR_PRESENCE_POSITION_EPSILON ||
+    yawDelta >= HARBOR_PRESENCE_YAW_EPSILON ||
+    Math.abs(next.sailX - previous.sailX) >= HARBOR_PRESENCE_SAIL_EPSILON
+  );
+}
 
 /// 没入時の航海士。WASD/矢印とスマホのスティックを同じ入力へまとめ、
 /// 砂地と三本の桟橋だけを歩く。入力は常にカメラ基準へ変換し、
@@ -1755,7 +1796,8 @@ function HarborSailingBoat({
     root.current.position.x = THREE.MathUtils.damp(
       root.current.position.x,
       x + Math.sin(time * 0.28 + phase) * 0.16,
-      8,
+      // 自分の操作は軽快に、低頻度で届く相手の座標は次の更新まで滑らかに補間。
+      self ? 8 : 3.5,
       delta,
     );
     root.current.position.y = Math.sin(time * 0.72 + phase) * 0.045;
@@ -2450,13 +2492,23 @@ export default function HarborWorld({
   // ---- 同じ港にいる航海士のリアルタイム同期 ----
   const [presenceRows, setPresenceRows] = useState<HarborPresence[]>([]);
   const [presenceClock, setPresenceClock] = useState(0);
+  const [pageVisible, setPageVisible] = useState(
+    () => typeof document === "undefined" || document.visibilityState !== "hidden",
+  );
   useEffect(() => {
-    if (isDemo) {
+    const updateVisibility = () =>
+      setPageVisible(document.visibilityState !== "hidden");
+    document.addEventListener("visibilitychange", updateVisibility);
+    return () =>
+      document.removeEventListener("visibilitychange", updateVisibility);
+  }, []);
+  useEffect(() => {
+    if (isDemo || !immersive || !pageVisible) {
       setPresenceRows([]);
       return;
     }
-    return listenHarborPresence(room.id, setPresenceRows);
-  }, [room.id]);
+    return listenHarborPresence(room.id, currentUid, setPresenceRows);
+  }, [currentUid, immersive, pageVisible, room.id]);
   useEffect(() => {
     const timer = window.setInterval(
       () => setPresenceClock((clock) => clock + 1),
@@ -2471,7 +2523,7 @@ export default function HarborWorld({
     const result = new Map<string, HarborPresence>();
     for (const presence of presenceRows) {
       if (presence.uid === currentUid || !memberIds.has(presence.uid)) continue;
-      if (now - presence.updatedAt.getTime() > 30_000) continue;
+      if (now - presence.updatedAt.getTime() > HARBOR_PRESENCE_STALE_MS) continue;
       result.set(presence.uid, presence);
     }
     return result;
@@ -2486,19 +2538,62 @@ export default function HarborWorld({
   const pendingPresence = useRef<HarborPresencePayload | null>(null);
   const presenceSendTimer = useRef<number | undefined>(undefined);
   const lastPresenceWrite = useRef(0);
+  const lastPublishedPresence = useRef<HarborPresencePayload | null>(null);
   const flushPresence = useCallback(() => {
     presenceSendTimer.current = undefined;
     const next = pendingPresence.current;
     pendingPresence.current = null;
-    if (!next || isDemo) return;
+    if (
+      !next ||
+      isDemo ||
+      !pageVisible ||
+      document.visibilityState === "hidden"
+    ) {
+      return;
+    }
     lastPresenceWrite.current = Date.now();
-    void publishHarborPresence(room.id, next).catch(() => {});
-  }, [room.id]);
+    lastPublishedPresence.current = next;
+    void publishHarborPresence(room.id, next).catch(() => {
+      if (lastPublishedPresence.current === next) {
+        lastPublishedPresence.current = null;
+      }
+    });
+  }, [pageVisible, room.id]);
   const queuePresence = useCallback(
-    (next: HarborPresencePayload) => {
-      if (isDemo) return;
+    (
+      next: HarborPresencePayload,
+      priority: HarborPresencePriority = "movement",
+    ) => {
+      if (isDemo || !pageVisible) return;
+
+      const previous = lastPublishedPresence.current;
+      if (priority === "immediate") {
+        if (previous && !presenceStatusChanged(previous, next)) return;
+        pendingPresence.current = next;
+        window.clearTimeout(presenceSendTimer.current);
+        flushPresence();
+        return;
+      }
+      if (priority === "heartbeat") {
+        pendingPresence.current = next;
+        window.clearTimeout(presenceSendTimer.current);
+        flushPresence();
+        return;
+      }
+
+      // 送信待ちがある間は最新座標へ差し替える。待ちがなければ、前回送信値
+      // から見た目に出ない程度の差しかない更新を破棄する。
+      if (pendingPresence.current) {
+        pendingPresence.current = next;
+        return;
+      }
+      if (previous && !presenceMovementChanged(previous, next)) return;
       pendingPresence.current = next;
-      const wait = Math.max(0, 300 - (Date.now() - lastPresenceWrite.current));
+      const wait = Math.max(
+        0,
+        HARBOR_PRESENCE_MOVE_INTERVAL_MS -
+          (Date.now() - lastPresenceWrite.current),
+      );
       if (wait === 0) {
         window.clearTimeout(presenceSendTimer.current);
         flushPresence();
@@ -2506,7 +2601,7 @@ export default function HarborWorld({
         presenceSendTimer.current = window.setTimeout(flushPresence, wait);
       }
     },
-    [flushPresence],
+    [flushPresence, pageVisible],
   );
   const currentPresence = useCallback(
     (transform = walkerTransform.current): HarborPresencePayload => ({
@@ -2540,34 +2635,54 @@ export default function HarborWorld({
   const handleWalkerTransform = useCallback(
     (transform: HarborWalkerTransform) => {
       walkerTransform.current = transform;
-      if (immersive && phase === "idle") {
+      if (immersive && pageVisible && phase === "idle") {
         queuePresence(currentPresence(transform));
       }
     },
-    [currentPresence, immersive, phase, queuePresence],
+    [currentPresence, immersive, pageVisible, phase, queuePresence],
   );
 
   // 仕草・装備・乗降の変化は、座標が止まっていてもすぐ共有する。
   useEffect(() => {
-    if (!immersive || phase !== "idle") return;
-    queuePresence(currentPresence());
-  }, [currentPresence, immersive, phase, queuePresence]);
+    if (!immersive || !pageVisible || phase !== "idle") return;
+    queuePresence(currentPresenceRef.current(), "immediate");
+  }, [
+    aboard,
+    emotePose,
+    emoteSeq,
+    equipmentAction,
+    fishingRodVisible,
+    immersive,
+    pageVisible,
+    phase,
+    queuePresence,
+    restingAtTent,
+  ]);
 
-  // 停止中も短いハートビートを送り、通信断やタブ終了の残像を30秒以内に消す。
+  // 船の横移動は連打中も一秒ごとの最新位置だけを共有する。
   useEffect(() => {
-    if (!immersive || isDemo) return;
+    if (!immersive || !pageVisible || phase !== "idle") return;
+    queuePresence(currentPresenceRef.current());
+  }, [immersive, pageVisible, phase, queuePresence, sailX]);
+
+  // 停止中は15秒に一度だけ在席を更新する。タブが隠れたら購読も送信も止め、
+  // 在席ドキュメントを削除して他ユーザー側の不要な読み取りも発生させない。
+  useEffect(() => {
+    if (!immersive || !pageVisible || isDemo) return;
     const heartbeat = window.setInterval(
-      () => queuePresence(currentPresenceRef.current()),
-      8_000,
+      () => queuePresence(currentPresenceRef.current(), "heartbeat"),
+      HARBOR_PRESENCE_HEARTBEAT_MS,
     );
     return () => {
       window.clearInterval(heartbeat);
       window.clearTimeout(presenceSendTimer.current);
       presenceSendTimer.current = undefined;
       pendingPresence.current = null;
+      lastPresenceWrite.current = 0;
+      lastPublishedPresence.current = null;
       void clearHarborPresence(room.id).catch(() => {});
     };
-  }, [immersive, queuePresence, room.id]);
+  }, [immersive, pageVisible, queuePresence, room.id]);
 
   const look = useRef<HarborLookState>({ yaw: 0, pitch: 0.38 });
   const lookDrag = useRef<{ pointerId: number; x: number; y: number } | null>(null);
