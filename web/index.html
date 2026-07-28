@@ -2,21 +2,7 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <script>
-      (() => {
-        const host = window.location.hostname;
-        if (
-          host !== "landfall-studylog.com" &&
-          host !== "www.aftide.app"
-        ) {
-          return;
-        }
-
-        window.location.replace(
-          `https://aftide.app${window.location.pathname}${window.location.search}${window.location.hash}`,
-        );
-      })();
-    </script>
+    <script src="/bootstrap.js"></script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <!-- iOS/iPadOSのホーム画面アイコン。iPad(152)・iPad Pro(167)・iPhone(180)が
@@ -49,31 +35,6 @@
     <meta property="og:url" content="https://aftide.app/" />
     <meta property="og:image" content="https://aftide.app/favicon.svg" />
     <title>Aftide — Study Log</title>
-    <!-- Service Workerは更新時の新旧JS混在を繰り返したため廃止した。
-         既存端末に登録が残っている場合だけ、終了専用Workerへ差し替えて
-         キャッシュ削除・登録解除・ネットワーク版への再読込を行う。 -->
-    <script>
-      (() => {
-        const host = window.location.hostname;
-        const production =
-          host === "aftide.app" ||
-          host === "www.aftide.app" ||
-          host === "landfall-studylog.com" ||
-          host.endsWith(".landfall-studylog.pages.dev");
-        if (!production || !("serviceWorker" in navigator)) return;
-
-        navigator.serviceWorker
-          .getRegistration()
-          .then((registration) => {
-            if (!registration) return;
-            return navigator.serviceWorker.register("/sw-retire.js?v=1", {
-              scope: "/",
-              updateViaCache: "none",
-            });
-          })
-          .catch(() => {});
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

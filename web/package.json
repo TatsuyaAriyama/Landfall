@@ -8,7 +8,10 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "icons": "node scripts/gen-icons.mjs"
+    "icons": "node scripts/gen-icons.mjs",
+    "security:secrets": "node scripts/security-secrets.mjs",
+    "security:audit": "npm audit --omit=dev --audit-level=high",
+    "security:check": "npm run security:secrets && npm run security:audit && npm run lint && npm run build"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

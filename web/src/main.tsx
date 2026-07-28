@@ -22,7 +22,7 @@ if (!import.meta.env.DEV && window.location.hash === "#demo") {
 
 // Service Worker廃止前に失敗したメインJSのHTTPキャッシュとURLを分離する。
 // 今後の障害調査でも、表示中の配信世代をDOMから確認できる。
-const APP_BUILD = "2026-07-27-aftide-v1";
+const APP_BUILD = "2026-07-28-security-v1";
 document.documentElement.dataset.appBuild = APP_BUILD;
 
 // キーボード/ピッカーで実際に見えている高さを :root に流す(全階層のCSSが参照する)。
@@ -30,26 +30,62 @@ watchViewport();
 
 const root = document.getElementById("root")!;
 
+function loadingIndicator(label = "読み込み中") {
+  const indicator = document.createElement("div");
+  indicator.className = "harbor-loading";
+  indicator.setAttribute("role", "status");
+  indicator.setAttribute("aria-label", label);
+  return indicator;
+}
+
 // App本体と認証ライブラリは分割して読み込むため、回線や端末によってはReactが
 // マウントされるまで少し間が空く。ここを空のままにすると正常な読込中でも
 // 「起動しない」ように見えるため、最初のimportより前に必ず海の灯りを置く。
-root.innerHTML =
-  '<div class="harbor-loading" role="status" aria-label="読み込み中"></div>';
+root.replaceChildren(loadingIndicator());
 
 /// 起動そのものが失敗した場合の最後の安全網。CSSの地色が暗いため、
 /// 何もマウントされないと「真っ黒で再読込しても変わらない」ように見える。
 /// 案内文だけでも出して、次に取れる行動(再読込)を示す。
 function renderFatalError() {
-  root.innerHTML =
-    '<div style="min-height:100vh;display:flex;flex-direction:column;' +
-    "align-items:center;justify-content:center;gap:12px;padding:24px;" +
-    'text-align:center;color:#F4F1EC;font-family:-apple-system,sans-serif;">' +
-    '<p style="font-size:17px;margin:0;">読み込みに失敗しました。</p>' +
-    '<p style="font-size:14px;opacity:0.6;margin:0;">' +
-    "しばらくしてから再読込してください。" +
-    '</p><button onclick="location.reload()" style="margin-top:12px;' +
-    "min-height:48px;padding:0 28px;border-radius:20px;background:#EADEBD;" +
-    'color:#141414;font-size:15px;border:none;">再読込する</button></div>';
+  const container = document.createElement("div");
+  Object.assign(container.style, {
+    minHeight: "100vh",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "12px",
+    padding: "24px",
+    textAlign: "center",
+    color: "#F4F1EC",
+    fontFamily: "-apple-system, sans-serif",
+  });
+
+  const title = document.createElement("p");
+  title.textContent = "読み込みに失敗しました。";
+  Object.assign(title.style, { fontSize: "17px", margin: "0" });
+
+  const detail = document.createElement("p");
+  detail.textContent = "しばらくしてから再読込してください。";
+  Object.assign(detail.style, { fontSize: "14px", opacity: "0.6", margin: "0" });
+
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.textContent = "再読込する";
+  retry.addEventListener("click", () => location.reload());
+  Object.assign(retry.style, {
+    marginTop: "12px",
+    minHeight: "48px",
+    padding: "0 28px",
+    borderRadius: "20px",
+    background: "#EADEBD",
+    color: "#141414",
+    fontSize: "15px",
+    border: "none",
+  });
+
+  container.append(title, detail, retry);
+  root.replaceChildren(container);
 }
 
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
@@ -82,7 +118,7 @@ async function recoverTransientLoad(
   const previousTry = sameBuild ? Number(url.searchParams.get("recoverTry") ?? "0") : 0;
   if (previousTry >= 2) return false;
 
-  root.innerHTML = '<div class="harbor-loading"></div>';
+  root.replaceChildren(loadingIndicator());
   const assetUrl = failedAssetUrl(error);
   if (waitForAsset && assetUrl) {
     for (const delay of [500, 1200, 2500]) {
