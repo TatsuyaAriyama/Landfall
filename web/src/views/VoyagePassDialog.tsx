@@ -27,11 +27,16 @@ export function VoyagePassDialog({ onClose }: { onClose: () => void }) {
         <div className="voyage-pass-intro">
           <span className="voyage-pass-kicker">{t("voyagePassKicker")}</span>
           <h2>{pass.active ? t("voyagePassWelcomeBack") : t("voyagePassIntro")}</h2>
+          <div className="voyage-pass-chart" aria-hidden="true">
+            <span className="voyage-pass-chart-sun" />
+            <span className="voyage-pass-chart-horizon" />
+            <span className="voyage-pass-chart-boat">◇</span>
+          </div>
           {!pass.active && (
             <ul>
+              <li>{t("voyagePassBenefitMultiplayer")}</li>
               <li>{t("voyagePassBenefitSeas")}</li>
               <li>{t("voyagePassBenefitNavigator")}</li>
-              <li>{t("voyagePassBenefitReport")}</li>
             </ul>
           )}
         </div>
@@ -51,7 +56,12 @@ export function VoyagePassDialog({ onClose }: { onClose: () => void }) {
             </button>
           </div>
         </div>
-        {!pass.active && <p className="voyage-pass-reassurance">{t("voyagePassReassurance")}</p>}
+        {!pass.active && (
+          <p className="voyage-pass-reassurance">
+            <span aria-hidden="true">✓</span>
+            {t("voyagePassReassurance")}
+          </p>
+        )}
         {error && <p className="harbor-error">{t("voyagePassError")}</p>}
       </>
     </Modal>

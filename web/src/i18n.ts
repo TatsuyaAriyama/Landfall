@@ -384,13 +384,12 @@ const ja = {
   voyagePassDescription:
     "季節の海域や航海士の装いなど、Aftideの世界をさらに広げるための航海証です。",
   voyagePassKicker: "海の向こう側へ",
-  voyagePassIntro: "いつもの航海を、もう少し遠くまで。",
+  voyagePassIntro: "潮の先へ、仲間と進む。",
   voyagePassWelcomeBack: "航海証とともに、次の海へ。",
+  voyagePassBenefitMultiplayer: "マルチプレイでの並走機能",
   voyagePassBenefitSeas: "季節とともに移ろう、特別な海域",
-  voyagePassBenefitNavigator: "航海士と船の、特別な装い",
-  voyagePassBenefitReport: "一年の歩みを深く読める航海報告",
-  voyagePassReassurance:
-    "月額490円。支払いや解約はいつでもStripeの安全なページで管理できます。",
+  voyagePassBenefitNavigator: "航海士と船の特別な装い",
+  voyagePassReassurance: "支払いや解約はStripeで安全に。",
   voyagePassActive: "有効",
   voyagePassActiveDescription: "航海証を携えています。Aftideの特別な海域を航行できます。",
   voyagePassGet: "航海証を手に入れる",
@@ -810,13 +809,12 @@ const en: Record<I18nKey, string> = {
   voyagePassDescription:
     "Your pass to seasonal seas, navigator attire, and more of the Aftide world.",
   voyagePassKicker: "Beyond the horizon",
-  voyagePassIntro: "Let your everyday voyage carry you farther.",
+  voyagePassIntro: "Sail beyond the tide, together.",
   voyagePassWelcomeBack: "Your Voyage Pass is ready for the next sea.",
+  voyagePassBenefitMultiplayer: "Sail side by side in multiplayer",
   voyagePassBenefitSeas: "Special waters that change with the seasons",
-  voyagePassBenefitNavigator: "Distinctive attire for your navigator and boat",
-  voyagePassBenefitReport: "Deeper voyage reports across your year",
-  voyagePassReassurance:
-    "¥490 per month. Manage payment or cancel anytime on Stripe's secure page.",
+  voyagePassBenefitNavigator: "Special attire for your navigator and boat",
+  voyagePassReassurance: "Payments and cancellations are handled securely by Stripe.",
   voyagePassActive: "Active",
   voyagePassActiveDescription:
     "Your Voyage Pass is aboard. Special waters of Aftide are open to you.",

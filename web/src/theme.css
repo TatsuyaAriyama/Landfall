@@ -30,22 +30,30 @@
 }
 
 .voyage-pass-entry {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-height: 44px;
-  padding: 0 10px;
-  color: var(--return-orange);
+  padding: 0 13px;
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--home-glass, var(--paper)) 54%, transparent);
   font-size: 13px;
+  font-weight: 500;
   letter-spacing: 0.2px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .voyage-pass-entry span {
+  color: var(--return-orange);
   font-size: 16px;
 }
 
 .voyage-pass-intro {
-  margin: 2px 0 22px;
+  margin: 2px 0 18px;
 }
 
 .voyage-pass-kicker {
@@ -60,41 +68,110 @@
 
 .voyage-pass-intro h2 {
   margin: 0;
-  font-size: 23px;
+  max-width: 300px;
+  font-size: clamp(25px, 7vw, 32px);
   font-weight: 500;
-  line-height: 1.45;
+  line-height: 1.28;
+  letter-spacing: -0.02em;
+}
+
+.voyage-pass-chart {
+  position: relative;
+  height: 104px;
+  margin: 20px 0 18px;
+  overflow: hidden;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.voyage-pass-chart::before,
+.voyage-pass-chart::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  border: 1px solid color-mix(in srgb, var(--return-orange) 30%, transparent);
+  border-radius: 50%;
+  transform: translateX(-50%);
+}
+
+.voyage-pass-chart::before {
+  bottom: -93px;
+  width: 280px;
+  height: 150px;
+}
+
+.voyage-pass-chart::after {
+  bottom: -72px;
+  width: 210px;
+  height: 110px;
+}
+
+.voyage-pass-chart-sun {
+  position: absolute;
+  top: 19px;
+  right: 17%;
+  width: 19px;
+  height: 19px;
+  border: 1px solid var(--return-orange);
+  border-radius: 50%;
+}
+
+.voyage-pass-chart-horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 59px;
+  height: 1px;
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.voyage-pass-chart-boat {
+  position: absolute;
+  left: 36%;
+  top: 45px;
+  color: var(--return-orange);
+  font-size: 22px;
+  transform: rotate(45deg);
 }
 
 .voyage-pass-intro ul {
   display: grid;
-  gap: 9px;
-  margin: 20px 0 0;
+  gap: 0;
+  margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
-  color: color-mix(in srgb, var(--ink) 72%, transparent);
+  color: color-mix(in srgb, var(--ink) 88%, transparent);
 }
 
 .voyage-pass-intro li {
   position: relative;
-  padding-left: 20px;
+  min-height: 48px;
+  padding: 13px 4px 12px 28px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
 }
 
 .voyage-pass-intro li::before {
   content: "◇";
   position: absolute;
-  left: 0;
+  left: 4px;
+  top: 13px;
   color: var(--return-orange);
 }
 
 .voyage-pass-card {
   display: flex;
   gap: 14px;
-  padding: 17px;
-  border: 1px solid color-mix(in srgb, var(--return-orange) 30%, transparent);
+  padding: 18px;
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--return-orange) 44%, transparent);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--return-orange) 6%, var(--paper));
+  background: color-mix(
+    in srgb,
+    var(--home-glass, var(--paper)) 92%,
+    var(--return-orange) 8%
+  );
 }
 
 .voyage-pass-mark {
@@ -119,7 +196,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 500;
 }
 
@@ -127,7 +204,7 @@
   margin: 7px 0 0;
   font-size: 13px;
   line-height: 1.65;
-  color: color-mix(in srgb, var(--ink) 68%, transparent);
+  color: color-mix(in srgb, var(--ink) 78%, transparent);
 }
 
 .voyage-pass-copy .voyage-pass-note {
@@ -135,20 +212,49 @@
 }
 
 .voyage-pass-action {
-  margin-top: 13px;
+  width: 100%;
+  min-height: 46px;
+  margin-top: 15px;
+  border-color: var(--return-orange);
+  color: var(--paper);
+  background: var(--return-orange);
 }
 
 .voyage-pass-reassurance {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 14px 4px 0;
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.6;
-  color: color-mix(in srgb, var(--ink) 50%, transparent);
+  color: color-mix(in srgb, var(--ink) 74%, transparent);
+}
+
+.voyage-pass-reassurance span {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--ink) 35%, transparent);
+  border-radius: 50%;
+  font-size: 10px;
 }
 
 @media (max-width: 430px) {
   .voyage-pass-entry {
-    padding-inline: 6px;
+    padding-inline: 10px;
     font-size: 12px;
+  }
+
+  .voyage-pass-card {
+    gap: 11px;
+    padding: 15px;
+  }
+
+  .voyage-pass-mark {
+    width: 36px;
+    height: 36px;
   }
 }
 
