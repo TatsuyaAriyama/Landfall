@@ -13,5 +13,10 @@ xcuserdata/
 # macOS
 .DS_Store
 
+# Local web build and deployment state
+.wrangler/
+web/dist/
+web/node_modules/
+
 # Firebase client config (obtain from Firebase console; required to build)
 GoogleService-Info.plist
