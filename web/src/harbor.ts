@@ -19,6 +19,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import { newestSharedSessionsFirst } from "./sharedSessionOrder";
 import { storage } from "./storage";
 import { auth, db } from "./firebase";
 import { PlayerProfile } from "./profile";
@@ -531,17 +532,19 @@ export async function fetchMonth(
   if (!snap || !snap.exists()) return null;
   const v = snap.data();
   const days = ((v.days as number[]) ?? []).filter((n) => typeof n === "number");
-  const sessions = (((v.sessions as Record<string, unknown>[]) ?? []) as Record<string, unknown>[])
-    .map((s) => ({
-      day: Number(s.day ?? 0),
-      minutes: Number(s.minutes ?? 0),
-      note: typeof s.note === "string" ? s.note : undefined,
-      date: s.date instanceof Timestamp ? s.date.toDate() : undefined,
-      itemName: typeof s.itemName === "string" ? s.itemName : undefined,
-      styleToken: typeof s.styleToken === "string" ? s.styleToken : "midnight",
-      symbolToken: typeof s.symbolToken === "string" ? s.symbolToken : "compass",
-    }))
-    .filter((s) => s.day >= 1);
+  const sessions = newestSharedSessionsFirst(
+    (((v.sessions as Record<string, unknown>[]) ?? []) as Record<string, unknown>[])
+      .map((s) => ({
+        day: Number(s.day ?? 0),
+        minutes: Number(s.minutes ?? 0),
+        note: typeof s.note === "string" ? s.note : undefined,
+        date: s.date instanceof Timestamp ? s.date.toDate() : undefined,
+        itemName: typeof s.itemName === "string" ? s.itemName : undefined,
+        styleToken: typeof s.styleToken === "string" ? s.styleToken : "midnight",
+        symbolToken: typeof s.symbolToken === "string" ? s.symbolToken : "compass",
+      }))
+      .filter((s) => s.day >= 1),
+  );
   return { days, sessions };
 }
 
@@ -568,8 +571,11 @@ export function buildMonthPayload(
     .sort((a, b) => a - b);
 
   const itemById = new Map(data.items.map((i) => [i.id, i]));
-  const sessions = data.sessions
-    .filter((s) => s.date.getFullYear() === year && s.date.getMonth() === month)
+  const sessions = newestSharedSessionsFirst(
+    data.sessions.filter(
+      (s) => s.date.getFullYear() === year && s.date.getMonth() === month,
+    ),
+  )
     .slice(0, 1000)
     .map((s) => {
       const item = s.itemUUID ? itemById.get(s.itemUUID) : undefined;

@@ -23,6 +23,7 @@ struct SharedSession: Identifiable {
     let id = UUID()
     let day: Int
     let minutes: Int
+    let date: Date?
     let note: String?
     let itemName: String?
     let styleToken: String
@@ -232,6 +233,10 @@ final class RoomService: ObservableObject {
             }
             return dict
         }
+        .sorted {
+            guard let lhs = $0["date"] as? Date, let rhs = $1["date"] as? Date else { return false }
+            return lhs > rhs
+        }
 
         return (docID, [
             "days": days.sorted(),
@@ -293,11 +298,20 @@ final class RoomService: ObservableObject {
             SharedSession(
                 day: raw["day"] as? Int ?? 0,
                 minutes: raw["minutes"] as? Int ?? 0,
+                date: (raw["date"] as? Timestamp)?.dateValue() ?? raw["date"] as? Date,
                 note: (raw["note"] as? String).flatMap { $0.isEmpty ? nil : $0 },
                 itemName: raw["itemName"] as? String,
                 styleToken: raw["styleToken"] as? String ?? TileStyle.midnight.rawValue,
                 symbolToken: raw["symbolToken"] as? String ?? TileSymbol.phoenix.rawValue
             )
+        }
+        .sorted { lhs, rhs in
+            if let lhsDate = lhs.date, let rhsDate = rhs.date, lhsDate != rhsDate {
+                return lhsDate > rhsDate
+            }
+            if lhs.day != rhs.day { return lhs.day > rhs.day }
+            if lhs.date != nil, rhs.date == nil { return true }
+            return false
         }
         return (days, sessions)
     }
