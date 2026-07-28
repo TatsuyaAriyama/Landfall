@@ -1,4 +1,4 @@
-// Service Worker廃止用の一回限りの移行Worker。
+// Service Worker廃止用の一回限りの移行Worker(v2)。
 // 旧キャッシュを全削除し、自分自身も登録解除して、開いている画面を
 // キャッシュを通さない通常のWebページへ戻す。
 self.addEventListener("install", () => self.skipWaiting());
@@ -18,7 +18,8 @@ self.addEventListener("activate", (event) => {
       await Promise.all(
         windows.map((client) => {
           const url = new URL(client.url);
-          url.searchParams.set("_sw", "off");
+          // v1と異なるURLにして、通常のHTTPキャッシュに残った旧HTMLも迂回する。
+          url.searchParams.set("_aftide_release", "2");
           return client.navigate(url.href);
         }),
       );

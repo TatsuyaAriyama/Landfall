@@ -17,13 +17,13 @@
   if (!production || !("serviceWorker" in navigator)) return;
 
   navigator.serviceWorker
-    .getRegistration()
-    .then((registration) => {
-      if (!registration) return undefined;
-      return navigator.serviceWorker.register("/sw-retire.js?v=1", {
+    .getRegistrations()
+    .then((registrations) => {
+      if (registrations.length === 0) return undefined;
+      return navigator.serviceWorker.register("/sw-retire.js?v=2", {
         scope: "/",
         updateViaCache: "none",
-      });
+      }).then((registration) => registration.update());
     })
     .catch(() => {});
 })();
