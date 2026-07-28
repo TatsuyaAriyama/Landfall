@@ -42,8 +42,6 @@ export const TILE_SYMBOLS = [
   "pen",
   "sailboat",
   "attire",
-  "headphones",
-  "cupcake",
 ] as const;
 export type TileSymbolToken = (typeof TILE_SYMBOLS)[number];
 

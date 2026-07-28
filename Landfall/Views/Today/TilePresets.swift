@@ -326,8 +326,6 @@ enum TileSymbol: String, CaseIterable, Identifiable {
     case pen         // 書く
     case sailboat    // 帆船(港)
     case attire      // 旗(装い)
-    case headphones  // 聴く・集中
-    case cupcake     // 菓子・ごほうび
 
     var id: String { rawValue }
 
@@ -379,10 +377,6 @@ struct TileSymbolView: View {
                 SailboatShape().fill(fg)
             case .attire:
                 AttireShape().fill(fg)
-            case .headphones:
-                HeadphonesSymbol(fg: fg)
-            case .cupcake:
-                CupcakeSymbol(fg: fg, bg: bg)
             case .pen:
                 ZStack {
                     Capsule(style: .continuous)
@@ -399,134 +393,6 @@ struct TileSymbolView: View {
             }
         }
         .aspectRatio(1, contentMode: .fit)
-    }
-}
-
-/// ヘッドホン。支給図案のアーチと左右のイヤーカップを、200x200の単色記号へ整理。
-struct HeadphonesSymbol: View {
-    let fg: Color
-
-    var body: some View {
-        GeometryReader { geo in
-            let s = min(geo.size.width, geo.size.height)
-            let k = s / 200
-            ZStack(alignment: .topLeading) {
-                HeadphonesBandShape()
-                    .stroke(
-                        fg,
-                        style: StrokeStyle(
-                            lineWidth: 22 * k,
-                            lineCap: .round,
-                            lineJoin: .round
-                        )
-                    )
-                RoundedRectangle(cornerRadius: 21 * k, style: .continuous)
-                    .fill(fg)
-                    .frame(width: 48 * k, height: 76 * k)
-                    .offset(x: 31 * k, y: 105 * k)
-                RoundedRectangle(cornerRadius: 21 * k, style: .continuous)
-                    .fill(fg)
-                    .frame(width: 48 * k, height: 76 * k)
-                    .offset(x: 121 * k, y: 105 * k)
-            }
-            .frame(width: s, height: s, alignment: .topLeading)
-        }
-        .aspectRatio(1, contentMode: .fit)
-    }
-}
-
-struct HeadphonesBandShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: rect.minX + x / 200 * rect.width, y: rect.minY + y / 200 * rect.height)
-        }
-        var p = Path()
-        p.move(to: pt(48, 118))
-        p.addCurve(to: pt(100, 34), control1: pt(42, 71), control2: pt(65, 34))
-        p.addCurve(to: pt(152, 118), control1: pt(135, 34), control2: pt(158, 71))
-        return p
-    }
-}
-
-/// カップケーキ。クリームと包み紙をfg、折り目と中央の抜きをbgで描く。
-struct CupcakeSymbol: View {
-    let fg: Color
-    let bg: Color
-
-    var body: some View {
-        GeometryReader { geo in
-            let s = min(geo.size.width, geo.size.height)
-            let k = s / 200
-            ZStack(alignment: .topLeading) {
-                CupcakeWrapperShape().fill(fg)
-                CupcakeFrostingShape().fill(fg)
-                CupcakeStripeShape()
-                    .stroke(bg, style: StrokeStyle(lineWidth: 6 * k, lineCap: .round))
-                Circle()
-                    .fill(bg)
-                    .frame(width: 30 * k, height: 30 * k)
-                    .offset(x: 85 * k, y: 33 * k)
-                Circle()
-                    .fill(fg)
-                    .frame(width: 20 * k, height: 20 * k)
-                    .offset(x: 90 * k, y: 38 * k)
-            }
-            .frame(width: s, height: s, alignment: .topLeading)
-        }
-        .aspectRatio(1, contentMode: .fit)
-    }
-}
-
-struct CupcakeWrapperShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: rect.minX + x / 200 * rect.width, y: rect.minY + y / 200 * rect.height)
-        }
-        var p = Path()
-        p.move(to: pt(62, 108))
-        p.addLine(to: pt(68, 158))
-        p.addQuadCurve(to: pt(100, 184), control: pt(75, 184))
-        p.addQuadCurve(to: pt(132, 158), control: pt(125, 184))
-        p.addLine(to: pt(138, 108))
-        p.closeSubpath()
-        return p
-    }
-}
-
-struct CupcakeFrostingShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: rect.minX + x / 200 * rect.width, y: rect.minY + y / 200 * rect.height)
-        }
-        var p = Path()
-        p.move(to: pt(38, 105))
-        p.addQuadCurve(to: pt(53, 68), control: pt(38, 88))
-        p.addLine(to: pt(78, 40))
-        p.addQuadCurve(to: pt(91, 42), control: pt(84, 33))
-        p.addLine(to: pt(97, 51))
-        p.addQuadCurve(to: pt(103, 51), control: pt(100, 57))
-        p.addLine(to: pt(109, 42))
-        p.addQuadCurve(to: pt(122, 40), control: pt(116, 33))
-        p.addLine(to: pt(143, 68))
-        p.addQuadCurve(to: pt(162, 105), control: pt(162, 88))
-        p.addQuadCurve(to: pt(100, 120), control: pt(162, 119))
-        p.addQuadCurve(to: pt(38, 105), control: pt(38, 119))
-        p.closeSubpath()
-        return p
-    }
-}
-
-struct CupcakeStripeShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        func pt(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
-            CGPoint(x: rect.minX + x / 200 * rect.width, y: rect.minY + y / 200 * rect.height)
-        }
-        var p = Path()
-        p.move(to: pt(45, 114)); p.addQuadCurve(to: pt(155, 114), control: pt(100, 124))
-        p.move(to: pt(78, 123)); p.addLine(to: pt(74, 159))
-        p.move(to: pt(100, 123)); p.addLine(to: pt(100, 171))
-        p.move(to: pt(122, 123)); p.addLine(to: pt(126, 159))
-        return p
     }
 }
 
