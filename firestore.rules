@@ -50,7 +50,7 @@ service cloud.firestore {
           && data.keys().hasOnly(['name', 'styleToken', 'symbolToken', 'sortOrder', 'createdAt', 'updatedAt'])
           && data.name is string && data.name.size() >= 1 && data.name.size() <= 60
           && validItemStyle(data.styleToken)
-          && data.symbolToken in ['anchor', 'compass', 'wheel', 'lighthouse', 'island', 'phoenix', 'book', 'pen', 'sailboat', 'attire']
+          && data.symbolToken in ['anchor', 'compass', 'wheel', 'lighthouse', 'island', 'phoenix', 'book', 'pen', 'sailboat', 'attire', 'headphones', 'cupcake']
           && data.sortOrder is int
           && data.sortOrder >= -100000 && data.sortOrder <= 100000
           && data.createdAt is timestamp

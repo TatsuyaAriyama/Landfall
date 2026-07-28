@@ -24,7 +24,7 @@ docID = 項目の UUID 文字列(大文字ハイフン形式。Web で新規作�
 |---|---|---|
 | `name` | string | 項目名。表示上限60文字 |
 | `styleToken` | string | `midnight / coral / ink / seaGreen / violet / sunYellow`(項目タイルはこの6色のみ) |
-| `symbolToken` | string | `anchor / compass / wheel / lighthouse / island / phoenix / book / pen`(旧: `wave→anchor, comet→compass, sun→lighthouse` に読み替え) |
+| `symbolToken` | string | `anchor / compass / wheel / lighthouse / island / phoenix / book / pen / sailboat / attire / headphones / cupcake`(旧: `wave→anchor, comet→compass, sun→lighthouse` に読み替え) |
 | `sortOrder` | number(int) | グリッドの並び順 |
 | `createdAt` | timestamp | |
 | `updatedAt` | timestamp? | LWW。v1.0 の書類には無い場合がある |

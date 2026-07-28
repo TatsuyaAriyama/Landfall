@@ -150,6 +150,48 @@ export function TileSymbolSvg({
           <path d="M 63 34 L 150 44 L 118 63 L 150 82 L 63 92 Z" fill={fg} />
         </svg>
       );
+    case "headphones":
+      // 支給されたヘッドホン図案を、他のシンボルと同じ単色シルエットへ整理。
+      return (
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <path
+            d="M 48 118 C 42 71 65 34 100 34 C 135 34 158 71 152 118"
+            fill="none"
+            stroke={fg}
+            strokeWidth="22"
+            strokeLinecap="round"
+          />
+          <rect x="31" y="105" width="48" height="76" rx="21" fill={fg} />
+          <rect x="121" y="105" width="48" height="76" rx="21" fill={fg} />
+        </svg>
+      );
+    case "cupcake":
+      // クリーム、包み紙、中央の飾りを二色だけで読めるようにした図案。
+      return (
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <path
+            d="M 62 108 L 68 158 Q 75 184 100 184 Q 125 184 132 158
+               L 138 108 Z"
+            fill={fg}
+          />
+          <path
+            d="M 38 105 Q 38 88 53 68 L 78 40 Q 84 33 91 42 L 97 51
+               Q 100 57 103 51 L 109 42 Q 116 33 122 40 L 143 68
+               Q 162 88 162 105 Q 162 119 100 120 Q 38 119 38 105 Z"
+            fill={fg}
+          />
+          <path
+            d="M 45 114 Q 100 124 155 114 M 78 123 L 74 159
+               M 100 123 L 100 171 M 122 123 L 126 159"
+            fill="none"
+            stroke={bg}
+            strokeWidth="6"
+            strokeLinecap="round"
+          />
+          <circle cx="100" cy="48" r="15" fill={bg} />
+          <circle cx="100" cy="48" r="10" fill={fg} />
+        </svg>
+      );
   }
 }
 
