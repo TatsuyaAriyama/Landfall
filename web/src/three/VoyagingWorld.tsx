@@ -21,7 +21,7 @@ import {
 import { clockLabel, elapsedSec, isOnBreak, pomoPhase, type RunningTimer } from "../timer";
 import { durationLabel, t } from "../i18n";
 import { useBackToClose } from "../backClose";
-import { lockBodyScroll } from "../scrollLock";
+import { useBodyScrollLock } from "../scrollLock";
 import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 import { itemStyleColors, normalizeSymbol } from "../types";
 import { TileSymbolSvg } from "../symbols";
@@ -313,6 +313,7 @@ export default function VoyagingWorld({
   // 明示ボタンと同じくホームへ戻す。
   const closeAction = completion ? onHome : onMinimize;
   useBackToClose(true, closeAction);
+  useBodyScrollLock();
 
   // Escは「閉じるだけ」(計測は続ける)。取り消しと混同させない。
   useEffect(() => {
@@ -320,10 +321,8 @@ export default function VoyagingWorld({
       if (e.key === "Escape") closeAction();
     };
     window.addEventListener("keydown", onKey);
-    const unlockScroll = lockBodyScroll();
     return () => {
       window.removeEventListener("keydown", onKey);
-      unlockScroll();
     };
   }, [closeAction]);
 

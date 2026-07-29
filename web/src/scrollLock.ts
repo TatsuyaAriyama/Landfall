@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 // 全画面表示とモーダルが重なっても、最後の一枚が閉じるまでは背景を固定し、
 // すべて閉じた時だけ元のスクロール状態へ戻す。
 //
@@ -28,4 +30,19 @@ export function lockBodyScroll(): () => void {
       originalOverflow = "";
     }
   };
+}
+
+/**
+ * 表示している間だけ背景を固定する。
+ *
+ * Escなど別の副作用と同じuseEffectへ混ぜると、その依存値が変わるたびに
+ * overflowを解除→再設定してしまう。iOS Safariはこの短い切り替えでも
+ * スクロール対象を見失うことがあるため、固定の寿命はコンポーネントの
+ * マウント期間だけに揃える。
+ */
+export function useBodyScrollLock(enabled = true): void {
+  useEffect(() => {
+    if (!enabled) return;
+    return lockBodyScroll();
+  }, [enabled]);
 }

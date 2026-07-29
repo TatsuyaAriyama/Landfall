@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   TILE_STYLES,
   TILE_SYMBOLS,
@@ -21,6 +21,7 @@ import { publishCurrentMonth } from "../harbor";
 import { TileSymbolSvg } from "../symbols";
 import { DialogHeader, Modal, askConfirm, showToast } from "../overlays";
 import { lang, t } from "../i18n";
+import { useScrollFriendlyPointerDrag } from "../pointerDrag";
 
 const LEGACY_SEA_POSITIONS: Record<string, FreeColorSelection> = {
   midnight: { hue: 258, saturation: 0.65, value: 0.19 },
@@ -83,7 +84,6 @@ export function ItemEditor({
   const [seaColor, setSeaColor] = useState<FreeColorSelection>(
     seaPositionFromToken(initialStyleToken),
   );
-  const activeColorPointer = useRef<number | null>(null);
   const [symbolToken, setSymbolToken] = useState(normalizeSymbol(item?.symbolToken ?? "compass"));
   const [working, setWorking] = useState(false);
   const orderedItems = [...data.items].sort(
@@ -191,11 +191,7 @@ export function ItemEditor({
     setStyleToken(freeColorToken(normalized));
   };
 
-  const moveOnSeaChart = (
-    event: ReactPointerEvent<HTMLDivElement>,
-    allowIdle = false,
-  ) => {
-    if (!allowIdle && activeColorPointer.current !== event.pointerId) return;
+  const moveOnSeaChart = (event: ReactPointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     const radius = Math.min(rect.width, rect.height) / 2;
     const x = event.clientX - (rect.left + rect.width / 2);
@@ -205,13 +201,10 @@ export function ItemEditor({
     applySeaColor({ ...seaColor, hue, saturation: distance / radius });
   };
 
-  const releaseColorPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (activeColorPointer.current !== event.pointerId) return;
-    activeColorPointer.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  };
+  const colorDrag = useScrollFriendlyPointerDrag<HTMLDivElement>({
+    handleSelector: ".color-sea-boat",
+    onChange: moveOnSeaChart,
+  });
 
   return (
     <Modal onClose={onClose}>
@@ -281,15 +274,7 @@ export function ItemEditor({
             tabIndex={0}
             aria-label={lang === "ja" ? "色の海図" : "Color chart"}
             aria-valuetext={`${Math.round(seaColor.hue)}°, ${Math.round(seaColor.saturation * 100)}%`}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              activeColorPointer.current = event.pointerId;
-              event.currentTarget.setPointerCapture(event.pointerId);
-              moveOnSeaChart(event, true);
-            }}
-            onPointerMove={(event) => moveOnSeaChart(event)}
-            onPointerUp={releaseColorPointer}
-            onPointerCancel={releaseColorPointer}
+            {...colorDrag}
             onKeyDown={(event) => {
               const hueStep = event.shiftKey ? 15 : 3;
               if (event.key === "ArrowLeft") {

@@ -38,7 +38,7 @@ import { newUUID } from "../types";
 import { askConfirm, showToast } from "../overlays";
 import { t } from "../i18n";
 import { useBackToClose } from "../backClose";
-import { lockBodyScroll } from "../scrollLock";
+import { useBodyScrollLock } from "../scrollLock";
 import { TAP_SLOP } from "./voyageConstants";
 import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 
@@ -660,16 +660,15 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
   // Escで閉じる+表示中は背景スクロールを固定(Modalと同じ作法)。
   // 端末の「戻る」でも閉じられるように(Androidでアプリが終了してしまうのを防ぐ)。
   useBackToClose(true, requestClose);
+  useBodyScrollLock();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") requestClose();
     };
     window.addEventListener("keydown", onKey);
-    const unlockScroll = lockBodyScroll();
     return () => {
       window.removeEventListener("keydown", onKey);
-      unlockScroll();
     };
   }, [requestClose]);
 

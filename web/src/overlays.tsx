@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { t } from "./i18n";
 import { useBackToClose } from "./backClose";
-import { lockBodyScroll } from "./scrollLock";
+import { useBodyScrollLock } from "./scrollLock";
 
 // ダイアログとトーストの共通基盤。
 // - Modal: Esc で閉じる+表示中は背景スクロールを固定
@@ -12,6 +12,7 @@ export function Modal({ onClose, children }: { onClose: () => void; children: Re
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  useBodyScrollLock();
   // Androidの戻る・ブラウザの戻るは、アプリを離れるのではなく最前面の
   // ダイアログを一つだけ閉じる。確認ダイアログが重なっていてもスタック順に戻る。
   useBackToClose(true, onClose);
@@ -40,7 +41,6 @@ export function Modal({ onClose, children }: { onClose: () => void; children: Re
       }
     };
     window.addEventListener("keydown", onKey);
-    const unlockScroll = lockBodyScroll();
     requestAnimationFrame(() => {
       const autofocus = dialogRef.current?.querySelector<HTMLElement>("[autofocus]");
       const first = dialogRef.current?.querySelector<HTMLElement>(focusableSelector);
@@ -48,7 +48,6 @@ export function Modal({ onClose, children }: { onClose: () => void; children: Re
     });
     return () => {
       window.removeEventListener("keydown", onKey);
-      unlockScroll();
       previouslyFocused?.focus();
     };
   }, []);

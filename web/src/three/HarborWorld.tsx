@@ -52,7 +52,7 @@ import {
   saveNavigatorInventory,
   type NavigatorInventory,
 } from "../inventory";
-import { lockBodyScroll } from "../scrollLock";
+import { useBodyScrollLock } from "../scrollLock";
 import {
   HARBOR_CONTROL_SETTINGS_EVENT,
   loadHarborControlSettings,
@@ -2779,7 +2779,11 @@ export default function HarborWorld({
     }
   }, []);
 
-  // 没入中は Esc で出る+背景スクロールを固定(Modalと同じ作法)。
+  // 没入中は背景スクロールを固定する。Escの状態更新とは寿命を分け、
+  // iOS Safariでoverflowを再描画のたびに切り替えない。
+  useBodyScrollLock(immersive);
+
+  // 没入中は Esc で出る(背景固定は上の専用Hookが受け持つ)。
   useEffect(() => {
     if (!immersive) return;
     const onKey = (e: KeyboardEvent) => {
@@ -2791,10 +2795,8 @@ export default function HarborWorld({
       else requestClose();
     };
     window.addEventListener("keydown", onKey);
-    const unlockScroll = lockBodyScroll();
     return () => {
       window.removeEventListener("keydown", onKey);
-      unlockScroll();
     };
   }, [
     aboard,

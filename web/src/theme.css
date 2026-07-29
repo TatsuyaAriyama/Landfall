@@ -1270,7 +1270,9 @@ textarea {
   aspect-ratio: 1;
   border-radius: 50%;
   overflow: hidden;
-  touch-action: none;
+  /* 海図の大半は縦スクロールへ譲る。小舟そのものを掴んだ時だけ
+     2方向ドラッグに切り替える(pointerDrag.ts)。 */
+  touch-action: pan-y;
   cursor: grab;
   outline: none;
   background:
@@ -1378,7 +1380,8 @@ textarea {
   height: 52px;
   transform: translate(-50%, -50%);
   filter: drop-shadow(0 3px 2px rgb(24 20 14 / 0.34));
-  pointer-events: none;
+  pointer-events: auto;
+  touch-action: none;
 }
 
 .color-skiff {
@@ -1779,7 +1782,9 @@ textarea {
     linear-gradient(#173f47 0 44%, #174a4d 45% 47%, #0d3438 48% 100%);
   box-shadow: inset 0 0 42px rgba(5, 26, 29, 0.35);
   cursor: crosshair;
-  touch-action: none;
+  /* 背景からの縦スワイプは設定ダイアログを送る。スティックを掴んだ時だけ
+     2方向ドラッグに切り替える(pointerDrag.ts)。 */
+  touch-action: pan-y;
   user-select: none;
 }
 
@@ -1803,7 +1808,8 @@ textarea {
   border-radius: 50%;
   background: rgba(13, 42, 36, 0.76);
   box-shadow: 0 10px 24px rgba(3, 16, 13, 0.32);
-  pointer-events: none;
+  pointer-events: auto;
+  touch-action: none;
 }
 
 .harbor-control-editor-stick > span {

@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useState, type PointerEvent as ReactPointerEvent } from "react";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 import { deleteEverything } from "../harbor";
@@ -17,10 +17,10 @@ import {
   saveHarborControlSettings,
   type HarborControlSettings,
 } from "../harborControls";
+import { useScrollFriendlyPointerDrag } from "../pointerDrag";
 
 function HarborControlEditor({ onBack }: { onBack: () => void }) {
   const [settings, setSettings] = useState(loadHarborControlSettings);
-  const activePointer = useRef<number | null>(null);
 
   const update = (next: HarborControlSettings) => {
     const saved = saveHarborControlSettings(next);
@@ -36,13 +36,10 @@ function HarborControlEditor({ onBack }: { onBack: () => void }) {
     });
   };
 
-  const release = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (activePointer.current !== event.pointerId) return;
-    activePointer.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  };
+  const placementDrag = useScrollFriendlyPointerDrag<HTMLDivElement>({
+    handleSelector: ".harbor-control-editor-stick",
+    onChange: moveControl,
+  });
 
   const previewSize = 34 + ((settings.size - HARBOR_CONTROL_SIZE_MIN) / (
     HARBOR_CONTROL_SIZE_MAX - HARBOR_CONTROL_SIZE_MIN
@@ -57,19 +54,7 @@ function HarborControlEditor({ onBack }: { onBack: () => void }) {
           className="harbor-control-editor-preview"
           role="application"
           aria-label={t("harborControlsPlacement")}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            activePointer.current = event.pointerId;
-            event.currentTarget.setPointerCapture(event.pointerId);
-            moveControl(event);
-          }}
-          onPointerMove={(event) => {
-            if (activePointer.current !== event.pointerId) return;
-            event.preventDefault();
-            moveControl(event);
-          }}
-          onPointerUp={release}
-          onPointerCancel={release}
+          {...placementDrag}
         >
           <div className="harbor-control-editor-horizon" aria-hidden="true" />
           <div
