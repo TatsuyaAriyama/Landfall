@@ -7,21 +7,19 @@ import BoatModel from "../three/BoatModel";
 import PhoenixModel, { type PhoenixPose } from "../three/PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "../three/SeaParts";
 import {
-  BOAT_OPTIONS,
-  boatPartId,
+  SAIL_COLORS,
   boatProps,
-  isBoatOptionUnlocked,
   navigatorHood,
   navigatorPose,
-  setBoatPart,
+  sailColorId,
   setNavigatorHood,
   setNavigatorPose,
-  totalMinutes,
-  type BoatPart,
+  setSailColor,
   type NavigatorHood,
+  type SailColorId,
 } from "../boat";
 import { pushProfileEverywhere } from "../harbor";
-import { lang, t, unlockAtLabel, type I18nKey } from "../i18n";
+import { t, type I18nKey } from "../i18n";
 
 // 船スタジオ。夜の海に浮かぶ自分の船を、three.jsで360度眺めながら着せ替える。
 // 船体・海・月・波紋の3D部品は src/three/ に共有化してある(VoyageSceneと同じ世界)。
@@ -135,7 +133,7 @@ const POSES: [PhoenixPose, I18nKey][] = [
 
 /// 装いタブ。上が3Dステージ、下がカスタマイズ。
 /// 「船」と「航海士」を切り替えて、それぞれを360度眺められる。
-export default function BoatStudio({ data }: { data: UserData }) {
+export default function BoatStudio(_: { data: UserData }) {
   const [, setTick] = useState(0);
   const [mode, setMode] = useState<"boat" | "sailor">("boat");
   // 選んだ仕草はローカルに保存され、次にこのタブを開いたときも続きから眺められる。
@@ -154,15 +152,12 @@ export default function BoatStudio({ data }: { data: UserData }) {
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
-  const total = totalMinutes(data.sessions);
-  const totalLabel =
-    lang === "ja" ? `${Math.floor(total / 60)}時間` : `${Math.floor(total / 60)}h`;
   const parts = boatProps();
 
-  // 部位を選んだら、参加中の港の「みんなの海」へも即反映する
+  // 帆色を選んだら、参加中の港の「みんなの海」へも即反映する
   // (fire-and-forget。オフラインや未サインインの失敗は握りつぶす)。
-  const choose = (part: BoatPart, id: string) => {
-    setBoatPart(part, id);
+  const chooseSail = (id: SailColorId) => {
+    setSailColor(id);
     setTick((n) => n + 1);
     void pushProfileEverywhere().catch(() => {});
   };
@@ -236,70 +231,30 @@ export default function BoatStudio({ data }: { data: UserData }) {
         </div>
       ) : null}
       {mode === "sailor" ? null : (
-        <>
-          <p className="boat-studio-total">
-            {t("totalVoyage")}: {totalLabel}
+        <div>
+          <p className="row-sub" style={{ margin: "14px 0 8px" }}>
+            {t("sailColor")}
           </p>
-          {(
-        [
-          ["sail", "sailColor"],
-          ["jib", "jibLabel"],
-          ["hull", "hullLabel"],
-          ["stripe", "stripeLabel"],
-          ["flag", "flagLabel"],
-        ] as [BoatPart, I18nKey][]
-      ).map(([part, labelKey]) => (
-        <div key={part}>
-          <p className="row-sub" style={{ margin: "14px 0 6px" }}>
-            {t(labelKey)}
-          </p>
-          <div className="chip-row">
-            {BOAT_OPTIONS[part].map((o) => {
-              // 戦利品は累計時間ではなく「共同航海の到着」で解放される。
-              const locked = !isBoatOptionUnlocked(o, total);
-              const lockLabel = o.lootKey
-                ? t("lootLock")
-                : unlockAtLabel(o.unlockMinutes / 60);
-              const selected = boatPartId(part) === o.id;
-              if (o.color) {
-                return (
-                  <button
-                    key={o.id}
-                    className={`swatch${selected ? " selected" : ""}`}
-                    style={{ background: o.color, opacity: locked ? 0.3 : 1 }}
-                    disabled={locked}
-                    title={locked ? lockLabel : o.id}
-                    onClick={() => choose(part, o.id)}
-                    aria-label={locked ? `${o.id} · ${lockLabel}` : o.id}
-                  />
-                );
-              }
-              const label = t(
-                (o.id === "none"
-                  ? "flagNone"
-                  : o.id === "pennant"
-                    ? "flagPennant"
-                    : o.id === "swallow"
-                      ? "flagSwallow"
-                      : "flagKraken") as I18nKey,
-              );
+          <div className="sail-color-grid">
+            {SAIL_COLORS.map((option) => {
+              const selected = sailColorId() === option.id;
+              const label = t(option.labelKey);
               return (
                 <button
-                  key={o.id}
-                  className={`chip${selected ? " selected" : ""}`}
-                  disabled={locked}
-                  style={locked ? { opacity: 0.4 } : undefined}
-                  onClick={() => choose(part, o.id)}
+                  key={option.id}
+                  className={`sail-color-option${selected ? " selected" : ""}`}
+                  onClick={() => chooseSail(option.id)}
+                  aria-label={label}
+                  aria-pressed={selected}
+                  title={label}
                 >
-                  {label}
-                  {locked ? ` · ${lockLabel}` : ""}
+                  <span className="sail-color-swatch" style={{ background: option.color }} />
+                  <span>{label}</span>
                 </button>
               );
             })}
           </div>
         </div>
-          ))}
-        </>
       )}
     </div>
   );

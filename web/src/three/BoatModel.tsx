@@ -7,6 +7,8 @@ import type { BoatParts } from "../symbols";
 // 低ポリ+flatShadingのフラットな質感で、2DのBoatSvgと同じ配色契約(boatProps)に従う。
 
 const WOOD = "#5A2A15";
+export const NAVIGATOR_DECK_POSITION: [number, number, number] = [0.74, 0.68, 0.18];
+export const NAVIGATOR_DECK_SCALE = 0.62;
 
 /// 舳先の上がった三日月型の船体。側面プロフィールを押し出し、
 /// 端に向かって幅を絞って(plan view も船形に)低ポリの丸みはベベルで作る。

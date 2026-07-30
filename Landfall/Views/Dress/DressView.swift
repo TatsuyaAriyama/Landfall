@@ -1,10 +1,7 @@
 import SwiftUI
-import SwiftData
 
-/// 装い。夜の海に浮かぶ自分の船を3Dで眺めながら、帆・ジブ・船体・ライン・旗を着せ替える。
-/// 選択肢は累計時間(または共同航海の戦利品)で解放される(Web BoatStudio 完全移植)。
+/// 装い。船は帆色だけを選び、航海士は仕草を切り替えて眺める。
 struct DressView: View {
-    @Query private var sessions: [StudySession]
     /// 選ぶたびに +1 して、3Dの色と選択枠を更新する。
     @State private var version = 0
     @State private var mode: Mode = Self.initialMode
@@ -22,19 +19,14 @@ struct DressView: View {
 
     private static var initialMode: Mode {
         #if DEBUG
-        // 全部位が乗った船を検証するためのデモ選択(タップ検証が塞がれているため)。
+        // 色選択を検証するためのデモ選択。
         if ProcessInfo.processInfo.environment["LANDFALL_DEMO_BOAT"] != nil {
-            BoatCustomization.select(.jib, "seaGreen")
-            BoatCustomization.select(.hull, "coral")
-            BoatCustomization.select(.stripe, "returnOrange")
-            BoatCustomization.select(.flag, "kraken")
+            BoatCustomization.selectSail("coral")
         }
         if ProcessInfo.processInfo.environment["LANDFALL_DRESS_NAV"] != nil { return .navigator }
         #endif
         return .boat
     }
-
-    private var totalMinutes: Int { totalStudyMinutes(sessions) }
 
     var body: some View {
         NavigationStack {
@@ -89,15 +81,7 @@ struct DressView: View {
                         }
 
                         if mode == .boat {
-                            Text("Voyage so far: \(LF.duration(minutes: totalMinutes))")
-                                .font(LFFont.copy(15))
-                                .foregroundStyle(LFColor.ink.opacity(0.7))
-                                .padding(.horizontal, 24)
-                                .padding(.top, 4)
-
-                            ForEach(BoatPart.allCases) { part in
-                                partSection(part)
-                            }
+                            sailColorSection
                         }
                     }
                     .padding(.bottom, 40)
@@ -138,83 +122,60 @@ struct DressView: View {
         .buttonStyle(.plain)
     }
 
-    private func partSection(_ part: BoatPart) -> some View {
+    private var sailColorSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(part.title)
+            Text("Sail color")
                 .font(LFFont.label(13))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
-                .padding(.horizontal, 24)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(part.options) { option in
-                        optionButton(part, option)
-                    }
+
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
+                spacing: 10
+            ) {
+                ForEach(BoatCustomization.sailColors) { option in
+                    sailColorButton(option)
                 }
-                .padding(.horizontal, 24)
             }
         }
+        .padding(.horizontal, 24)
         .padding(.top, 20)
     }
 
-    /// 色を持つ選択肢は丸スウォッチ、色を持たない(なし・旗)ものはテキストチップ。
-    @ViewBuilder
-    private func optionButton(_ part: BoatPart, _ option: BoatOption) -> some View {
-        let unlocked = option.isUnlocked(totalMinutes: totalMinutes)
-        let selected = BoatCustomization.selectedID(part) == option.id
-        if let color = option.color {
-            Button { choose(part, option, unlocked) } label: {
+    private func sailColorButton(_ option: SailColorOption) -> some View {
+        let selected = BoatCustomization.selectedSailID == option.id
+        return Button {
+            BoatCustomization.selectSail(option.id)
+            version += 1
+            Haptics.tap(.light)
+            RoomService.shared.pushProfileToAllRooms()
+            PublicHarborService.shared.pushProfile()
+        } label: {
+            VStack(spacing: 6) {
                 Circle()
-                    .fill(color)
-                    .frame(width: 44, height: 44)
-                    .opacity(unlocked ? 1 : 0.3)
+                    .fill(option.color)
+                    .frame(width: 40, height: 40)
                     .overlay(Circle().strokeBorder(LFColor.returnOrange, lineWidth: selected ? 3 : 0))
-                    .overlay { if !unlocked { lockGlyph } }
+
+                Text(option.title)
+                    .font(LFFont.label(11))
+                    .foregroundStyle(LFColor.ink.opacity(selected ? 0.9 : 0.58))
+                    .lineLimit(1)
             }
-            .buttonStyle(.plain)
-            .disabled(!unlocked)
-            .accessibilityLabel(Text(option.id))
-        } else {
-            Button { choose(part, option, unlocked) } label: {
-                HStack(spacing: 5) {
-                    Text(optionLabel(option.id))
-                    if !unlocked { Image(systemName: "lock.fill").font(.system(size: 10)) }
-                }
-                .font(LFFont.copy(14))
-                .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
-                .opacity(unlocked ? 1 : 0.4)
-                .padding(.horizontal, 14).frame(height: 44)
-                .background(Capsule().fill(selected ? LFColor.ink : Color.clear))
-                .overlay(Capsule().strokeBorder(LFColor.ink.opacity(selected ? 0 : 0.2), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .disabled(!unlocked)
+            .frame(maxWidth: .infinity, minHeight: 68)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(selected ? LFColor.returnOrange.opacity(0.07) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(
+                        selected ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
+                        lineWidth: 1
+                    )
+            )
         }
-    }
-
-    private var lockGlyph: some View {
-        Image(systemName: "lock.fill")
-            .font(.system(size: 12))
-            .foregroundStyle(LFColor.inkFixed.opacity(0.5))
-    }
-
-    private func choose(_ part: BoatPart, _ option: BoatOption, _ unlocked: Bool) {
-        guard unlocked else { return }
-        BoatCustomization.select(part, option.id)
-        Haptics.tap(.light)
-        version += 1
-        // 参加中の港(プライベート/パブリック)の「みんなの海」へも反映(fire-and-forget)。
-        RoomService.shared.pushProfileToAllRooms()
-        PublicHarborService.shared.pushProfile()
-    }
-
-    /// 色を持たない選択肢の表示名(なし・旗の種類)。
-    private func optionLabel(_ id: String) -> LocalizedStringKey {
-        switch id {
-        case "none": return "None"
-        case "pennant": return "Pennant"
-        case "swallow": return "Swallow"
-        case "kraken": return "Kraken"
-        default: return LocalizedStringKey(id)
-        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(option.title))
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

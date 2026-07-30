@@ -327,6 +327,11 @@
 "Drag to look around." = "ドラッグで一周できます。";
 "Voyage so far: %@" = "これまでの航海: %@";
 "Sail color" = "帆の色";
+"Sand" = "砂";
+"Sunlight" = "陽光";
+"Sea green" = "海緑";
+"Twilight" = "薄暮";
+"Horizon" = "水平線";
 "Hull" = "船体";
 "Your navigator" = "あなたの航海士";
 "Idle" = "待機";
