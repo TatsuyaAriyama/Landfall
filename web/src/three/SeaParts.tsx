@@ -10,6 +10,7 @@ export const SEA_COLOR = "#1E5348";
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
 const MOON_GEO = new THREE.SphereGeometry(1.1, 20, 14);
+const SUN_GEO = new THREE.SphereGeometry(0.72, 20, 14);
 const SEA_GEO = new THREE.CircleGeometry(30, 48);
 const RIPPLE_GEO = new THREE.RingGeometry(0.9, 1.0, 48);
 
@@ -23,6 +24,21 @@ export function Moon({ position }: { position: [number, number, number] }) {
         emissiveIntensity={0.95}
         fog={false}
       />
+    </mesh>
+  );
+}
+
+/// 昼の太陽。月と同じく遠景の単色球として、霧の影響を受けずに置く。
+export function Sun({
+  position,
+  color = "#FFF0B8",
+}: {
+  position: [number, number, number];
+  color?: string;
+}) {
+  return (
+    <mesh geometry={SUN_GEO} position={position}>
+      <meshBasicMaterial color={color} fog={false} />
     </mesh>
   );
 }
@@ -46,6 +62,7 @@ const SEA_FRAG = /* glsl */ `
   uniform vec3 uDeep;
   uniform vec3 uMoon;
   uniform float uMoonX;
+  uniform float uReflection;
   uniform float uTime;
   varying vec2 vPos;
   void main() {
@@ -63,7 +80,7 @@ const SEA_FRAG = /* glsl */ `
     // さざ波で反射を分断する、ゆっくりした揺らぎ。
     float shimmer = 0.55 + 0.45 * sin(vPos.y * 1.1 - uTime * 1.4)
                                 * sin(vPos.x * 0.9 + uTime * 0.7);
-    float streak = clamp(band * along * shimmer, 0.0, 1.0) * 0.5;
+    float streak = clamp(band * along * shimmer, 0.0, 1.0) * uReflection;
     col = mix(col, uMoon, streak);
     gl_FragColor = vec4(col, 1.0);
   }
@@ -71,21 +88,36 @@ const SEA_FRAG = /* glsl */ `
 
 /// 海。大きな円盤に、放射グラデーションと月光の筋(月の真下に立つ揺らぐ光)。
 /// moonX にそのシーンの月のX座標を渡すと、反射がその真下に立つ。
-export function Sea({ moonX = 0, animate = true }: { moonX?: number; animate?: boolean }) {
+export function Sea({
+  moonX = 0,
+  animate = true,
+  seaColor = SEA_COLOR,
+  deepColor = SEA_DEEP,
+  lightColor = SEA_MOON,
+  reflection = 0.5,
+}: {
+  moonX?: number;
+  animate?: boolean;
+  seaColor?: string;
+  deepColor?: string;
+  lightColor?: string;
+  reflection?: number;
+}) {
   const mat = useMemo(
     () =>
       new THREE.ShaderMaterial({
         vertexShader: SEA_VERT,
         fragmentShader: SEA_FRAG,
         uniforms: {
-          uSea: { value: new THREE.Color(SEA_COLOR) },
-          uDeep: { value: new THREE.Color(SEA_DEEP) },
-          uMoon: { value: new THREE.Color(SEA_MOON) },
+          uSea: { value: new THREE.Color(seaColor) },
+          uDeep: { value: new THREE.Color(deepColor) },
+          uMoon: { value: new THREE.Color(lightColor) },
           uMoonX: { value: moonX },
+          uReflection: { value: reflection },
           uTime: { value: 0 },
         },
       }),
-    [moonX],
+    [deepColor, lightColor, moonX, reflection, seaColor],
   );
   useEffect(() => () => mat.dispose(), [mat]);
 

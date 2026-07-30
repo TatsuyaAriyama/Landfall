@@ -2,10 +2,10 @@
 // 言語は設定(localStorage)→ブラウザ設定の順で決まる(ja 以外は英語)。
 
 const ja = {
-  appName: "Landfall",
-  wordmark: "Landfall-StudyLog",
+  appName: "Aftide",
+  wordmark: "Aftide",
   signInEnter: "サインインして、入港しましょう。",
-  signInSync: "記録は、複数の端末で同期されます。",
+  signInSync: "記録は複数の端末で同期されます。",
   signInWithGoogle: "Googleで続ける",
   signInWithApple: "Appleで続ける",
   signInNote: "アカウントは記録の同期にだけ使います。",
@@ -341,8 +341,8 @@ const ja = {
 export type I18nKey = keyof typeof ja;
 
 const en: Record<I18nKey, string> = {
-  appName: "Landfall",
-  wordmark: "Landfall-StudyLog",
+  appName: "Aftide",
+  wordmark: "Aftide",
   signInEnter: "Sign in to enter the harbor.",
   signInSync: "Your record syncs across your devices.",
   signInWithGoogle: "Continue with Google",
