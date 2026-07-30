@@ -93,7 +93,7 @@ export function SignInView({ redirectError }: { redirectError?: string | null })
           ? e.message.replace(/https?:\/\/\S+/g, "[url]").slice(0, 240)
           : "";
       if (code) {
-        console.error(`[Aftide auth] ${code}${detail ? `: ${detail}` : ""}`);
+        console.error(`[KeelMira auth] ${code}${detail ? `: ${detail}` : ""}`);
       }
       const message = messageForCode(code);
       if (message) setError(message);

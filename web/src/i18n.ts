@@ -2,8 +2,8 @@
 // 言語は設定(localStorage)→ブラウザ設定の順で決まる(ja 以外は英語)。
 
 const ja = {
-  appName: "Aftide",
-  wordmark: "Aftide",
+  appName: "KeelMira",
+  wordmark: "KeelMira",
   signInEnter: "サインインして、入港しましょう。",
   signInSync: "記録は複数の端末で同期されます。",
   signInWithGoogle: "Googleで続ける",
@@ -347,8 +347,8 @@ const ja = {
 export type I18nKey = keyof typeof ja;
 
 const en: Record<I18nKey, string> = {
-  appName: "Aftide",
-  wordmark: "Aftide",
+  appName: "KeelMira",
+  wordmark: "KeelMira",
   signInEnter: "Sign in to enter the harbor.",
   signInSync: "Your record syncs across your devices.",
   signInWithGoogle: "Continue with Google",
