@@ -1,0 +1,136 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "C90109F5",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_billingGracePeriodEnabled" : false,
+    "_billingIssuesEnabled" : false,
+    "_disableDialogs" : false,
+    "_failTransactionsEnabled" : false,
+    "_locale" : "ja",
+    "_renewalBillingIssuesEnabled" : false,
+    "_storefront" : "JPN",
+    "_storeKitErrors" : [
+
+    ],
+    "_timeRate" : 0
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "71BD0E43",
+      "localizations" : [
+
+      ],
+      "name" : "Voyage Pass",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "billingPlans" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "commitmentDisplayPrice" : "780",
+              "displayPrice" : "780",
+              "internalID" : "5BF35426",
+              "isEnabled" : true
+            }
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "780",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "0C2908B6",
+          "introductoryOffers" : [
+
+          ],
+          "localizations" : [
+            {
+              "description" : "最大4人のプライベート港をひらき、無料の仲間を招待できます。",
+              "displayName" : "航海証 月額",
+              "locale" : "ja"
+            },
+            {
+              "description" : "Open a private harbor for up to 4 sailors. Invited sailors join free.",
+              "displayName" : "Voyage Pass Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.tatsuyaariyama.keelmira.voyagepass.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Voyage Pass Monthly",
+          "subscriptionGroupID" : "71BD0E43",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "billingPlans" : [
+            {
+              "billingPlanType" : "BILLED_UPFRONT",
+              "commitmentDisplayPrice" : "7800",
+              "displayPrice" : "7800",
+              "internalID" : "B7CFE612",
+              "isEnabled" : true
+            }
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "7800",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "15D3A6D8",
+          "introductoryOffers" : [
+
+          ],
+          "localizations" : [
+            {
+              "description" : "最大4人のプライベート港をひらける、2か月分お得な年間航海証です。",
+              "displayName" : "航海証 年額",
+              "locale" : "ja"
+            },
+            {
+              "description" : "Open a private harbor for up to 4 sailors, with two months saved annually.",
+              "displayName" : "Voyage Pass Annual",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.tatsuyaariyama.keelmira.voyagepass.annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Voyage Pass Annual",
+          "subscriptionGroupID" : "71BD0E43",
+          "type" : "RecurringSubscription",
+          "winbackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 5,
+    "minor" : 0
+  }
+}

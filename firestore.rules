@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Landfall Firestore セキュリティルール。
+// KeelMira Firestore セキュリティルール。
 //
 // 方針:
 //  - users/{uid}/** … 本人だけが読み書きできる私的バックアップ。
@@ -18,9 +18,55 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // 開発者例外はFirebaseが検証したメールクレームに限定。
+    // クライアント内の文字列書き換えだけでは突破できない。
+    function isDeveloper() {
+      return request.auth != null
+        && request.auth.token.email == 'ari.initx@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function entitlementIsActive(userId, entitlementId) {
+      let entitlement = /databases/$(database)/documents/users/$(userId)/entitlements/$(entitlementId);
+      return exists(entitlement)
+        && get(entitlement).data.active == true
+        && get(entitlement).data.currentPeriodEnd is timestamp
+        && get(entitlement).data.currentPeriodEnd > request.time;
+    }
+
+    function hasVoyagePass() {
+      return isDeveloper()
+        || (
+          request.auth != null
+          && (
+            entitlementIsActive(request.auth.uid, 'voyagePass')
+            || entitlementIsActive(request.auth.uid, 'voyagePassAppStore')
+          )
+        );
+    }
+
     // ---- 私的バックアップ: 本人のみ ----
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+    // 航海証(entitlements)だけはStripe Webhook / App Store検証の管理SDK専用。
+    // 広い users/{uid}/** 許可を残すと、クライアントがactive=trueを書けてしまうため、
+    // 本人が編集できる既存コレクションを明示する。
+    match /users/{userId}/{collectionId}/{documentId} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == userId
+        && collectionId in ['items', 'sessions', 'days', 'destinations', 'blocks'];
+    }
+
+    match /users/{userId}/entitlements/{entitlementId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    // Stripe顧客IDとWebhook処理履歴は管理SDKだけが使用する。
+    match /billingCustomers/{userId} {
+      allow read, write: if false;
+    }
+
+    match /stripeEvents/{eventId} {
+      allow read, write: if false;
     }
 
     // ---- 港(ルーム) ----
@@ -32,15 +78,16 @@ service cloud.firestore {
       allow list: if request.auth != null
         && request.auth.uid in resource.data.memberIds;
 
-      // 作成: 自分だけをメンバーに入れて作る。ownerUid は作成者本人(以後不変・権限は無い)。
+      // 作成: 航海証(または確認済み開発者)だけ。参加には航海証を求めない。
       allow create: if request.auth != null
+        && hasVoyagePass()
         && request.resource.data.keys().hasOnly(['name', 'memberIds', 'createdAt', 'ownerUid'])
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 1
         && request.resource.data.name.size() <= 80
         && request.resource.data.memberIds == [request.auth.uid]
         && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.createdAt is timestamp;
+        && request.resource.data.createdAt == request.time;
 
       // 更新: 「自分だけを加える」または「自分だけを外す」に限定。
       // 港名・作成日時・他メンバーは一切改変できず、余計なフィールドも足せない
@@ -49,8 +96,13 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['name', 'memberIds', 'createdAt', 'ownerUid'])
         && request.resource.data.name == resource.data.name
         && request.resource.data.createdAt == resource.data.createdAt
-        && ( !('ownerUid' in resource.data)
-          || request.resource.data.ownerUid == resource.data.ownerUid )
+        && (
+          ( 'ownerUid' in resource.data
+            && request.resource.data.ownerUid == resource.data.ownerUid )
+          ||
+          ( !('ownerUid' in resource.data)
+            && !('ownerUid' in request.resource.data) )
+        )
         && request.resource.data.memberIds is list
         && ( addsOnlySelf() || removesOnlySelf() );
 
@@ -77,6 +129,55 @@ service cloud.firestore {
       function isMember() {
         return request.auth != null
           && request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.memberIds;
+      }
+
+      function isOwner() {
+        let room = get(/databases/$(database)/documents/rooms/$(roomId)).data;
+        return isMember()
+          && (
+            ( 'ownerUid' in room
+              && room.ownerUid in room.memberIds
+              && room.ownerUid == request.auth.uid )
+            ||
+            ( ( !('ownerUid' in room) || !(room.ownerUid in room.memberIds) )
+              && room.memberIds.size() > 0
+              && room.memberIds[0] == request.auth.uid )
+          );
+      }
+
+      function hasCrewPlan(sessionId, memberId) {
+        return exists(
+          /databases/$(database)/documents/rooms/$(roomId)/crewSessions/$(sessionId)/plans/$(memberId)
+        );
+      }
+
+      function allCrewReady(sessionId) {
+        let memberIds = get(
+          /databases/$(database)/documents/rooms/$(roomId)
+        ).data.memberIds;
+        return memberIds.size() > 0
+          && hasCrewPlan(sessionId, memberIds[0])
+          && (memberIds.size() < 2 || hasCrewPlan(sessionId, memberIds[1]))
+          && (memberIds.size() < 3 || hasCrewPlan(sessionId, memberIds[2]))
+          && (memberIds.size() < 4 || hasCrewPlan(sessionId, memberIds[3]));
+      }
+
+      function crewSessionData(sessionId) {
+        return get(
+          /databases/$(database)/documents/rooms/$(roomId)/crewSessions/$(sessionId)
+        ).data;
+      }
+
+      function crewSessionHasNotStarted(sessionId) {
+        return !('startedAt' in crewSessionData(sessionId));
+      }
+
+      function crewSessionHasFinished(sessionId) {
+        let session = crewSessionData(sessionId);
+        return session.startedAt is timestamp
+          && session.durationMinutes is int
+          && request.time >= session.startedAt
+            + duration.value(session.durationMinutes, 'm');
       }
 
       // ---- メンバーのプレイヤーカード ----
@@ -134,6 +235,114 @@ service cloud.firestore {
             && request.resource.data.sessions.size() <= 1000;
 
           allow delete: if request.auth != null && request.auth.uid == memberId;
+        }
+      }
+
+      // ---- 最大4人の共通タイマー ----
+      // 船長が時間を決め、全員が自分の作業項目と意図を準備してから一斉に出航する。
+      // Web/iOS共通: crewSessionsの最新1件を購読し、plans/{uid}は本人だけが書く。
+      match /crewSessions/{sessionId} {
+        allow read: if isMember();
+
+        allow create: if isOwner()
+          && request.resource.data.keys().hasOnly([
+            'durationMinutes', 'createdAt', 'createdBy'
+          ])
+          && request.resource.data.durationMinutes is int
+          && request.resource.data.durationMinutes >= 1
+          && request.resource.data.durationMinutes <= 240
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.createdBy == request.auth.uid;
+
+        // 船長だけが、出航前の時間変更またはstartedAtの一度きりの追加を行える。
+        allow update: if isOwner()
+          && request.resource.data.keys().hasOnly([
+            'durationMinutes', 'createdAt', 'createdBy', 'startedAt'
+          ])
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.durationMinutes is int
+          && request.resource.data.durationMinutes >= 1
+          && request.resource.data.durationMinutes <= 240
+          && (
+            ( !('startedAt' in resource.data)
+              && !('startedAt' in request.resource.data)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['durationMinutes']) )
+            ||
+            ( !('startedAt' in resource.data)
+              && request.resource.data.startedAt == request.time
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['startedAt'])
+              && allCrewReady(sessionId) )
+          );
+
+        // 履歴は消さない。次の航海は新しいcrewSessionsドキュメントを作る。
+        allow delete: if false;
+
+        match /plans/{memberId} {
+          allow read: if isMember();
+
+          // 準備は出航前だけ。本人のplanだけを作成でき、サーバー時刻を使う。
+          allow create: if isMember()
+            && request.auth.uid == memberId
+            && crewSessionHasNotStarted(sessionId)
+            && request.resource.data.keys().hasOnly([
+              'itemId', 'itemName', 'itemStyle', 'itemSymbol',
+              'intention', 'preparedAt', 'recall', 'recordedAt'
+            ])
+            && request.resource.data.itemId is string
+            && request.resource.data.itemId.size() <= 80
+            && request.resource.data.itemName is string
+            && request.resource.data.itemName.size() <= 60
+            && request.resource.data.itemStyle is string
+            && request.resource.data.itemStyle.size() <= 24
+            && request.resource.data.itemSymbol is string
+            && request.resource.data.itemSymbol.size() <= 24
+            && request.resource.data.intention is string
+            && request.resource.data.intention.size() >= 1
+            && request.resource.data.intention.size() <= 80
+            && request.resource.data.preparedAt == request.time
+            && !('recall' in request.resource.data)
+            && !('recordedAt' in request.resource.data);
+
+          // 出航前は準備内容だけを編集可能。到着後は元の準備を変えず、
+          // recall/recordedAtを一度だけ追加できる。早送り・履歴改ざんを防ぐ。
+          allow update: if isMember()
+            && request.auth.uid == memberId
+            && request.resource.data.keys().hasOnly([
+              'itemId', 'itemName', 'itemStyle', 'itemSymbol',
+              'intention', 'preparedAt', 'recall', 'recordedAt'
+            ])
+            && request.resource.data.itemId is string
+            && request.resource.data.itemId.size() <= 80
+            && request.resource.data.itemName is string
+            && request.resource.data.itemName.size() <= 60
+            && request.resource.data.itemStyle is string
+            && request.resource.data.itemStyle.size() <= 24
+            && request.resource.data.itemSymbol is string
+            && request.resource.data.itemSymbol.size() <= 24
+            && request.resource.data.intention is string
+            && request.resource.data.intention.size() >= 1
+            && request.resource.data.intention.size() <= 80
+            && (
+              ( crewSessionHasNotStarted(sessionId)
+                && request.resource.data.preparedAt == request.time
+                && !('recall' in request.resource.data)
+                && !('recordedAt' in request.resource.data) )
+              ||
+              ( crewSessionHasFinished(sessionId)
+                && !('recall' in resource.data)
+                && !('recordedAt' in resource.data)
+                && request.resource.data.diff(resource.data).affectedKeys()
+                  .hasOnly(['recall', 'recordedAt'])
+                && request.resource.data.recall is string
+                && request.resource.data.recall.size() >= 20
+                && request.resource.data.recall.size() <= 500
+                && request.resource.data.recordedAt == request.time )
+            );
+
+          allow delete: if isMember() && request.auth.uid == memberId;
         }
       }
 
@@ -211,15 +420,28 @@ service cloud.firestore {
               && request.resource.data.keys().hasOnly(['uid', 'kind', 'text', 'createdAt', 'reactions'])
               && request.resource.data.text is string
               && request.resource.data.text.size() >= 1
-              && request.resource.data.text.size() <= 500 )
+              && request.resource.data.text.size() <= 500
+              && !request.resource.data.text.matches(
+                '(?i).*(kill[ ._-]*yourself|\\bkys\\b|nigger|faggot|死ね|しね|殺す|ころす|自殺しろ).*'
+              ) )
             ||
             ( request.resource.data.kind in ['landfall', 'return']
               && request.resource.data.keys().hasOnly(['uid', 'kind', 'itemName', 'itemStyle', 'itemSymbol', 'minutes', 'gapDays', 'createdAt', 'reactions'])
               && request.resource.data.itemName is string
               && request.resource.data.itemName.size() <= 60
+              && request.resource.data.itemStyle is string
+              && request.resource.data.itemStyle.size() <= 24
+              && request.resource.data.itemSymbol is string
+              && request.resource.data.itemSymbol.size() <= 24
               && request.resource.data.minutes is int
-              && request.resource.data.minutes <= 6000 )
-          );
+              && request.resource.data.minutes >= 1
+              && request.resource.data.minutes <= 6000
+              && ( !('gapDays' in request.resource.data)
+                || (request.resource.data.gapDays is int
+                  && request.resource.data.gapDays >= 0
+                  && request.resource.data.gapDays <= 36500) ) )
+          )
+          && request.resource.data.createdAt == request.time;
 
         // 更新はリアクションのみ。自分の枠(reactions[自分のuid])だけを、許可された印で。
         allow update: if isMember()
@@ -302,8 +524,35 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.reporterUid == request.auth.uid
         && request.resource.data.keys().hasOnly(['reporterUid', 'roomId', 'targetUid', 'messageId', 'text', 'createdAt'])
+        && request.resource.data.reporterUid is string
+        && request.resource.data.roomId is string
+        && request.resource.data.roomId.size() >= 1
+        && request.resource.data.roomId.size() <= 128
         && request.resource.data.targetUid is string
-        && ( !('text' in request.resource.data) || request.resource.data.text.size() <= 500 );
+        && request.resource.data.targetUid.size() >= 1
+        && request.resource.data.targetUid.size() <= 128
+        && request.resource.data.targetUid != request.auth.uid
+        && exists(/databases/$(database)/documents/rooms/$(request.resource.data.roomId))
+        && request.auth.uid in get(
+          /databases/$(database)/documents/rooms/$(request.resource.data.roomId)
+        ).data.memberIds
+        && request.resource.data.targetUid in get(
+          /databases/$(database)/documents/rooms/$(request.resource.data.roomId)
+        ).data.memberIds
+        && ( !('messageId' in request.resource.data)
+          || (request.resource.data.messageId is string
+            && request.resource.data.messageId.size() >= 1
+            && request.resource.data.messageId.size() <= 128
+            && exists(
+              /databases/$(database)/documents/rooms/$(request.resource.data.roomId)/chat/$(request.resource.data.messageId)
+            )
+            && get(
+              /databases/$(database)/documents/rooms/$(request.resource.data.roomId)/chat/$(request.resource.data.messageId)
+            ).data.uid == request.resource.data.targetUid) )
+        && ( !('text' in request.resource.data)
+          || (request.resource.data.text is string
+            && request.resource.data.text.size() <= 500) )
+        && request.resource.data.createdAt == request.time;
       allow read, update, delete: if false;
     }
   }

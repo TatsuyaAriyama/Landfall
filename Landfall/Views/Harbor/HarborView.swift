@@ -6,10 +6,12 @@ import SwiftData
 struct HarborView: View {
     @EnvironmentObject private var auth: AuthService
     @StateObject private var service = RoomService.shared
+    @StateObject private var voyagePass = VoyagePassStore.shared
     @Environment(\.modelContext) private var modelContext
 
     @State private var creating = false
     @State private var joining = false
+    @State private var showingVoyagePass = false
     @State private var editingProfile = false
     @State private var membersByRoom: [String: [HarborMember]] = [:]
     /// 初回ロードが済むまでは空状態CTAを出さない(在港者に「空です」を一瞬見せないため)。
@@ -131,6 +133,9 @@ struct HarborView: View {
         .sheet(isPresented: $joining) {
             RoomJoinSheet(prefilledCode: incomingCode) { await reload() }
         }
+        .sheet(isPresented: $showingVoyagePass) {
+            VoyagePassView()
+        }
         .sheet(item: $invitingRoom) { room in
             InvitePassSheet(roomName: room.name, code: room.id)
         }
@@ -246,35 +251,59 @@ struct HarborView: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: 12) {
-            Button {
-                creating = true
-            } label: {
-                Text("Open a harbor")
-                    .font(LFFont.copy(16))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Button {
+                    if voyagePass.isActive {
+                        creating = true
+                    } else {
+                        showingVoyagePass = true
+                    }
+                } label: {
+                    HStack(spacing: 7) {
+                        Text("Open a harbor")
+                        if !voyagePass.isActive {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                    }
+                    .font(LFFont.copy(15))
                     .foregroundStyle(LFColor.paper)
-                    .padding(.horizontal, 20)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .frame(maxWidth: .infinity)
                     .frame(height: 52)
                     .background(LFColor.ink)
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    // 手で開くときは、以前リンクから受け取ったコードを持ち越さない。
+                    incomingCode = nil
+                    joining = true
+                } label: {
+                    Text("Enter with a code")
+                        .font(LFFont.copy(15))
+                        .foregroundStyle(LFColor.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .stroke(LFColor.ink, lineWidth: 1.5)
+                        )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            Button {
-                // 手で開くときは、以前リンクから受け取ったコードを持ち越さない。
-                incomingCode = nil
-                joining = true
-            } label: {
-                Text("Enter with a code")
-                    .font(LFFont.copy(16))
-                    .foregroundStyle(LFColor.ink)
-                    .padding(.horizontal, 20)
-                    .frame(height: 52)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(LFColor.ink, lineWidth: 1.5)
-                    )
+
+            if !voyagePass.isActive {
+                Text("A Voyage Pass opens a private harbor. Anyone can join free with its code.")
+                    .font(LFFont.label(11))
+                    .foregroundStyle(LFColor.ink.opacity(0.48))
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -287,26 +316,40 @@ struct HarborView: View {
                     .font(LFFont.copy(22))
                     .foregroundStyle(LFColor.ink)
                 Spacer()
-                // 招待コード。タップで入港証(コード+QRの一枚)を開いて渡せる。
-                Button {
-                    Haptics.tap()
-                    invitingRoom = room
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(verbatim: room.id)
-                            .font(LFFont.label(15))
-                            .tracking(2)
-                            .monospacedDigit()
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 13, weight: .medium))
+                if isOwner(room) {
+                    if voyagePass.isActive {
+                        // 招待コードは「港を開いた航海証所持者」にだけ見せる。
+                        Button {
+                            Haptics.tap()
+                            invitingRoom = room
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(verbatim: room.id)
+                                    .font(LFFont.label(15))
+                                    .tracking(2)
+                                    .monospacedDigit()
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 13, weight: .medium))
+                            }
+                            .foregroundStyle(LFColor.returnOrange)
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Invite code \(room.id)"))
+                        .accessibilityHint(Text("Share"))
+                    } else {
+                        Button {
+                            showingVoyagePass = true
+                        } label: {
+                            Label("Renew to invite", systemImage: "lock.fill")
+                                .font(LFFont.label(12))
+                                .foregroundStyle(LFColor.returnOrange)
+                                .frame(minHeight: 44)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .foregroundStyle(LFColor.returnOrange)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("Invite code \(room.id)"))
-                .accessibilityHint(Text("Share"))
             }
 
             // みんなの航海(チャット)。言葉と、着岸/帰還の自動の行がひとつの流れになる。
@@ -349,6 +392,14 @@ struct HarborView: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private func isOwner(_ room: HarborRoom) -> Bool {
+        guard let uid = auth.user?.uid else { return false }
+        if let ownerUid = room.ownerUid, room.memberIds.contains(ownerUid) {
+            return ownerUid == uid
+        }
+        return room.memberIds.first == uid
     }
 
     private func memberRow(roomId: String, member: HarborMember) -> some View {

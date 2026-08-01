@@ -104,6 +104,9 @@ final class RoomService: ObservableObject {
     /// 港を作る。招待コード(=ルームID)を返す。ひらけるのは ひとり1港・参加は3港まで。
     func createRoom(named name: String, context: ModelContext) async throws -> String {
         guard let uid else { throw RoomError.notSignedIn }
+        // 端末内の表示値だけではなく、Apple署名をサーバーで再検証する。
+        // 無料ユーザーの「参加」は joinRoom 側なのでこの制限を受けない。
+        try await VoyagePassStore.shared.preparePrivateHarborCreation()
         await refreshRooms()
         guard rooms.count < HarborRoom.maxJoined else { throw RoomError.tooManyRooms }
         // 自分がひらいた港が(退港済みでも)既にないか。
@@ -138,8 +141,8 @@ final class RoomService: ObservableObject {
     /// 招待コードで港に入る。
     func joinRoom(code rawCode: String, context: ModelContext) async throws {
         guard let uid else { throw RoomError.notSignedIn }
-        let code = rawCode.trimmingCharacters(in: .whitespaces).uppercased()
-        guard !code.isEmpty else { throw RoomError.roomNotFound }
+        let code = Self.normalizedCode(rawCode)
+        guard code.count == 6 else { throw RoomError.roomNotFound }
         await refreshRooms()
         let ref = db.collection("rooms").document(code)
         guard let snap = try? await ref.getDocument(), snap.exists else {
@@ -149,7 +152,18 @@ final class RoomService: ObservableObject {
         if !members.contains(uid) {
             guard rooms.count < HarborRoom.maxJoined else { throw RoomError.tooManyRooms }
             guard members.count < HarborRoom.maxMembers else { throw RoomError.roomFull }
-            try await ref.updateData(["memberIds": FieldValue.arrayUnion([uid])])
+            do {
+                // arrayUnionはサーバー上で原子的。同時に最後の1席へ入ろうとしても、
+                // Firestoreルールが更新後の人数 <= 4 を検証し、5人目を拒否する。
+                try await ref.updateData(["memberIds": FieldValue.arrayUnion([uid])])
+            } catch {
+                // 競合時も「権限エラー」ではなく「満員」と伝える。
+                if let latest = try? await ref.getDocument(),
+                   ((latest.data()?["memberIds"] as? [String])?.count ?? 0) >= HarborRoom.maxMembers {
+                    throw RoomError.roomFull
+                }
+                throw error
+            }
         }
         try await joinedRoomSetup(roomId: code, uid: uid, context: context)
         await refreshRooms()
@@ -308,6 +322,13 @@ final class RoomService: ObservableObject {
     private static func generateCode() -> String {
         let charset = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
         return String((0..<6).map { _ in charset.randomElement()! })
+    }
+
+    private static func normalizedCode(_ rawCode: String) -> String {
+        let allowed = Set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        let compact = rawCode.uppercased().filter { !$0.isWhitespace && $0 != "-" }
+        guard compact.allSatisfy({ allowed.contains($0) }) else { return "" }
+        return compact
     }
 }
 

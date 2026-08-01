@@ -6,6 +6,34 @@ enum LF {
     /// アプリ内設定で選ばれたロケール(system のときは端末ロケール)。
     private static var appLocale: Locale { AppLanguage.current.locale }
 
+    // MARK: - 文字列
+
+    /// SwiftUI の `Text` 以外で作る文字列も、端末ではなくアプリ内の言語設定に追従させる。
+    /// 英語は開発言語なのでキー自体、日本語は明示した lproj、system は通常のBundle解決を使う。
+    static func text(_ key: String) -> String {
+        switch AppLanguage.current {
+        case .en:
+            return key
+        case .ja:
+            guard let path = Bundle.main.path(forResource: "ja", ofType: "lproj"),
+                  let bundle = Bundle(path: path) else {
+                return key
+            }
+            return bundle.localizedString(forKey: key, value: key, table: nil)
+        case .system:
+            return Bundle.main.localizedString(forKey: key, value: key, table: nil)
+        }
+    }
+
+    /// `%@` / `%lld` を含むローカライズ済み書式を、選択中のロケールで展開する。
+    static func format(_ key: String, _ arguments: CVarArg...) -> String {
+        String(
+            format: text(key),
+            locale: appLocale,
+            arguments: arguments
+        )
+    }
+
     // MARK: - 期間
 
     /// 期間表示。en: "9h 15m" / ja: "9時間15分"。60分未満は分のみ。
