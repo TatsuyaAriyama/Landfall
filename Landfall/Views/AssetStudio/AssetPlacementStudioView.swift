@@ -11,7 +11,9 @@ struct AssetPlacementStudioView: View {
     @State private var panelOnLeading = false
     @State private var inspectorSection: InspectorSection = .position
     @State private var confirmingDelete = false
+    @State private var confirmingClearTerrain = false
     @State private var toastMessage: String?
+    @State private var modeHelpExpanded = false
     @State private var showingNewStudioPrompt = false
     @State private var showingRenameStudioPrompt = false
     @State private var studioNameDraft = ""
@@ -39,7 +41,8 @@ struct AssetPlacementStudioView: View {
 
             VStack(spacing: 0) {
                 topBar
-                HStack {
+                HStack(alignment: .top, spacing: 8) {
+                    modeCoach
                     Spacer(minLength: 0)
                     homeShipReferenceButton
                 }
@@ -88,6 +91,22 @@ struct AssetPlacementStudioView: View {
         ) {
             Button("Delete", role: .destructive) { deleteSelection() }
             Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(deleteConfirmationDetail)
+        }
+        .confirmationDialog(
+            "Clear all terrain?",
+            isPresented: $confirmingClearTerrain,
+            titleVisibility: .visible
+        ) {
+            Button("Clear terrain", role: .destructive) {
+                store.clearVisibleTerrain()
+                Haptics.tap(.medium)
+                showToast(String(localized: "Terrain cleared"))
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes every terrain stroke in the current world. You can undo it afterward.")
         }
         .alert("New Studio", isPresented: $showingNewStudioPrompt) {
             TextField("Studio name", text: $studioNameDraft)
@@ -234,12 +253,14 @@ struct AssetPlacementStudioView: View {
                 accessibilityLabel: "Undo",
                 disabled: !store.canUndo
             ) { store.undo() }
+            .accessibilityHint("Undo the last edit")
 
             studioIconButton(
                 symbol: "arrow.uturn.forward",
                 accessibilityLabel: "Redo",
                 disabled: !store.canRedo
             ) { store.redo() }
+            .accessibilityHint("Redo the last undone edit")
 
             Menu {
                 Button {
@@ -324,6 +345,131 @@ struct AssetPlacementStudioView: View {
         }
     }
 
+    /// キャンバスから目を離さずに、現在モードと次の操作を確認する小さなガイド。
+    private var modeCoach: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Button {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                    modeHelpExpanded.toggle()
+                }
+                Haptics.tap(.light)
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: store.manipulationMode.symbolName)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Color(uiColor: VoyageSceneKit.ember))
+                    Text(modeStatusTitle)
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.90))
+                        .lineLimit(1)
+                    Image(systemName: modeHelpExpanded ? "chevron.up" : "questionmark.circle")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.46))
+                }
+                .padding(.horizontal, 10)
+                .frame(minHeight: 30)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
+            if modeHelpExpanded {
+                Text(modeHelpText)
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.62))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 10)
+
+                modeQuickActions
+                    .padding(.horizontal, 7)
+                    .padding(.bottom, 7)
+            }
+        }
+        .frame(maxWidth: modeHelpExpanded ? 246 : 190, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(.black.opacity(0.50), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color(uiColor: VoyageSceneKit.ember).opacity(modeHelpExpanded ? 0.30 : 0.14), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Current tool")
+        .accessibilityValue(modeStatusTitle)
+    }
+
+    @ViewBuilder
+    private var modeQuickActions: some View {
+        if store.manipulationMode == .camera {
+            HStack(spacing: 5) {
+                coachAction("Overview", symbol: "map.fill") { store.requestCamera(.overview) }
+                coachAction("Top", symbol: "arrow.down.to.line") { store.requestCamera(.top) }
+                if store.selectionCount > 0 {
+                    coachAction("Selected", symbol: "scope") { store.requestCamera(.focusSelection) }
+                }
+            }
+        } else if store.manipulationMode == .terrain {
+            HStack(spacing: 5) {
+                coachTerrainShape(.hill)
+                coachTerrainShape(.mountain)
+                coachTerrainShape(.ridge)
+            }
+        } else if store.selectionCount > 0,
+                  store.manipulationMode == .move || store.manipulationMode == .height {
+            HStack(spacing: 5) {
+                coachAction("Snap now", symbol: "arrow.down.to.line.compact") { snapSelectedToSurface() }
+                coachAction("Focus selected", symbol: "scope") { store.requestCamera(.focusSelection) }
+            }
+        }
+    }
+
+    private func coachAction(
+        _ title: LocalizedStringKey,
+        symbol: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            action()
+            Haptics.tap(.light)
+        } label: {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .minimumScaleFactor(0.70)
+                .foregroundStyle(.white.opacity(0.76))
+                .frame(maxWidth: .infinity, minHeight: 29)
+                .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+    }
+
+    private func coachTerrainShape(_ shape: AssetTerrainShape) -> some View {
+        Button {
+            store.selectTerrainShape(shape)
+            Haptics.tap(.light)
+        } label: {
+            VStack(spacing: 2) {
+                Image(systemName: shape.symbolName)
+                Text(terrainShapeTitle(shape))
+                    .lineLimit(1)
+            }
+            .font(.system(size: 8, weight: .bold, design: .rounded))
+            .foregroundStyle(
+                store.terrainShape == shape
+                    ? Color(uiColor: VoyageSceneKit.nightBG)
+                    : .white.opacity(0.72)
+            )
+            .frame(maxWidth: .infinity, minHeight: 34)
+            .background(
+                store.terrainShape == shape
+                    ? Color(uiColor: VoyageSceneKit.ember)
+                    : .white.opacity(0.07),
+                in: RoundedRectangle(cornerRadius: 9)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(terrainShapeTitle(shape))
+    }
+
     private var homeShipReferenceButton: some View {
         Button {
             store.requestCamera(.homeShipMarker)
@@ -369,19 +515,29 @@ struct AssetPlacementStudioView: View {
                         HStack(spacing: 6) {
                             Image(systemName: selectionSymbol)
                                 .foregroundStyle(Color(uiColor: VoyageSceneKit.ember))
-                            Text(verbatim: selectionSummary)
-                                .lineLimit(1)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(verbatim: selectionSummary)
+                                    .lineLimit(1)
+                                if store.selectionCount > 1 {
+                                    Text(verbatim: selectionBreakdown)
+                                        .font(.system(size: 8, weight: .medium, design: .rounded))
+                                        .foregroundStyle(.white.opacity(0.48))
+                                        .lineLimit(1)
+                                }
+                            }
                             Image(systemName: "slider.horizontal.3")
                                 .foregroundStyle(.white.opacity(0.45))
                         }
                         .font(.system(size: 10, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white.opacity(0.84))
                         .padding(.horizontal, 11)
-                        .frame(minHeight: 28)
+                        .frame(minHeight: store.selectionCount > 1 ? 34 : 28)
                         .background(.black.opacity(0.48), in: Capsule())
                         .overlay(Capsule().stroke(.white.opacity(0.10), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(selectionSummary)
+                    .accessibilityValue(selectionBreakdown)
 
                     if store.selectionCount == 1, store.selectedPlacement != nil {
                         Button {
@@ -429,7 +585,8 @@ struct AssetPlacementStudioView: View {
                     title: "Assets",
                     active: activePanel == .assets || store.manipulationMode == .place,
                     accented: false,
-                    badge: store.availableAssetCount
+                    badge: store.availableAssetCount,
+                    accessibilityHint: "Open the asset library and choose an item to place"
                 ) {
                     withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
                         activePanel = activePanel == .assets ? nil : .assets
@@ -440,9 +597,11 @@ struct AssetPlacementStudioView: View {
                     canvasToolButton(
                         symbol: mode.symbolName,
                         title: modeTitle(mode),
-                        active: store.manipulationMode == mode
+                        active: store.manipulationMode == mode,
+                        accessibilityHint: modeAccessibilityHint(mode)
                     ) {
                         store.manipulationMode = mode
+                        modeHelpExpanded = false
                         withAnimation(.easeOut(duration: 0.16)) { activePanel = nil }
                         Haptics.tap(.light)
                         if mode == .select {
@@ -460,7 +619,8 @@ struct AssetPlacementStudioView: View {
                     title: "Details",
                     active: activePanel == .inspector,
                     accented: false,
-                    badge: store.visiblePlacements.count
+                    badge: store.visiblePlacements.count,
+                    accessibilityHint: "Open object details and precise controls"
                 ) {
                     withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
                         activePanel = activePanel == .inspector ? nil : .inspector
@@ -724,6 +884,7 @@ struct AssetPlacementStudioView: View {
         active: Bool,
         accented: Bool = true,
         badge: Int? = nil,
+        accessibilityHint: LocalizedStringKey = "",
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -761,6 +922,7 @@ struct AssetPlacementStudioView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
+        .accessibilityHint(accessibilityHint)
     }
 
     private func sidePanel(_ panel: StudioPanel) -> some View {
@@ -802,6 +964,7 @@ struct AssetPlacementStudioView: View {
                     if panel == .assets {
                         sideAssetLibrary
                     } else {
+                        worldContentOverview
                         placedObjects
                         if store.manipulationMode == .paint {
                             paintInspector
@@ -809,7 +972,9 @@ struct AssetPlacementStudioView: View {
                             terrainInspector
                         } else if store.manipulationMode == .camera {
                             cameraInspector
-                        } else if store.selectionCount > 1 || store.selectionCount == 1 {
+                        } else if store.selectionCount > 1
+                                    || !store.selectedPaintStrokes.isEmpty
+                                    || !store.selectedTerrainStrokes.isEmpty {
                             multiSelectionInspector
                         } else if store.selectedPlacement != nil {
                             selectedInspector
@@ -1101,9 +1266,7 @@ struct AssetPlacementStudioView: View {
             )
 
             Button(role: .destructive) {
-                store.clearVisibleTerrain()
-                Haptics.tap(.medium)
-                showToast(String(localized: "Terrain cleared"))
+                confirmingClearTerrain = true
             } label: {
                 Label("Clear terrain", systemImage: "trash")
                     .font(.system(size: 10, weight: .bold, design: .rounded))
@@ -1231,6 +1394,50 @@ struct AssetPlacementStudioView: View {
         .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 9))
     }
 
+    /// 複雑な世界でも、各編集レイヤーの量を一眼で把握できる。
+    private var worldContentOverview: some View {
+        HStack(spacing: 6) {
+            contentCount(
+                store.visiblePlacements.count,
+                title: "Models",
+                symbol: "cube.fill"
+            )
+            contentCount(
+                store.visiblePaintStrokes.count,
+                title: "Paint",
+                symbol: "paintbrush.pointed.fill"
+            )
+            contentCount(
+                store.visibleTerrainStrokes.count,
+                title: "Terrain",
+                symbol: "mountain.2.fill"
+            )
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("World contents")
+        .accessibilityValue(worldContentBreakdown)
+    }
+
+    private func contentCount(
+        _ count: Int,
+        title: LocalizedStringKey,
+        symbol: String
+    ) -> some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                Text("\(count)")
+                    .fontWeight(.bold)
+            }
+            Text(title)
+                .font(.system(size: 7, weight: .semibold, design: .rounded))
+        }
+        .font(.system(size: 9, weight: .semibold, design: .rounded))
+        .foregroundStyle(.white.opacity(count > 0 ? 0.72 : 0.28))
+        .frame(maxWidth: .infinity, minHeight: 40)
+        .background(.white.opacity(count > 0 ? 0.06 : 0.025), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     @ViewBuilder
     private var placedObjects: some View {
         if !store.visiblePlacements.isEmpty {
@@ -1270,6 +1477,13 @@ struct AssetPlacementStudioView: View {
             Text(selectionSummary)
                 .font(.system(size: 13, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
+
+            Text(selectionBreakdown)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(Color(uiColor: VoyageSceneKit.ember).opacity(0.86))
+                .padding(.horizontal, 10)
+                .frame(minHeight: 25)
+                .background(Color(uiColor: VoyageSceneKit.ember).opacity(0.09), in: Capsule())
 
             Text("Selected models, paint strokes, and terrain can be deleted together. Drag another box to replace the selection.")
                 .font(.system(size: 10, weight: .medium, design: .rounded))
@@ -1606,6 +1820,124 @@ struct AssetPlacementStudioView: View {
         return Color(uiColor: VoyageSceneKit.coral)
     }
 
+    private var modeStatusTitle: String {
+        let mode: String
+        switch store.manipulationMode {
+        case .select: mode = String(localized: "Select")
+        case .paint: mode = String(localized: "Paint")
+        case .terrain: mode = String(localized: "Terrain")
+        case .place: mode = String(localized: "Place")
+        case .move: mode = String(localized: "Move")
+        case .height: mode = String(localized: "Height")
+        case .rotate: mode = String(localized: "Rotate")
+        case .scale: mode = String(localized: "Scale")
+        case .camera: mode = String(localized: "Camera")
+        }
+
+        switch store.manipulationMode {
+        case .paint:
+            return "\(mode) · \(localizedPaintToolName(store.paintTool))"
+        case .terrain:
+            return "\(mode) · \(localizedTerrainShapeName(store.terrainShape))"
+        case .place:
+            guard let assetID = store.placementBrushAssetID else { return mode }
+            return "\(mode) · \(Asset3DCatalog.displayName(for: assetID))"
+        default:
+            return mode
+        }
+    }
+
+    private var modeHelpText: String {
+        switch store.manipulationMode {
+        case .select:
+            return String(localized: "Drag across models, paint, or terrain to box-select")
+        case .paint:
+            return String(localized: "Paint with one finger. Move the camera with two fingers.")
+        case .terrain:
+            return String(localized: "Tap to add the chosen landform. Drag Ridge to build a mountain range.")
+        case .place:
+            return String(localized: "Tap the world repeatedly to place the chosen asset.")
+        case .move:
+            return String(localized: "Drag the selected model across surfaces. It stays grounded automatically.")
+        case .height:
+            return String(localized: "Drag vertically to change height without moving sideways.")
+        case .rotate:
+            return String(localized: "Drag sideways to rotate the selected model.")
+        case .scale:
+            return String(localized: "Drag or pinch to resize the selected model.")
+        case .camera:
+            return String(localized: "One finger orbits, two fingers pan, and pinch zooms.")
+        }
+    }
+
+    private func modeAccessibilityHint(_ mode: AssetManipulationMode) -> LocalizedStringKey {
+        switch mode {
+        case .select: return "Drag to select models, paint, and terrain"
+        case .paint: return "Draw or erase surface materials"
+        case .terrain: return "Build mountains, ridges, plateaus, and valleys"
+        case .place: return "Place the chosen asset repeatedly"
+        case .move: return "Move the selected model across the ground"
+        case .height: return "Move the selected model only vertically"
+        case .rotate: return "Rotate the selected model"
+        case .scale: return "Resize the selected model"
+        case .camera: return "Orbit, pan, and zoom the world view"
+        }
+    }
+
+    private func localizedPaintToolName(_ tool: AssetPaintTool) -> String {
+        switch tool {
+        case .sand: return String(localized: "Sand")
+        case .grass: return String(localized: "Grass")
+        case .path: return String(localized: "Path")
+        case .eraser: return String(localized: "Eraser")
+        }
+    }
+
+    private func localizedTerrainShapeName(_ shape: AssetTerrainShape) -> String {
+        switch shape {
+        case .hill: return String(localized: "Hill")
+        case .mountain: return String(localized: "Mountain")
+        case .plateau: return String(localized: "Plateau")
+        case .ridge: return String(localized: "Ridge")
+        }
+    }
+
+    private var selectionBreakdown: String {
+        contentBreakdown(
+            models: store.selectedPlacements.count,
+            paint: store.selectedPaintStrokes.count,
+            terrain: store.selectedTerrainStrokes.count,
+            omittingEmpty: true
+        )
+    }
+
+    private var worldContentBreakdown: String {
+        contentBreakdown(
+            models: store.visiblePlacements.count,
+            paint: store.visiblePaintStrokes.count,
+            terrain: store.visibleTerrainStrokes.count,
+            omittingEmpty: false
+        )
+    }
+
+    private func contentBreakdown(
+        models: Int,
+        paint: Int,
+        terrain: Int,
+        omittingEmpty: Bool
+    ) -> String {
+        let values: [(Int, String)] = [
+            (models, String(localized: "Models: %lld")),
+            (paint, String(localized: "Paint: %lld")),
+            (terrain, String(localized: "Terrain: %lld"))
+        ]
+        let parts = values.compactMap { count, format -> String? in
+            guard !omittingEmpty || count > 0 else { return nil }
+            return String(format: format, Int64(count))
+        }
+        return parts.isEmpty ? String(localized: "No selection") : parts.joined(separator: " · ")
+    }
+
     private var selectionSummary: String {
         guard store.selectionCount > 1 else {
             if let placement = store.selectedPlacement { return placement.name }
@@ -1633,6 +1965,13 @@ struct AssetPlacementStudioView: View {
         return String(
             format: String(localized: "Delete %lld selected items?"),
             Int64(store.selectionCount)
+        )
+    }
+
+    private var deleteConfirmationDetail: String {
+        String(
+            format: String(localized: "This will delete %@. You can undo this afterward."),
+            selectionBreakdown
         )
     }
 

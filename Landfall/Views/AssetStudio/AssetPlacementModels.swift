@@ -1103,6 +1103,10 @@ final class AssetPlacementStore: ObservableObject {
 
     func endInteractiveEdit() {
         guard let interactionStart else { return }
+        // SceneViewはドラッグ中の穴を防ぐため高密度に点を送る。表示結果を
+        // ほぼ変えない許容誤差で操作終了時に簡略化し、長い山脈や谷でも
+        // JSON、Undoスナップショット、メッシュ再生成を小さく保つ。
+        simplifyChangedStrokes(comparedTo: interactionStart)
         self.interactionStart = nil
         guard interactionStart != currentSnapshot else { return }
         commitCurrentState()
@@ -1164,6 +1168,83 @@ final class AssetPlacementStore: ObservableObject {
         placements = snapshot.placements
         paintStrokes = snapshot.paintStrokes
         terrainStrokes = snapshot.terrainStrokes
+    }
+
+    private func simplifyChangedStrokes(comparedTo start: AssetStudioSnapshot) {
+        let originalTerrainPoints = Dictionary(
+            uniqueKeysWithValues: start.terrainStrokes.map { ($0.id, $0.points) }
+        )
+        for index in terrainStrokes.indices {
+            let stroke = terrainStrokes[index]
+            guard originalTerrainPoints[stroke.id] != stroke.points else { continue }
+            terrainStrokes[index].points = Self.simplifiedPoints(
+                stroke.points,
+                tolerance: max(stroke.radius * 0.045, 0.012)
+            )
+        }
+    }
+
+    /// Ramer–Douglas–Peucker。XZだけでなくYも評価し、斜面上のストロークを浮かせない。
+    private static func simplifiedPoints(
+        _ points: [AssetPaintPoint],
+        tolerance: Float
+    ) -> [AssetPaintPoint] {
+        guard points.count > 2 else { return points }
+        let squaredTolerance = tolerance * tolerance
+        var retained = Array(repeating: false, count: points.count)
+        retained[0] = true
+        retained[points.count - 1] = true
+        var ranges: [(Int, Int)] = [(0, points.count - 1)]
+
+        while let (start, end) = ranges.popLast() {
+            guard end > start + 1 else { continue }
+            var furthestIndex: Int?
+            var furthestDistance: Float = 0
+            for index in (start + 1)..<end {
+                let distance = squaredDistance(
+                    from: points[index],
+                    toSegmentFrom: points[start],
+                    to: points[end]
+                )
+                if distance > furthestDistance {
+                    furthestDistance = distance
+                    furthestIndex = index
+                }
+            }
+            guard let furthestIndex, furthestDistance > squaredTolerance else { continue }
+            retained[furthestIndex] = true
+            ranges.append((start, furthestIndex))
+            ranges.append((furthestIndex, end))
+        }
+
+        return zip(points, retained).compactMap { point, keep in keep ? point : nil }
+    }
+
+    private static func squaredDistance(
+        from point: AssetPaintPoint,
+        toSegmentFrom start: AssetPaintPoint,
+        to end: AssetPaintPoint
+    ) -> Float {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let dz = end.z - start.z
+        let lengthSquared = dx * dx + dy * dy + dz * dz
+        guard lengthSquared > 0.000_001 else {
+            let px = point.x - start.x
+            let py = point.y - start.y
+            let pz = point.z - start.z
+            return px * px + py * py + pz * pz
+        }
+        let projection = min(max(
+            ((point.x - start.x) * dx
+                + (point.y - start.y) * dy
+                + (point.z - start.z) * dz) / lengthSquared,
+            0
+        ), 1)
+        let px = point.x - (start.x + dx * projection)
+        let py = point.y - (start.y + dy * projection)
+        let pz = point.z - (start.z + dz * projection)
+        return px * px + py * py + pz * pz
     }
 
     private func commitCurrentState() {
@@ -1352,7 +1433,14 @@ enum AssetPlacementRuntime {
     /// 同じ場所を重ねると峰が高くなり、長く引くと尾根になる。
     static func makeTerrainNode(for strokes: [AssetTerrainStroke]) -> SCNNode? {
         let validStrokes = strokes.filter { !$0.points.isEmpty && $0.radius > 0.02 }
-        let allPoints = validStrokes.flatMap(\.points)
+        // 保存時はポイントを簡略化し、メッシュ化時だけ等間隔に復元する。
+        // 見た目の連続性と大規模マップの保存コストを両立する。
+        let renderPoints = Dictionary(
+            uniqueKeysWithValues: validStrokes.map { stroke in
+                (stroke.id, resampledTerrainPoints(for: stroke))
+            }
+        )
+        let allPoints = validStrokes.flatMap { renderPoints[$0.id] ?? $0.points }
         guard !allPoints.isEmpty else { return nil }
 
         let largestRadius = validStrokes.map(\.radius).max() ?? 0.8
@@ -1364,9 +1452,12 @@ enum AssetPlacementRuntime {
         let width = max(maximumX - minimumX, 0.2)
         let depth = max(maximumZ - minimumZ, 0.2)
 
-        // 約11cm間隔を基本にしつつ、広大な世界でも端末の頂点数を制御する。
-        let columns = min(max(Int(ceil(width / 0.11)) + 1, 7), 137)
-        let rows = min(max(Int(ceil(depth / 0.11)) + 1, 7), 137)
+        // 小さなブラシは細かく、広域地形は端末で扱える頂点数に自動調整。
+        // 従来の137固定上限で起きていた、広いマップの山頂や尾根の角張りを抑える。
+        let smallestRadius = validStrokes.map(\.radius).min() ?? 0.8
+        let preferredStep = min(max(smallestRadius / 13, 0.075), 0.14)
+        let columns = min(max(Int(ceil(width / preferredStep)) + 1, 7), 193)
+        let rows = min(max(Int(ceil(depth / preferredStep)) + 1, 7), 193)
         let stepX = width / Float(columns - 1)
         let stepZ = depth / Float(rows - 1)
         let vertexCount = columns * rows
@@ -1389,7 +1480,7 @@ enum AssetPlacementRuntime {
         // 曲面の土台上でも接地するよう、各頂点の基準高を最寄りの入力点から求める。
         for stroke in validStrokes {
             let reach = stroke.radius * 1.5
-            for point in stroke.points {
+            for point in renderPoints[stroke.id] ?? stroke.points {
                 let columnRange = affectedRange(
                     coordinate: point.x,
                     minimum: minimumX,
@@ -1423,10 +1514,11 @@ enum AssetPlacementRuntime {
         // 各頂点が最後に受けた「盛る」ブラシの素材を保持。
         // v5までの地形はグレー固定にせず、芝生へ移行する。
         var surfaceMaterials = Array(repeating: AssetTerrainMaterial.grass, count: vertexCount)
+        var weatheringMask = Array(repeating: Float.zero, count: vertexCount)
         for stroke in validStrokes {
             var influence = Array(repeating: Float.zero, count: vertexCount)
             let radius = max(stroke.radius, 0.03)
-            for point in stroke.points {
+            for point in renderPoints[stroke.id] ?? stroke.points {
                 let columnRange = affectedRange(
                     coordinate: point.x,
                     minimum: minimumX,
@@ -1474,23 +1566,75 @@ enum AssetPlacementRuntime {
                 }
             }
 
+            let terrainShape = stroke.shape ?? .hill
+            let detailSeed = paintSeed(for: stroke.id)
             switch stroke.tool {
             case .raise:
                 for index in heights.indices where influence[index] > 0 {
+                    let row = index / columns
+                    let column = index % columns
+                    let x = minimumX + Float(column) * stepX
+                    let z = minimumZ + Float(row) * stepZ
+                    let detail = terrainDetail(atX: x, z: z, seed: detailSeed)
+                    var delta = stroke.strength * influence[index]
+                    switch terrainShape {
+                    case .hill:
+                        // 丘のシルエットは保ち、同じ形のコピー感だけを消す。
+                        delta *= 1 + detail * 0.035 * min(influence[index] * 2, 1)
+                    case .mountain:
+                        // 大小二段の決定的ノイズで岩稜と枝尾根を一筆で作る。
+                        delta *= 1 + detail * 0.19 * pow(influence[index], 0.42)
+                        weatheringMask[index] = max(weatheringMask[index], influence[index])
+                    case .plateau:
+                        // 中心の平面と外周の段丘を同時に作る。
+                        let terraceStep = max(stroke.strength / 4.5, 0.08)
+                        let terraced = floor(delta / terraceStep + 0.20) * terraceStep
+                        delta = delta * 0.18 + terraced * 0.82
+                    case .ridge:
+                        delta *= 1 + detail * 0.12 * min(influence[index] * 1.6, 1)
+                        weatheringMask[index] = max(weatheringMask[index], influence[index] * 0.78)
+                    }
                     heights[index] = min(
                         baseHeights[index] + 24,
-                        heights[index] + stroke.strength * influence[index]
+                        heights[index] + max(delta, 0)
                     )
                     if influence[index] > 0.025 {
                         surfaceMaterials[index] = stroke.material ?? .grass
                     }
                 }
             case .lower:
+                let hasCarvableRelief = heights.indices.contains { index in
+                    influence[index] > 0.02 && heights[index] - baseHeights[index] > 0.012
+                }
                 for index in heights.indices where influence[index] > 0 {
-                    heights[index] = max(
-                        baseHeights[index],
-                        heights[index] - stroke.strength * influence[index]
-                    )
+                    let row = index / columns
+                    let column = index % columns
+                    let x = minimumX + Float(column) * stepX
+                    let z = minimumZ + Float(row) * stepZ
+                    let detail = terrainDetail(atX: x, z: z, seed: detailSeed)
+                    if hasCarvableRelief {
+                        // 完全な円形ではなく、自然に枝分かれた谷・火口になる。
+                        let delta = stroke.strength * influence[index] * (1 + detail * 0.08)
+                        heights[index] = max(
+                            baseHeights[index],
+                            heights[index] - max(delta, 0)
+                        )
+                    } else {
+                        // SceneKitの島土台自体に穴を開けられない場合も、平地への一筆で
+                        // 両岸を生成し、元の地表を川床・谷底として見せる。
+                        let shoulder = max(
+                            0,
+                            1 - abs(influence[index] - 0.34) / 0.24
+                        )
+                        let bankHeight = stroke.strength * 0.30 * shoulder * (1 + detail * 0.07)
+                        heights[index] = min(
+                            baseHeights[index] + 24,
+                            heights[index] + max(bankHeight, 0)
+                        )
+                        if shoulder > 0.04 {
+                            surfaceMaterials[index] = stroke.material ?? .earth
+                        }
+                    }
                 }
             case .smooth:
                 for _ in 0..<2 {
@@ -1513,6 +1657,32 @@ enum AssetPlacementRuntime {
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // 急峻な山と尾根だけに小さな熱侵食風の緩和をかける。
+        // 大きな輪郭や台地の段差は残しつつ、ノイズの孤立した針を防ぐ。
+        for _ in 0..<2 {
+            let source = heights
+            for row in 1..<(rows - 1) {
+                for column in 1..<(columns - 1) {
+                    let index = row * columns + column
+                    let mask = weatheringMask[index]
+                    guard mask > 0.02 else { continue }
+                    let neighborAverage = (
+                        source[index - 1]
+                            + source[index + 1]
+                            + source[index - columns]
+                            + source[index + columns]
+                    ) / 4
+                    let difference = neighborAverage - source[index]
+                    let excessSlope = max(abs(difference) - 0.11, 0)
+                    let amount = min(excessSlope * 0.16 * mask, 0.075)
+                    heights[index] = max(
+                        baseHeights[index],
+                        source[index] + (difference < 0 ? -amount : amount)
+                    )
                 }
             }
         }
@@ -1552,37 +1722,16 @@ enum AssetPlacementRuntime {
                 let elevation = heights[index] - baseHeights[index]
                 let steepness = 1 - normal.y
                 let selectedMaterial = surfaceMaterials[index]
-                let baseColor: UIColor
-                switch selectedMaterial {
-                case .grass:
-                    // 急斜面も緑を残し、ユーザーが選んだ素材を優先する。
-                    if elevation > 3.2 {
-                        baseColor = UIColor(rgb: 0xA0BB75)
-                    } else if steepness > 0.30 {
-                        baseColor = UIColor(rgb: 0x4F8253)
-                    } else {
-                        baseColor = selectedMaterial.color
-                    }
-                case .earth:
-                    baseColor = steepness > 0.28
-                        ? UIColor(rgb: 0x754A35)
-                        : selectedMaterial.color
-                case .sand:
-                    baseColor = elevation > 2.6
-                        ? UIColor(rgb: 0xCDBF98)
-                        : selectedMaterial.color
-                case .rock:
-                    baseColor = elevation > 2.8
-                        ? UIColor(rgb: 0xA8A895)
-                        : selectedMaterial.color
-                case .snow:
-                    baseColor = steepness > 0.32
-                        ? UIColor(rgb: 0xB8C2B9)
-                        : selectedMaterial.color
-                }
                 let x = minimumX + Float(column) * stepX
                 let z = minimumZ + Float(row) * stepZ
-                let tone = 0.96 + sin(x * 3.71 + z * 2.43) * 0.035
+                let detail = terrainDetail(atX: x, z: z, seed: 7.31)
+                let baseColor = terrainSurfaceColor(
+                    material: selectedMaterial,
+                    elevation: elevation,
+                    steepness: steepness,
+                    detail: detail
+                )
+                let tone = 0.965 + detail * 0.045
                 vertices.append(SCNVector3(x, heights[index] + 0.004, z))
                 normals.append(normal)
                 colors.append(baseColor.scaled(CGFloat(tone)))
@@ -1653,6 +1802,114 @@ enum AssetPlacementRuntime {
 
     static func terrainSurfaceHeight(on node: SCNNode, atLocalX x: Float, z: Float) -> Float? {
         (node as? TerrainSceneNode)?.heightField?.height(atX: x, z: z)
+    }
+
+    private static func resampledTerrainPoints(
+        for stroke: AssetTerrainStroke
+    ) -> [AssetPaintPoint] {
+        guard let first = stroke.points.first, stroke.points.count > 1 else {
+            return stroke.points
+        }
+        let spacing = max(stroke.radius * 0.18, 0.055)
+        var result = [first]
+        result.reserveCapacity(stroke.points.count)
+        for index in 1..<stroke.points.count {
+            let start = stroke.points[index - 1]
+            let end = stroke.points[index]
+            let dx = end.x - start.x
+            let dy = end.y - start.y
+            let dz = end.z - start.z
+            let distance = sqrt(dx * dx + dz * dz)
+            let steps = max(Int(ceil(distance / spacing)), 1)
+            for step in 1...steps {
+                let progress = Float(step) / Float(steps)
+                result.append(
+                    AssetPaintPoint(
+                        x: start.x + dx * progress,
+                        y: start.y + dy * progress,
+                        z: start.z + dz * progress
+                    )
+                )
+            }
+        }
+        return result
+    }
+
+    /// 完全に決定的な二オクターブの地形ディテール。保存の度に形が変わらない。
+    private static func terrainDetail(atX x: Float, z: Float, seed: Float) -> Float {
+        let broad = sin(x * 1.37 + seed * 0.73) * cos(z * 1.11 - seed * 0.41)
+        let fine = sin((x + z) * 3.17 + seed * 1.91)
+            * cos((x - z) * 2.43 - seed * 0.83)
+        return broad * 0.68 + fine * 0.32
+    }
+
+    /// 選択素材を主役に保ちながら、高度と斜度で岩肌・雪線を自動生成。
+    private static func terrainSurfaceColor(
+        material: AssetTerrainMaterial,
+        elevation: Float,
+        steepness: Float,
+        detail: Float
+    ) -> UIColor {
+        let rock = UIColor(rgb: 0x74796F)
+        let snow = UIColor(rgb: 0xDFE7DF)
+        var color: UIColor
+        switch material {
+        case .grass:
+            color = blend(
+                material.color,
+                UIColor(rgb: 0x426F4A),
+                amount: min(max((steepness - 0.12) / 0.30, 0), 0.72)
+            )
+        case .earth:
+            color = blend(
+                material.color,
+                UIColor(rgb: 0x6E4937),
+                amount: min(max((steepness - 0.14) / 0.34, 0), 0.66)
+            )
+        case .sand:
+            color = blend(
+                material.color,
+                UIColor(rgb: 0xBFAE83),
+                amount: min(max((steepness - 0.16) / 0.34, 0), 0.58)
+            )
+        case .rock:
+            color = blend(
+                material.color,
+                UIColor(rgb: 0xA4A696),
+                amount: min(max(elevation / 7, 0), 0.48)
+            )
+        case .snow:
+            color = blend(
+                material.color,
+                rock,
+                amount: min(max((steepness - 0.18) / 0.34, 0), 0.72)
+            )
+        }
+
+        // 芝・土の高山は岩壁から雪線へ自然に遷移する。
+        if material == .grass || material == .earth {
+            let exposedRock = min(max((steepness - 0.27) / 0.25, 0), 0.70)
+            color = blend(color, rock, amount: exposedRock)
+            let snowLine = 5.4 + detail * 0.55
+            let snowAmount = min(max((elevation - snowLine) / 2.4, 0), 0.82)
+                * min(max((0.56 - steepness) / 0.34, 0), 1)
+            color = blend(color, snow, amount: snowAmount)
+        }
+        return color
+    }
+
+    private static func blend(_ lhs: UIColor, _ rhs: UIColor, amount: Float) -> UIColor {
+        var lr: CGFloat = 0, lg: CGFloat = 0, lb: CGFloat = 0, la: CGFloat = 0
+        var rr: CGFloat = 0, rg: CGFloat = 0, rb: CGFloat = 0, ra: CGFloat = 0
+        lhs.getRed(&lr, green: &lg, blue: &lb, alpha: &la)
+        rhs.getRed(&rr, green: &rg, blue: &rb, alpha: &ra)
+        let t = CGFloat(min(max(amount, 0), 1))
+        return UIColor(
+            red: lr + (rr - lr) * t,
+            green: lg + (rg - lg) * t,
+            blue: lb + (rb - lb) * t,
+            alpha: la + (ra - la) * t
+        )
     }
 
     static func makePaintNode(for stroke: AssetPaintStroke) -> SCNNode {

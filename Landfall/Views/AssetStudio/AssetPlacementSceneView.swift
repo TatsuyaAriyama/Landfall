@@ -39,6 +39,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
         private var renderedPaintStrokes: [UUID: AssetPaintStroke] = [:]
         private var terrainNode: SCNNode?
         private var homeShipMarkerNode: SCNNode?
+        private var brushPreviewNode: SCNNode?
         private var renderedHomeProgressRatio: Double?
         private var renderedTerrainStrokes: [AssetTerrainStroke] = []
         private var renderedContext: AssetPlacementContext?
@@ -51,6 +52,8 @@ struct AssetPlacementSceneView: UIViewRepresentable {
         private var lastPaintPoint: AssetPaintPoint?
         private var activeTerrainStrokeID: UUID?
         private var lastTerrainPoint: AssetPaintPoint?
+        private var lastPaintGeometryRefresh: TimeInterval = 0
+        private var lastTerrainGeometryRefresh: TimeInterval = 0
 
         private var cameraTarget = SCNVector3(0, 1.3, 0)
         private var cameraAzimuth: Float = 0.72
@@ -61,10 +64,13 @@ struct AssetPlacementSceneView: UIViewRepresentable {
 
         private var interactionID: UUID?
         private var initialTransform: AssetTransform?
+        private var panEditsSelection = false
+        private var pinchEditsSelection = false
         private var initialAzimuth: Float = 0
         private var initialElevation: Float = 0
         private var initialDistance: Float = 0
         private var initialCameraTarget = SCNVector3Zero
+        private var pinchAnchorWorldPoint: SCNVector3?
         private var initialWorldDragPoint: SCNVector3?
         private var initialNodeWorldPosition: SCNVector3?
         private var dragPlaneY: Float = 0
@@ -152,6 +158,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
 
             let visibleStrokes = owner.store.visiblePaintStrokes
             let visibleStrokeIDs = Set(visibleStrokes.map(\.id))
+            let refreshTime = ProcessInfo.processInfo.systemUptime
             for (id, node) in paintNodes where !visibleStrokeIDs.contains(id) {
                 node.removeFromParentNode()
                 paintNodes[id] = nil
@@ -159,23 +166,33 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 selectionGeometryChanged = true
             }
             for stroke in visibleStrokes where renderedPaintStrokes[stroke.id] != stroke {
+                let isActiveStroke = stroke.id == activePaintStrokeID
+                if isActiveStroke, refreshTime - lastPaintGeometryRefresh < 1.0 / 30.0 {
+                    continue
+                }
                 paintNodes[stroke.id]?.removeFromParentNode()
                 let node = AssetPlacementRuntime.makePaintNode(for: stroke)
                 placementParent.addChildNode(node)
                 paintNodes[stroke.id] = node
                 renderedPaintStrokes[stroke.id] = stroke
                 selectionGeometryChanged = true
+                if isActiveStroke { lastPaintGeometryRefresh = refreshTime }
             }
 
             let visibleTerrainStrokes = owner.store.visibleTerrainStrokes
             if renderedTerrainStrokes != visibleTerrainStrokes {
-                terrainNode?.removeFromParentNode()
-                terrainNode = AssetPlacementRuntime.makeTerrainNode(for: visibleTerrainStrokes)
-                if let terrainNode {
-                    placementParent.addChildNode(terrainNode)
+                let shouldThrottle = activeTerrainStrokeID != nil
+                    && refreshTime - lastTerrainGeometryRefresh < 1.0 / 24.0
+                if !shouldThrottle {
+                    terrainNode?.removeFromParentNode()
+                    terrainNode = AssetPlacementRuntime.makeTerrainNode(for: visibleTerrainStrokes)
+                    if let terrainNode {
+                        placementParent.addChildNode(terrainNode)
+                    }
+                    renderedTerrainStrokes = visibleTerrainStrokes
+                    selectionGeometryChanged = true
+                    lastTerrainGeometryRefresh = refreshTime
                 }
-                renderedTerrainStrokes = visibleTerrainStrokes
-                selectionGeometryChanged = true
             }
 
             if selectionGeometryChanged { renderedSelectionIDs.removeAll() }
@@ -188,7 +205,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             let camera = SCNCamera()
             camera.fieldOfView = 46
             camera.zNear = 0.015
-            camera.zFar = 240
+            camera.zFar = 1_500
             camera.wantsHDR = true
             camera.wantsExposureAdaptation = true
             camera.exposureOffset = -0.08
@@ -263,6 +280,8 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             paintNodes.removeAll()
             renderedPaintStrokes.removeAll()
             terrainNode = nil
+            brushPreviewNode?.removeFromParentNode()
+            brushPreviewNode = nil
             renderedTerrainStrokes.removeAll()
             homeShipMarkerNode = nil
             renderedHomeProgressRatio = nil
@@ -316,7 +335,8 @@ struct AssetPlacementSceneView: UIViewRepresentable {
         private func makeGrid() -> SCNNode {
             let root = SCNNode()
             root.name = "asset-studio-grid"
-            let extent = 32
+            // 大規模マップでも距離感を失わないよう、編集可能範囲全体へ広げる。
+            let extent = 128
 
             func layer(values: [Int], opacity: CGFloat, y: Float) -> SCNNode {
                 var vertices: [SCNVector3] = []
@@ -343,8 +363,20 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             }
 
             let allValues = Array(-extent...extent)
-            root.addChildNode(layer(values: allValues.filter { !$0.isMultiple(of: 5) }, opacity: 0.055, y: 0.005))
-            root.addChildNode(layer(values: allValues.filter { $0.isMultiple(of: 5) }, opacity: 0.16, y: 0.007))
+            root.addChildNode(
+                layer(
+                    values: allValues.filter { $0.isMultiple(of: 2) && !$0.isMultiple(of: 10) },
+                    opacity: 0.045,
+                    y: 0.005
+                )
+            )
+            root.addChildNode(
+                layer(
+                    values: allValues.filter { $0.isMultiple(of: 10) },
+                    opacity: 0.17,
+                    y: 0.007
+                )
+            )
             return root
         }
 
@@ -473,9 +505,15 @@ struct AssetPlacementSceneView: UIViewRepresentable {
 
             for selectionID in selectionIDs {
                 let indicator: SCNNode
-                if let selectedNode = placementNodes[selectionID] ?? paintNodes[selectionID] {
+                if let selectedNode = placementNodes[selectionID] {
                     indicator = makeSelectionIndicator(for: selectedNode)
                     selectedNode.addChildNode(indicator)
+                } else if let stroke = owner.store.visiblePaintStrokes.first(where: { $0.id == selectionID }) {
+                    indicator = makeStrokeFootprintSelectionIndicator(
+                        points: stroke.points,
+                        radius: max(stroke.width * 0.5, 0.04)
+                    )
+                    placementParent.addChildNode(indicator)
                 } else if let stroke = owner.store.visibleTerrainStrokes.first(where: { $0.id == selectionID }) {
                     indicator = makeTerrainSelectionIndicator(for: stroke)
                     placementParent.addChildNode(indicator)
@@ -500,28 +538,70 @@ struct AssetPlacementSceneView: UIViewRepresentable {
         }
 
         private func makeTerrainSelectionIndicator(for stroke: AssetTerrainStroke) -> SCNNode {
-            guard let firstPoint = stroke.points.first else {
-                return makeSelectionIndicator(
-                    minimum: SCNVector3(-0.5, 0, -0.5),
-                    maximum: SCNVector3(0.5, 0.4, 0.5)
-                )
-            }
-            let radius = max(stroke.radius, 0.08)
-            var minimum = SCNVector3(firstPoint.x - radius, firstPoint.y - 0.03, firstPoint.z - radius)
-            var maximum = SCNVector3(
-                firstPoint.x + radius,
-                firstPoint.y + max(abs(stroke.strength), 0.22),
-                firstPoint.z + radius
+            makeStrokeFootprintSelectionIndicator(
+                points: stroke.points,
+                radius: max(stroke.radius, 0.08)
             )
-            for point in stroke.points.dropFirst() {
-                minimum.x = min(minimum.x, point.x - radius)
-                minimum.y = min(minimum.y, point.y - 0.03)
-                minimum.z = min(minimum.z, point.z - radius)
-                maximum.x = max(maximum.x, point.x + radius)
-                maximum.y = max(maximum.y, point.y + max(abs(stroke.strength), 0.22))
-                maximum.z = max(maximum.z, point.z + radius)
+        }
+
+        /// ペンや地形の実際のブラシ範囲を点列で示し、巨大な直方体枠で世界を隠さない。
+        private func makeStrokeFootprintSelectionIndicator(
+            points: [AssetPaintPoint],
+            radius: Float
+        ) -> SCNNode {
+            let indicator = SCNNode()
+            indicator.name = "asset-studio-selection"
+            guard !points.isEmpty else { return indicator }
+
+            let material = SCNMaterial()
+            material.lightingModel = .constant
+            material.diffuse.contents = UIColor(rgb: 0xFFD36A)
+            material.emission.contents = UIColor(rgb: 0xE7A83E)
+            material.readsFromDepthBuffer = false
+            material.writesToDepthBuffer = false
+
+            var sampledPoints: [AssetPaintPoint] = []
+            let stride = max(1, points.count / 16)
+            for index in Swift.stride(from: 0, to: points.count, by: stride) {
+                sampledPoints.append(points[index])
             }
-            return makeSelectionIndicator(minimum: minimum, maximum: maximum)
+            if let last = points.last, sampledPoints.last != last { sampledPoints.append(last) }
+
+            if sampledPoints.count > 1 {
+                var vertices: [SCNVector3] = []
+                var indices: [Int32] = []
+                for index in 0..<(sampledPoints.count - 1) {
+                    let start = sampledPoints[index]
+                    let end = sampledPoints[index + 1]
+                    let vertexIndex = Int32(vertices.count)
+                    vertices.append(SCNVector3(start.x, start.y + 0.055, start.z))
+                    vertices.append(SCNVector3(end.x, end.y + 0.055, end.z))
+                    indices.append(contentsOf: [vertexIndex, vertexIndex + 1])
+                }
+                let pathGeometry = SCNGeometry(
+                    sources: [SCNGeometrySource(vertices: vertices)],
+                    elements: [SCNGeometryElement(indices: indices, primitiveType: .line)]
+                )
+                pathGeometry.firstMaterial = material
+                let pathNode = SCNNode(geometry: pathGeometry)
+                pathNode.renderingOrder = 902
+                indicator.addChildNode(pathNode)
+            }
+
+            for point in sampledPoints {
+                let ringGeometry = SCNTorus(
+                    ringRadius: CGFloat(radius),
+                    pipeRadius: CGFloat(max(radius * 0.018, 0.009))
+                )
+                ringGeometry.ringSegmentCount = 40
+                ringGeometry.pipeSegmentCount = 5
+                ringGeometry.firstMaterial = material
+                let ringNode = SCNNode(geometry: ringGeometry)
+                ringNode.position = SCNVector3(point.x, point.y + 0.05, point.z)
+                ringNode.renderingOrder = 903
+                indicator.addChildNode(ringNode)
+            }
+            return indicator
         }
 
         private func makeSelectionIndicator(minimum: SCNVector3, maximum: SCNVector3) -> SCNNode {
@@ -589,11 +669,17 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
             pinch.delegate = self
 
+            let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+            longPress.minimumPressDuration = 0.42
+            longPress.allowableMovement = 12
+            longPress.delegate = self
+
             view.addGestureRecognizer(singleTap)
             view.addGestureRecognizer(doubleTap)
             view.addGestureRecognizer(pan)
             view.addGestureRecognizer(verticalPan)
             view.addGestureRecognizer(pinch)
+            view.addGestureRecognizer(longPress)
         }
 
         @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -636,9 +722,26 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 renderedSelectionIDs.removeAll()
                 refreshSelectionIfNeeded()
                 focusSelection(animated: true)
+            } else if owner.store.manipulationMode == .camera || owner.store.manipulationMode == .select,
+                      let worldPoint = editableWorldPoint(at: gesture.location(in: view), in: view) {
+                cameraTarget = worldPoint
+                cameraDistance *= 0.58
+                updateCamera(animated: 0.30)
+                Haptics.tap(.medium)
             } else {
                 resetCamera(animated: true)
             }
+        }
+
+        @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+            guard gesture.state == .began,
+                  let view = sceneView,
+                  (owner.store.manipulationMode == .camera || owner.store.manipulationMode == .select),
+                  let worldPoint = editableWorldPoint(at: gesture.location(in: view), in: view)
+            else { return }
+            cameraTarget = worldPoint
+            updateCamera(animated: 0.24)
+            Haptics.tap(.medium)
         }
 
         @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
@@ -657,12 +760,6 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             }
             let translation = gesture.translation(in: view)
             let store = owner.store
-            let editCamera = store.manipulationMode == .camera
-                || store.manipulationMode == .select
-                || store.manipulationMode == .paint
-                || store.manipulationMode == .terrain
-                || store.manipulationMode == .place
-                || store.selectedPlacement == nil
 
             switch gesture.state {
             case .began:
@@ -671,9 +768,16 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 initialCameraTarget = cameraTarget
                 interactionID = store.selectedID
                 initialTransform = store.selectedPlacement?.transform
+                let isTransformMode = store.manipulationMode == .move
+                    || store.manipulationMode == .height
+                    || store.manipulationMode == .rotate
+                    || store.manipulationMode == .scale
+                panEditsSelection = isTransformMode
+                    && store.selectedID != nil
+                    && placementID(at: gesture.location(in: view), in: view) == store.selectedID
                 initialWorldDragPoint = nil
                 initialNodeWorldPosition = nil
-                if !editCamera {
+                if panEditsSelection {
                     if store.manipulationMode == .height {
                         store.followsPlacementSurface = false
                     }
@@ -692,7 +796,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 }
 
             case .changed:
-                if editCamera {
+                if !panEditsSelection {
                     cameraAzimuth = initialAzimuth - Float(translation.x) * 0.0064
                     // 横方向は360度回転させ、縦方向は指の移動と同じ向きで傾ける。
                     // 実際の上下限は updateCamera() 内で安全な範囲に制約される。
@@ -778,12 +882,12 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 }
 
             case .ended, .cancelled, .failed:
-                if editCamera, gesture.state == .ended {
+                if !panEditsSelection, gesture.state == .ended {
                     let velocity = gesture.velocity(in: view)
                     cameraAzimuth -= Float(velocity.x) * 0.00010
                     cameraElevation += Float(velocity.y) * 0.000075
                     updateCamera(animated: 0.18)
-                } else if !editCamera {
+                } else if panEditsSelection {
                     store.endInteractiveEdit()
                     if store.manipulationMode == .rotate || store.manipulationMode == .scale {
                         store.requestSurfaceSnap(clampOnly: !store.followsPlacementSurface)
@@ -791,6 +895,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 }
                 interactionID = nil
                 initialTransform = nil
+                panEditsSelection = false
                 initialWorldDragPoint = nil
                 initialNodeWorldPosition = nil
             default:
@@ -803,10 +908,20 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             switch gesture.state {
             case .began:
                 guard let point = paintingPoint(at: location, in: view) else { return }
+                showBrushPreview(
+                    at: point,
+                    radius: max(owner.store.paintWidth * 0.5, 0.04),
+                    color: owner.store.paintTool.material?.color ?? UIColor(rgb: 0xFF746B)
+                )
                 activePaintStrokeID = owner.store.beginPaintStroke(at: point)
                 lastPaintPoint = point
             case .changed:
                 guard let point = paintingPoint(at: location, in: view) else { return }
+                showBrushPreview(
+                    at: point,
+                    radius: max(owner.store.paintWidth * 0.5, 0.04),
+                    color: owner.store.paintTool.material?.color ?? UIColor(rgb: 0xFF746B)
+                )
                 appendPaintSamples(through: point)
             case .ended, .cancelled, .failed:
                 if let point = paintingPoint(at: location, in: view) {
@@ -815,6 +930,9 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 owner.store.endInteractiveEdit()
                 activePaintStrokeID = nil
                 lastPaintPoint = nil
+                hideBrushPreview()
+                lastPaintGeometryRefresh = 0
+                synchronize()
                 Haptics.tap(.light)
             default:
                 break
@@ -826,10 +944,20 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             switch gesture.state {
             case .began:
                 guard let point = terrainPoint(at: location, in: view) else { return }
+                showBrushPreview(
+                    at: point,
+                    radius: owner.store.terrainRadius,
+                    color: terrainPreviewColor
+                )
                 activeTerrainStrokeID = owner.store.beginTerrainStroke(at: point)
                 lastTerrainPoint = point
             case .changed:
                 guard let point = terrainPoint(at: location, in: view) else { return }
+                showBrushPreview(
+                    at: point,
+                    radius: owner.store.terrainRadius,
+                    color: terrainPreviewColor
+                )
                 appendTerrainSamples(through: point)
             case .ended, .cancelled, .failed:
                 if let point = terrainPoint(at: location, in: view) {
@@ -838,10 +966,74 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 owner.store.endInteractiveEdit()
                 activeTerrainStrokeID = nil
                 lastTerrainPoint = nil
+                hideBrushPreview()
+                lastTerrainGeometryRefresh = 0
+                synchronize()
                 Haptics.tap(.medium)
             default:
                 break
             }
+        }
+
+        private var terrainPreviewColor: UIColor {
+            switch owner.store.terrainTool {
+            case .raise: return UIColor(rgb: 0xFFD36A)
+            case .lower: return UIColor(rgb: 0xFF746B)
+            case .smooth: return UIColor(rgb: 0x6ED0B0)
+            }
+        }
+
+        private func showBrushPreview(
+            at point: AssetPaintPoint,
+            radius: Float,
+            color: UIColor
+        ) {
+            let preview: SCNNode
+            if let brushPreviewNode {
+                preview = brushPreviewNode
+            } else {
+                preview = SCNNode()
+                preview.name = "asset-studio-brush-preview"
+
+                let ringMaterial = VoyageSceneKit.unlitMaterial(color)
+                ringMaterial.readsFromDepthBuffer = false
+                ringMaterial.writesToDepthBuffer = false
+                let ringGeometry = SCNTorus(ringRadius: 1, pipeRadius: 0.025)
+                ringGeometry.ringSegmentCount = 56
+                ringGeometry.pipeSegmentCount = 6
+                ringGeometry.firstMaterial = ringMaterial
+                let ringNode = SCNNode(geometry: ringGeometry)
+                ringNode.name = "asset-studio-brush-preview-ring"
+                ringNode.renderingOrder = 920
+                preview.addChildNode(ringNode)
+
+                let centerMaterial = VoyageSceneKit.unlitMaterial(color.withAlphaComponent(0.10))
+                centerMaterial.readsFromDepthBuffer = false
+                centerMaterial.writesToDepthBuffer = false
+                let centerGeometry = SCNCylinder(radius: 1, height: 0.008)
+                centerGeometry.radialSegmentCount = 40
+                centerGeometry.firstMaterial = centerMaterial
+                let centerNode = SCNNode(geometry: centerGeometry)
+                centerNode.renderingOrder = 919
+                preview.addChildNode(centerNode)
+
+                placementParent.addChildNode(preview)
+                brushPreviewNode = preview
+            }
+            preview.position = SCNVector3(point.x, point.y + 0.065, point.z)
+            preview.scale = SCNVector3(radius, 1, radius)
+            for child in preview.childNodes {
+                let displayColor = child.name == "asset-studio-brush-preview-ring"
+                    ? color
+                    : color.withAlphaComponent(0.10)
+                child.geometry?.firstMaterial?.diffuse.contents = displayColor
+                child.geometry?.firstMaterial?.emission.contents = displayColor
+            }
+        }
+
+        private func hideBrushPreview() {
+            brushPreviewNode?.removeFromParentNode()
+            brushPreviewNode = nil
         }
 
         private func appendTerrainSamples(through point: AssetPaintPoint) {
@@ -904,6 +1096,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             for hit in hits {
                 if nodeOrAncestor(hit.node, hasNamePrefix: "asset-studio-paint:")
                     || nodeOrAncestor(hit.node, hasNamePrefix: "asset-studio-selection")
+                    || nodeOrAncestor(hit.node, hasNamePrefix: "asset-studio-brush-preview")
                     || nodeOrAncestor(hit.node, hasNamePrefix: "asset-studio-home-ship-marker") {
                     continue
                 }
@@ -945,6 +1138,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 if nodeOrAncestor(hit.node, hasNamePrefix: "asset-studio-paint:")
                     || nodeOrAncestor(hit.node, hasNamePrefix: "asset-studio-terrain")
                     || nodeOrAncestor(hit.node, hasNamePrefix: "asset-studio-selection")
+                    || nodeOrAncestor(hit.node, hasNamePrefix: "asset-studio-brush-preview")
                     || nodeOrAncestor(hit.node, hasNamePrefix: "asset-studio-home-ship-marker") {
                     continue
                 }
@@ -1190,35 +1384,66 @@ struct AssetPlacementSceneView: UIViewRepresentable {
 
         @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
             let store = owner.store
-            let editCamera = store.manipulationMode == .camera
-                || store.manipulationMode == .select
-                || store.manipulationMode == .paint
-                || store.manipulationMode == .terrain
-                || store.manipulationMode == .place
-                || store.selectedPlacement == nil
-
             switch gesture.state {
             case .began:
                 initialDistance = cameraDistance
+                initialCameraTarget = cameraTarget
                 interactionID = store.selectedID
                 initialTransform = store.selectedPlacement?.transform
-                if !editCamera { store.beginInteractiveEdit() }
+                let location = sceneView.map { gesture.location(in: $0) }
+                let isTransformMode = store.manipulationMode == .move
+                    || store.manipulationMode == .height
+                    || store.manipulationMode == .rotate
+                    || store.manipulationMode == .scale
+                let pinchHitsSelection: Bool
+                if let view = sceneView, let location {
+                    pinchHitsSelection = placementID(at: location, in: view) == store.selectedID
+                } else {
+                    pinchHitsSelection = false
+                }
+                pinchEditsSelection = isTransformMode
+                    && store.selectedID != nil
+                    && pinchHitsSelection
+                if pinchEditsSelection {
+                    pinchAnchorWorldPoint = nil
+                    store.beginInteractiveEdit()
+                } else if let view = sceneView {
+                    pinchAnchorWorldPoint = editableWorldPoint(
+                        at: gesture.location(in: view),
+                        in: view
+                    )
+                } else {
+                    pinchAnchorWorldPoint = nil
+                }
             case .changed:
-                if editCamera {
-                    cameraDistance = initialDistance / pow(Float(gesture.scale), 0.86)
-                    updateCamera()
-                } else if let id = interactionID, let start = initialTransform {
+                if pinchEditsSelection, let id = interactionID, let start = initialTransform {
                     store.updatePlacement(id: id, interactively: true) { placement in
                         placement.transform.scale = start.scale * Float(gesture.scale)
                     }
+                } else {
+                    cameraDistance = initialDistance / pow(Float(gesture.scale), 0.86)
+                    if let anchor = pinchAnchorWorldPoint {
+                        let focusStrength = min(
+                            max(1 - cameraDistance / max(initialDistance, 0.001), 0),
+                            0.78
+                        )
+                        cameraTarget = SCNVector3(
+                            initialCameraTarget.x + (anchor.x - initialCameraTarget.x) * focusStrength,
+                            initialCameraTarget.y + (anchor.y - initialCameraTarget.y) * focusStrength,
+                            initialCameraTarget.z + (anchor.z - initialCameraTarget.z) * focusStrength
+                        )
+                    }
+                    updateCamera()
                 }
             case .ended, .cancelled, .failed:
-                if !editCamera {
+                if pinchEditsSelection {
                     store.endInteractiveEdit()
                     store.requestSurfaceSnap(clampOnly: !store.followsPlacementSurface)
                 }
                 interactionID = nil
                 initialTransform = nil
+                pinchEditsSelection = false
+                pinchAnchorWorldPoint = nil
             default:
                 break
             }
@@ -1240,6 +1465,22 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                     }
                     node = current.parent
                 }
+            }
+            return nil
+        }
+
+        private func editableWorldPoint(at point: CGPoint, in view: SCNView) -> SCNVector3? {
+            let hits = view.hitTest(point, options: [
+                .searchMode: SCNHitTestSearchMode.all.rawValue,
+                .ignoreHiddenNodes: true,
+                .boundingBoxOnly: false,
+            ])
+            for hit in hits {
+                if nodeOrAncestor(hit.node, hasNamePrefix: "asset-studio-selection")
+                    || nodeOrAncestor(hit.node, hasNamePrefix: "asset-studio-home-ship-marker") {
+                    continue
+                }
+                return hit.worldCoordinates
             }
             return nil
         }
@@ -1298,13 +1539,10 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             var best: (id: UUID, normalizedDistance: Float)?
             for stroke in owner.store.visiblePaintStrokes.reversed() {
                 let reach = max(stroke.width * 0.65, 0.07)
-                for candidate in stroke.points {
-                    let distance = sqrt(pow(candidate.x - point.x, 2) + pow(candidate.z - point.z, 2))
-                    let normalized = distance / reach
-                    guard normalized <= 1 else { continue }
-                    if best == nil || normalized < best!.normalizedDistance {
-                        best = (stroke.id, normalized)
-                    }
+                let normalized = distanceFromStroke(point, to: stroke.points) / reach
+                guard normalized <= 1 else { continue }
+                if best == nil || normalized < best!.normalizedDistance {
+                    best = (stroke.id, normalized)
                 }
             }
             return best?.id
@@ -1314,16 +1552,49 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             var best: (id: UUID, normalizedDistance: Float)?
             for stroke in owner.store.visibleTerrainStrokes.reversed() {
                 let reach = max(stroke.radius, 0.08)
-                for candidate in stroke.points {
-                    let distance = sqrt(pow(candidate.x - point.x, 2) + pow(candidate.z - point.z, 2))
-                    let normalized = distance / reach
-                    guard normalized <= 1.08 else { continue }
-                    if best == nil || normalized < best!.normalizedDistance {
-                        best = (stroke.id, normalized)
-                    }
+                let normalized = distanceFromStroke(point, to: stroke.points) / reach
+                guard normalized <= 1.08 else { continue }
+                if best == nil || normalized < best!.normalizedDistance {
+                    best = (stroke.id, normalized)
                 }
             }
             return best?.id
+        }
+
+        private func distanceFromStroke(
+            _ point: SCNVector3,
+            to strokePoints: [AssetPaintPoint]
+        ) -> Float {
+            guard let first = strokePoints.first else { return .greatestFiniteMagnitude }
+            guard strokePoints.count > 1 else {
+                return sqrt(pow(first.x - point.x, 2) + pow(first.z - point.z, 2))
+            }
+            var minimumDistance = Float.greatestFiniteMagnitude
+            for index in 0..<(strokePoints.count - 1) {
+                let start = strokePoints[index]
+                let end = strokePoints[index + 1]
+                let segmentX = end.x - start.x
+                let segmentZ = end.z - start.z
+                let lengthSquared = segmentX * segmentX + segmentZ * segmentZ
+                let progress: Float
+                if lengthSquared <= 0.000_001 {
+                    progress = 0
+                } else {
+                    progress = min(
+                        max(
+                            ((point.x - start.x) * segmentX + (point.z - start.z) * segmentZ)
+                                / lengthSquared,
+                            0
+                        ),
+                        1
+                    )
+                }
+                let closestX = start.x + segmentX * progress
+                let closestZ = start.z + segmentZ * progress
+                let distance = sqrt(pow(closestX - point.x, 2) + pow(closestZ - point.z, 2))
+                minimumDistance = min(minimumDistance, distance)
+            }
+            return minimumDistance
         }
 
         private func worldPoint(
@@ -1353,18 +1624,18 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                     maximumElevation: 1.28,
                     minimumDistance: 4.6,
                     // 進捗0%時のホーム船は島から約90m。実寸の船視点を再現できる上限にする。
-                    maximumDistance: 120,
-                    minimumTarget: SCNVector3(-120, 0.15, -120),
-                    maximumTarget: SCNVector3(120, 24, 120)
+                    maximumDistance: 420,
+                    minimumTarget: SCNVector3(-512, 0.15, -512),
+                    maximumTarget: SCNVector3(512, 96, 512)
                 )
             case .studio:
                 return CameraLimits(
                     minimumElevation: 0.08,
                     maximumElevation: 1.28,
                     minimumDistance: 1.4,
-                    maximumDistance: 120,
-                    minimumTarget: SCNVector3(-120, 0, -120),
-                    maximumTarget: SCNVector3(120, 24, 120)
+                    maximumDistance: 420,
+                    minimumTarget: SCNVector3(-512, -12, -512),
+                    maximumTarget: SCNVector3(512, 96, 512)
                 )
             }
         }
@@ -1385,11 +1656,57 @@ struct AssetPlacementSceneView: UIViewRepresentable {
         }
 
         private func showOverview(animated: Bool) {
-            cameraTarget = SCNVector3(0, 1.0, 0)
             cameraAzimuth = nearestEquivalentAzimuth(to: 0.72)
             cameraElevation = 0.74
-            cameraDistance = renderedContext == .studio ? 58 : 22
+            if let bounds = authoredWorldBounds() {
+                cameraTarget = SCNVector3(
+                    (bounds.minimum.x + bounds.maximum.x) * 0.5,
+                    max((bounds.minimum.y + bounds.maximum.y) * 0.5, 0.7),
+                    (bounds.minimum.z + bounds.maximum.z) * 0.5
+                )
+                let width = bounds.maximum.x - bounds.minimum.x
+                let height = bounds.maximum.y - bounds.minimum.y
+                let depth = bounds.maximum.z - bounds.minimum.z
+                let radius = max(sqrt(width * width + height * height + depth * depth) * 0.5, 4.5)
+                let fieldOfView = Float(cameraNode.camera?.fieldOfView ?? 46) * .pi / 180
+                cameraDistance = radius / max(tan(fieldOfView * 0.5), 0.1) * 1.28
+            } else {
+                cameraTarget = SCNVector3(0, 1.0, 0)
+                cameraDistance = renderedContext == .studio ? 58 : 22
+            }
             updateCamera(animated: animated ? 0.38 : 0)
+        }
+
+        private func authoredWorldBounds() -> (minimum: SCNVector3, maximum: SCNVector3)? {
+            var result: (minimum: SCNVector3, maximum: SCNVector3)?
+
+            func include(_ next: (minimum: SCNVector3, maximum: SCNVector3)) {
+                guard var current = result else {
+                    result = next
+                    return
+                }
+                current.minimum.x = min(current.minimum.x, next.minimum.x)
+                current.minimum.y = min(current.minimum.y, next.minimum.y)
+                current.minimum.z = min(current.minimum.z, next.minimum.z)
+                current.maximum.x = max(current.maximum.x, next.maximum.x)
+                current.maximum.y = max(current.maximum.y, next.maximum.y)
+                current.maximum.z = max(current.maximum.z, next.maximum.z)
+                result = current
+            }
+
+            if renderedContext == .destinationIsland {
+                include((SCNVector3(-4.2, -0.1, -3.2), SCNVector3(4.2, 4.8, 3.2)))
+            }
+            for node in placementNodes.values {
+                if let bounds = worldBounds(of: node) { include(bounds) }
+            }
+            for node in paintNodes.values {
+                if let bounds = worldBounds(of: node) { include(bounds) }
+            }
+            for stroke in owner.store.visibleTerrainStrokes {
+                if let bounds = terrainStrokeWorldBounds(stroke) { include(bounds) }
+            }
+            return result
         }
 
         /// 船の正確な地点を、島へ向かう方角ごと後方から見せる。
@@ -1823,6 +2140,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
         private func updateCamera(animated duration: TimeInterval = 0) {
             constrainCamera()
             cameraNode.camera?.zNear = Double(max(0.012, cameraDistance * 0.002))
+            cameraNode.camera?.zFar = Double(max(1_500, cameraDistance * 8))
             if duration > 0 {
                 SCNTransaction.begin()
                 SCNTransaction.animationDuration = duration
