@@ -40,6 +40,8 @@ class TabErrorBoundary extends Component<
 
 // 不死鳥(航海士)の360度ビューア。#phoenix で直接開ける(サインイン不要)。
 const PhoenixViewer = lazy(() => import("./three/PhoenixViewer"));
+// 目的地の一本樹を背景なしで確認する360度ビューア。#tree で直接開ける。
+const TreeViewer = lazy(() => import("./three/TreeViewer"));
 
 /// 再読込しても開いていたタブに戻れるよう、タブを URL ハッシュに控える。
 function initialTab(): Tab {
@@ -50,6 +52,13 @@ function initialTab(): Tab {
 export default function App() {
   const { user, loading, redirectError } = useAuthUser();
 
+  if (window.location.hash.startsWith("#tree")) {
+    return (
+      <Suspense fallback={null}>
+        <TreeViewer />
+      </Suspense>
+    );
+  }
   if (window.location.hash.startsWith("#phoenix")) {
     return (
       <Suspense fallback={null}>
