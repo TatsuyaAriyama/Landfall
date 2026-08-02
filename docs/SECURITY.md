@@ -1,11 +1,11 @@
-# Landfall セキュリティ概要
+# KeelMira セキュリティ概要
 
-Landfall の防御は3層です。**それぞれ「有効化」の手順が違う**ので注意してください。
+KeelMira の防御は3層です。**それぞれ「有効化」の手順が違う**ので注意してください。
 
 | 層 | どこ | 何を守る | 有効化 |
 |----|------|---------|--------|
 | Firestore セキュリティルール | `firestore.rules` | 本当の権限境界。誰が何を読み書きできるか | **デプロイが必要**(下記) |
-| App Check | アプリ内 `AppCheckProvider.swift` + Firebase コンソール | 本物のアプリからのアクセスか(濫用・なりすまし防止) | コンソールで **enforcement を ON** にして初めて遮断が効く |
+| App Check | iOS `AppCheckProvider.swift` / Web `firebase.ts` + Firebase コンソール | 本物のクライアントからのアクセスか(濫用・なりすまし防止) | コンソールで **enforcement を ON** にして初めて遮断が効く |
 | クライアント側の入力上限 | `RoomService.swift` ほか | 肥大データを送らない(多重防御・UX) | ビルドに含まれる(自動) |
 
 ## 1. Firestore ルール(最重要)
@@ -34,16 +34,32 @@ firebase deploy --only firestore:rules
 
 ## 2. App Check(濫用対策)
 
+### iOS
+
 `AppCheck.setAppCheckProviderFactory(...)` を `FirebaseApp.configure()` の前に差し込み済み。
 - 本番(実機): **App Attest**(Secure Enclave による端末+アプリの証明)。
+- Releaseの `com.apple.developer.devicecheck.appattest-environment` は **`production`**。
+  Firebase App Checkへ登録したiOS App IDとBundle IDも一致させる。
 - DEBUG(シミュレータ/開発機): デバッグプロバイダ。起動ログに出るデバッグトークンをコンソールに登録すると検証が通る。
 
+### Web
+
+`VITE_FB_APPCHECK_SITE_KEY` が設定されている環境では、
+`ReCaptchaEnterpriseProvider` を初期化する。Firebase コンソールで Web アプリ用
+reCAPTCHA Enterprise プロバイダを登録し、Cloudflare Pages の環境変数にも同じ
+サイトキーを設定する。サイトキーは公開識別子であり、秘密鍵ではない。
+
 **遮断を効かせるには**、Firebase コンソールで:
-1. App Check にこのアプリ(App Attest)を登録。
-2. 開発用にデバッグトークンを登録。
-3. 正規トラフィックがすべて通ることを監視で確認してから、Firestore と Authentication の **enforcement を ON**。
+1. iOS アプリに App Attest、Web アプリに reCAPTCHA Enterprise をそれぞれ登録。
+2. 開発用に iOS のデバッグトークンを登録。
+3. iOS / Web 双方から App Check 付きリクエストが届くことを監視で確認。
+4. その後にだけ、Firestore など対応サービスの **enforcement を ON**。
 
 > enforcement が OFF の間は未登録でも通常通信は妨げられません(安全に先行導入できます)。順序を守らないと正規ユーザーを締め出す恐れがあるため、**必ず監視 → 確認 → 有効化**の順で。
+
+2026-07-31時点では、FirestoreとAuthenticationは**監視のみ（UNENFORCED）**。
+App Store配布ビルドを実機またはTestFlightで起動し、App Attestの有効なリクエストが
+メトリクスへ現れることを確認してから強制を有効化する。
 
 ## 3. 秘密情報の扱い
 - `GoogleService-Info.plist`(Firebase クライアント設定)は `.gitignore` 済み。リポジトリには含めません。

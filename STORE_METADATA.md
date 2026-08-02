@@ -8,73 +8,65 @@
 > (下の「App Privacy」節に正しい回答を記載)。説明文の該当箇所も本ファイルで是正済み。
 
 ## App Name / アプリ名
-- EN: `Landfall`
-- JA: `Landfall`
+- EN: `KeelMira`
+- JA: `KeelMira`
 
 ## Subtitle(30文字以内)/ サブタイトル
-- EN: `Study log. Rest included.`  (25 chars)
-- JA: `休むことも、記録になる`  (11文字)
+- EN: `Turn Focus Into a Voyage`
+- JA: `集中時間を航海に変える`
 
 ## Category / カテゴリ
 - Primary: Productivity(仕事効率化)
 - Secondary: Education(教育)— 任意
 
 ## Promotional Text(170文字以内、随時更新可)/ プロモーションテキスト
-- EN: `Landfall doesn't hide the days you rested — it counts them, right next to the days you studied. No streaks. No guilt. Just your comeback power.`
-- JA: `休んだ日を隠さない学習ログ。連続日数は測らない。評価するのは「戻ってくる力」だけ。月末には、その月ぜんぶが4枚のカードになる。`
+- EN: `Choose a work item, start the timer, and watch your voyage move forward. As the due date nears, your destination draws closer.`
+- JA: `作業項目を選び、タイマーを始める。記録した時間だけ船が進み、期日が近づくほど目的地の島も近づきます。`
 
 ## Description / 説明文
 
 ### EN
 ```
-Landfall is a study log that never hides the days you rested.
+KeelMira turns focused time into a 3D voyage.
 
-Most habit apps punish you for stopping. Landfall doesn't. It puts the days you rested right next to the days you studied — same size, same weight, no shame. What it measures instead is your comeback power: how you return after a gap, not how long you can avoid one.
+FOCUS AND MOVE FORWARD
+Choose a work item, then start a standard or Pomodoro timer. Every recorded minute becomes part of today's voyage. You can also add time manually, or start, pause, and finish a session from the widget.
 
-HOME
-Add the things you're working on — a book, a language, an exam, a side project — as simple tiles. Tap one to start a timer or log a length of time, with an optional note about what you did.
+SET A DESTINATION
+Tap the sea and choose a distant island. Give it a name and due date. The island draws closer as the date approaches, making your goal feel present in the world around you.
 
-TRACE
-See your month as a single line: a skyline of the days you showed up, gaps where you rested, and a quiet marker every time you came back. Tap any day to revisit exactly what you logged.
+LOOK BACK
+Review and edit daily records in Trace. In the Logbook, leave a short reflection for today or yesterday. Turn a day's voyage into a shareable card whenever you want.
 
-WRAPPED
-At the end of each month, Landfall turns the whole month into four cards: the facts (days studied, days rested, and the fact that you never once quit), the story of your longest gap, a comeback "type" built from your own pattern, and a one-page trace of everything. Share any card as an image.
+SAIL ALONE OR TOGETHER
+The core experience works without an account. Sign in to sync across devices and enter the Harbor. Meet sailors with similar goals in public harbors, or use chat and a shared timer in a private harbor for up to four people.
 
-HARBOR (optional)
-Sign in to sync your records across your devices, and to open a small "harbor" with friends. In a harbor you can see each other's days — never ranked, never compared, everyone the same size.
+MAKE IT YOURS
+Customize your ship, sails, sailor, app icon, language, and appearance.
 
-WHAT LANDFALL WILL NEVER DO
-No streak counters. No "don't break the chain." No nagging notifications. No leaderboards, no comparisons, no ads, and no tracking — your data is never sold or used to follow you across apps.
-
-Your records live on your device. Signing in is optional and only powers sync and harbors.
-
-Landfall is for anyone who has ever quit a habit app out of guilt. This one keeps the door open instead.
+There are no streaks or leaderboards. Motivation comes in waves. Keep sailing anyway.
 ```
 
 ### JA
 ```
-Landfallは、休んだ日を隠さない学習ログです。
+KeelMiraは、集中した時間を3Dの航海として残す作業・学習タイマーです。
 
-多くの習慣アプリは「止まること」を罰します。Landfallはそうしません。休んだ日を、学んだ日とまったく同じ大きさ・同じ重さで並べます。恥じることは何もありません。代わりに見つめるのは「再開力」— どれだけ長く続けたかではなく、どれだけ戻ってこられたか。
+■ 集中すると、船が進む
+作業項目を選び、通常タイマーまたはポモドーロを開始。記録した時間が今日の航海になります。時間は手入力でき、ウィジェットから開始・休憩・着岸も操作できます。
 
-■ ホーム
-取り組んでいること(本、語学、資格、サイドプロジェクトなど)をタイルとして追加。タップしてタイマーで計測するか、時間を選んで記録します。任意でひとことメモも添えられます。
+■ 目的地を決める
+海をタップして、遠くの島に名前と期日を設定。期日が近づくにつれて島も近づき、目標を景色の中で感じられます。
 
-■ 軌跡
-その月を一本の線で振り返れます。学んだ日は山になり、休んだ日は平らな空白として残り、戻ってきた日には静かな印がつきます。どの日をタップしても、そのとき何を記録したか読み返せます。
+■ 振り返る
+軌跡で日々の記録を確認・編集。航海誌には今日または昨日の短い感想を残せます。その日の航海は共有カードにして持ち出せます。
 
-■ Wrapped
-月末になると、その月の全てが4枚のカードになります。事実(学んだ日数・休んだ日数、そして一度もやめなかったという事実)、いちばん長い空白の物語、あなた自身のパターンから導かれる「再開力タイプ」、そして軌跡の一枚絵。どのカードも画像として共有できます。
+■ ひとりでも、仲間とも
+基本機能はサインインなしで使えます。サインインすると端末間同期と港が利用可能。パブリック港で同じ目的を持つ航海士と出会い、プライベート港では最大4人でチャットと共通タイマーを使えます。
 
-■ 港(任意)
-サインインすると、記録を複数の端末で同期でき、友人と小さな「港」をひらけます。港では互いの学んだ日を見せ合えます — 順位もランキングもなく、全員が同じ大きさ。
+■ 自分らしい航海
+船、帆、航海士、アプリアイコン、言語、外観をカスタマイズできます。
 
-■ 作らないと決めていること
-連続日数の表示、「鎖を切らない」といった煽り、催促の通知、順位・他ユーザーとの比較。広告もトラッキングもありません — あなたのデータを売ったり、アプリを横断して追跡したりはしません。
-
-記録はあなたの端末の中にあります。サインインは任意で、同期と港のためだけに使います。
-
-罪悪感で習慣アプリをやめてしまったことがある人へ。Landfallは、扉を閉じません。
+連続記録も順位もありません。モチベーションの波はある。それでも、航海を続けよう。
 ```
 
 ## Keywords(100文字以内、カンマ区切り、スペース節約)/ キーワード
@@ -85,38 +77,26 @@ Landfallは、休んだ日を隠さない学習ログです。
 
 ## What's New
 
-### v1.0(初回)
-- EN: `Landfall v1.0 — Home, Trace, and Wrapped. Your first Wrapped arrives at the end of your first month.`
-- JA: `Landfall v1.0 — ホーム・軌跡・Wrapped。最初のWrappedは、記録した月の終わりに届きます。`
-
-### 次のアップデート(v1.0 承認後に提出。ローカル main に実装済み)
-> v1.0 以降に積んだもの一式(同期・ダークモード・ウィジェット・通知・共有カード・港の磨き込み・
-> アクセシビリティ・セキュリティ強化)。提出時に MARKETING_VERSION / CURRENT_PROJECT_VERSION を上げること。
+### v1.1
 - EN:
 ```
-You can now carry your voyage with you.
+KeelMira now begins in a living 3D voyage.
 
-• Sync — sign in to keep your records across your devices.
-• Harbor — open a small harbor with friends and see each other's days. No ranks, no comparison.
-• Share a day — turn any day into a postcard of the harbor and share it.
-• Home widget — your month, at a glance.
-• A gentle nudge — an optional, never-nagging reminder. Off by default.
-• Dark mode, larger text support, and dozens of small refinements.
-
-Still no streaks. Still no guilt. Times quit: still zero.
+• Set a distant island as your destination.
+• Use standard and Pomodoro timers, manual entry, and the new widget controls.
+• Review records in Trace and write short reflections in the Logbook.
+• Meet sailors in public harbors or sail privately with up to four people.
+• Customize your ship, sails, sailor, appearance, and app icon.
 ```
 - JA:
 ```
-航海を、持ち歩けるようになりました。
+KeelMiraの航海体験を新しくしました。
 
-・同期 — サインインで、記録を複数の端末に。
-・港 — 友人と小さな港をひらき、互いの学んだ日を見せ合えます。順位も比較もありません。
-・その日を共有 — 一日を港の絵はがきにして贈れます。
-・ホームウィジェット — 今月を、ひと目で。
-・そっと戻れる通知 — 煽らない、任意のリマインド(既定はオフ)。
-・ダークモード、文字サイズ対応、そして数十の細かな磨き込み。
-
-連続日数はやっぱりありません。罪悪感もなし。やめた回数は、いつも0のまま。
+・3Dの海で遠くの島を目的地に設定できます。
+・通常／ポモドーロタイマー、手入力、ウィジェット操作に対応しました。
+・軌跡で記録を振り返り、航海誌に短い感想を残せます。
+・パブリック港と、最大4人で使えるプライベート港を整えました。
+・船、帆、航海士、外観、アプリアイコンをカスタマイズできます。
 ```
 
 ## Copyright
@@ -127,17 +107,56 @@ Still no streaks. Still no guilt. Times quit: still zero.
 **「Data Not Collected」は誤り。以下を App Store Connect に入力すること。**
 
 - Tracking: **No**(トラッキングなし。IDFA/広告なし)
-- 収集するデータ(いずれも **Linked to identity=Yes / Used for tracking=No / 用途=App Functionality**):
+- KeelMira自身が扱うデータ(いずれも **Linked to identity=Yes / Used for tracking=No /
+  用途=App Functionality**):
   1. **Contact Info → Email Address**(Apple/Google サインイン)
   2. **Contact Info → Name**(表示名・プレイヤー名)
   3. **Identifiers → User ID**(Firebase UID)
-  4. **User Content → Other User Content**(学習記録・ひとこと・港での共有)
+  4. **User Content → Other User Content**(学習記録・ひとこと・港のチャット/共同タイマー)
+- 組み込みSDKの `PrivacyInfo.xcprivacy` が追加で宣言する項目も、App Store Connectで開示する:
+  1. **Contact Info → Phone Number**(Google Sign-In / Linked / App Functionality)
+  2. **Location → Coarse Location**(Google Sign-In / Linked / App Functionality)
+  3. **Identifiers → User ID**(Google Sign-In / Linked / Analytics。App Functionalityと併記)
+  4. **Identifiers → Device ID**(Google Sign-In / Linked / Analytics)
+  5. **Usage Data → Other Usage Data**(Google Sign-In / Linked / Analytics)
+  6. **Diagnostics → Other Diagnostic Data**(Firebase Auth/Firestore / Not Linked / Analytics)
+  7. **Other Data → Other Data Types**(Google Sign-In / Linked / App Functionality + Analytics)
+
+> Google Sign-Inの電話番号・概算位置などはKeelMiraの画面やFirestoreで直接保存しないが、
+> 同梱SDKの公式プライバシーマニフェストが収集を宣言しているため、第三者SDK分として回答する。
+> 全項目で **Used for tracking=No**。
 
 > 記録の中核は端末内(SwiftData)だが、サインイン時に上記が Firebase(Auth/Firestore)へ同期・共有されるため
 > 収集扱いになる。トラッキングは一切していない(NSPrivacyTracking=false)。
 
 ## Age Rating
-- 暴力・成人向け要素なし → 4+ 相当を想定
+- プライベート港にユーザー間チャットあり。年齢レーティング質問票では
+  **Messaging and Chat / User-Generated Content を実態どおり回答**する。
+- 有害表現の送信前フィルター、通報、ブロック、運営連絡先を実装済み。
+
+## App Review Notes
+```
+KeelMira can be reviewed without an account: on the first screen, choose
+"Continue without signing in." Work items, destinations, timers, Trace,
+Logbook, appearance, notifications, and Settings are available in local mode.
+
+Harbor and cross-device sync require an account. Sign in with Apple is available
+on the first screen and provides access to those features. Private Harbor rooms
+support up to four members, chat, and a shared timer. User-generated content has
+pre-send filtering, reporting, blocking, sender deletion, and published support
+contact information.
+
+Account deletion is available in Settings > Account > Delete account. The app
+reauthenticates the user, deletes associated Firebase and Harbor data, and
+revokes the Apple token for accounts created with Sign in with Apple.
+
+Voyage Pass is an optional auto-renewable subscription sold through StoreKit.
+It lets the subscriber create one private Harbor for up to four sailors; invited
+members can join that Harbor without purchasing. Restore Purchases and subscription
+management are available in Settings. Notifications are local, optional, and off by default.
+```
 
 ## Support URL / Marketing URL / Privacy Policy URL
-- 未確定。実際にホストされたURLが必要(下記「必要な情報」参照)
+- Support URL: `https://aftide.app/privacy#support`
+- Marketing URL: `https://aftide.app`
+- Privacy Policy URL: `https://aftide.app/privacy`

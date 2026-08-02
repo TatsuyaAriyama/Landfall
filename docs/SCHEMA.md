@@ -1,4 +1,4 @@
-# Landfall Firestore スキーマ(iOS / Web 共通の契約)
+# KeelMira Firestore スキーマ(iOS / Web 共通の契約)
 
 このファイルが **スキーマの正典**。iOS(Swift)と Web(TypeScript)はコードを共有できないため、
 コレクション構造・フィールド型・docID 規約・上限値はここに合わせる。
@@ -79,9 +79,8 @@ docID = `yyyy-MM-dd`(端末ローカルのタイムゾーンでの startOfDay)�
 今日を期日にした瞬間に締切を過ぎたことになり即着岸してしまうため、この解釈を必ず通すこと。進捗の比率も
 日単位に丸めず実時刻で計算する(丸めると同じ日のうち船が動かない)。
 
-**注意**: iOSアプリは同一Firestoreを共有するが、`steps` と `targetHasTime` は未対応。未知フィールドとして
-無視するためデータは壊れないが、iOS側の対応は別タスク(iOSは日付だけの期日を 00:00 締切として扱うので、
-今日を期日にすると即着岸する挙動が残っている)。
+Web/iOSともに `steps`、`targetHasTime`、旧目標フィールドを同じ解釈で読み書きする。
+到達条件を満たしても自動では `achievedAt` を立てず、本人が「上陸する」を選んだ時点で航海を締める。
 
 ---
 
@@ -142,6 +141,35 @@ docID = 6文字の招待コード(コードが合鍵)。定員4人・参加は3�
 | `days` | array ≤31 | `{ day: number(1〜31), note?: string }` |
 | `sessions` | array ≤1000 | `{ day: number, minutes: number, itemName: string, itemStyle: string, itemSymbol: string, note?: string }` |
 | `updatedAt` | timestamp | serverTimestamp |
+
+### `rooms/{code}/crewSessions/{sessionId}` — 最大4人の共通タイマー
+
+Web/iOS共通の船団航海。船長(`rooms.ownerUid`)が準備を開き、1〜240分の航海時間を設定する。
+各メンバーが自分の作業項目と今回の意図を `plans/{uid}` に置き、在港者全員のplanが揃うと
+船長が `startedAt` を一度だけ追加する。全端末は同じサーバー時刻から残り時間を導出する。
+終了後は各自が20文字以上の思い出しを残し、自分の通常の作業記録にも同じ時間を刻む。
+完了済みセッションは消さず、次の航海は新しいドキュメントを作る。
+
+| フィールド | 型 | 備考 |
+|---|---|---|
+| `durationMinutes` | int | 1〜240。開始前のみ船長が変更 |
+| `createdAt` | timestamp | serverTimestamp |
+| `createdBy` | string | 作成した船長のuid |
+| `startedAt` | timestamp? | 全員準備後、船長が一度だけ追加 |
+
+#### `rooms/{code}/crewSessions/{sessionId}/plans/{uid}`
+
+読みは在港者のみ。書き・編集・削除はそのuid本人のみ。
+
+| フィールド | 型 | 備考 |
+|---|---|---|
+| `itemId` | string | 本人の作業項目ID |
+| `itemName` | string | ≤60 |
+| `itemStyle` / `itemSymbol` | string | 各≤24 |
+| `intention` | string | 今回やること。1〜80 |
+| `preparedAt` | timestamp | serverTimestamp |
+| `recall` | string? | 到着後の思い出し。20〜500 |
+| `recordedAt` | timestamp? | 通常記録へ保存した刻印 |
 
 ### `rooms/{code}/voyage/current` — 共同航海(単一ドキュメント)
 

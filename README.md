@@ -1,4 +1,4 @@
-# Landfall
+# KeelMira
 
 航海という世界観をメインにした学習ログアプリ。
 途切れることは前提という再会力を評価する。
@@ -8,6 +8,7 @@
 - 目的地を設定してそこから逆算して、作業を計画する。
 - 2日以上の空白のあとに戻ってきた日は「帰還」として讃える
 - ユーザーがスクリーンショットを撮りたくなるような画面
+- サインインは任意。端末間同期と港(パブリック/最大4人のプライベート並走)で利用する
 
 ## 画面
 
@@ -45,7 +46,9 @@
 ## 技術
 
 - SwiftUI + SwiftData / iOS 17+
-- 完全ローカル(バックエンド・アカウント・通知・計測SDKなし)
+- SwiftDataを端末内の正本とし、任意のサインイン時はFirebase Auth/Firestoreで同期・港を提供
+- Apple / Googleサインイン、App Check、Firestore Security Rules
+- 通知はローカル・既定オフ。広告SDK・解析SDK・トラッキングなし
 - 共有画像は `ImageRenderer` でカードをPNG化 → `ShareLink`
 - ローカライズ: 英語(既定)+ 日本語(`Landfall/ja.lproj/Localizable.strings`)。日付・時間はロケール準拠(`LF` ヘルパー)
 - 言語切替: 設定シートで System / English / 日本語 を選択。`\.locale` 環境値の上書きで、端末言語に関わらずアプリ内で即時切替(`AppLanguage`)

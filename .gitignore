@@ -13,5 +13,14 @@ xcuserdata/
 # macOS
 .DS_Store
 
+# Local agent/editor state
+.claude/
+
+# Blender automatic backup files
+*.blend1
+
+# Local deployment-tool cache (contains Cloudflare account metadata)
+.wrangler/
+
 # Firebase client config (obtain from Firebase console; required to build)
 GoogleService-Info.plist
