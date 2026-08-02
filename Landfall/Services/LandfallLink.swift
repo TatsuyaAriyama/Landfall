@@ -5,11 +5,9 @@ import UIKit
 
 /// アプリへの導線(URL)とQRコードの一元管理。
 ///
-/// **重要**: 共有画像は一度出回ると回収できない。行き先が無いQRを焼き込むと、
-/// 未来の全ての共有物が死んだQRを抱えることになる。
-/// そのため `site` が未設定のあいだは、QRもURLも**一切描かない**設計にしてある。
-/// App Store公開URL(または独自ドメイン)が決まったら、ここに1行入れるだけで
-/// カードと入港証の両方にQRが出るようになる。
+/// **重要**: 共有画像は一度出回ると回収できない。日々の共有カードは公開中の
+/// ランディングページへ向け、App Store公開後はストアURLを優先する。
+/// 入港証は未インストールの参加者を迷わせないため、従来どおりストア公開後だけQRを出す。
 enum LandfallLink {
 
     // MARK: - 設定するのはここだけ
@@ -20,8 +18,8 @@ enum LandfallLink {
     ///   1. `appStoreID` に数値IDを入れる
     ///   2. `isPubliclyAvailable` を true にする(= 審査通過・配信開始後)
     /// ※ 公開前に true にすると、まだ開けないURLのQRが共有画像に焼き込まれてしまう。
-    static let appStoreID: String? = nil            // 例: "6612345678"
-    static let isPubliclyAvailable = false          // 配信開始後に true
+    static let appStoreID: String? = "6791381131"
+    static let isPubliclyAvailable = true
 
     /// アプリの入口。公開後は App Store のページ、それまでは nil(QR/URLを描かない)。
     static let site: URL? = {
@@ -36,13 +34,26 @@ enum LandfallLink {
         return URL(string: "https://apps.apple.com/app/id\(id)")
     }()
 
+    /// SNS共有カードに載せる恒久的な広告導線。公開後はApp Storeを直接開き、
+    /// 公開前はWebの入口へ向ける。DEBUGでは差し替えてQR読み取りも検証できる。
+    static var sharePromotionURL: URL {
+        #if DEBUG
+        if let raw = ProcessInfo.processInfo.environment["LANDFALL_MARKETING_URL"],
+           let url = URL(string: raw) {
+            return url
+        }
+        #endif
+        return site ?? URL(string: "https://aftide.app")!
+    }
+
     /// アプリが入っている端末で直接開くためのカスタムURLスキーム。
     /// ドメインもApp Store IDも要らないので、これは今日から使える。
-    static let scheme = "landfall"
+    static let scheme = "keelmira"
+    private static let acceptedSchemes: Set<String> = [scheme, "landfall"]
 
     // MARK: - 導線があるか
 
-    /// 共有画像にQRを載せてよいか。
+    /// 公開URLが必要な入港証にQRを載せてよいか。
     static var canShowQR: Bool { site != nil }
 
     /// 画像に添える短い表記(QRの下に置く)。スキームだけの状態では出さない。
@@ -64,9 +75,12 @@ enum LandfallLink {
         URL(string: "\(scheme)://join?code=\(normalize(code))")!
     }
 
-    /// 受け取ったURLから港のコードを取り出す。landfall://join?code=XXXXXX と https://…/j/XXXXXX の両方。
+    /// 受け取ったURLから港のコードを取り出す。keelmira://join?code=XXXXXX、
+    /// 旧landfall://リンク、https://…/j/XXXXXXのいずれも受け付ける。
     static func joinCode(from url: URL) -> String? {
-        if url.scheme == scheme, url.host == "join" {
+        if let urlScheme = url.scheme,
+           acceptedSchemes.contains(urlScheme.lowercased()),
+           url.host == "join" {
             let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "code" })?.value
             return code.map(normalize).flatMap { $0.isEmpty ? nil : $0 }
