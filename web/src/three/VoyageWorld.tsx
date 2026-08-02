@@ -438,7 +438,8 @@ function WorldScene({
       {/* 入力中の島の名前が、島の上にライブで浮かぶ */}
       {islandLabel && (
         <Html
-          position={[ISLAND_POS[0], 1.9, ISLAND_POS[2]]}
+          // 一本樹の樹冠(最高点≈2.0)を隠さず、島と名前をひと続きに読ませる。
+          position={[ISLAND_POS[0], 2.42, ISLAND_POS[2]]}
           center
           distanceFactor={9}
           zIndexRange={[3, 0]}

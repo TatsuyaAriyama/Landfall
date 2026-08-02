@@ -10,6 +10,7 @@ import { TAP_SLOP } from "./voyageConstants";
 import { boatProps } from "../boat";
 import { useNavigatorPose } from "./navigatorPose";
 import { shortDateLabel } from "../i18n";
+import WindsweptTree from "./WindsweptTree";
 
 // 目的地の航海シーン。自分の船が、夜の海を島へ向かって走っている。
 // 記録するほど(ratioが増えるほど)船が島に近づく。BoatStudioと同じ
@@ -128,6 +129,11 @@ export function Island() {
       <mesh geometry={KNOLL_GEO} position={[-0.85, 0.08, 0.25]}>
         <meshStandardMaterial color={SAND} flatShading roughness={0.9} />
       </mesh>
+      <WindsweptTree
+        position={[-0.38, 0.7, -0.12]}
+        rotation={[0, -0.28, 0]}
+        scale={0.72}
+      />
     </group>
   );
 }
