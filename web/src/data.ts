@@ -7,6 +7,7 @@ import {
   onSnapshot,
   setDoc,
   Timestamp,
+  writeBatch,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 import { completeRedirectSignIn } from "./auth";
@@ -25,6 +26,7 @@ import {
   type StudyDay,
   type StudyItem,
   type StudySession,
+  type VoyageLogEntry,
 } from "./types";
 
 // users/{uid}/items|sessions|days を購読し、iOS と同じ書式(updatedAt LWW)で書く。
@@ -62,6 +64,7 @@ export interface UserData {
   items: StudyItem[];
   sessions: StudySession[];
   days: StudyDay[];
+  voyageLogs: VoyageLogEntry[];
   destinations: Destination[];
   ready: boolean;
   /// 購読が失敗した、または待っても何も届かなかった。
@@ -80,6 +83,7 @@ interface Loaded {
   items: boolean;
   sessions: boolean;
   days: boolean;
+  voyageLogs: boolean;
 }
 
 /// これだけ待って何も届かなければ、繋がらないものとして扱う。
@@ -91,25 +95,38 @@ export function useUserData(uid: string, enabled = true): UserData {
   const [items, setItems] = useState<StudyItem[]>([]);
   const [sessions, setSessions] = useState<StudySession[]>([]);
   const [days, setDays] = useState<StudyDay[]>([]);
+  const [voyageLogs, setVoyageLogs] = useState<VoyageLogEntry[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [loaded, setLoaded] = useState<Loaded>({
     items: false,
     sessions: false,
     days: false,
+    voyageLogs: false,
   });
   const [failed, setFailed] = useState(false);
   // 再試行のたびに増やして、購読を張り直す。
   const [attempt, setAttempt] = useState(0);
-  const loadedRef = useRef<Loaded>({ items: false, sessions: false, days: false });
+  const loadedRef = useRef<Loaded>({
+    items: false,
+    sessions: false,
+    days: false,
+    voyageLogs: false,
+  });
 
   useEffect(() => {
     if (!enabled) return;
     setItems([]);
     setSessions([]);
     setDays([]);
+    setVoyageLogs([]);
     setDestinations([]);
     setFailed(false);
-    loadedRef.current = { items: false, sessions: false, days: false };
+    loadedRef.current = {
+      items: false,
+      sessions: false,
+      days: false,
+      voyageLogs: false,
+    };
     setLoaded(loadedRef.current);
 
     const mark = (key: keyof Loaded) => {
@@ -151,6 +168,9 @@ export function useUserData(uid: string, enabled = true): UserData {
               minutes: Number(v.minutes ?? 0),
               note: typeof v.note === "string" ? v.note : undefined,
               itemUUID: typeof v.itemUUID === "string" ? v.itemUUID : undefined,
+              itemName: typeof v.itemName === "string" ? v.itemName : undefined,
+              itemStyle: typeof v.itemStyle === "string" ? v.itemStyle : undefined,
+              itemSymbol: typeof v.itemSymbol === "string" ? v.itemSymbol : undefined,
               updatedAt: asDate(v.updatedAt),
             };
           })
@@ -174,12 +194,34 @@ export function useUserData(uid: string, enabled = true): UserData {
       mark("days");
     }, onError);
 
+    const offVoyageLogs = onSnapshot(
+      collection(db, "users", uid, "voyageLogs"),
+      (snap) => {
+        setVoyageLogs(
+          snap.docs
+            .map((d) => {
+              const v = d.data();
+              return {
+                id: d.id,
+                date: asDate(v.date),
+                body: String(v.body ?? ""),
+                updatedAt: asDate(v.updatedAt),
+              };
+            })
+            .filter((entry) => entry.body.length > 0)
+            .sort((a, b) => b.date.getTime() - a.date.getTime()),
+        );
+        mark("voyageLogs");
+      },
+      onError,
+    );
+
     const offDestinations = listenDestinations(uid, setDestinations);
 
     // 黙ったまま何も来ない場合の見切り。
     const timer = setTimeout(() => {
       const l = loadedRef.current;
-      if (!(l.items && l.sessions && l.days)) setFailed(true);
+      if (!(l.items && l.sessions && l.days && l.voyageLogs)) setFailed(true);
     }, CONNECT_TIMEOUT_MS);
 
     return () => {
@@ -187,15 +229,17 @@ export function useUserData(uid: string, enabled = true): UserData {
       offItems();
       offSessions();
       offDays();
+      offVoyageLogs();
       offDestinations();
     };
   }, [uid, enabled, attempt]);
 
-  const ready = loaded.items && loaded.sessions && loaded.days;
+  const ready = loaded.items && loaded.sessions && loaded.days && loaded.voyageLogs;
   return {
     items,
     sessions,
     days,
+    voyageLogs,
     destinations,
     ready,
     // 届いた後の失敗で画面を作り直さない(既に見えているものは見せ続ける)。
@@ -207,6 +251,26 @@ export function useUserData(uid: string, enabled = true): UserData {
 // ---- 書き込み(iOS の DTO 形に一致させる。undefined は書かない) ----
 // 記録の保存・編集・削除では、参加中の港への月間ペイロード公開と、
 // プライベート港チャットへの自動の行(着岸/帰還)も iOS と同じく行う。
+
+/// 航海日録を一日一件で保存する。空文字は記録の削除として扱う。
+export async function saveVoyageLog(
+  uid: string,
+  date: Date,
+  body: string,
+): Promise<void> {
+  const id = dayId(date);
+  const trimmed = trimAll(body).slice(0, 260);
+  const ref = doc(db, "users", uid, "voyageLogs", id);
+  if (!trimmed) {
+    await deleteDoc(ref);
+    return;
+  }
+  await setDoc(ref, {
+    date: startOfDay(date),
+    body: trimmed,
+    updatedAt: new Date(),
+  });
+}
 
 export async function saveItem(
   uid: string,
@@ -230,34 +294,51 @@ export async function saveItem(
   });
 }
 
-/// 項目の削除。iOS はローカルの cascade で記録も消えるので、Web も紐づく記録を消し、
-/// 空になった日の刻印(days)も外して整合を保つ。
-export async function deleteItemDeep(
+/// 項目の削除。過去の作業記録は航海の履歴なので消さない。
+/// 古い記録には表示用スナップショットが無いため、削除直前の項目名・配色・印を
+/// セッションへ補ってから項目だけを削除する。400件ずつに分け、Firestoreの
+/// 1バッチ上限にも余裕を持たせる。
+export async function deleteItemPreservingHistory(
   uid: string,
   itemId: string,
   source: PublishSource,
 ): Promise<void> {
-  const allSessions = source.sessions;
-  const mine = allSessions.filter((s) => s.itemUUID === itemId);
-  for (const s of mine) {
-    await deleteDoc(doc(db, "users", uid, "sessions", s.id));
-  }
-  await deleteDoc(doc(db, "users", uid, "items", itemId));
-  // 空になった日の刻印を外す。
-  const remaining = allSessions.filter((s) => s.itemUUID !== itemId);
-  const remainingDayIds = new Set(remaining.map((s) => dayId(s.date)));
-  const touchedDayIds = new Set(mine.map((s) => dayId(s.date)));
-  for (const dId of touchedDayIds) {
-    if (!remainingDayIds.has(dId)) {
-      await deleteDoc(doc(db, "users", uid, "days", dId));
+  const item = source.items.find((candidate) => candidate.id === itemId);
+  const mine = source.sessions.filter((session) => session.itemUUID === itemId);
+  if (item) {
+    for (let offset = 0; offset < mine.length; offset += 400) {
+      const batch = writeBatch(db);
+      for (const session of mine.slice(offset, offset + 400)) {
+        batch.set(
+          doc(db, "users", uid, "sessions", session.id),
+          {
+            itemName: session.itemName ?? item.name.slice(0, 60),
+            itemStyle: session.itemStyle ?? item.styleToken,
+            itemSymbol: session.itemSymbol ?? item.symbolToken,
+            updatedAt: new Date(),
+          },
+          { merge: true },
+        );
+      }
+      await batch.commit();
     }
   }
+  await deleteDoc(doc(db, "users", uid, "items", itemId));
+
+  const archivedSessions = source.sessions.map((session) =>
+    session.itemUUID === itemId && item
+      ? {
+          ...session,
+          itemName: session.itemName ?? item.name,
+          itemStyle: session.itemStyle ?? item.styleToken,
+          itemSymbol: session.itemSymbol ?? item.symbolToken,
+        }
+      : session,
+  );
   await publishCurrentMonth({
     items: source.items.filter((i) => i.id !== itemId),
-    sessions: remaining,
-    days: source.days.filter(
-      (d) => remainingDayIds.has(d.id) || !touchedDayIds.has(d.id),
-    ),
+    sessions: archivedSessions,
+    days: source.days,
   });
 }
 
@@ -271,10 +352,15 @@ export async function recordSession(
   const date = input.date ?? new Date();
   const note = input.note?.trim();
   const sessionId = newUUID();
-  await setDoc(doc(db, "users", uid, "sessions", sessionId), {
+  const sessionRef = doc(db, "users", uid, "sessions", sessionId);
+  const batch = writeBatch(db);
+  batch.set(sessionRef, {
     date,
     minutes: input.minutes,
     itemUUID: input.item.id,
+    itemName: input.item.name.slice(0, 60),
+    itemStyle: input.item.styleToken,
+    itemSymbol: input.item.symbolToken,
     updatedAt: new Date(),
     ...(note ? { note: note.slice(0, 120) } : {}),
   });
@@ -282,11 +368,13 @@ export async function recordSession(
   const existingDayIds = new Set(source.days.map((d) => d.id));
   const isNewDay = !existingDayIds.has(dId);
   if (isNewDay) {
-    await setDoc(doc(db, "users", uid, "days", dId), {
+    batch.set(doc(db, "users", uid, "days", dId), {
       date: startOfDay(date),
       updatedAt: new Date(),
     });
   }
+  // セッションと日の刻印は一つの原子的な書き込みにし、片方だけ残る状態を作らない。
+  await batch.commit();
 
   // 空白日数は「今日の刻印を打つ前」の状態から数える(何日ぶりの航海か)。
   const gapDays = gapDaysBeforeToday(source.days);
@@ -298,6 +386,9 @@ export async function recordSession(
     minutes: input.minutes,
     note: note ? note.slice(0, 120) : undefined,
     itemUUID: input.item.id,
+    itemName: input.item.name.slice(0, 60),
+    itemStyle: input.item.styleToken,
+    itemSymbol: input.item.symbolToken,
     updatedAt: new Date(),
   };
   const nextDays = isNewDay
@@ -319,13 +410,15 @@ export async function deleteSession(
   session: StudySession,
   source: PublishSource,
 ): Promise<void> {
-  await deleteDoc(doc(db, "users", uid, "sessions", session.id));
   const dId = dayId(session.date);
   const remainingSessions = source.sessions.filter((s) => s.id !== session.id);
   const remains = remainingSessions.some((s) => dayId(s.date) === dId);
+  const batch = writeBatch(db);
+  batch.delete(doc(db, "users", uid, "sessions", session.id));
   if (!remains) {
-    await deleteDoc(doc(db, "users", uid, "days", dId));
+    batch.delete(doc(db, "users", uid, "days", dId));
   }
+  await batch.commit();
   await publishCurrentMonth({
     items: source.items,
     sessions: remainingSessions,

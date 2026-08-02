@@ -7,19 +7,22 @@ import BoatModel from "../three/BoatModel";
 import PhoenixModel, { type PhoenixPose } from "../three/PhoenixModel";
 import { Moon, NIGHT_BG, Ripples, Sea } from "../three/SeaParts";
 import {
-  SAIL_COLORS,
+  BOAT_OPTIONS,
+  boatPartId,
   boatProps,
+  isBoatOptionUnlocked,
   navigatorHood,
   navigatorPose,
-  sailColorId,
+  setBoatPart,
   setNavigatorHood,
   setNavigatorPose,
-  setSailColor,
+  totalMinutes,
+  type BoatPart,
   type NavigatorHood,
-  type SailColorId,
+  type NavigatorPose,
 } from "../boat";
 import { pushProfileEverywhere } from "../harbor";
-import { t, type I18nKey } from "../i18n";
+import { lang, t, unlockAtLabel, type I18nKey } from "../i18n";
 
 // 船スタジオ。夜の海に浮かぶ自分の船を、three.jsで360度眺めながら着せ替える。
 // 船体・海・月・波紋の3D部品は src/three/ に共有化してある(VoyageSceneと同じ世界)。
@@ -75,7 +78,9 @@ function SailorStage({
   hood: NavigatorHood;
   animate: boolean;
 }) {
-  const [autoRotate, setAutoRotate] = useState(true);
+  // Open on the authored front view. Automatic orbit made the new navigator
+  // appear edge-on before the user could inspect it.
+  const [autoRotate, setAutoRotate] = useState(false);
   return (
     <>
       <color attach="background" args={[NIGHT_BG]} />
@@ -95,15 +100,15 @@ function SailorStage({
       <Moon position={[-8.5, 5.6, -14]} />
       <Sea moonX={-8.5} animate={animate} />
       <Ripples animate={animate} />
-      <group scale={0.95}>
+      <group rotation={[0, -Math.PI / 2, 0]} scale={1.36}>
         <PhoenixModel animate={animate} pose={pose} hood={hood} />
       </group>
       <OrbitControls
-        target={[0, 0.62, 0]}
+        target={[0, 0.8, 0]}
         enablePan={false}
         enableDamping
-        minDistance={1.8}
-        maxDistance={7}
+        minDistance={1.45}
+        maxDistance={5}
         minPolarAngle={Math.PI * 0.14}
         maxPolarAngle={Math.PI * 0.56}
         autoRotate={autoRotate && animate}
@@ -119,7 +124,7 @@ const HOODS: [NavigatorHood, I18nKey][] = [
   ["down", "hoodDown"],
 ];
 
-const POSES: [PhoenixPose, I18nKey][] = [
+const POSES: [NavigatorPose, I18nKey][] = [
   ["idle", "poseIdle"],
   ["walk", "poseWalk"],
   ["lookout", "poseLookout"],
@@ -129,11 +134,12 @@ const POSES: [PhoenixPose, I18nKey][] = [
   ["stargaze", "poseStargaze"],
   ["rest", "poseRest"],
   ["sit", "poseSit"],
+  ["read", "poseRead"],
 ];
 
 /// 装いタブ。上が3Dステージ、下がカスタマイズ。
 /// 「船」と「航海士」を切り替えて、それぞれを360度眺められる。
-export default function BoatStudio(_: { data: UserData }) {
+export default function BoatStudio({ data }: { data: UserData }) {
   const [, setTick] = useState(0);
   const [mode, setMode] = useState<"boat" | "sailor">("boat");
   // 選んだ仕草はローカルに保存され、次にこのタブを開いたときも続きから眺められる。
@@ -144,20 +150,23 @@ export default function BoatStudio(_: { data: UserData }) {
     setHoodState(next);
     setNavigatorHood(next);
   };
-  const [pose, setPoseState] = useState<PhoenixPose>(() => navigatorPose());
-  const setPose = (next: PhoenixPose) => {
+  const [pose, setPoseState] = useState<NavigatorPose>(() => navigatorPose());
+  const setPose = (next: NavigatorPose) => {
     setPoseState(next);
     setNavigatorPose(next);
   };
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
+  const total = totalMinutes(data.sessions);
+  const totalLabel =
+    lang === "ja" ? `${Math.floor(total / 60)}時間` : `${Math.floor(total / 60)}h`;
   const parts = boatProps();
 
-  // 帆色を選んだら、参加中の港の「みんなの海」へも即反映する
+  // 部位を選んだら、参加中の港の「みんなの海」へも即反映する
   // (fire-and-forget。オフラインや未サインインの失敗は握りつぶす)。
-  const chooseSail = (id: SailColorId) => {
-    setSailColor(id);
+  const choose = (part: BoatPart, id: string) => {
+    setBoatPart(part, id);
     setTick((n) => n + 1);
     void pushProfileEverywhere().catch(() => {});
   };
@@ -189,7 +198,7 @@ export default function BoatStudio(_: { data: UserData }) {
           camera={
             mode === "boat"
               ? { position: [3.1, 1.7, 4.3], fov: 40 }
-              : { position: [1.7, 1.35, 3.4], fov: 40 }
+              : { position: [0.72, 1.25, 2.25], fov: 36 }
           }
         >
           {mode === "boat" ? (
@@ -231,30 +240,69 @@ export default function BoatStudio(_: { data: UserData }) {
         </div>
       ) : null}
       {mode === "sailor" ? null : (
-        <div>
-          <p className="row-sub" style={{ margin: "14px 0 8px" }}>
-            {t("sailColor")}
+        <>
+          <p className="boat-studio-total">
+            {t("totalVoyage")}: {totalLabel}
           </p>
-          <div className="sail-color-grid">
-            {SAIL_COLORS.map((option) => {
-              const selected = sailColorId() === option.id;
-              const label = t(option.labelKey);
+          {(
+        [
+          ["sail", "sailColor"],
+          ["jib", "jibLabel"],
+          ["hull", "hullLabel"],
+          ["stripe", "stripeLabel"],
+        ] as [BoatPart, I18nKey][]
+      ).map(([part, labelKey]) => (
+        <div key={part}>
+          <p className="row-sub" style={{ margin: "14px 0 6px" }}>
+            {t(labelKey)}
+          </p>
+          <div className="chip-row">
+            {BOAT_OPTIONS[part].map((o) => {
+              // 戦利品は累計時間ではなく「共同航海の到着」で解放される。
+              const locked = !isBoatOptionUnlocked(o, total);
+              const lockLabel = o.lootKey
+                ? t("lootLock")
+                : unlockAtLabel(o.unlockMinutes / 60);
+              const selected = boatPartId(part) === o.id;
+              if (o.color) {
+                return (
+                  <button
+                    key={o.id}
+                    className={`swatch${selected ? " selected" : ""}`}
+                    style={{ background: o.color, opacity: locked ? 0.3 : 1 }}
+                    disabled={locked}
+                    title={locked ? lockLabel : o.id}
+                    onClick={() => choose(part, o.id)}
+                    aria-label={locked ? `${o.id} · ${lockLabel}` : o.id}
+                  />
+                );
+              }
+              const label = t(
+                (o.id === "none"
+                  ? "flagNone"
+                  : o.id === "pennant"
+                    ? "flagPennant"
+                    : o.id === "swallow"
+                      ? "flagSwallow"
+                      : "flagKraken") as I18nKey,
+              );
               return (
                 <button
-                  key={option.id}
-                  className={`sail-color-option${selected ? " selected" : ""}`}
-                  onClick={() => chooseSail(option.id)}
-                  aria-label={label}
-                  aria-pressed={selected}
-                  title={label}
+                  key={o.id}
+                  className={`chip${selected ? " selected" : ""}`}
+                  disabled={locked}
+                  style={locked ? { opacity: 0.4 } : undefined}
+                  onClick={() => choose(part, o.id)}
                 >
-                  <span className="sail-color-swatch" style={{ background: option.color }} />
-                  <span>{label}</span>
+                  {label}
+                  {locked ? ` · ${lockLabel}` : ""}
                 </button>
               );
             })}
           </div>
         </div>
+          ))}
+        </>
       )}
     </div>
   );

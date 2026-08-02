@@ -81,12 +81,24 @@ function NotesIndex({ data }: { data: UserData }) {
 
   return (
     <div>
-      <input
-        className="field"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder={t("searchNotes")}
-      />
+      <label className="sr-only" htmlFor="notes-search">
+        {t("searchNotes")}
+      </label>
+      <div className="field-with-action">
+        <input
+          id="notes-search"
+          className="field"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("searchNotes")}
+        />
+        {query && (
+          <button className="field-clear" onClick={() => setQuery("")} aria-label={t("clearSearch")}>
+            ×
+          </button>
+        )}
+      </div>
       {data.items.length > 0 && (
         <div className="chip-row" style={{ marginTop: 12 }}>
           {data.items.map((item) => (
@@ -100,13 +112,15 @@ function NotesIndex({ data }: { data: UserData }) {
           ))}
         </div>
       )}
+      <p className="section-label" aria-live="polite">
+        {noteCountLabel(visible.length)}
+      </p>
       {visible.length === 0 ? (
         <p className="empty-note" style={{ marginTop: 24 }}>
           {t("noNotes")}
         </p>
       ) : (
         <>
-          <p className="section-label">{noteCountLabel(visible.length)}</p>
           <div className="rows">
             {visible.map((e, i) => (
               <div
@@ -254,9 +268,9 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
         </div>
       )}
 
-      <div className="calendar">
+      <div className="calendar" role="grid" aria-label={monthTitle}>
         {weekdayNames.map((n, i) => (
-          <span key={i} className="weekday">
+          <span key={i} className="weekday" role="columnheader">
             {n}
           </span>
         ))}
@@ -266,6 +280,17 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
           const isFuture = date > today;
           const isToday = id === dayId(today);
           const studied = dayById.has(id);
+          const fullDate = new Intl.DateTimeFormat(lang, {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+            weekday: "long",
+          }).format(date);
+          const stateLabel = studied
+            ? t("studiedDays")
+            : isToday
+              ? t("noRecordsToday")
+              : t("noDayRecords");
           // まだ使っていなかった日。休んだ日と同じ色にはしない。
           const beforeStart = startMs !== null && date.getTime() < startMs;
           const classes = ["day-cell"];
@@ -282,6 +307,9 @@ function CalendarView({ uid, data }: { uid: string; data: UserData }) {
               className={classes.join(" ")}
               onClick={() => !isFuture && setSelected(date)}
               disabled={isFuture}
+              aria-label={`${fullDate}、${stateLabel}`}
+              aria-current={isToday ? "date" : undefined}
+              aria-pressed={id === dayId(selected)}
             >
               {date.getDate()}
             </button>

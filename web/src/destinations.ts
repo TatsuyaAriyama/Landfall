@@ -18,6 +18,8 @@ import { newUUID, startOfDay, trimAll, type StudyItem, type StudySession } from 
 export interface DestinationStep {
   id: string;
   name: string;
+  // この小島へ向かう予定日時。達成日時(doneAt)とは別に、未達のうちから決められる。
+  scheduledAt?: Date;
   doneAt?: Date;
 }
 
@@ -69,6 +71,9 @@ export function listenDestinations(
                   const o = s as Record<string, unknown>;
                   if (typeof o.id !== "string" || typeof o.name !== "string") return [];
                   const step: DestinationStep = { id: o.id, name: o.name };
+                  if (o.scheduledAt instanceof Timestamp) {
+                    step.scheduledAt = o.scheduledAt.toDate();
+                  }
                   if (o.doneAt instanceof Timestamp) step.doneAt = o.doneAt.toDate();
                   return [step];
                 })
@@ -112,13 +117,14 @@ export async function saveDestination(
   },
 ): Promise<void> {
   const id = input.id ?? newUUID();
-  // ステップは名前を整えて上限で切り、doneAtは立っているものだけ持つ。
+  // ステップは名前を整えて上限で切り、日時は立っているものだけ持つ。
   const steps = (input.steps ?? [])
     .filter((s) => trimAll(s.name).length > 0)
     .slice(0, MAX_STEPS)
     .map((s) => ({
       id: s.id,
       name: trimAll(s.name).slice(0, 60),
+      ...(s.scheduledAt ? { scheduledAt: s.scheduledAt } : {}),
       ...(s.doneAt ? { doneAt: s.doneAt } : {}),
     }));
   await setDoc(doc(db, "users", uid, "destinations", id), {

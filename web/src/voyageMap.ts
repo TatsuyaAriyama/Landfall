@@ -1,9 +1,11 @@
+import type { LootKey } from "./boat";
+
 // 共同航海の海図。seed から決定的に3本の航路を生成する
 // (全メンバーが同じ seed を読むので、全員の海図・遭遇位置が一致する)。
 // 航路は毎回ランダムだが、性格は3類型で固定:
-//   凪   … 遭遇が少なく静か。
-//   嵐   … 嵐の海域を抜ける。
-//   深み … 海獣の棲む深みを渡る。
+//   凪   … 遭遇が少なく静か。戦利品はない。
+//   嵐   … 嵐の海域を抜ける。到着で「月光の帆」。
+//   深み … 海獣の棲む深みを渡る。到着で「深海色の船体」。
 
 export type EncounterKind = "kraken" | "storm";
 
@@ -19,7 +21,7 @@ export type RouteArchetype = "calm" | "squall" | "deep";
 export interface SeaRoute {
   archetype: RouteArchetype;
   encounters: RouteEncounter[];
-  /// 旧航海データとの互換用。新しい航路では設定しない。
+  /// 到着で解放される戦利品(凪は undefined)。
   lootKey?: LootKey;
   /// 海図に描く経路(0..1 の正規化座標。両端が港と島)。
   points: { x: number; y: number }[];
@@ -79,6 +81,7 @@ export function generateRoutes(seed: number): SeaRoute[] {
       segment("storm", 0.24 + rand() * 0.1, 0.17),
       segment("storm", 0.6 + rand() * 0.14, 0.21),
     ],
+    lootKey: "loot.moonlightSail",
     points: [],
   };
   const deep: SeaRoute = {
@@ -87,6 +90,7 @@ export function generateRoutes(seed: number): SeaRoute[] {
       segment("storm", 0.26 + rand() * 0.08, 0.13),
       segment("kraken", 0.62 + rand() * 0.1, 0.25),
     ],
+    lootKey: "loot.krakenFlag",
     points: [],
   };
 
@@ -151,4 +155,3 @@ export function smoothPath(pts: { x: number; y: number }[]): string {
   }
   return d;
 }
-import type { LootKey } from "./boat";

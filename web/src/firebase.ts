@@ -1,4 +1,8 @@
 import { initializeApp } from "firebase/app";
+import {
+  initializeAppCheck,
+  ReCaptchaEnterpriseProvider,
+} from "firebase/app-check";
 import { getAuth, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
 import {
   getFirestore,
@@ -17,6 +21,21 @@ export const app = initializeApp({
   storageBucket: import.meta.env.VITE_FB_STORAGE_BUCKET,
   ...(appId ? { appId } : {}),
 });
+
+// Web版の正規クライアントからの通信であることをApp Checkトークンで証明する。
+// 公開サイトキーが設定済みの本番だけで有効化し、未設定・初期化失敗でも
+// 認証画面そのものは落とさない。遮断はコンソールでメトリクス確認後に有効化する。
+const appCheckSiteKey = import.meta.env.VITE_FB_APP_CHECK_SITE_KEY as string | undefined;
+if (import.meta.env.PROD && appCheckSiteKey) {
+  try {
+    initializeAppCheck(app, {
+      provider: new ReCaptchaEnterpriseProvider(appCheckSiteKey),
+      isTokenAutoRefreshEnabled: true,
+    });
+  } catch {
+    // 二重初期化やブラウザー制限時は、Firestore側の認証・ルールを安全網として継続する。
+  }
+}
 
 export const auth = getAuth(app);
 

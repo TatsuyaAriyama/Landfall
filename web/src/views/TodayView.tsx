@@ -18,9 +18,8 @@ import {
   type SoundMode,
 } from "../audio";
 import {
-  STYLE_COLORS,
   dayId,
-  normalizeStyle,
+  itemStyleColors,
   normalizeSymbol,
   type StudyItem,
   type StudySession,
@@ -30,7 +29,8 @@ import { TileSymbolSvg } from "../symbols";
 import { ItemEditor } from "./ItemEditor";
 import { DestinationsSection } from "./DestinationsSection";
 import { Modal, askConfirm, showToast } from "../overlays";
-import { durationLabel, lang, t } from "../i18n";
+import { storage } from "../storage";
+import { durationLabel, lang, t, tf } from "../i18n";
 import {
   clockLabel,
   creditedMinutes,
@@ -39,6 +39,7 @@ import {
   eraseTimer,
   isOnBreak,
   pomoPhase,
+  pomoWorkedSec,
   readTimer,
   startBreak,
   writeTimer,
@@ -47,13 +48,18 @@ import {
 } from "../timer";
 import { canUseWebGL } from "../webgl";
 import { useDragReorder } from "../dragReorder";
+import { useFloatingDrag } from "../floatingDrag";
+import { whenIdle } from "../idle";
 
-// 航海の世界は three.js を含んで重いので、計測をはじめるときだけ読み込む。
-// タイルを押してすぐ入りたいので、Todayを開いた時点で先に取りに行っておく。
+// 航海の世界は three.js を含んで重いので、初期描画と競合させない。
+// 空き時間か、タイルへ指を置いた瞬間から読み込み、押した後の待ちを短くする。
 let voyagingWorldPromise: Promise<typeof import("../three/VoyagingWorld")> | null = null;
 function loadVoyagingWorld() {
   voyagingWorldPromise ??= import("../three/VoyagingWorld");
   return voyagingWorldPromise;
+}
+function preloadVoyagingWorld() {
+  if (canUseWebGL()) void loadVoyagingWorld();
 }
 const VoyagingWorld = lazy(loadVoyagingWorld);
 
@@ -74,35 +80,41 @@ class VoyagingErrorBoundary extends Component<
   }
 }
 
-const MINUTE_PRESETS = [15, 30, 45, 60, 90];
+const MINUTE_ADDITIONS = [5, 15, 30, 60];
 
 // 前回記録した分数。次の記録ダイアログの初期値にする(いつも同じ長さの人の一手間を省く)。
 const LAST_MINUTES_KEY = "record.lastMinutes";
 
+interface VoyageCompletion {
+  /// 完了後も、航海中と同じ海・船の位置をそのまま見せるためのスナップショット。
+  timer: RunningTimer;
+  item: StudyItem;
+  minutes: number;
+  note?: string;
+}
+
 function lastUsedMinutes(): number | null {
-  const n = Number(localStorage.getItem(LAST_MINUTES_KEY) ?? 0);
-  return Number.isFinite(n) && n >= 1 && n <= 6000 ? n : null;
+  try {
+    const n = Number(storage.get(LAST_MINUTES_KEY) ?? 0);
+    return Number.isFinite(n) && n >= 1 && n <= 6000 ? n : null;
+  } catch {
+    return null;
+  }
 }
 
 // 計測の状態は timer.ts に集約(航海中の世界と共有する)。
 
 export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const [recording, setRecording] = useState<StudyItem | null>(null);
-  const [editing, setEditing] = useState<StudyItem | null>(null);
   const [creating, setCreating] = useState(false);
   const [timer, setTimer] = useState<RunningTimer | null>(() => readTimer());
-  const [now, setNow] = useState(Date.now());
   // 航海の世界を開いているか。閉じても計測は続く(チップから戻れる)。
   const [voyaging, setVoyaging] = useState(false);
+  // 保存が成功した航海だけ、世界を閉じずに完了の一幕へ切り替える。
+  const [completion, setCompletion] = useState<VoyageCompletion | null>(null);
   const [saving, setSaving] = useState(false);
   // 「時間を手で入れる」で開くときの初期値(測った分)。
   const [prefillMinutes, setPrefillMinutes] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!timer) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [timer]);
 
   // 読み込み済みの項目一覧から大元が消えたら、別端末からの削除を含めて
   // その項目を指す端末ローカルのタイマーも同時に畳む。
@@ -113,9 +125,11 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     setVoyaging(false);
   }, [data.items, timer]);
 
-  // タイルを押した瞬間に世界へ入れるよう、先に読み込んでおく。
+  // 初期描画が終わって端末が空いたときだけ先読みする。Safariは idle API が
+  // ないため idle.ts の短いタイマーへ落ちる。画面を離れたら予約も解除する。
   useEffect(() => {
-    if (canUseWebGL()) void loadVoyagingWorld();
+    if (!canUseWebGL()) return;
+    return whenIdle(preloadVoyagingWorld, { delay: 3000, timeout: 3500 });
   }, []);
 
   // 項目をタップしたら、その場で計測をはじめて航海の世界へ入る。
@@ -129,6 +143,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
       breakStartedAt: null,
     };
     writeTimer(next);
+    setCompletion(null);
     setTimer(next);
     setRecording(null);
     setVoyaging(true);
@@ -150,6 +165,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
 
   const clearTimer = () => {
     eraseTimer();
+    setCompletion(null);
     setTimer(null);
     setVoyaging(false);
   };
@@ -172,7 +188,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     const next = isOnBreak(timer) ? endBreak(timer, at) : startBreak(timer, at);
     writeTimer(next);
     setTimer(next);
-    setNow(at);
   };
 
   /// 航海を終えてそのまま記録する。ダイアログは挟まない。
@@ -187,9 +202,14 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     setSaving(true);
     try {
       const minutes = creditedMinutes(timer);
-      await recordSession(uid, { item, minutes, note: note.trim() || undefined }, data);
-      clearTimer();
-      showToast(t("recordedToast"));
+      const trimmedNote = note.trim() || undefined;
+      await recordSession(uid, { item, minutes, note: trimmedNote }, data);
+      // 書き込み成功後にだけローカルタイマーを消す。世界は閉じず、
+      // 走っていた海を背景に完了カードへ切り替える。
+      eraseTimer();
+      setCompletion({ timer, item, minutes, note: trimmedNote });
+      setTimer(null);
+      setVoyaging(true);
     } catch {
       // 失敗しても航海は続いている扱いにする。もう一度押せば記録できる。
       showToast(t("errGeneric"));
@@ -202,7 +222,12 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const switchToManual = () => {
     if (!timer) return;
     const item = data.items.find((i) => i.id === timer.itemId);
-    const minutes = creditedMinutes(timer);
+    // 通常の計測確定は0分の記録を避けるため最低1分にするが、手入力へ移る時は
+    // 実測が1分未満なら0分から始める。ここで1分を足すと「+30分」を2回押して
+    // 61分になり、加算入力の直感を壊す。
+    const elapsed = elapsedSec(timer);
+    const worked = timer.mode === "pomo" ? pomoWorkedSec(elapsed) : elapsed;
+    const minutes = Math.min(Math.max(0, Math.round(worked / 60)), 6000);
     clearTimer();
     if (item) {
       setPrefillMinutes(minutes);
@@ -266,12 +291,35 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
     month: "long",
     day: "numeric",
   }).format(today);
+  const activeItem = timer
+    ? data.items.find((item) => item.id === timer.itemId)
+    : completion?.item;
+  const worldTimer = timer ?? completion?.timer;
+  const worldCompletion = useMemo(
+    () =>
+      completion
+        ? {
+            minutes: completion.minutes,
+            note: completion.note,
+            styleToken: completion.item.styleToken,
+            symbolToken: completion.item.symbolToken,
+          }
+        : undefined,
+    [completion],
+  );
 
   return (
     <div>
       <header className="today-dateline">
         <span className="today-weekday">{weekday}</span>
-        <h1 className="today-date">{monthDay}</h1>
+        <div className="today-title-row">
+          <h1 className="today-date">{monthDay}</h1>
+          {todayTotal > 0 && (
+            <span className="today-total">
+              {tf(t("todayTotalLabel"), { time: durationLabel(todayTotal) })}
+            </span>
+          )}
+        </div>
       </header>
 
       <DestinationsSection uid={uid} data={data} />
@@ -280,7 +328,7 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
       {data.items.length === 0 && <p className="empty-note">{t("emptyToday")}</p>}
       <div className="tile-grid">
         {orderedItems.map((item) => {
-          const style = STYLE_COLORS[normalizeStyle(item.styleToken)];
+          const style = itemStyleColors(item.styleToken);
           const lifted = item.id === reorder.liftedId ? " lifted" : "";
           const timing = timer?.itemId === item.id;
           const totalMin = totalByItem.get(item.id) ?? 0;
@@ -288,6 +336,9 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
             <button
               key={item.id}
               className={`tile${lifted}${timing ? " timing" : ""}`}
+              onPointerEnter={preloadVoyagingWorld}
+              onFocus={preloadVoyagingWorld}
+              onTouchStart={preloadVoyagingWorld}
               onClick={() => void openOrStart(item)}
               {...reorder.tileProps(item.id)}
             >
@@ -303,18 +354,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
                 {totalMin > 0 && (
                   <span className="tile-today">{durationLabel(totalMin)}</span>
                 )}
-              </span>
-              <span
-                className="tile-edit"
-                style={{ background: style.bg, color: style.fg }}
-                role="button"
-                aria-label={t("editItem")}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditing(item);
-                }}
-              >
-                …
               </span>
             </button>
           );
@@ -332,9 +371,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         <>
           <p className="section-label">
             {t("todaysLog")}
-            {todayTotal > 0 && (
-              <span className="section-label-sub"> · {durationLabel(todayTotal)}</span>
-            )}
           </p>
           <div className="rows">
             {todaySessions.map((s) => (
@@ -359,16 +395,34 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         </>
       )}
 
-      {/* 航海中の世界。項目をタップした直後はこれが開く。 */}
-      {timer && voyaging && canUseWebGL() && (
-        <VoyagingErrorBoundary onFail={() => setVoyaging(false)}>
-          <Suspense fallback={<div className="voyaging-world" />}>
+      {/* 航海中の世界。記録後も同じ海を残し、完了の一幕だけを重ねる。 */}
+      {worldTimer && voyaging && canUseWebGL() && (
+        <VoyagingErrorBoundary
+          onFail={() => {
+            setVoyaging(false);
+            setCompletion(null);
+          }}
+        >
+          <Suspense
+            fallback={
+              <div className="voyaging-world voyage-loading" role="status" aria-label={t("loading")}>
+                <span />
+              </div>
+            }
+          >
             <VoyagingWorld
-              itemName={data.items.find((i) => i.id === timer.itemId)?.name ?? ""}
-              timer={timer}
+              itemName={activeItem?.name ?? ""}
+              timer={worldTimer}
               hasDestination={data.destinations.some((d) => !d.achievedAt)}
               saving={saving}
+              completion={worldCompletion}
               onFinish={(note) => void finishTimer(note)}
+              onHome={() => {
+                eraseTimer();
+                setCompletion(null);
+                setTimer(null);
+                setVoyaging(false);
+              }}
               onMinimize={() => setVoyaging(false)}
               onToggleMode={toggleMode}
               onManual={switchToManual}
@@ -388,7 +442,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         <TimerChip
           item={data.items.find((i) => i.id === timer.itemId)}
           timer={timer}
-          now={now}
           onOpen={() => setVoyaging(true)}
           onToggleBreak={toggleBreak}
           onFinish={() => void finishTimer("")}
@@ -414,10 +467,10 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           }}
         />
       )}
-      {(creating || editing) && (
+      {creating && (
         <ItemEditor
           uid={uid}
-          item={editing}
+          item={null}
           nextSortOrder={
             data.items.length === 0
               ? 0
@@ -426,7 +479,6 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           data={data}
           onClose={() => {
             setCreating(false);
-            setEditing(null);
           }}
         />
       )}
@@ -443,7 +495,7 @@ export function SessionRow({
   item?: StudyItem;
   onDelete?: () => void;
 }) {
-  const style = STYLE_COLORS[normalizeStyle(item?.styleToken ?? "midnight")];
+  const style = itemStyleColors(item?.styleToken ?? session.itemStyle ?? "midnight");
   const time = `${String(session.date.getHours()).padStart(2, "0")}:${String(
     session.date.getMinutes(),
   ).padStart(2, "0")}`;
@@ -452,13 +504,13 @@ export function SessionRow({
       {/* 項目のタイルと同じ絵柄(配色×シンボル)を小さく。色の点だけでは項目が判別できない。 */}
       <span className="row-tile" style={{ background: style.bg }}>
         <TileSymbolSvg
-          symbol={normalizeSymbol(item?.symbolToken ?? "compass")}
+          symbol={normalizeSymbol(item?.symbolToken ?? session.itemSymbol ?? "compass")}
           fg={style.fg}
           bg={style.bg}
         />
       </span>
       <div className="row-main">
-        <div className="row-title">{item?.name ?? "—"}</div>
+        <div className="row-title">{item?.name ?? session.itemName ?? "—"}</div>
         <div className="row-sub">
           <span className="row-time">{time}</span>
           {session.note ? ` · ${session.note}` : ""}
@@ -479,7 +531,6 @@ export function SessionRow({
 function TimerChip({
   item,
   timer,
-  now,
   onOpen,
   onToggleBreak,
   onFinish,
@@ -487,13 +538,16 @@ function TimerChip({
 }: {
   item?: StudyItem;
   timer: RunningTimer;
-  now: number;
   onOpen: () => void;
   onToggleBreak: () => void;
   onFinish: () => void;
   onDiscard: () => void;
 }) {
+  const floating = useFloatingDrag("landfall.timer-chip-position.v1");
   const [sound, setSound] = useState<SoundMode>(() => soundPref());
+  // 1秒更新をチップの中だけに閉じ込める。親のTodayViewで持つと、時計の数字を
+  // 変えるたびに目的地・全タイル・今日の記録まで再描画されてしまう。
+  const [now, setNow] = useState(Date.now);
   // 休憩中は時計が止まる(elapsedSecが休憩ぶんを引く)。止まった数字だけでは
   // 事故に見えるので、局面の代わりに「錨を下ろしている」と出す。
   const resting = isOnBreak(timer);
@@ -510,6 +564,13 @@ function TimerChip({
   const phaseKey = phase?.key ?? "";
   const display = clockLabel(phase ? phase.left : elapsed);
 
+  useEffect(() => {
+    setNow(Date.now());
+    if (resting) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [resting]);
+
   // 区切り(集中⇄休憩)の合図。開始直後には鳴らさない。
   const prevPhase = useRef(phaseKey);
   useEffect(() => {
@@ -521,9 +582,9 @@ function TimerChip({
 
   // 計測中はタブのタイトルにも時間を出す(別タブで作業していても進みが見える)。
   useEffect(() => {
-    document.title = `${phaseLabel ? `${phaseLabel} ` : ""}${display} · Landfall`;
+    document.title = `${phaseLabel ? `${phaseLabel} ` : ""}${display} · KeelMira`;
     return () => {
-      document.title = "Landfall — Study Log";
+      document.title = "KeelMira — Study Log";
     };
   }, [display, phaseLabel]);
 
@@ -543,30 +604,53 @@ function TimerChip({
     sound === "off" ? t("soundOff") : sound === "waves" ? t("soundWaves") : t("soundPiano");
 
   return (
-    <div className="timer-chip">
+    <div
+      ref={floating.elementRef}
+      className={`timer-chip${floating.dragging ? " dragging" : ""}`}
+      style={floating.style}
+      {...floating.pointerProps}
+    >
       {/* 名前と時間を押すと、航海の世界へ戻る。 */}
-      <button className="timer-back" onClick={onOpen} aria-label={t("backToVoyage")}>
+      <button
+        className="timer-back"
+        onClick={() => {
+          if (!floating.consumeDraggedClick()) onOpen();
+        }}
+        aria-label={t("backToVoyage")}
+      >
         <span className="timer-name">
           {phaseLabel && <span className="timer-phase">{phaseLabel} </span>}
           {item?.name ?? "—"}
         </span>
         <span className="timer-elapsed">{display}</span>
       </button>
-      <button className="timer-sound" onClick={cycleSound}>
+      <button
+        className="timer-sound"
+        data-no-floating-drag
+        onClick={cycleSound}
+        aria-label={soundLabel}
+      >
         {soundLabel}
       </button>
       {/* 休憩。世界を閉じて実際に作業しているときこそ要る操作なので、
           世界の中だけでなくここにも置く。 */}
       <button
         className={`timer-break${resting ? " on" : ""}`}
+        data-no-floating-drag
         onClick={onToggleBreak}
+        aria-pressed={resting}
       >
         {resting ? t("endBreakShort") : t("takeBreakShort")}
       </button>
-      <button className="timer-finish" onClick={onFinish}>
+      <button className="timer-finish" data-no-floating-drag onClick={onFinish}>
         {t("timerFinish")}
       </button>
-      <button className="timer-discard" onClick={onDiscard} aria-label="discard">
+      <button
+        className="timer-discard"
+        data-no-floating-drag
+        onClick={onDiscard}
+        aria-label={t("discardVoyage")}
+      >
         ✕
       </button>
     </div>
@@ -586,19 +670,50 @@ function RecordDialog({
   initialMinutes?: number | null;
   onClose: () => void;
 }) {
-  const [minutes, setMinutes] = useState(() => initialMinutes ?? lastUsedMinutes() ?? 30);
+  const previousMinutes = useMemo(lastUsedMinutes, []);
+  const [minuteState, setMinuteState] = useState(() => ({
+    minutes: Math.min(6000, Math.max(0, initialMinutes ?? 0)),
+    history: [] as number[],
+  }));
+  const minutes = minuteState.minutes;
   const [note, setNote] = useState("");
   const [working, setWorking] = useState(false);
-  const style = STYLE_COLORS[normalizeStyle(item.styleToken)];
+  const style = itemStyleColors(item.styleToken);
+
+  const changeMinutes = (next: (current: number) => number) => {
+    setMinuteState((state) => {
+      const minutes = Math.min(6000, Math.max(0, Math.round(next(state.minutes))));
+      if (minutes === state.minutes) return state;
+      return {
+        minutes,
+        // 誤タップをすぐ戻せるだけで十分なので、履歴は直近12操作に限る。
+        history: [...state.history.slice(-11), state.minutes],
+      };
+    });
+  };
+  const undoMinutes = () => {
+    setMinuteState((state) => {
+      const previous = state.history.at(-1);
+      return previous === undefined
+        ? state
+        : { minutes: previous, history: state.history.slice(0, -1) };
+    });
+  };
 
   const save = async () => {
     if (working || minutes <= 0) return;
     setWorking(true);
     const clamped = Math.min(minutes, 6000);
-    localStorage.setItem(LAST_MINUTES_KEY, String(clamped));
-    await recordSession(uid, { item, minutes: clamped, note }, data);
-    showToast(t("recordedToast"));
-    onClose();
+    try {
+      storage.set(LAST_MINUTES_KEY, String(clamped));
+      await recordSession(uid, { item, minutes: clamped, note: note.trim() || undefined }, data);
+      showToast(t("recordedToast"));
+      onClose();
+    } catch {
+      showToast(t("errGeneric"));
+    } finally {
+      setWorking(false);
+    }
   };
 
   return (
@@ -623,7 +738,7 @@ function RecordDialog({
         <div className="stepper-row">
           <button
             className="minus-button stepper-button"
-            onClick={() => setMinutes((m) => Math.max(5, Math.floor((m - 1) / 5) * 5))}
+            onClick={() => changeMinutes((m) => Math.max(0, Math.ceil(m / 5) * 5 - 5))}
             aria-label="-5"
           >
             −
@@ -638,7 +753,7 @@ function RecordDialog({
               onFocus={(e) => e.target.select()}
               onChange={(e) => {
                 const n = Number(e.target.value.replace(/[^0-9]/g, ""));
-                setMinutes(Number.isFinite(n) ? Math.min(n, 6000) : 0);
+                changeMinutes(() => (Number.isFinite(n) ? n : 0));
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) void save();
@@ -649,29 +764,61 @@ function RecordDialog({
           </span>
           <button
             className="minus-button stepper-button"
-            onClick={() => setMinutes((m) => Math.min(6000, Math.floor(m / 5) * 5 + 5))}
+            onClick={() => changeMinutes((m) => Math.floor(m / 5) * 5 + 5)}
             aria-label="+5"
           >
             +
           </button>
         </div>
-        {/* 分だけだと1時間を超えたときに読み取れない(90と出ても1時間30分だと
-            すぐ分からない)。打ち込みは分のままが速いので、読み方だけ添える。 */}
-        {minutes >= 60 && <p className="stepper-reading">{durationLabel(minutes)}</p>}
-        <div className="chip-row" style={{ justifyContent: "center", marginTop: 14 }}>
-          {MINUTE_PRESETS.map((m) => (
+        <p className="stepper-reading">
+          {tf(t("manualTimeTotal"), { time: durationLabel(minutes) })}
+        </p>
+        <p className="manual-time-hint">{t("manualTimeAddHint")}</p>
+        <div className="minute-additions">
+          {MINUTE_ADDITIONS.map((m) => (
             <button
               key={m}
-              className={`chip${minutes === m ? " selected" : ""}`}
-              onClick={() => setMinutes(m)}
+              className="chip"
+              onClick={() => changeMinutes((current) => current + m)}
+              disabled={minutes >= 6000}
             >
-              {durationLabel(m)}
+              +{durationLabel(m)}
             </button>
           ))}
         </div>
+        <div className="manual-time-actions">
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={undoMinutes}
+            disabled={minuteState.history.length === 0}
+          >
+            {t("undo")}
+          </button>
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={() => changeMinutes(() => 0)}
+            disabled={minutes === 0}
+          >
+            {t("clear")}
+          </button>
+          {previousMinutes !== null && previousMinutes !== minutes && (
+            <button
+              type="button"
+              className="quiet-button"
+              onClick={() => changeMinutes(() => previousMinutes)}
+            >
+              {tf(t("previousTime"), { time: durationLabel(previousMinutes) })}
+            </button>
+          )}
+        </div>
 
-        <p className="section-label">{t("noteOptional")}</p>
+        <label className="section-label" htmlFor="record-note">
+          {t("noteOptional")}
+        </label>
         <input
+          id="record-note"
           className="field"
           value={note}
           onChange={(e) => setNote(e.target.value)}
@@ -681,6 +828,9 @@ function RecordDialog({
             if (e.key === "Enter" && !e.nativeEvent.isComposing) void save();
           }}
         />
+        <p className="field-meta" aria-live="polite">
+          {note.length} / 120
+        </p>
 
         <div style={{ height: 28 }} />
         <button className="primary-button" onClick={save} disabled={working || minutes <= 0}>

@@ -7,13 +7,48 @@
 # 逆に /assets/ の中身はファイル名にハッシュが入っていて中身が変われば名前も
 # 変わるので、長く持たせて良い(immutable)。
 
+# 全画面共通のブラウザー側防御。Google/Appleの認証ポップアップを保ったまま、
+# 埋め込み・MIME誤認・不要な端末権限・参照元の漏出を閉じる。
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com; font-src 'self' data:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://www.google.com https://www.recaptcha.net https://*.stripe.com; frame-src https://accounts.google.com https://appleid.apple.com https://*.firebaseapp.com https://www.google.com https://www.recaptcha.net https://*.stripe.com; worker-src 'self' blob:; manifest-src 'self'; form-action 'self' https://accounts.google.com https://appleid.apple.com https://*.stripe.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Cross-Origin-Opener-Policy: same-origin-allow-popups
+  Cross-Origin-Resource-Policy: same-site
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+
+# アプリの入口は必ず最新を取得する。HTMLだけ古い状態で新しいハッシュ付きJSが
+# 消えていると起動不能になるため、ブラウザにもCDNにも保存させない。
+/
+  Cache-Control: no-store
+
+/index.html
+  Cache-Control: no-store
+
+/404.html
+  Cache-Control: no-store
+
 # no-cache は Cloudflare 側で max-age=14400 に正規化されてしまったので、
 # トップページと同じ「max-age=0 + 毎回検証」の形で書く(こちらは通る)。
 /sw.js
   Cache-Control: public, max-age=0, must-revalidate
 
+/sw-retire.js
+  Cache-Control: no-store
+
+/bootstrap.js
+  Cache-Control: no-store
+
 /manifest.webmanifest
   Cache-Control: public, max-age=0, must-revalidate
+
+/models/navigator_main-v4.glb
+  Cache-Control: public, max-age=31536000, immutable
+
+/models/navigator_main-v5.glb
+  Cache-Control: public, max-age=31536000, immutable
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable

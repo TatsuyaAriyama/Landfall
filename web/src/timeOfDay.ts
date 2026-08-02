@@ -2,7 +2,20 @@ import { useEffect, useState } from "react";
 
 export type TimeOfDay = "morning" | "day" | "evening" | "night";
 
-export const TIME_OF_DAY = {
+export interface SeaLightPalette {
+  sky: string;
+  fog: string;
+  sea: string;
+  seaDeep: string;
+  reflection: string;
+  ambient: string;
+  keyLight: string;
+  fillLight: string;
+  stars: number;
+  celestial: "sun" | "moon";
+}
+
+export const SEA_LIGHT: Record<TimeOfDay, SeaLightPalette> = {
   morning: {
     sky: "#E8B789",
     fog: "#A7C7B9",
@@ -51,9 +64,9 @@ export const TIME_OF_DAY = {
     stars: 380,
     celestial: "moon",
   },
-} as const;
+};
 
-export function currentTimeOfDay(date = new Date()): TimeOfDay {
+export function timeOfDayAt(date: Date): TimeOfDay {
   const hour = date.getHours();
   if (hour >= 5 && hour < 10) return "morning";
   if (hour >= 10 && hour < 17) return "day";
@@ -61,25 +74,29 @@ export function currentTimeOfDay(date = new Date()): TimeOfDay {
   return "night";
 }
 
-/// ログイン画面を開いたまま時間帯をまたいでも、空と海を現在時刻へ追従させる。
+function demoOverride(): TimeOfDay | null {
+  if (typeof window === "undefined" || window.location.hash !== "#demo") return null;
+  const value = new URLSearchParams(window.location.search).get("tod");
+  return value === "morning" || value === "day" || value === "evening" || value === "night"
+    ? value
+    : null;
+}
+
 export function useTimeOfDay(): TimeOfDay {
-  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>(() => currentTimeOfDay());
+  const read = () => demoOverride() ?? timeOfDayAt(new Date());
+  const [value, setValue] = useState<TimeOfDay>(read);
 
   useEffect(() => {
-    const refresh = () => setTimeOfDay(currentTimeOfDay());
-    const timer = window.setInterval(refresh, 60_000);
-    const onVisibility = () => {
-      if (document.visibilityState === "visible") refresh();
-    };
-
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", onVisibility);
+    const update = () => setValue(read());
+    const id = window.setInterval(update, 60_000);
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
     return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(id);
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
     };
   }, []);
 
-  return timeOfDay;
+  return value;
 }

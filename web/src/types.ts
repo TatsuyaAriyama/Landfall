@@ -1,4 +1,10 @@
 // Firestore スキーマ(docs/SCHEMA.md)に対応する型とデザイントークン。
+import {
+  freeColorStyle,
+  parseFreeColorToken,
+  parsePccsToken,
+  pccsStyle,
+} from "./pccs";
 
 /// 項目タイルで選べる配色。グリッドは一覧性が命なので、ここは意図的に増やさない。
 export const TILE_STYLES = [
@@ -86,6 +92,19 @@ export const STYLE_COLORS: Record<ProfileStyleToken, { bg: string; fg: string }>
   sunrise: { bg: "#F5822A", fg: "#1A1130" },
 };
 
+/// 作業項目は従来の6配色に加え、`pccs-{tone}-{hue}` を解釈する。
+/// 未知の値は従来通りmidnightへ戻し、新旧クライアント間の互換性を保つ。
+export function itemStyleColors(token: string): { bg: string; fg: string } {
+  const free = parseFreeColorToken(token);
+  if (free) return freeColorStyle(free);
+  const pccs = parsePccsToken(token);
+  return pccs ? pccsStyle(pccs) : STYLE_COLORS[normalizeStyle(token)];
+}
+
+export function normalizeItemStyle(token: string): string {
+  return parseFreeColorToken(token) || parsePccsToken(token) ? token : normalizeStyle(token);
+}
+
 export interface StudyItem {
   id: string; // UUID(大文字)
   name: string;
@@ -102,6 +121,10 @@ export interface StudySession {
   minutes: number;
   note?: string;
   itemUUID?: string;
+  /// 記録時点の項目表示。項目そのものを削除しても過去の航海を読めるように残す。
+  itemName?: string;
+  itemStyle?: string;
+  itemSymbol?: string;
   updatedAt: Date;
 }
 
@@ -109,6 +132,14 @@ export interface StudyDay {
   id: string; // yyyy-MM-dd
   date: Date;
   note?: string;
+  updatedAt: Date;
+}
+
+/// 航海誌に残す一日ぶんの自由記録。作業記録の有無とは独立して保存する。
+export interface VoyageLogEntry {
+  id: string; // yyyy-MM-dd
+  date: Date;
+  body: string;
   updatedAt: Date;
 }
 

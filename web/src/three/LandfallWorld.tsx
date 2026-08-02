@@ -10,6 +10,7 @@ import { Gulls, type GullFlock } from "./Gulls";
 import { boatProps } from "../boat";
 import { durationLabel, t, tf } from "../i18n";
 import { useBackToClose } from "../backClose";
+import { useBodyScrollLock } from "../scrollLock";
 
 // 着岸の世界。目的地に到達した瞬間に開く一幕。
 //
@@ -321,6 +322,7 @@ export default function LandfallWorld({ name, minutes, onClose }: LandfallWorldP
   // 端末の「戻る」だけは受ける。ここを塞ぐと Android で戻るを押した人が
   // アプリの外へ出てしまう(閉じ込めるより、逃げ道は残す)。
   useBackToClose(true, onClose);
+  useBodyScrollLock();
 
   useEffect(() => {
     // Esc も上陸を見終えるまでは効かせない。タップと同じく「飛ばす操作」。
@@ -328,11 +330,8 @@ export default function LandfallWorld({ name, minutes, onClose }: LandfallWorldP
       if (e.key === "Escape" && words) onClose();
     };
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
     };
   }, [onClose, words]);
 

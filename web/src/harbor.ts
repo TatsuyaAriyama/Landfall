@@ -1,11 +1,10 @@
 import {
   addDoc,
   arrayRemove,
-  arrayUnion,
   collection,
   deleteDoc,
-  deleteField,
   doc,
+  documentId,
   getDoc,
   getDocs,
   limit,
@@ -13,12 +12,15 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
+import { newestSharedSessionsFirst } from "./sharedSessionOrder";
+import { storage } from "./storage";
 import { auth, db } from "./firebase";
 import { PlayerProfile } from "./profile";
 import { serviceStartDay } from "./since";
@@ -75,6 +77,39 @@ export interface HarborMember {
   boatFlag?: string;
 }
 
+// 港を開いている間だけ共有する、一時的な航海士の状態。
+// updatedAt が古いものは描画側で無視し、タブ終了時の削除に失敗しても残像を残さない。
+export const HARBOR_PRESENCE_POSES = [
+  "idle",
+  "walk",
+  "pickupRod",
+  "equipRod",
+  "holdRod",
+  "walkRod",
+  "stowRod",
+  "hail",
+  "raise",
+  "point",
+  "lookout",
+  "rest",
+  "read",
+] as const;
+export type HarborPresencePose = (typeof HARBOR_PRESENCE_POSES)[number];
+
+export interface HarborPresence {
+  uid: string;
+  x: number;
+  z: number;
+  yaw: number;
+  pose: HarborPresencePose;
+  aboard: boolean;
+  /** 共同航海レーン内での左右の操船位置。 */
+  sailX: number;
+  fishingRod: boolean;
+  emoteSeq: number;
+  updatedAt: Date;
+}
+
 /// 航海のはじまり(yyyy-MM-dd)の読み取り。書式が違うもの・実在しない日は捨てる。
 export function parseSinceDay(value: unknown): string | undefined {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
@@ -118,12 +153,7 @@ export interface ChatMessage {
   minutes?: number;
   gapDays?: number;
   createdAt: Date;
-  reactions: Record<string, string>; // uid → heart | lighthouse
 }
-
-// チャットの反応だけの語彙(共有アイテムアイコンとは別枠。views/HarborView.tsxのReactionSymbolSvg参照)。
-// heart=いいね(汎用)、lighthouse=見てるよ(汎用の見守り)。
-export const CHAT_REACTIONS = ["heart", "lighthouse"] as const;
 
 export type HarborErrorCode =
   | "notSignedIn"
@@ -150,20 +180,37 @@ function uid(): string {
 
 // ---- プライベートの港(rooms) ----
 
+function roomFromDoc(id: string, value: Record<string, unknown>): HarborRoom {
+  return {
+    id,
+    name: String(value.name ?? ""),
+    memberIds: Array.isArray(value.memberIds)
+      ? value.memberIds.filter((memberId): memberId is string => typeof memberId === "string")
+      : [],
+    ownerUid: typeof value.ownerUid === "string" ? value.ownerUid : undefined,
+  };
+}
+
 export async function fetchRooms(): Promise<HarborRoom[]> {
   const u = uid();
   const snap = await getDocs(
     query(collection(db, "rooms"), where("memberIds", "array-contains", u)),
   );
-  return snap.docs.map((d) => {
-    const v = d.data();
-    return {
-      id: d.id,
-      name: String(v.name ?? ""),
-      memberIds: (v.memberIds as string[]) ?? [],
-      ownerUid: typeof v.ownerUid === "string" ? v.ownerUid : undefined,
-    };
-  });
+  return snap.docs.map((d) => roomFromDoc(d.id, d.data()));
+}
+
+/// 参加中の港と人数をリアルタイムで反映する。
+/// 招待された側の参加・退港が、既に港を開いている端末にも再読込なしで届く。
+export function listenRooms(
+  cb: (rooms: HarborRoom[]) => void,
+  onError?: () => void,
+): () => void {
+  const u = uid();
+  return onSnapshot(
+    query(collection(db, "rooms"), where("memberIds", "array-contains", u)),
+    (snap) => cb(snap.docs.map((d) => roomFromDoc(d.id, d.data()))),
+    () => onError?.(),
+  );
 }
 
 /// iOS と同じ紛らわしくない文字集合(I/O/0/1 なし)。
@@ -210,19 +257,48 @@ export async function createRoom(
 /// 招待コードで港に入る。
 export async function joinRoom(rawCode: string, data: PublishSource): Promise<void> {
   const u = uid();
-  const code = rawCode.trim().toUpperCase();
-  if (!code) throw new HarborError("roomNotFound");
+  const code = normalizeRoomCode(rawCode);
+  if (code.length !== 6) throw new HarborError("roomNotFound");
   const ref = doc(db, "rooms", code);
-  const snap = await getDoc(ref).catch(() => null);
-  if (!snap || !snap.exists()) throw new HarborError("roomNotFound");
-  const members = (snap.data().memberIds as string[]) ?? [];
-  if (!members.includes(u)) {
-    const rooms = await fetchRooms();
-    if (rooms.length >= ROOM_MAX_JOINED) throw new HarborError("tooManyRooms");
-    if (members.length >= ROOM_MAX_MEMBERS) throw new HarborError("roomFull");
-    await updateDoc(ref, { memberIds: arrayUnion(u) });
+  const rooms = await fetchRooms();
+  const alreadyJoined = rooms.some((room) => room.id === code);
+  if (!alreadyJoined && rooms.length >= ROOM_MAX_JOINED) {
+    throw new HarborError("tooManyRooms");
   }
-  await joinedSetup("rooms", code, data);
+
+  // 読み取り→更新を一つのトランザクションにする。二人が最後の一席へ同時に
+  // 入ろうとしても、再試行時に最新人数を読み直して4人を超えない。
+  let addedMembership = false;
+  await runTransaction(db, async (transaction) => {
+    // トランザクションは競合時に同じコールバックを再実行する。
+    addedMembership = false;
+    const snap = await transaction.get(ref);
+    if (!snap.exists()) throw new HarborError("roomNotFound");
+    const rawMembers: unknown = snap.data().memberIds;
+    const members = Array.isArray(rawMembers)
+      ? rawMembers.filter((memberId: unknown): memberId is string => typeof memberId === "string")
+      : [];
+    if (members.includes(u)) return;
+    if (members.length >= ROOM_MAX_MEMBERS) throw new HarborError("roomFull");
+    transaction.update(ref, { memberIds: [...members, u] });
+    addedMembership = true;
+  });
+
+  try {
+    await joinedSetup("rooms", code, data);
+  } catch (error) {
+    // メンバーカードの作成に失敗したとき、人数だけ増えた「見えない参加者」を
+    // 港に残さない。元から参加済みだった場合は所属を触らない。
+    if (addedMembership) {
+      await updateDoc(ref, { memberIds: arrayRemove(u) }).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+/// 招待コード入力。区切りを含む貼り付けにも耐え、実際に発行する文字だけを残す。
+export function normalizeRoomCode(rawCode: string): string {
+  return rawCode.toUpperCase().replace(/[^A-HJ-NP-Z2-9]/g, "").slice(0, 6);
 }
 
 /// 退港。自分の共有分(プロフィール+月間記録)を消してから抜ける。
@@ -248,13 +324,13 @@ export async function fetchPublicJoined(): Promise<Set<string>> {
     ).catch(() => null);
     if (snap?.exists()) found.add(harbor.slug);
   }
-  localStorage.setItem(JOINED_CACHE_KEY, JSON.stringify([...found].sort()));
+  storage.set(JOINED_CACHE_KEY, JSON.stringify([...found].sort()));
   return found;
 }
 
 export function cachedPublicJoined(): Set<string> {
   try {
-    return new Set(JSON.parse(localStorage.getItem(JOINED_CACHE_KEY) ?? "[]") as string[]);
+    return new Set(JSON.parse(storage.get(JOINED_CACHE_KEY) ?? "[]") as string[]);
   } catch {
     return new Set();
   }
@@ -264,7 +340,7 @@ export async function joinPublic(slug: string, data: PublishSource): Promise<voi
   await joinedSetup("publicHarbors", slug, data);
   const joined = cachedPublicJoined();
   joined.add(slug);
-  localStorage.setItem(JOINED_CACHE_KEY, JSON.stringify([...joined].sort()));
+  storage.set(JOINED_CACHE_KEY, JSON.stringify([...joined].sort()));
 }
 
 export async function leavePublic(slug: string): Promise<void> {
@@ -275,7 +351,7 @@ export async function leavePublic(slug: string): Promise<void> {
   await deleteDoc(memberRef).catch(() => {});
   const joined = cachedPublicJoined();
   joined.delete(slug);
-  localStorage.setItem(JOINED_CACHE_KEY, JSON.stringify([...joined].sort()));
+  storage.set(JOINED_CACHE_KEY, JSON.stringify([...joined].sort()));
 }
 
 export async function leaveAllPublic(): Promise<void> {
@@ -322,16 +398,11 @@ export async function pushProfileEverywhere(sinceDay?: Date | null): Promise<voi
 
 // ---- メンバーと月間記録の閲覧 ----
 
-export async function fetchMembers(
-  root: "rooms" | "publicHarbors",
-  id: string,
-): Promise<HarborMember[]> {
-  const snap = await getDocs(
-    query(collection(db, root, id, "members"), orderBy("joinedAt", "desc"), limit(200)),
-  ).catch(() => null);
-  if (!snap) return [];
+function membersFromDocs(
+  docs: { id: string; data: () => Record<string, unknown> }[],
+): HarborMember[] {
   const str = (value: unknown) => (typeof value === "string" ? value : undefined);
-  return snap.docs.map((d) => {
+  return docs.map((d) => {
     const v = d.data();
     return {
       id: d.id,
@@ -349,6 +420,106 @@ export async function fetchMembers(
   });
 }
 
+export async function fetchMembers(
+  root: "rooms" | "publicHarbors",
+  id: string,
+): Promise<HarborMember[]> {
+  const snap = await getDocs(
+    query(collection(db, root, id, "members"), orderBy("joinedAt", "desc"), limit(200)),
+  ).catch(() => null);
+  return snap ? membersFromDocs(snap.docs) : [];
+}
+
+/// 港内の船をリアルタイムで保つ。初回以降に増えたメンバーは画面側で
+/// 入港アニメーションへ渡し、退港したメンバーは購読結果から自然に消える。
+export function listenMembers(
+  root: "rooms" | "publicHarbors",
+  id: string,
+  cb: (members: HarborMember[]) => void,
+  onError?: () => void,
+): () => void {
+  return onSnapshot(
+    query(collection(db, root, id, "members"), orderBy("joinedAt", "desc"), limit(200)),
+    (snap) => cb(membersFromDocs(snap.docs)),
+    () => onError?.(),
+  );
+}
+
+function presenceRef(roomId: string, memberId: string) {
+  return doc(db, "rooms", roomId, "presence", memberId);
+}
+
+/// 同じ友人港を開いている航海士の位置・向き・仕草を購読する。
+/// 最大4人の一時コレクションで、履歴や学習記録としては保存しない。
+export function listenHarborPresence(
+  roomId: string,
+  currentUid: string,
+  cb: (presence: HarborPresence[]) => void,
+): () => void {
+  return onSnapshot(
+    query(
+      collection(db, "rooms", roomId, "presence"),
+      where(documentId(), "!=", currentUid),
+      limit(ROOM_MAX_MEMBERS - 1),
+    ),
+    (snap) => {
+      cb(
+        snap.docs.flatMap((presenceDoc) => {
+          const value = presenceDoc.data();
+          const pose = value.pose;
+          if (
+            typeof pose !== "string" ||
+            !HARBOR_PRESENCE_POSES.includes(pose as HarborPresencePose)
+          ) {
+            return [];
+          }
+          return [{
+            uid: presenceDoc.id,
+            x: Number(value.x ?? 0),
+            z: Number(value.z ?? 0),
+            yaw: Number(value.yaw ?? 0),
+            pose: pose as HarborPresencePose,
+            aboard: value.aboard === true,
+            sailX: Math.max(-0.75, Math.min(0.75, Number(value.sailX ?? 0))),
+            fishingRod: value.fishingRod === true,
+            emoteSeq:
+              typeof value.emoteSeq === "number" ? Math.max(0, value.emoteSeq) : 0,
+            updatedAt:
+              value.updatedAt instanceof Timestamp
+                ? value.updatedAt.toDate()
+                : new Date(0),
+          }];
+        }),
+      );
+    },
+    () => cb([]),
+  );
+}
+
+export async function publishHarborPresence(
+  roomId: string,
+  state: Omit<HarborPresence, "uid" | "updatedAt">,
+): Promise<void> {
+  const currentUid = uid();
+  await setDoc(presenceRef(roomId, currentUid), {
+    x: state.x,
+    z: state.z,
+    yaw: state.yaw,
+    pose: state.pose,
+    aboard: state.aboard,
+    sailX: Math.max(-0.75, Math.min(0.75, state.sailX)),
+    fishingRod: state.fishingRod,
+    emoteSeq: Math.max(0, Math.floor(state.emoteSeq)),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function clearHarborPresence(roomId: string): Promise<void> {
+  const currentUid = auth.currentUser?.uid;
+  if (!currentUid) return;
+  await deleteDoc(presenceRef(roomId, currentUid));
+}
+
 export async function fetchMonth(
   root: "rooms" | "publicHarbors",
   id: string,
@@ -361,17 +532,19 @@ export async function fetchMonth(
   if (!snap || !snap.exists()) return null;
   const v = snap.data();
   const days = ((v.days as number[]) ?? []).filter((n) => typeof n === "number");
-  const sessions = (((v.sessions as Record<string, unknown>[]) ?? []) as Record<string, unknown>[])
-    .map((s) => ({
-      day: Number(s.day ?? 0),
-      minutes: Number(s.minutes ?? 0),
-      note: typeof s.note === "string" ? s.note : undefined,
-      date: s.date instanceof Timestamp ? s.date.toDate() : undefined,
-      itemName: typeof s.itemName === "string" ? s.itemName : undefined,
-      styleToken: typeof s.styleToken === "string" ? s.styleToken : "midnight",
-      symbolToken: typeof s.symbolToken === "string" ? s.symbolToken : "compass",
-    }))
-    .filter((s) => s.day >= 1);
+  const sessions = newestSharedSessionsFirst(
+    (((v.sessions as Record<string, unknown>[]) ?? []) as Record<string, unknown>[])
+      .map((s) => ({
+        day: Number(s.day ?? 0),
+        minutes: Number(s.minutes ?? 0),
+        note: typeof s.note === "string" ? s.note : undefined,
+        date: s.date instanceof Timestamp ? s.date.toDate() : undefined,
+        itemName: typeof s.itemName === "string" ? s.itemName : undefined,
+        styleToken: typeof s.styleToken === "string" ? s.styleToken : "midnight",
+        symbolToken: typeof s.symbolToken === "string" ? s.symbolToken : "compass",
+      }))
+      .filter((s) => s.day >= 1),
+  );
   return { days, sessions };
 }
 
@@ -398,8 +571,11 @@ export function buildMonthPayload(
     .sort((a, b) => a - b);
 
   const itemById = new Map(data.items.map((i) => [i.id, i]));
-  const sessions = data.sessions
-    .filter((s) => s.date.getFullYear() === year && s.date.getMonth() === month)
+  const sessions = newestSharedSessionsFirst(
+    data.sessions.filter(
+      (s) => s.date.getFullYear() === year && s.date.getMonth() === month,
+    ),
+  )
     .slice(0, 1000)
     .map((s) => {
       const item = s.itemUUID ? itemById.get(s.itemUUID) : undefined;
@@ -408,11 +584,11 @@ export function buildMonthPayload(
         minutes: s.minutes,
         date: s.date,
         ...(s.note ? { note: s.note.slice(0, 120) } : {}),
-        ...(item
+        ...(item || s.itemName
           ? {
-              itemName: item.name.slice(0, 60),
-              styleToken: item.styleToken,
-              symbolToken: item.symbolToken,
+              itemName: (item?.name ?? s.itemName ?? "").slice(0, 60),
+              styleToken: item?.styleToken ?? s.itemStyle ?? "midnight",
+              symbolToken: item?.symbolToken ?? s.itemSymbol ?? "compass",
             }
           : {}),
       };
@@ -470,7 +646,6 @@ export function listenChat(
             minutes: typeof v.minutes === "number" ? v.minutes : undefined,
             gapDays: typeof v.gapDays === "number" ? v.gapDays : undefined,
             createdAt: v.createdAt instanceof Timestamp ? v.createdAt.toDate() : new Date(),
-            reactions: (v.reactions as Record<string, string>) ?? {},
           };
         }),
       );
@@ -494,19 +669,6 @@ export async function sendChat(roomId: string, text: string): Promise<void> {
 
 export async function deleteChat(roomId: string, messageId: string): Promise<void> {
   await deleteDoc(doc(chatRef(roomId), messageId));
-}
-
-/// リアクション。同じ印をもう一度押すと消える(1人1つ)。
-export async function reactChat(
-  roomId: string,
-  message: ChatMessage,
-  token: string,
-): Promise<void> {
-  const u = uid();
-  const current = message.reactions[u];
-  await updateDoc(doc(chatRef(roomId), message.id), {
-    [`reactions.${u}`]: current === token ? deleteField() : token,
-  }).catch(() => {});
 }
 
 /// 今日の記録を、参加中の全プライベート港のチャットに自動の行として流す。
@@ -719,7 +881,7 @@ export async function deleteEverything(): Promise<void> {
   const rooms = await fetchRooms().catch(() => [] as HarborRoom[]);
   for (const room of rooms) await leaveRoom(room.id);
   await leaveAllPublic().catch(() => {});
-  for (const sub of ["items", "sessions", "days", "destinations", "blocks"]) {
+  for (const sub of ["items", "sessions", "days", "voyageLogs", "destinations", "blocks"]) {
     const snap = await getDocs(collection(db, "users", u, sub)).catch(() => null);
     for (const d of snap?.docs ?? []) await deleteDoc(d.ref).catch(() => {});
   }

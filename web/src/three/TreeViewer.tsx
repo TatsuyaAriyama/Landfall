@@ -10,11 +10,11 @@ function TreeFraming() {
     // 縦長画面は水平画角が極端に狭い。固定距離のままだと、横へ流れる樹冠が
     // 左右で切れるため、縦横比を見てカメラだけ一歩引く。
     if (size.width / Math.max(size.height, 1) < 0.72) {
-      camera.position.set(5.2, 2.9, 8.1);
+      camera.position.set(7.2, 3.6, 10.4);
     } else {
-      camera.position.set(3.25, 2.15, 4.3);
+      camera.position.set(5.1, 2.8, 6.7);
     }
-    camera.lookAt(0.1, 1.05, 0);
+    camera.lookAt(1.05, 1.22, 0);
   }, [camera, size.height, size.width]);
 
   return null;
@@ -30,7 +30,7 @@ export default function TreeViewer() {
       <Canvas
         dpr={[1, 2]}
         shadows
-        camera={{ position: [3.25, 2.15, 4.3], fov: 34, near: 0.1, far: 30 }}
+        camera={{ position: [5.1, 2.8, 6.7], fov: 34, near: 0.1, far: 30 }}
       >
         <TreeFraming />
         <color attach="background" args={["#D8E4D9"]} />
@@ -51,26 +51,27 @@ export default function TreeViewer() {
         />
         <directionalLight color="#76A68C" intensity={0.65} position={[4, 2.5, -3]} />
 
-        <WindsweptTree position={[0, 0.03, 0]} scale={1.28} animate={animate} />
-        <mesh receiveShadow rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
-          <circleGeometry args={[2.15, 64]} />
-          <meshStandardMaterial color="#C9C3A7" roughness={1} />
+        <WindsweptTree position={[0, 0.03, 0]} animate={animate} />
+        {/* 背景色を書かず深度だけを持つ地面。沈んだ根先を隠すが、人工的な台は見せない。 */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.035, 0]}>
+          <planeGeometry args={[100, 100]} />
+          <meshBasicMaterial colorWrite={false} depthWrite />
         </mesh>
         <ContactShadows
-          position={[0, 0.012, 0]}
-          opacity={0.34}
-          scale={5}
-          blur={2.4}
+          position={[0, -0.032, 0]}
+          opacity={0.48}
+          scale={5.5}
+          blur={2.1}
           far={4}
           color="#243B31"
         />
 
         <OrbitControls
-          target={[0.1, 1.05, 0]}
+          target={[1.05, 1.22, 0]}
           enablePan={false}
           enableDamping
-          minDistance={2.7}
-          maxDistance={10.5}
+          minDistance={4.2}
+          maxDistance={12}
           minPolarAngle={Math.PI * 0.16}
           maxPolarAngle={Math.PI * 0.49}
           autoRotate={autoRotate}

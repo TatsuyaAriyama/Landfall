@@ -1,6 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { t } from "./i18n";
 import { useBackToClose } from "./backClose";
+import { useBodyScrollLock } from "./scrollLock";
 
 // ダイアログとトーストの共通基盤。
 // - Modal: Esc で閉じる+表示中は背景スクロールを固定
@@ -8,26 +9,59 @@ import { useBackToClose } from "./backClose";
 // - showToast: 保存・参加・失敗などの静かなフィードバック
 
 export function Modal({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useBodyScrollLock();
   // Androidの戻る・ブラウザの戻るは、アプリを離れるのではなく最前面の
   // ダイアログを一つだけ閉じる。確認ダイアログが重なっていてもスタック順に戻る。
   useBackToClose(true, onClose);
 
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const focusableSelector =
+      'button:not([disabled]), [href], input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
+      if (e.key !== "Tab" || !dialogRef.current) return;
+      const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(focusableSelector)];
+      if (focusable.length === 0) {
+        e.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    requestAnimationFrame(() => {
+      const autofocus = dialogRef.current?.querySelector<HTMLElement>("[autofocus]");
+      const first = dialogRef.current?.querySelector<HTMLElement>(focusableSelector);
+      (autofocus ?? first ?? dialogRef.current)?.focus();
+    });
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
+      previouslyFocused?.focus();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="overlay" onClick={onClose}>
-      <div className="dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div
+        ref={dialogRef}
+        className="dialog"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+      >
         {children}
       </div>
     </div>
@@ -102,7 +136,11 @@ export function OfflineWatcher() {
   }, []);
 
   if (!offline) return null;
-  return <div className="offline-banner">{t("offlineToast")}</div>;
+  return (
+    <div className="offline-banner" role="status" aria-live="polite">
+      {t("offlineToast")}
+    </div>
+  );
 }
 
 // ---- ホスト(App 直下に1つ置く) ----
@@ -112,7 +150,11 @@ export function OverlayHost() {
   const [toasts, setToasts] = useState<{ id: number; message: string }[]>([]);
 
   useEffect(() => {
-    requestConfirm = (req) => setConfirm(req);
+    requestConfirm = (req) =>
+      setConfirm((current) => {
+        current?.resolve(false);
+        return req;
+      });
     let nextId = 1;
     pushToast = (message) => {
       const id = nextId++;
@@ -154,8 +196,15 @@ export function OverlayHost() {
       )}
       <div className="toast-stack" aria-live="polite">
         {toasts.map((toast) => (
-          <div key={toast.id} className="toast">
-            {toast.message}
+          <div key={toast.id} className="toast" role="status">
+            <span>{toast.message}</span>
+            <button
+              className="toast-dismiss"
+              onClick={() => setToasts((list) => list.filter((item) => item.id !== toast.id))}
+              aria-label={t("close")}
+            >
+              ×
+            </button>
           </div>
         ))}
       </div>

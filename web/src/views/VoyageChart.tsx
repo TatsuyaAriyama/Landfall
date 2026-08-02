@@ -32,6 +32,12 @@ const ROUTE_COLOR: Record<RouteArchetype, string> = {
   deep: "#CECBF6",
 };
 
+function lootLabel(route: SeaRoute): string {
+  if (route.lootKey === "loot.moonlightSail") return t("routeLootMoonlight");
+  if (route.lootKey === "loot.krakenFlag") return t("routeLootKraken");
+  return t("routeLootNone");
+}
+
 /// ハリケーンの印(渦の二重うずまき+目)。
 function StormMark({ x, y, dim }: { x: number; y: number; dim: boolean }) {
   return (
@@ -228,6 +234,9 @@ export function VoyageChartPanel({ roomId }: { roomId: string }) {
                 <span className="route-card-main">
                   <span className="route-card-name">{t(ROUTE_NAME[route.archetype])}</span>
                   <span className="route-card-desc">{t(ROUTE_DESC[route.archetype])}</span>
+                  <span className={`route-loot${route.lootKey ? "" : " none"}`}>
+                    {lootLabel(route)}
+                  </span>
                 </span>
               </button>
             ))}

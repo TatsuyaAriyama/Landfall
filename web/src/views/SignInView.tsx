@@ -1,11 +1,16 @@
 import { Component, lazy, Suspense, useState, type ReactNode } from "react";
 import { isEmbeddedWebView, signInWithApple, signInWithGoogle } from "../auth";
 import { t } from "../i18n";
-import { useTimeOfDay } from "../three/timeOfDay";
+import { useTimeOfDay } from "../timeOfDay";
 
 const SignInVoyageWorld = lazy(() => import("../three/SignInVoyageWorld"));
 
-class VoyageErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+// WebGLが無効・一時的に失敗した端末でも、認証操作は必ず残す。
+// 背景色は .harbor-signin 自体が持つため、失敗時は静かな海色へ自然に戻る。
+class VoyageBackgroundBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
   state = { failed: false };
 
   static getDerivedStateFromError() {
@@ -88,13 +93,6 @@ export function SignInView({ redirectError }: { redirectError?: string | null })
       await (which === "google" ? signInWithGoogle() : signInWithApple());
     } catch (e) {
       const code = (e as { code?: string }).code ?? "";
-      const detail =
-        e instanceof Error
-          ? e.message.replace(/https?:\/\/\S+/g, "[url]").slice(0, 240)
-          : "";
-      if (code) {
-        console.error(`[KeelMira auth] ${code}${detail ? `: ${detail}` : ""}`);
-      }
       const message = messageForCode(code);
       if (message) setError(message);
     } finally {
@@ -108,26 +106,19 @@ export function SignInView({ redirectError }: { redirectError?: string | null })
       data-time-of-day={timeOfDay}
     >
       <div className="harbor-voyage-layer">
-        <VoyageErrorBoundary>
+        <VoyageBackgroundBoundary>
           <Suspense fallback={null}>
             <SignInVoyageWorld timeOfDay={timeOfDay} />
           </Suspense>
-        </VoyageErrorBoundary>
+        </VoyageBackgroundBoundary>
       </div>
       <div className="harbor-voyage-shade" aria-hidden="true" />
+
       <p className="harbor-topbar">{t("wordmark")}</p>
 
       <main className="harbor-content">
-        <img
-          className="harbor-app-icon"
-          src="/icon-512.png"
-          width="512"
-          height="512"
-          alt=""
-          aria-hidden="true"
-          decoding="async"
-        />
         <h1 className="harbor-enter">{t("signInEnter")}</h1>
+        <p className="harbor-sync">{t("signInSync")}</p>
         {embedded && <p className="harbor-webview-warning">{t("signInWebviewWarning")}</p>}
         <div className="harbor-actions">
           <button
@@ -146,7 +137,7 @@ export function SignInView({ redirectError }: { redirectError?: string | null })
             <GoogleGlyph />
             <span>{t("signInWithGoogle")}</span>
           </button>
-          <p className="harbor-note">{t("signInSync")}</p>
+          <p className="harbor-note">{t("signInNote")}</p>
           {error && <p className="harbor-error">{error}</p>}
         </div>
       </main>

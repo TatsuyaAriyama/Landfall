@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 
-// 夜の海の共有部品。BoatStudio(船スタジオ)とVoyageScene(目的地の航海)で使う。
-// 配色は2Dの夜の入港(harborTeal地+sand塗り)と同じ世界。
+// 海の共有部品。既定は従来の夜色だが、航海シーンから時間帯の配色も受け取れる。
 
 export const NIGHT_BG = "#123830";
 export const SEA_COLOR = "#1E5348";
@@ -28,13 +27,13 @@ export function Moon({ position }: { position: [number, number, number] }) {
   );
 }
 
-/// 昼の太陽。月と同じく遠景の単色球として、霧の影響を受けずに置く。
+/// 朝昼夕の太陽。時間帯ごとの色を受け、空の低さだけは呼び出し側で決める。
 export function Sun({
   position,
-  color = "#FFF0B8",
+  color,
 }: {
   position: [number, number, number];
-  color?: string;
+  color: string;
 }) {
   return (
     <mesh geometry={SUN_GEO} position={position}>
@@ -62,8 +61,8 @@ const SEA_FRAG = /* glsl */ `
   uniform vec3 uDeep;
   uniform vec3 uMoon;
   uniform float uMoonX;
-  uniform float uReflection;
   uniform float uTime;
+  uniform float uReflection;
   varying vec2 vPos;
   void main() {
     float r = length(vPos) / 30.0;
@@ -86,8 +85,8 @@ const SEA_FRAG = /* glsl */ `
   }
 `;
 
-/// 海。大きな円盤に、放射グラデーションと月光の筋(月の真下に立つ揺らぐ光)。
-/// moonX にそのシーンの月のX座標を渡すと、反射がその真下に立つ。
+/// 海。大きな円盤に、放射グラデーションと太陽/月の反射の筋。
+/// moonX にそのシーンの天体のX座標を渡すと、反射がその真下に立つ。
 export function Sea({
   moonX = 0,
   animate = true,
@@ -113,11 +112,11 @@ export function Sea({
           uDeep: { value: new THREE.Color(deepColor) },
           uMoon: { value: new THREE.Color(lightColor) },
           uMoonX: { value: moonX },
-          uReflection: { value: reflection },
           uTime: { value: 0 },
+          uReflection: { value: reflection },
         },
       }),
-    [deepColor, lightColor, moonX, reflection, seaColor],
+    [moonX, seaColor, deepColor, lightColor, reflection],
   );
   useEffect(() => () => mat.dispose(), [mat]);
 

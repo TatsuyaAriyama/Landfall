@@ -1,11 +1,11 @@
-/* Aftide Web テーマ。
+/* KeelMira Web テーマ。
    原則は iOS と同じ: フラット塗りのみ・影/グラデーション/絵文字なし・角丸20px・font-weight ≤500。
-   ink/paper は明暗に追従する意味色。ブランド色は固定。 */
+   外観モードは持たず、夜の配色を基準に時間帯の海が必要な意味色を上書きする。 */
 
 :root {
-  --ink: #141414;
-  --paper: #ffffff;
-  --tile-ink: #141414;
+  --ink: #f4f1ec;
+  --paper: #161412;
+  --tile-ink: #2c2a28;
   --sun-yellow: #ffd84d;
   --sea-green: #5dcaa5;
   --coral: #f0997b;
@@ -19,21 +19,235 @@
   --ember-gold: #f3c065;
   --ink-fixed: #141414;
   --radius: 20px;
+  color-scheme: dark;
 }
 
-/* 外観: 既定は端末設定に追従。設定で選ぶと data-theme が優先される。 */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --ink: #f4f1ec;
-    --paper: #161412;
-    --tile-ink: #2c2a28;
+/* ---- 航海証 / Voyage Pass ---- */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.voyage-pass-entry {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 13px;
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--home-glass, var(--paper)) 54%, transparent);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.voyage-pass-entry span {
+  color: var(--return-orange);
+  font-size: 16px;
+}
+
+.voyage-pass-entry .voyage-pass-entry-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 4px;
+  border-radius: 6px;
+  background: #2c2a28;
+}
+
+.voyage-pass-entry-mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.voyage-pass-intro {
+  margin: 2px 0 18px;
+}
+
+.voyage-pass-emblem {
+  width: 152px;
+  height: 152px;
+  margin: 4px auto 22px;
+  padding: 32px;
+  border-radius: 20px;
+  background: #2c2a28;
+}
+
+.voyage-pass-emblem svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.voyage-pass-intro ul {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--ink) 88%, transparent);
+}
+
+.voyage-pass-intro li {
+  position: relative;
+  min-height: 48px;
+  padding: 13px 4px 12px 28px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.voyage-pass-intro li::before {
+  content: "◇";
+  position: absolute;
+  left: 4px;
+  top: 13px;
+  color: var(--return-orange);
+}
+
+.voyage-pass-intro li:last-child {
+  border-bottom: 0;
+}
+
+.voyage-pass-card {
+  display: block;
+  padding: 18px 0 0;
+  color: var(--ink);
+  border-top: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.voyage-pass-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.voyage-pass-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 17px;
+  font-weight: 500;
+}
+
+.voyage-pass-price {
+  color: color-mix(in srgb, var(--ink) 68%, transparent);
+  font-size: 14px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.voyage-pass-copy p {
+  margin: 7px 0 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--ink) 78%, transparent);
+}
+
+.voyage-pass-copy .voyage-pass-note {
+  color: var(--return-orange);
+}
+
+.voyage-pass-card .voyage-pass-action {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 12px;
+  color: var(--home-glass, var(--paper));
+  background: var(--ink);
+}
+
+.voyage-pass-reassurance {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 4px 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--ink) 74%, transparent);
+}
+
+.voyage-pass-reassurance span {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--ink) 35%, transparent);
+  border-radius: 50%;
+  font-size: 10px;
+}
+
+.voyage-pass-acquired {
+  display: grid;
+  justify-items: center;
+  padding: 12px 0 4px;
+  text-align: center;
+}
+
+.voyage-pass-acquired .voyage-pass-emblem {
+  margin-bottom: 26px;
+  animation: voyage-pass-arrive 720ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+.voyage-pass-acquired p {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 500;
+  animation: voyage-pass-caption 520ms 360ms ease-out both;
+}
+
+.voyage-pass-continue {
+  min-width: 180px;
+  min-height: 44px;
+  margin-top: 28px;
+  animation: voyage-pass-caption 420ms 560ms ease-out both;
+}
+
+@keyframes voyage-pass-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 
-:root[data-theme="dark"] {
-  --ink: #f4f1ec;
-  --paper: #161412;
-  --tile-ink: #2c2a28;
+@keyframes voyage-pass-caption {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voyage-pass-acquired .voyage-pass-emblem,
+  .voyage-pass-acquired p,
+  .voyage-pass-continue {
+    animation: none;
+  }
+}
+
+@media (max-width: 430px) {
+  .voyage-pass-entry {
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+
 }
 
 * {
@@ -74,12 +288,157 @@ textarea {
   background: transparent;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 12px;
+  z-index: 50;
+  padding: 9px 14px;
+  border-radius: 999px;
+  color: var(--paper);
+  background: var(--ink);
+  transform: translateY(-160%);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
 /* ---- レイアウト ---- */
 
 .shell {
-  max-width: 680px;
+  width: 100%;
+  max-width: none;
   margin: 0 auto;
-  padding: 0 24px 96px;
+  padding: 0 clamp(24px, 4vw, 72px) 96px;
+}
+
+/* 通常画面はすべて、現地時刻の海を一枚の共通背景として持つ。
+   時刻を文字で説明せず、空から海へ溶ける色と光だけで朝昼晩を伝える。 */
+.shell.home-ocean {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  color: var(--ink);
+  transition: color 1.2s ease;
+}
+
+.home-ocean.time-morning {
+  --ink: #173f3c;
+  --home-sky-a: #f7d4b5;
+  --home-sky-b: #d9e8dd;
+  --home-sea-a: #a7d2c8;
+  --home-sea-b: #73aaa7;
+  --home-glow: #fff1c9;
+  --home-glass: #f6eee1;
+  --home-light-x: 20%;
+  --home-stars: transparent;
+}
+
+.home-ocean.time-day {
+  --ink: #123b40;
+  --home-sky-a: #a9deeb;
+  --home-sky-b: #d7eeea;
+  --home-sea-a: #8cc9cd;
+  --home-sea-b: #4f969c;
+  --home-glow: #fff5c8;
+  --home-glass: #e7f4ef;
+  --home-light-x: 62%;
+  --home-stars: transparent;
+}
+
+.home-ocean.time-evening {
+  --ink: #fff0da;
+  --home-sky-a: #a85552;
+  --home-sky-b: #df9476;
+  --home-sea-a: #527e7b;
+  --home-sea-b: #284f58;
+  --home-glow: #ffc27e;
+  --home-glass: #173f43;
+  --home-light-x: 78%;
+  --home-stars: rgba(255, 239, 204, 0.32);
+}
+
+.home-ocean.time-night {
+  --ink: #f4f1ec;
+  --home-sky-a: #0b2927;
+  --home-sky-b: #123a35;
+  --home-sea-a: #194b43;
+  --home-sea-b: #0b2928;
+  --home-glow: #d8e0c8;
+  --home-glass: #102f2c;
+  --home-light-x: 74%;
+  --home-stars: rgba(238, 232, 201, 0.6);
+}
+
+.home-ocean::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at var(--home-light-x) 15%, var(--home-glow) 0 1.1%, transparent 8%),
+    radial-gradient(circle at 14% 8%, var(--home-stars) 0 1px, transparent 1.4px),
+    radial-gradient(circle at 83% 24%, var(--home-stars) 0 1px, transparent 1.5px),
+    radial-gradient(circle at 52% 13%, var(--home-stars) 0 0.8px, transparent 1.3px),
+    linear-gradient(
+      to bottom,
+      var(--home-sky-a) 0%,
+      var(--home-sky-b) 24%,
+      var(--home-sea-a) 52%,
+      var(--home-sea-b) 100%
+    );
+  transition: background 1.2s ease;
+}
+
+/* 記録は海を隠さない薄い一枚に載せ、明るい昼も暗い夜も読みやすくする。 */
+.home-ocean .rows {
+  margin-inline: -10px;
+  padding-inline: 10px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--home-glass) 42%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.home-ocean .voyage-scene,
+.home-ocean .dest-card {
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.home-ocean .today-title-row {
+  border-bottom-color: color-mix(in srgb, var(--return-orange) 48%, transparent);
+}
+
+/* 設定・確認・編集も同じ海の上に浮かぶガラス面にする。
+   不透明な paper で覆うと、タブからダイアログへ移った瞬間だけ別世界に見える。 */
+.home-ocean .overlay {
+  background: color-mix(in srgb, var(--ink-fixed) 18%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.home-ocean .dialog {
+  background: color-mix(in srgb, var(--home-glass) 84%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.home-ocean .dialog-nav {
+  background: color-mix(in srgb, var(--home-glass) 92%, transparent);
 }
 
 .topbar {
@@ -206,8 +565,25 @@ textarea {
   font-weight: 500;
   letter-spacing: 0.5px;
   margin: 0;
+}
+
+.today-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 11px;
   padding-bottom: 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--return-orange) 22%, transparent);
+}
+
+.today-total {
+  flex: none;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  color: var(--return-orange);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .page-sub {
@@ -299,31 +675,6 @@ textarea {
   }
 }
 
-.tile-edit {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  font-size: 15px;
-  line-height: 1;
-  /* 常に出す。以前はホバーでしか現れず、スマホでは項目の改名・配色変更・削除・
-     並び替えへの入口が一切無かった(タイルを押すと計測が始まってしまうため、
-     ここが唯一の入口)。@media (hover: none) で出す手もあるが、トラックパッド付き
-     iPad のように hover を持つと申告するタッチ端末で再び消えるので、条件を付けない。
-     主役のタイルより控えめな濃さにして、常時表示でも邪魔にならないようにする。 */
-  display: flex;
-  opacity: 0.72;
-  align-items: center;
-  justify-content: center;
-}
-
-.tile:hover .tile-edit,
-.tile-edit:hover {
-  opacity: 1;
-}
-
 .tile-add {
   aspect-ratio: 1;
   border-radius: var(--radius);
@@ -411,6 +762,91 @@ textarea {
   font-size: 15px;
   color: color-mix(in srgb, var(--ink) 50%, transparent);
   line-height: 1.7;
+}
+
+/* 画面分割したタブを取得している短い間も、レイアウトが急に詰まらないようにする。
+   文字だけの「読み込み中」より現在地を保ち、低速回線でも操作を受け付けたと分かる。 */
+.view-loading {
+  min-height: 180px;
+  padding: 28px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+}
+
+.view-loading > div {
+  display: contents;
+}
+
+.view-loading p {
+  margin: 0;
+  font-size: 13px;
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+}
+
+.view-loading span {
+  display: block;
+  height: 14px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 11%, transparent);
+  animation: loading-breathe 1.1s ease-in-out infinite alternate;
+}
+
+.view-loading span:nth-child(1) {
+  width: 38%;
+}
+
+.view-loading span:nth-child(2) {
+  width: 100%;
+  height: 74px;
+  border-radius: var(--radius);
+  animation-delay: 0.08s;
+}
+
+.view-loading span:nth-child(3) {
+  width: 68%;
+  animation-delay: 0.16s;
+}
+
+.dialog-loading {
+  overflow: hidden;
+}
+
+.dialog-loading .view-loading {
+  min-height: 130px;
+  padding-block: 8px;
+}
+
+@keyframes loading-breathe {
+  from { opacity: 0.45; }
+  to { opacity: 0.9; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-loading span {
+    animation: none;
+  }
+}
+
+/* 3D航海の取得中も、タップ後すぐ同じ海へ入ったことが分かる最小限の灯り。 */
+.voyage-loading {
+  display: grid;
+  place-items: center;
+}
+
+.voyage-loading span {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--return-orange);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--return-orange) 14%, transparent);
+  animation: loading-breathe 0.8s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voyage-loading span {
+    animation: none;
+  }
 }
 
 /* ---- 軌跡: カレンダー ---- */
@@ -579,7 +1015,7 @@ textarea {
 .dialog-nav {
   position: sticky;
   top: -28px;
-  z-index: 3;
+  z-index: 6;
   display: grid;
   grid-template-columns: minmax(72px, 1fr) auto minmax(72px, 1fr);
   align-items: center;
@@ -613,6 +1049,51 @@ textarea {
 
 .dialog-nav-balance {
   min-width: 72px;
+}
+
+.item-editor-sticky-preview {
+  position: sticky;
+  top: 46px;
+  z-index: 5;
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -12px -8px 18px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--paper) 99%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--harbor-sand) 26%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.home-ocean .item-editor-sticky-preview {
+  background: color-mix(in srgb, var(--home-glass) 99%, transparent);
+}
+
+.item-editor-sticky-preview .tile-art {
+  width: 46px !important;
+  flex: 0 0 46px;
+  border-radius: 12px;
+}
+
+.item-editor-preview-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.item-editor-preview-copy small {
+  font-size: 10px;
+  color: color-mix(in srgb, var(--ink) 48%, transparent);
+}
+
+.item-editor-preview-copy .tile-name-text {
+  overflow: hidden;
+  font-size: 15px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .field {
@@ -686,58 +1167,429 @@ textarea {
   border: 3px solid var(--return-orange);
 }
 
-.sail-color-grid {
+.item-color-picker {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.item-color-current {
+  min-height: 58px;
+  padding: 10px 2px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--harbor-sand) 32%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--harbor-sand) 32%, transparent);
+}
+
+.item-color-current-swatch {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 5px 9px 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 44%, transparent);
+}
+
+.item-color-current > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.item-color-current strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.item-color-current small,
+.item-color-subsection small,
+.pccs-tone-strip small {
+  color: color-mix(in srgb, var(--ink) 52%, transparent);
+}
+
+.item-color-current small {
+  font-size: 12px;
+}
+
+.item-color-subsection {
+  margin-top: 5px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+}
+
+.item-color-subsection small {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.item-color-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.item-color-presets .swatch {
+  width: 42px;
+  height: 42px;
+  border-radius: 5px 9px 5px 8px;
+}
+
+.item-color-presets .swatch.selected {
+  border: 2px solid var(--ink);
+  outline: 2px solid var(--return-orange);
+  outline-offset: 2px;
+}
+
+.color-sea-heading {
+  display: grid;
+  gap: 3px;
+  padding-inline: 2px;
+  text-align: left;
+}
+
+.color-sea-heading > span {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.color-sea-heading small {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--ink) 48%, transparent);
+}
+
+.color-sea-chart {
+  position: relative;
+  width: min(calc(100% - 14px), 304px);
+  margin: 8px auto 10px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  overflow: hidden;
+  /* 海図の大半は縦スクロールへ譲る。小舟そのものを掴んだ時だけ
+     2方向ドラッグに切り替える(pointerDrag.ts)。 */
+  touch-action: pan-y;
+  cursor: grab;
+  outline: none;
+  background:
+    radial-gradient(circle, rgb(246 237 210 / 0.96) 0%, rgb(246 237 210 / 0.7) 18%, transparent 71%),
+    conic-gradient(
+      from -90deg,
+      #c93c4e,
+      #d96a3d,
+      #d99a42,
+      #c4b94c,
+      #6a9f58,
+      #3e9570,
+      #3d9692,
+      #4b7e9d,
+      #59649b,
+      #7a5594,
+      #a14e7d,
+      #c93c4e
+    );
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--harbor-sand) 70%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--harbor-teal) 92%, var(--ink)),
+    0 0 0 7px color-mix(in srgb, var(--harbor-sand) 66%, transparent);
+}
+
+.color-sea-chart::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background:
+    repeating-linear-gradient(
+      14deg,
+      transparent 0 7px,
+      rgb(66 48 29 / 0.04) 7px 8px
+    ),
+    repeating-linear-gradient(
+      101deg,
+      transparent 0 13px,
+      rgb(255 249 226 / 0.05) 13px 14px
+    );
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+.color-sea-chart:focus-visible {
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--harbor-sand) 70%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--harbor-teal) 92%, var(--ink)),
+    0 0 0 8px var(--return-orange);
+}
+
+.color-sea-ring,
+.color-sea-cross {
+  position: absolute;
+  pointer-events: none;
+  border-color: rgb(255 255 255 / 0.34);
+}
+
+.color-sea-ring {
+  inset: 24%;
+  border: 1px dashed rgb(61 51 36 / 0.32);
+  border-radius: 50%;
+}
+
+.color-sea-ring.ring-two {
+  inset: 8%;
+  border-style: solid;
+  border-color: rgb(61 51 36 / 0.17);
+}
+
+.color-sea-cross.horizontal {
+  left: 8%;
+  right: 8%;
+  top: 50%;
+  border-top: 1px solid;
+}
+
+.color-sea-cross.vertical {
+  top: 8%;
+  bottom: 8%;
+  left: 50%;
+  border-left: 1px solid;
+}
+
+.color-sea-compass {
+  position: absolute;
+  z-index: 2;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgb(45 38 28 / 0.72);
+  text-shadow: 0 1px 0 rgb(255 249 226 / 0.45);
+  pointer-events: none;
+}
+
+.color-sea-compass.north { top: 4%; left: 50%; transform: translateX(-50%); }
+.color-sea-compass.east { right: 4%; top: 50%; transform: translateY(-50%); }
+.color-sea-compass.south { bottom: 4%; left: 50%; transform: translateX(-50%); }
+.color-sea-compass.west { left: 4%; top: 50%; transform: translateY(-50%); }
+
+.color-sea-boat {
+  position: absolute;
+  z-index: 3;
+  width: 58px;
+  height: 52px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 3px 2px rgb(24 20 14 / 0.34));
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.color-skiff {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.color-skiff-wake {
+  fill: none;
+  stroke: rgb(249 241 215 / 0.8);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.color-skiff-rigging,
+.color-skiff-boom,
+.color-skiff-gunwale,
+.color-skiff-bowsprit {
+  fill: none;
+  stroke: #49301f;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.color-skiff-rigging {
+  stroke-width: 1.5;
+}
+
+.color-skiff-boom,
+.color-skiff-gunwale {
+  stroke-width: 2;
+}
+
+.color-skiff-bowsprit {
+  stroke-width: 2.5;
+}
+
+.color-skiff-sail {
+  stroke: #f7ebcf;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.color-skiff-sail-jib {
+  opacity: 0.86;
+}
+
+.color-skiff-hull {
+  fill: #75462e;
+  stroke: #382519;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.color-skiff-port {
+  fill: #f1c36d;
+  stroke: #382519;
+  stroke-width: 0.8;
+}
+
+.color-light-control {
+  display: grid;
+  gap: 9px;
+  margin-top: 5px;
+  padding: 11px 2px 13px;
+  border-top: 1px solid color-mix(in srgb, var(--harbor-sand) 28%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--harbor-sand) 28%, transparent);
+}
+
+.color-light-control > div {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: baseline;
+  font-size: 10px;
+  color: color-mix(in srgb, var(--ink) 48%, transparent);
+}
+
+.color-light-control > div strong {
+  font-size: 12px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--ink) 72%, transparent);
+}
+
+.color-light-control > div span:last-child {
+  text-align: right;
+}
+
+.color-light-control input[type="range"] {
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  appearance: none;
+  border-radius: 999px;
+  outline: none;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 13%, transparent);
+}
+
+.color-light-control input[type="range"]::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  appearance: none;
+  border: 2px solid var(--harbor-sand);
+  border-radius: 50%;
+  background: var(--harbor-teal);
+}
+
+.color-light-control input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--harbor-sand);
+  border-radius: 50%;
+  background: var(--harbor-teal);
+}
+
+.pccs-tone-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(96px, 1fr);
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: inline proximity;
+  scrollbar-width: none;
+  padding: 2px 1px 5px;
+}
+
+.pccs-tone-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.pccs-tone-strip button {
+  min-height: 48px;
+  padding: 6px 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  scroll-snap-align: start;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  text-align: left;
+}
+
+.pccs-tone-strip button.selected {
+  border-color: var(--return-orange);
+  box-shadow: inset 0 0 0 1px var(--return-orange);
+}
+
+.pccs-tone-dot {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.pccs-tone-strip button > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.pccs-tone-strip strong {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.pccs-tone-strip small {
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.pccs-hue-grid {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(36px, 1fr));
   gap: 8px;
 }
 
-.sail-color-option {
+.pccs-hue-grid button {
+  position: relative;
   min-width: 0;
-  min-height: 74px;
-  padding: 8px 4px 7px;
-  border: 1px solid color-mix(in srgb, var(--ink) 13%, transparent);
-  border-radius: 14px;
-  color: color-mix(in srgb, var(--ink) 64%, transparent);
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
-  font-size: 10.5px;
-  line-height: 1.2;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 9%, transparent);
+  transition: transform 0.12s ease-out, box-shadow 0.12s ease-out;
 }
 
-.sail-color-option:hover {
-  border-color: color-mix(in srgb, var(--return-orange) 45%, transparent);
+.pccs-hue-grid button:active {
+  transform: scale(0.92);
 }
 
-.sail-color-option:active {
-  transform: scale(0.97);
-}
-
-.sail-color-option.selected {
-  color: var(--ink);
-  border-color: var(--return-orange);
-  background: color-mix(in srgb, var(--return-orange) 7%, var(--paper));
-}
-
-.sail-color-swatch {
-  display: block;
-  width: 34px;
-  height: 34px;
-  margin: 0 auto 6px;
-  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
-  border-radius: 50%;
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 10%, transparent);
-}
-
-.sail-color-option.selected .sail-color-swatch {
+.pccs-hue-grid button.selected {
+  border-color: var(--paper);
   box-shadow:
-    0 0 0 2px var(--paper),
-    0 0 0 4px var(--return-orange);
+    0 0 0 3px var(--return-orange),
+    inset 0 0 0 1px color-mix(in srgb, var(--ink) 9%, transparent);
 }
 
-@media (max-width: 560px) {
-  .sail-color-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+.pccs-hue-grid span {
+  font-size: 10px;
+  font-weight: 750;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+@media (max-width: 420px) {
+  .pccs-hue-grid {
+    grid-template-columns: repeat(6, minmax(36px, 1fr));
   }
 }
 
@@ -830,6 +1682,29 @@ textarea {
   white-space: nowrap;
 }
 
+.player-card-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.player-card-pass {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 23px;
+  height: 23px;
+  padding: 4px;
+  border-radius: 6px;
+  background: #2c2a28;
+}
+
+.player-card-pass svg {
+  width: 100%;
+  height: 100%;
+}
+
 .player-card-resolve {
   font-size: 14px;
   opacity: 0.8;
@@ -857,6 +1732,140 @@ textarea {
   align-items: center;
   gap: 14px;
   width: 100%;
+}
+
+.settings-section-row {
+  min-height: 62px;
+}
+
+.settings-items-hint {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+}
+
+.settings-item-rows {
+  border-top: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.settings-item-row {
+  min-height: 64px;
+}
+
+.settings-item-row .row-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-row-chevron {
+  flex: none;
+  margin-left: auto;
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1;
+  color: color-mix(in srgb, var(--ink) 38%, transparent);
+}
+
+.harbor-control-editor-preview {
+  position: relative;
+  height: min(42vh, 310px);
+  min-height: 230px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #eadebd 24%, transparent);
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at 76% 18%, rgba(243, 192, 101, 0.52) 0 2px, transparent 3px),
+    linear-gradient(#173f47 0 44%, #174a4d 45% 47%, #0d3438 48% 100%);
+  box-shadow: inset 0 0 42px rgba(5, 26, 29, 0.35);
+  cursor: crosshair;
+  /* 背景からの縦スワイプは設定ダイアログを送る。スティックを掴んだ時だけ
+     2方向ドラッグに切り替える(pointerDrag.ts)。 */
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.harbor-control-editor-horizon {
+  position: absolute;
+  left: -12%;
+  right: -12%;
+  top: 47%;
+  height: 18%;
+  border-radius: 50%;
+  border-top: 1px solid rgba(234, 222, 189, 0.2);
+  background: rgba(83, 142, 136, 0.1);
+}
+
+.harbor-control-editor-stick {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(234, 222, 189, 0.42);
+  border-radius: 50%;
+  background: rgba(13, 42, 36, 0.76);
+  box-shadow: 0 10px 24px rgba(3, 16, 13, 0.32);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.harbor-control-editor-stick > span {
+  width: 40%;
+  height: 40%;
+  border-radius: 50%;
+  background: color-mix(in srgb, #eadebd 82%, #123830);
+  box-shadow: 0 4px 10px rgba(3, 16, 13, 0.32);
+}
+
+.harbor-control-editor-drag-hint {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: rgba(234, 222, 189, 0.76);
+  background: rgba(7, 30, 28, 0.48);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.harbor-control-size-field {
+  display: block;
+  margin-top: 22px;
+}
+
+.harbor-control-size-field > span:first-child,
+.harbor-control-size-labels {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.harbor-control-size-field output {
+  color: color-mix(in srgb, var(--ink) 52%, transparent);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.harbor-control-size-field input {
+  width: 100%;
+  margin: 14px 0 5px;
+  accent-color: var(--return-orange);
+}
+
+.harbor-control-size-labels {
+  color: color-mix(in srgb, var(--ink) 48%, transparent);
+  font-size: 11px;
+}
+
+.harbor-control-reset {
+  width: 100%;
+  margin-top: 22px;
 }
 
 .row-tap {
@@ -1149,9 +2158,9 @@ textarea {
 .chat-box {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 4px 0 8px;
-  min-height: 120px;
+  gap: 5px;
+  padding: 2px 0 4px;
+  min-height: 56px;
   max-height: 48vh;
   overflow-y: auto;
 }
@@ -1159,43 +2168,55 @@ textarea {
 .chat-msg {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  max-width: 82%;
+  width: 100%;
 }
 
-.chat-msg.mine {
-  align-self: flex-end;
-  align-items: flex-end;
+.chat-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
 }
 
 .chat-name {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex: none;
+  gap: 5px;
+  max-width: 32%;
   font-size: 12px;
   color: color-mix(in srgb, var(--ink) 45%, transparent);
-  margin-bottom: 4px;
 }
 
-.chat-bubble {
-  padding: 10px 16px;
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--ink) 7%, transparent);
-  color: var(--ink);
-  font-size: 15px;
-  line-height: 1.6;
+.chat-name > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-text {
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  color: color-mix(in srgb, var(--ink) 78%, transparent);
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
   overflow-wrap: anywhere;
   cursor: pointer;
 }
 
-.chat-msg.mine .chat-bubble {
-  background: var(--ink);
-  color: var(--paper);
+.chat-msg.mine .chat-text {
+  color: var(--ink);
 }
 
 .chat-time {
-  margin-top: 3px;
-  font-size: 11px;
+  flex: none;
+  margin-left: auto;
+  font-size: 10px;
   color: color-mix(in srgb, var(--ink) 40%, transparent);
   font-variant-numeric: tabular-nums;
 }
@@ -1214,7 +2235,7 @@ textarea {
 /* 日付の区切り。中央に小さく、その日の始まりを示す。 */
 .chat-date-sep {
   align-self: center;
-  margin: 4px 0;
+  margin: 3px 0 5px;
   padding: 2px 12px;
   border-radius: 999px;
   font-size: 11px;
@@ -1225,69 +2246,57 @@ textarea {
 .chat-auto {
   align-self: center;
   text-align: center;
-  font-size: 13px;
+  padding: 3px 0;
+  font-size: 11px;
   color: color-mix(in srgb, var(--ink) 55%, transparent);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
 }
 
 .chat-auto.return {
   color: var(--return-orange);
 }
 
-.chat-reactions {
-  display: flex;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.reaction {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
-  color: color-mix(in srgb, var(--ink) 55%, transparent);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.reaction.selected {
-  border-color: var(--return-orange);
-  color: var(--return-orange);
-}
-
-/* 未反応(0件・未選択)は控えめに。反応が増えるほど自然と主張が強くなる。 */
-.reaction.quiet {
-  opacity: 0.5;
-  border-color: color-mix(in srgb, var(--ink) 10%, transparent);
-}
-
-.reaction-symbol {
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-}
-
 .chat-actions {
   display: flex;
   gap: 8px;
-  margin-top: 4px;
+  margin: 2px 0 3px 28px;
 }
 
 .chat-input {
   display: flex;
   gap: 10px;
   align-items: center;
-  margin-top: 10px;
+  margin-top: 6px;
 }
 
 .chat-input .field {
   flex: 1;
+}
+
+.chat-count,
+.field-meta {
+  margin: 0;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+  white-space: nowrap;
+}
+
+.field-with-action {
+  position: relative;
+}
+
+.field-with-action .field {
+  width: 100%;
+  padding-right: 42px;
+}
+
+.field-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  width: 34px;
+  height: 34px;
+  transform: translateY(-50%);
+  color: color-mix(in srgb, var(--ink) 62%, transparent);
 }
 
 /* ---- 確認ダイアログ・トースト ---- */
@@ -1351,6 +2360,19 @@ textarea {
   border-radius: 999px;
   animation: toast-in 0.18s ease-out;
   max-width: min(92vw, 420px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.toast-dismiss {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 50%;
+  color: inherit;
+  opacity: 0.72;
 }
 
 @keyframes toast-in {
@@ -1387,6 +2409,13 @@ textarea {
     border-top: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
     justify-content: space-around;
     z-index: 4;
+  }
+
+  .home-ocean .tabs {
+    background: color-mix(in srgb, var(--home-glass) 82%, transparent);
+    border-top-color: color-mix(in srgb, var(--ink) 14%, transparent);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
   }
 
   /* 親指圏のタブバー: アイコンの上下積み+小ラベル。 */
@@ -1448,14 +2477,6 @@ textarea {
     font-size: 10.5px;
   }
 
-  .tile-edit {
-    top: 5px;
-    right: 5px;
-    width: 26px;
-    height: 26px;
-    font-size: 13px;
-  }
-
   .tile-add {
     font-size: 26px;
   }
@@ -1481,6 +2502,201 @@ textarea {
   display: block;
   width: 100%;
   height: auto;
+}
+
+/* ---- 航海誌: 航海日録 ---- */
+
+.voyage-journal {
+  border-radius: var(--radius);
+  padding: 24px;
+  background: color-mix(in srgb, var(--home-glass, var(--paper)) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.voyage-journal-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.voyage-journal-heading .section-label {
+  margin: 0 0 8px;
+  color: var(--return-orange);
+}
+
+.voyage-journal-heading h2 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.voyage-journal-heading p:last-child {
+  margin: 8px 0 0;
+  max-width: 420px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: color-mix(in srgb, var(--ink) 60%, transparent);
+}
+
+.voyage-journal-date {
+  flex: none;
+  min-height: 42px;
+  max-width: 148px;
+  padding: 0 12px;
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 14px;
+  color-scheme: dark;
+}
+
+.voyage-journal-weather {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 24px 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.voyage-journal-weather span,
+.voyage-journal-weather small {
+  font-size: 12px;
+  color: color-mix(in srgb, var(--ink) 52%, transparent);
+}
+
+.voyage-journal-weather strong {
+  color: var(--return-orange);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.voyage-journal-weather small {
+  margin-left: auto;
+}
+
+.voyage-journal-field {
+  display: block;
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  padding: 18px;
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--paper) 12%, transparent);
+  line-height: 1.9;
+  outline: none;
+}
+
+.voyage-journal-field:focus {
+  border-color: color-mix(in srgb, var(--return-orange) 62%, transparent);
+}
+
+.voyage-journal-field::placeholder {
+  color: color-mix(in srgb, var(--ink) 36%, transparent);
+}
+
+.voyage-journal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.voyage-journal-actions span {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--ink) 42%, transparent);
+}
+
+.voyage-journal-actions .primary-button {
+  width: auto;
+  min-height: 44px;
+  padding: 0 22px;
+  font-size: 14px;
+}
+
+.voyage-journal-action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.voyage-journal-delete {
+  color: var(--coral);
+}
+
+.voyage-journal-recent-label {
+  margin-top: 32px;
+}
+
+.voyage-journal-entries {
+  display: flex;
+  flex-direction: column;
+}
+
+.voyage-journal-years {
+  margin: -2px 0 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.voyage-journal-years::-webkit-scrollbar {
+  display: none;
+}
+
+.voyage-journal-entry {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 16px;
+  width: 100%;
+  padding: 15px 0;
+  text-align: left;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 11%, transparent);
+  content-visibility: auto;
+  contain-intrinsic-size: 64px;
+}
+
+.voyage-journal-entry time {
+  color: var(--return-orange);
+  font-size: 12px;
+}
+
+.voyage-journal-entry span {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--ink) 72%, transparent);
+  font-size: 13px;
+  line-height: 1.6;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voyage-journal-entry.selected span {
+  color: var(--ink);
+}
+
+@media (max-width: 560px) {
+  .voyage-journal {
+    padding: 20px;
+  }
+
+  .voyage-journal-heading {
+    flex-direction: column;
+  }
+
+  .voyage-journal-date {
+    width: 100%;
+    max-width: none;
+  }
+
+  .voyage-journal-weather {
+    flex-wrap: wrap;
+  }
+
+  .voyage-journal-weather small {
+    width: 100%;
+    margin-left: 0;
+  }
 }
 
 .boat-preview {
@@ -1514,7 +2730,7 @@ textarea {
   flex: none;
 }
 
-/* ---- 船のアニメーション(浮遊・旗のなびき・航跡・プレビュー) ---- */
+/* ---- 船のアニメーション(浮遊・航跡・プレビュー) ---- */
 
 .boat-anim {
   animation: boat-float 3.2s ease-in-out infinite alternate;
@@ -1533,21 +2749,6 @@ textarea {
   }
   to {
     transform: translateY(2.5px) rotate(1.8deg);
-  }
-}
-
-.boat-flag {
-  animation: flag-flutter 1.6s ease-in-out infinite alternate;
-  transform-box: fill-box;
-  transform-origin: left center;
-}
-
-@keyframes flag-flutter {
-  from {
-    transform: skewY(-5deg);
-  }
-  to {
-    transform: skewY(5deg);
   }
 }
 
@@ -1625,7 +2826,6 @@ textarea {
 
 @media (prefers-reduced-motion: reduce) {
   .boat-anim,
-  .boat-flag,
   .dest-boat::before,
   .dest-boat::after,
   .boat-stage-star {
@@ -1649,6 +2849,33 @@ textarea {
   overflow: hidden;
   text-align: left;
   transition: transform 0.12s ease-out;
+}
+
+.home-ocean.time-morning .dest-card,
+.home-ocean.time-morning .voyage-scene {
+  background: #e8b789;
+}
+
+.home-ocean.time-day .dest-card,
+.home-ocean.time-day .voyage-scene {
+  background: #77c6d7;
+}
+
+.home-ocean.time-evening .dest-card,
+.home-ocean.time-evening .voyage-scene {
+  background: #b85f58;
+}
+
+.home-ocean.time-night .dest-card,
+.home-ocean.time-night .voyage-scene {
+  background: #123830;
+}
+
+.home-ocean.time-morning .dest-name,
+.home-ocean.time-morning .dest-remaining,
+.home-ocean.time-day .dest-name,
+.home-ocean.time-day .dest-remaining {
+  color: #123b40;
 }
 
 .dest-card:active {
@@ -1993,6 +3220,27 @@ textarea {
      右端の✕がピルの外にはみ出す。 */
   width: max-content;
   max-width: min(92vw, 420px);
+  /* ピルの余白を掴んでもブラウザーのスクロールに奪われない。操作ボタンは
+     data-no-floating-drag でドラッグ開始から除外してある。 */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  transition: opacity 0.12s ease-out;
+}
+
+.timer-chip.dragging {
+  cursor: grabbing;
+  opacity: 0.9;
+}
+
+.timer-chip .timer-back {
+  touch-action: none;
+  cursor: grab;
+}
+
+.timer-chip.dragging .timer-back {
+  cursor: grabbing;
 }
 
 .timer-name {
@@ -2106,9 +3354,8 @@ textarea {
   opacity: 1;
 }
 
-/* ---- サインイン(夜の入港) ----
-   harborTeal 一色の地に harborSand のフラット塗りのみ。
-   空(星・月)/ 中央の言葉とボタン / 海(全幅の水平線・帆船・海岸)の三層。 */
+/* ---- サインイン(航海中の海) ----
+   背景はタイマー中と同じ3D世界。認証UIだけを前面の薄い船室ガラスに載せる。 */
 
 /* 認証状態の確定待ち(起動時・OAuthリダイレクトからの復帰直後)。何も描かず
    真っ黒に見えていた区間を、世界観と同じ地色で埋める。 */
@@ -2120,6 +3367,7 @@ textarea {
 
 .harbor-signin {
   position: relative;
+  min-height: 100vh;
   min-height: 100dvh;
   background: var(--harbor-teal);
   overflow: hidden;
@@ -2151,22 +3399,27 @@ textarea {
 
 .harbor-voyage-layer {
   z-index: 0;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .harbor-voyage-layer canvas {
   display: block;
   width: 100% !important;
   height: 100% !important;
-  touch-action: manipulation;
 }
 
+/* 3Dは全面に見せつつ、文字の背後だけを静かに落とす。時間帯の色は残す。 */
 .harbor-voyage-shade {
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(90deg, rgba(7, 23, 21, 0.04) 0%, rgba(7, 23, 21, 0.02) 46%, rgba(7, 23, 21, 0.34) 100%),
-    linear-gradient(180deg, transparent 52%, rgba(6, 18, 17, 0.26) 100%);
+    linear-gradient(
+      90deg,
+      rgba(7, 23, 21, 0.04) 0%,
+      rgba(7, 23, 21, 0.02) 46%,
+      rgba(7, 23, 21, 0.34) 100%
+    ),
+    linear-gradient(0deg, rgba(6, 18, 17, 0.26), transparent 48%);
 }
 
 .harbor-topbar {
@@ -2181,91 +3434,87 @@ textarea {
   z-index: 3;
 }
 
+/* 中央の言葉とボタン */
+
 .harbor-content {
   position: relative;
   z-index: 2;
-  box-sizing: border-box;
+  width: min(390px, calc(100% - 48px));
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin-left: auto;
+  margin-right: clamp(28px, 8vw, 132px);
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: stretch;
-  width: min(520px, calc(100% - 48px));
-  min-height: 100dvh;
-  margin-right: clamp(28px, 8vw, 132px);
-  margin-left: auto;
-  padding: 92px 32px 38px;
+  justify-content: center;
   text-align: center;
+  padding: 92px 32px 38px;
+  box-sizing: border-box;
 }
 
 .harbor-content::before {
+  content: "";
   position: absolute;
   inset: max(72px, 9vh) 0;
   z-index: -1;
-  content: "";
   border: 1px solid rgba(234, 222, 189, 0.18);
   border-radius: 30px;
   background: rgba(10, 36, 32, 0.56);
   box-shadow:
     0 26px 80px rgba(3, 15, 14, 0.22),
-    inset 0 1px rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(16px) saturate(112%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   -webkit-backdrop-filter: blur(16px) saturate(112%);
-}
-
-.harbor-app-icon {
-  display: block;
-  flex: none;
-  width: 92px;
-  height: 92px;
-  margin: 0 auto 28px;
-  border-radius: 22px;
-  object-fit: cover;
-  box-shadow:
-    0 16px 34px rgba(2, 17, 15, 0.24),
-    0 0 0 1px rgba(244, 241, 236, 0.12);
+  backdrop-filter: blur(16px) saturate(112%);
 }
 
 .harbor-enter {
-  margin: 0;
-  color: #f4f1ec;
-  font-size: clamp(24px, 2.2vw, 28px);
+  font-size: clamp(26px, 3vw, 34px);
   font-weight: 500;
   line-height: 1.45;
-  letter-spacing: -0.035em;
-  white-space: nowrap;
+  color: #f4f1ec;
+  margin: 0;
   text-shadow: 0 2px 20px rgba(4, 18, 16, 0.34);
+}
+
+.harbor-sync {
+  font-size: 15px;
+  color: rgba(244, 241, 236, 0.68);
+  margin: 14px 0 0;
 }
 
 /* Instagram/LINEなどアプリ内ブラウザの警告。Googleサインインが必ず失敗するため、
    押す前に気づけるよう目立つ色調で置く(harborTeal地に映すコーラル)。 */
 .harbor-webview-warning {
-  max-width: min(360px, 100%);
+  max-width: min(360px, 88vw);
   margin: 18px auto 0;
   padding: 12px 16px;
   border-radius: var(--radius);
-  border: 1px solid rgba(240, 153, 123, 0.4);
-  color: #f4f1ec;
-  background: rgba(240, 153, 123, 0.16);
+  background: color-mix(in srgb, var(--coral) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--coral) 40%, transparent);
+  color: var(--harbor-sand);
   font-size: 13.5px;
   line-height: 1.6;
 }
 
 .harbor-actions {
+  width: 100%;
+  margin-top: 40px;
   display: flex;
   flex-direction: column;
-  width: min(390px, 100%);
-  margin: 40px auto 0;
   gap: 12px;
 }
 
+/* サインインの入口。Apple は黒地、Google は白地の公式ボタン意匠に沿いつつ、
+   角丸と字送りだけこの世界に合わせる。 */
 .harbor-signin-button {
+  width: 100%;
+  height: 54px;
+  border-radius: var(--radius);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  width: 100%;
-  height: 54px;
-  border-radius: var(--radius);
   font-size: 16px;
   font-weight: 500;
   letter-spacing: 0.2px;
@@ -2287,8 +3536,8 @@ textarea {
 }
 
 .harbor-apple {
-  color: #fff;
   background: #000;
+  color: #fff;
 }
 
 .harbor-apple:hover:not(:disabled) {
@@ -2296,33 +3545,33 @@ textarea {
 }
 
 .harbor-google {
-  color: #1f1f1f;
   background: #fff;
+  color: #1f1f1f;
 }
 
 .harbor-google:hover:not(:disabled) {
   background: #f3f3f3;
 }
 
+/* 入口に添える一言。アカウントの用途をここで静かに伝える。 */
 .harbor-note {
-  margin: 7px 0 0;
-  color: rgba(244, 241, 236, 0.42);
-  font-size: 11.5px;
-  font-weight: 400;
+  margin: 6px 0 0;
+  font-size: 12.5px;
   line-height: 1.6;
+  color: rgba(244, 241, 236, 0.52);
 }
 
 .harbor-error {
-  margin: 8px 0 0;
-  color: var(--coral);
   font-size: 14px;
+  color: var(--coral);
+  margin: 8px 0 0;
 }
 
 @media (max-width: 720px) {
   .harbor-voyage-shade {
     background:
-      linear-gradient(180deg, rgba(7, 23, 21, 0.02) 0%, rgba(7, 23, 21, 0.02) 48%, rgba(7, 23, 21, 0.42) 100%),
-      linear-gradient(90deg, rgba(6, 18, 17, 0.08), transparent 50%, rgba(6, 18, 17, 0.08));
+      linear-gradient(0deg, rgba(5, 20, 18, 0.58) 0%, rgba(5, 20, 18, 0.12) 72%),
+      linear-gradient(90deg, rgba(5, 20, 18, 0.1), transparent);
   }
 
   .harbor-topbar {
@@ -2331,35 +3580,37 @@ textarea {
   }
 
   .harbor-content {
-    position: absolute;
-    bottom: max(16px, env(safe-area-inset-bottom));
-    left: 50%;
-    width: min(390px, calc(100% - 20px));
-    min-height: 0;
+    width: min(360px, calc(100% - 28px));
+    min-height: auto;
     height: auto;
     margin: 0 auto;
-    padding: 34px 16px 28px;
+    padding: 34px 24px 28px;
+    position: absolute;
+    left: 50%;
+    bottom: max(16px, env(safe-area-inset-bottom));
     transform: translateX(-50%);
   }
 
   .harbor-content::before {
     inset: 0;
-  }
-
-  .harbor-app-icon {
-    width: 76px;
-    height: 76px;
-    margin-bottom: 22px;
-    border-radius: 18px;
+    border-radius: 26px;
+    background: rgba(8, 34, 30, 0.62);
+    -webkit-backdrop-filter: blur(14px) saturate(110%);
+    backdrop-filter: blur(14px) saturate(110%);
   }
 
   .harbor-enter {
-    font-size: clamp(15.5px, 4.8vw, 20px);
+    font-size: clamp(23px, 7vw, 29px);
+  }
+
+  .harbor-sync {
+    font-size: 14px;
+    margin-top: 9px;
   }
 
   .harbor-actions {
-    gap: 10px;
     margin-top: 24px;
+    gap: 10px;
   }
 
   .harbor-signin-button {
@@ -2367,20 +3618,18 @@ textarea {
   }
 }
 
-@media (max-width: 720px) and (max-height: 680px) {
+@media (max-height: 680px) {
   .harbor-content {
-    padding: 22px 14px 18px;
+    padding-top: 24px;
+    padding-bottom: 20px;
   }
 
-  .harbor-app-icon {
-    width: 58px;
-    height: 58px;
-    margin-bottom: 14px;
-    border-radius: 14px;
+  .harbor-enter {
+    font-size: 23px;
   }
 
   .harbor-actions {
-    margin-top: 16px;
+    margin-top: 18px;
   }
 
   .harbor-note {
@@ -2424,14 +3673,80 @@ textarea {
 
 /* ---- 目的地の3D航海シーン(1件目のカード) ---- */
 
-/* 世界の読込中の幕。夜の海と同じ色で、素早く読めた場合は何も見えない(80ms遅延)。 */
+/* 世界の読込中の幕。低速回線でも故障に見えず、いつでもホームへ戻れる。 */
 .voyage-world-loading {
   position: fixed;
   inset: 0;
   z-index: 9;
   background: #123830;
+  color: #f4f1ec;
   opacity: 0;
   animation: voyage-loading-in 0.18s ease-out 0.08s forwards;
+}
+
+.voyage-world-loading-close {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  right: 16px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid rgb(244 241 236 / 32%);
+  border-radius: 999px;
+  color: inherit;
+  background: rgb(13 42 36 / 62%);
+}
+
+.voyage-world-loading-status {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transform: translate(-50%, -50%);
+  font-size: 14px;
+  color: rgb(244 241 236 / 72%);
+}
+
+.voyage-world-loading-status > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sun-yellow);
+  animation: voyage-loading-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes voyage-loading-pulse {
+  50% {
+    opacity: 0.35;
+    transform: scale(0.72);
+  }
+}
+
+.voyage-world-failure {
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.voyage-world-failure-card {
+  width: min(100%, 380px);
+  padding: 24px;
+  border: 1px solid rgb(244 241 236 / 18%);
+  border-radius: var(--radius);
+  text-align: center;
+  background: rgb(13 42 36 / 82%);
+}
+
+.voyage-world-failure-card p {
+  margin: 0 0 18px;
+  line-height: 1.7;
+  color: rgb(244 241 236 / 78%);
+}
+
+.voyage-world-failure-card .quiet-button {
+  margin-top: 10px;
+  color: inherit;
 }
 
 @keyframes voyage-loading-in {
@@ -2448,6 +3763,32 @@ textarea {
   background: #123830;
   cursor: pointer;
   transition: transform 0.12s ease-out;
+}
+
+.voyage-scene.time-morning {
+  background: #e8b789;
+}
+
+.voyage-scene.time-day {
+  background: #77c6d7;
+}
+
+.voyage-scene.time-evening {
+  background: #b85f58;
+}
+
+.voyage-scene.time-night {
+  background: #123830;
+}
+
+.voyage-scene.time-morning .voyage-name,
+.voyage-scene.time-day .voyage-name {
+  color: #123b40;
+}
+
+.voyage-scene.time-morning .voyage-remaining,
+.voyage-scene.time-day .voyage-remaining {
+  color: color-mix(in srgb, #123b40 68%, transparent);
 }
 
 .voyage-scene:active {
@@ -2524,6 +3865,42 @@ textarea {
   color-scheme: dark;
 }
 
+.voyage-world.time-morning {
+  background: #e8b789;
+}
+
+.voyage-world.time-day {
+  background: #77c6d7;
+}
+
+.voyage-world.time-evening {
+  background: #b85f58;
+}
+
+.voyage-world.time-night {
+  background: #123830;
+}
+
+/* タイマー航海と同じ世界なので、明るい海では目的地の編集UIも同じ墨色へ切り替える。 */
+.voyage-world.time-morning,
+.voyage-world.time-day {
+  --ink: #123b40;
+  --paper: #edf7f2;
+  color-scheme: light;
+}
+
+.voyage-world.time-morning .voyage-world-panel,
+.voyage-world.time-day .voyage-world-panel {
+  background: color-mix(in srgb, #edf7f2 76%, transparent);
+}
+
+.voyage-world.time-morning .voyage-world-name,
+.voyage-world.time-day .voyage-world-name,
+.voyage-world.time-morning .voyage-world-close,
+.voyage-world.time-day .voyage-world-close {
+  background: color-mix(in srgb, #edf7f2 62%, transparent);
+}
+
 .voyage-world canvas {
   display: block;
   /* ドラッグで世界を回す(ページは背後で固定済み) */
@@ -2563,7 +3940,7 @@ textarea {
 }
 
 /* ---- 航海中の世界(ストップウォッチ) ---- */
-/* 目的地の世界(.voyage-world)と同じ作法。夜に固定し、タブバーより上に置く。 */
+/* 目的地の世界(.voyage-world)と同じ作法。時間帯の海としてタブバーより上に置く。 */
 .voyaging-world {
   position: fixed;
   inset: 0;
@@ -2573,6 +3950,45 @@ textarea {
   --paper: #123830;
   color: var(--ink);
   color-scheme: dark;
+}
+
+.voyaging-world.time-morning {
+  background: #e8b789;
+}
+
+.voyaging-world.time-day {
+  background: #77c6d7;
+}
+
+.voyaging-world.time-evening {
+  background: #b85f58;
+}
+
+.voyaging-world.time-night {
+  background: #123830;
+}
+
+/* 明るい海ではUIも墨色へ切り替える。夜用の白い文字をそのまま置くと、
+   朝霧や昼空に溶けて操作が見えなくなる。 */
+.voyaging-world.time-morning,
+.voyaging-world.time-day {
+  --ink: #123b40;
+  --paper: #edf7f2;
+  color-scheme: light;
+}
+
+.voyaging-world.time-morning .voyaging-panel,
+.voyaging-world.time-day .voyaging-panel {
+  background: color-mix(in srgb, #edf7f2 76%, transparent);
+}
+
+.voyaging-world.time-morning .voyaging-break,
+.voyaging-world.time-day .voyaging-break,
+.voyaging-world.time-morning .voyaging-mode,
+.voyaging-world.time-day .voyaging-mode,
+.voyaging-world.time-morning .voyage-world-close,
+.voyaging-world.time-day .voyage-world-close {
+  background: color-mix(in srgb, #edf7f2 62%, transparent);
 }
 
 .voyaging-world canvas {
@@ -2756,6 +4172,176 @@ textarea {
 
 .voyaging-link.danger {
   color: var(--coral);
+}
+
+/* ---- 航海の完了 ----
+   保存が済んだ瞬間も海と船はそのまま残し、作業の記録だけを一枚の航海札として
+   浮かべる。カードは中央より少し下へ置き、上半分の水平線と航海を隠しすぎない。 */
+.voyaging-complete {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: end center;
+  padding:
+    max(96px, calc(env(safe-area-inset-top) + 72px))
+    16px
+    max(20px, calc(env(safe-area-inset-bottom) + 16px));
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to bottom,
+      transparent 22%,
+      color-mix(in srgb, #071c18 8%, transparent) 48%,
+      color-mix(in srgb, #071c18 24%, transparent) 100%
+    );
+}
+
+.voyaging-complete-card {
+  position: relative;
+  width: min(100%, 430px);
+  padding: 28px 24px 22px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: calc(var(--radius) + 4px);
+  text-align: center;
+  color: var(--ink);
+  background: color-mix(in srgb, #0d2a24 76%, transparent);
+  box-shadow: 0 24px 70px color-mix(in srgb, #071c18 34%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  pointer-events: auto;
+  animation: voyaging-complete-in 0.72s cubic-bezier(0.2, 0.75, 0.2, 1) both;
+}
+
+.voyaging-world.time-morning .voyaging-complete-card,
+.voyaging-world.time-day .voyaging-complete-card {
+  background: color-mix(in srgb, #edf7f2 82%, transparent);
+  box-shadow: 0 24px 70px color-mix(in srgb, #123b40 20%, transparent);
+}
+
+.voyaging-complete-line {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 76px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--return-orange);
+  transform: translateX(-50%) scaleX(0);
+  animation: voyaging-complete-line 0.55s 0.34s ease-out forwards;
+}
+
+.voyaging-complete-eyebrow,
+.voyaging-complete-label,
+.voyaging-complete-name,
+.voyaging-complete-note,
+.voyaging-complete-time {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.voyaging-complete-eyebrow {
+  margin-top: 0;
+  margin-bottom: 18px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: color-mix(in srgb, var(--ink) 62%, transparent);
+}
+
+.voyaging-complete-icon {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 16px;
+  overflow: hidden;
+  border-radius: 20px;
+  box-shadow: 0 8px 24px color-mix(in srgb, #071c18 22%, transparent);
+  animation: voyaging-complete-icon-in 0.62s 0.12s cubic-bezier(0.2, 0.9, 0.25, 1.25)
+    both;
+}
+
+.voyaging-complete-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.voyaging-complete-label {
+  margin-top: 0;
+  margin-bottom: 5px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--ink) 48%, transparent);
+}
+
+.voyaging-complete-name {
+  margin-top: 0;
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+  font-size: clamp(24px, 7vw, 34px);
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+.voyaging-complete-note {
+  max-width: 30em;
+  margin-top: 10px;
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--ink) 68%, transparent);
+}
+
+/* 学習時間はホームの記録と同じ、小さな帰帆色。 */
+.voyaging-complete-time {
+  margin-top: 12px;
+  margin-bottom: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--return-orange);
+}
+
+.voyaging-complete-home {
+  width: 100%;
+  margin-top: 22px;
+}
+
+@keyframes voyaging-complete-in {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes voyaging-complete-icon-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.72) rotate(-4deg);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0);
+  }
+}
+
+@keyframes voyaging-complete-line {
+  to {
+    transform: translateX(-50%) scaleX(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voyaging-complete-card,
+  .voyaging-complete-icon,
+  .voyaging-complete-line {
+    animation: none;
+  }
 }
 
 /* 浮きピルの「航海に戻る」部分(名前と時間そのものが入口)。 */
@@ -2987,11 +4573,12 @@ textarea {
 .harbor-world,
 .harbor-world-fallback {
   position: relative;
-  height: 260px;
+  height: 320px;
   margin-top: 14px;
   border-radius: var(--radius);
   overflow: hidden;
   background: #123830;
+  box-shadow: 0 18px 42px color-mix(in srgb, #071713 18%, transparent);
 }
 
 .harbor-world canvas {
@@ -3051,6 +4638,823 @@ textarea {
   cursor: pointer;
 }
 
+/* 乗船中は個人タイマーと同じ沖合の画面。港名と「仲間と航海中」だけを
+   上辺に小さく残し、海と船団を主役にする。 */
+.harbor-sailing-status {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 4;
+  max-width: min(42vw, 360px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 15px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 20%, transparent);
+  border-radius: 999px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 54%, transparent);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.harbor-sailing-status strong {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+}
+
+.harbor-sailing-status > span {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: color-mix(in srgb, var(--harbor-sand) 64%, transparent);
+}
+
+.harbor-sailing-controls {
+  position: absolute;
+  right: 14px;
+  bottom: calc(58px + env(safe-area-inset-bottom));
+  z-index: 7;
+  display: grid;
+  grid-template-columns: 42px 58px 42px;
+  align-items: center;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 24%, transparent);
+  border-radius: 999px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 72%, transparent);
+  box-shadow: 0 10px 28px color-mix(in srgb, #071713 24%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  touch-action: none;
+  user-select: none;
+}
+
+.harbor-sailing-controls button {
+  width: 42px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: #123830;
+  background: color-mix(in srgb, var(--harbor-sand) 88%, transparent);
+  font: inherit;
+  font-size: 18px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.harbor-sailing-controls button:active {
+  transform: scale(0.92);
+  background: #f3c065;
+}
+
+.harbor-sailing-position {
+  position: relative;
+  width: 50px;
+  height: 4px;
+  margin-inline: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--harbor-sand) 22%, transparent);
+}
+
+.harbor-sailing-position > i {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: #f3c065;
+  box-shadow: 0 0 10px color-mix(in srgb, #f3c065 55%, transparent);
+  transition: left 120ms ease-out;
+}
+
+.harbor-world.sailing .harbor-emote-dock {
+  bottom: calc(12px + env(safe-area-inset-bottom));
+}
+
+/* 船の上の名前。現在同じ港画面にいる仲間だけ、在室の緑灯を添える。 */
+.harbor-sailing-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 150px;
+  overflow: hidden;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--harbor-sand) 82%, transparent);
+  background: color-mix(in srgb, #0d2a24 56%, transparent);
+  font-size: 10px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 5px 15px color-mix(in srgb, #071713 20%, transparent);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+}
+
+.harbor-sailing-name.live > span {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5dcaa5;
+  box-shadow: 0 0 9px color-mix(in srgb, #5dcaa5 82%, transparent);
+}
+
+/* 航海士のバッグ。コンパクト表示でも所持数を確認でき、没入時はHUDとして残る。 */
+.harbor-bag-button {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 7;
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid color-mix(in srgb, #eadebd 24%, transparent);
+  border-radius: 999px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 70%, transparent);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.harbor-world.immersive .harbor-bag-button {
+  top: calc(12px + env(safe-area-inset-top));
+  left: 14px;
+  min-height: 40px;
+  font-size: 14px;
+}
+
+.harbor-bag-button.open {
+  border-color: color-mix(in srgb, #f3c065 44%, transparent);
+  background: color-mix(in srgb, #1e5348 90%, transparent);
+}
+
+.harbor-bag-mark {
+  position: relative;
+  width: 15px;
+  height: 13px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px 3px 5px 5px;
+  opacity: 0.9;
+}
+
+.harbor-bag-mark::before {
+  content: "";
+  position: absolute;
+  left: 3px;
+  top: -6px;
+  width: 7px;
+  height: 6px;
+  border: 1.5px solid currentColor;
+  border-bottom: 0;
+  border-radius: 5px 5px 0 0;
+}
+
+.harbor-bag-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #123830;
+  background: var(--harbor-sand);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.harbor-bag-panel {
+  position: absolute;
+  left: 10px;
+  top: 56px;
+  z-index: 8;
+  width: min(340px, calc(100% - 20px));
+  padding: 13px;
+  color: var(--harbor-sand);
+  border: 1px solid color-mix(in srgb, #eadebd 25%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, #0b251f 93%, transparent);
+  box-shadow: 0 16px 44px rgba(3, 16, 13, 0.32);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.harbor-world.immersive .harbor-bag-panel {
+  left: 14px;
+  top: calc(62px + env(safe-area-inset-top));
+}
+
+.harbor-bag-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.harbor-bag-dismiss {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  margin: -5px -4px -5px 0;
+  border: 0;
+  border-radius: 999px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.harbor-bag-item {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.harbor-bag-item-art {
+  width: 64px;
+  height: 92px;
+  display: block;
+  object-fit: cover;
+  border-radius: 12px;
+  background: #123830;
+}
+
+.harbor-bag-item-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 4px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.harbor-equipped-badge {
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #123830;
+  background: #f3c065;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.harbor-bag-item-desc,
+.harbor-bag-empty {
+  margin: 0;
+  color: color-mix(in srgb, #eadebd 68%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.harbor-equip-button {
+  min-height: 34px;
+  margin-top: 9px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 999px;
+  color: #123830;
+  background: var(--harbor-sand);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.harbor-equip-button:disabled,
+.harbor-pickup-action:disabled {
+  opacity: 0.56;
+  cursor: wait;
+}
+
+.harbor-inventory-notice {
+  position: absolute;
+  left: 50%;
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  z-index: 9;
+  max-width: calc(100% - 96px);
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 999px;
+  color: #123830;
+  background: #f3c065;
+  box-shadow: 0 8px 30px rgba(3, 16, 13, 0.25);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: harbor-inventory-notice 2.6s ease both;
+}
+
+@keyframes harbor-inventory-notice {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  12%,
+  84% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.harbor-walk-hint {
+  position: absolute;
+  top: calc(18px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 4;
+  transform: translateX(-50%);
+  max-width: min(52vw, 430px);
+  padding: 5px 12px;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--harbor-sand) 76%, transparent);
+  background: color-mix(in srgb, #0d2a24 54%, transparent);
+  font-size: 11px;
+  letter-spacing: 0.25px;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.harbor-world.immersive canvas {
+  cursor: grab;
+  touch-action: none;
+}
+
+.harbor-world.immersive canvas:active {
+  cursor: grabbing;
+}
+
+.harbor-board-action,
+.harbor-pickup-action,
+.harbor-tent-action {
+  position: absolute;
+  top: calc(62px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 6;
+  min-height: 42px;
+  padding: 0 22px;
+  transform: translateX(-50%);
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 34%, transparent);
+  border-radius: 999px;
+  color: #123830;
+  background: color-mix(in srgb, var(--harbor-sand) 92%, transparent);
+  box-shadow: 0 10px 26px color-mix(in srgb, #071713 24%, transparent);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.harbor-board-action:active,
+.harbor-pickup-action:active,
+.harbor-tent-action:active {
+  transform: translateX(-50%) scale(0.96);
+}
+
+/* エモート。画面下中央にまとめ、左のチャット・右の移動スティックを塞がない。 */
+.harbor-emote-dock {
+  position: absolute;
+  left: 50%;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  z-index: 7;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.harbor-emote-toggle {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 28%, transparent);
+  border-radius: 999px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 76%, transparent);
+  box-shadow: 0 10px 28px color-mix(in srgb, #071713 26%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.harbor-emote-toggle.open {
+  border-color: color-mix(in srgb, #f3c065 48%, transparent);
+  background: color-mix(in srgb, #1e5348 90%, transparent);
+}
+
+.harbor-emote-toggle-mark {
+  color: #f3c065;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.harbor-live-count {
+  min-width: 19px;
+  height: 19px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  color: #123830;
+  background: #5dcaa5;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.harbor-emote-panel {
+  position: absolute;
+  left: 50%;
+  bottom: 48px;
+  width: min(430px, calc(100vw - 28px));
+  transform: translateX(-50%);
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 24%, transparent);
+  border-radius: 16px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0b251f 92%, transparent);
+  box-shadow: 0 16px 40px color-mix(in srgb, #071713 34%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.harbor-emote-live {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: color-mix(in srgb, var(--harbor-sand) 66%, transparent);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.harbor-emote-live > span,
+.harbor-live-sailor-name > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #5dcaa5;
+  box-shadow: 0 0 10px color-mix(in srgb, #5dcaa5 78%, transparent);
+}
+
+.harbor-emote-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.harbor-emote-options button {
+  min-width: 0;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 5px 7px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 16%, transparent);
+  border-radius: 11px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #eadebd 8%, transparent);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.harbor-emote-options button > span {
+  color: #f3c065;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.harbor-emote-options button.selected {
+  color: #123830;
+  border-color: #f3c065;
+  background: #f3c065;
+}
+
+.harbor-emote-options button.selected > span {
+  color: #123830;
+}
+
+/* スマホ用のアナログスティック。PCでは常に非表示で、WASD/矢印だけを使う。 */
+.harbor-walk-controls {
+  position: absolute;
+  left: clamp(
+    calc(var(--harbor-control-size, 142px) / 2 + 10px),
+    var(--harbor-control-x, 82%),
+    calc(100% - var(--harbor-control-size, 142px) / 2 - 10px)
+  );
+  top: clamp(
+    calc(var(--harbor-control-size, 142px) / 2 + env(safe-area-inset-top) + 10px),
+    var(--harbor-control-y, 68%),
+    calc(100% - var(--harbor-control-size, 142px) / 2 - env(safe-area-inset-bottom) - 10px)
+  );
+  z-index: 5;
+  width: var(--harbor-control-size, 142px);
+  height: var(--harbor-control-size, 142px);
+  transform: translate(-50%, -50%);
+  display: none;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 20%, transparent);
+  border-radius: 50%;
+  color: color-mix(in srgb, var(--harbor-sand) 58%, transparent);
+  background:
+    radial-gradient(
+      circle,
+      color-mix(in srgb, #0d2a24 48%, transparent) 0 34%,
+      color-mix(in srgb, #0d2a24 68%, transparent) 35% 100%
+    );
+  box-shadow:
+    inset 0 0 30px color-mix(in srgb, #eadebd 5%, transparent),
+    0 14px 34px color-mix(in srgb, #071713 22%, transparent);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.harbor-walk-controls .direction {
+  position: absolute;
+  font-size: calc(var(--harbor-control-size, 142px) * 0.092);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.harbor-walk-controls .up {
+  top: 7.7%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.harbor-walk-controls .left {
+  top: 50%;
+  left: 8.4%;
+  transform: translateY(-50%);
+}
+
+.harbor-walk-controls .right {
+  top: 50%;
+  right: 8.4%;
+  transform: translateY(-50%);
+}
+
+.harbor-walk-controls .down {
+  bottom: 7.7%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.harbor-walk-controls .joystick-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 39.4%;
+  height: 39.4%;
+  margin: -19.7% 0 0 -19.7%;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 36%, transparent);
+  border-radius: 50%;
+  background: color-mix(in srgb, #eadebd 82%, #123830);
+  box-shadow:
+    0 7px 18px color-mix(in srgb, #071713 28%, transparent),
+    inset 0 2px 6px color-mix(in srgb, white 18%, transparent);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.harbor-walk-controls .joystick-knob span {
+  width: 23%;
+  height: 23%;
+  border-radius: 50%;
+  background: color-mix(in srgb, #123830 72%, transparent);
+}
+
+@media (max-width: 700px), (pointer: coarse) and (max-width: 1000px) {
+  .harbor-world.immersive .harbor-bag-button {
+    top: calc(52px + env(safe-area-inset-top));
+  }
+
+  .harbor-world.immersive .harbor-bag-panel {
+    top: calc(102px + env(safe-area-inset-top));
+  }
+
+  .harbor-emote-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .harbor-walk-controls {
+    display: block;
+  }
+
+  .harbor-walk-hint {
+    top: calc(14px + env(safe-area-inset-top));
+    left: 14px;
+    transform: none;
+    max-width: calc(100vw - 120px);
+    font-size: 10px;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .harbor-sailing-status {
+    max-width: calc(100vw - 228px);
+    padding: 6px 10px;
+  }
+
+  .harbor-sailing-status strong {
+    font-size: 11px;
+  }
+
+  .harbor-sailing-controls {
+    right: 10px;
+    bottom: calc(62px + env(safe-area-inset-bottom));
+    grid-template-columns: 44px 46px 44px;
+  }
+
+  .harbor-sailing-position {
+    width: 40px;
+    margin-inline: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .harbor-inventory-notice {
+    animation-duration: 0.01s;
+  }
+}
+
+/* 世界の中でも会話を見失わない、小さな半透明チャット。
+   過去ログと入力を一つの器に収め、港町を覆い尽くさない。 */
+.harbor-world-chat-mini {
+  position: absolute;
+  left: 14px;
+  bottom: calc(54px + env(safe-area-inset-bottom));
+  z-index: 4;
+  width: min(330px, calc(100vw - 28px));
+  max-height: min(34vh, 250px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, #eadebd 20%, transparent);
+  border-radius: 16px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #0d2a24 68%, transparent);
+  box-shadow: 0 12px 34px color-mix(in srgb, #071713 24%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.harbor-world-chat-mini-messages {
+  min-height: 24px;
+  max-height: 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--harbor-sand) 34%, transparent) transparent;
+  padding-right: 3px;
+}
+
+.harbor-world-chat-mini-messages::-webkit-scrollbar {
+  width: 4px;
+}
+
+.harbor-world-chat-mini-messages::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--harbor-sand) 34%, transparent);
+}
+
+.harbor-world-chat-mini-line {
+  width: fit-content;
+  max-width: 90%;
+  padding: 5px 9px;
+  border-radius: 10px 10px 10px 3px;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  background: color-mix(in srgb, #eadebd 12%, transparent);
+}
+
+.harbor-world-chat-mini-line.mine {
+  align-self: flex-end;
+  border-radius: 10px 10px 3px;
+  color: #123830;
+  background: color-mix(in srgb, var(--harbor-sand) 88%, transparent);
+}
+
+.harbor-world-chat-mini-line.auto {
+  align-self: center;
+  max-width: 100%;
+  color: color-mix(in srgb, var(--harbor-sand) 72%, transparent);
+  background: transparent;
+  text-align: center;
+}
+
+.harbor-world-chat-mini-empty {
+  align-self: center;
+  padding: 4px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--harbor-sand) 60%, transparent);
+}
+
+.harbor-world-chat-mini-input {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.harbor-world-chat-mini-input .chat-count {
+  color: color-mix(in srgb, var(--harbor-sand) 58%, transparent);
+  font-size: 9px;
+}
+
+.harbor-world-chat-mini-input input {
+  min-width: 0;
+  min-height: 36px;
+  flex: 1;
+  padding: 0 11px;
+  border: 1px solid color-mix(in srgb, #eadebd 18%, transparent);
+  border-radius: 11px;
+  outline: none;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #071713 38%, transparent);
+  font: inherit;
+  font-size: 12px;
+}
+
+.harbor-world-chat-mini-input input:focus {
+  border-color: color-mix(in srgb, var(--return-orange) 75%, transparent);
+}
+
+.harbor-world-chat-mini-input input::placeholder {
+  color: color-mix(in srgb, var(--harbor-sand) 44%, transparent);
+}
+
+.harbor-world-chat-mini-input button {
+  min-width: 52px;
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 11px;
+  color: #123830;
+  background: var(--harbor-sand);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.harbor-world-chat-mini-input button:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+@media (max-height: 560px) {
+  .harbor-world-chat-mini-messages {
+    max-height: 76px;
+  }
+}
+
 /* 船の上の名前(drei Htmlでアンカー)。sandの小さなピル。 */
 .harbor-world-name {
   font-size: 12px;
@@ -3063,17 +5467,64 @@ textarea {
   pointer-events: none;
 }
 
-/* 島の上の港名。名前ピルよりさらに控えめに。 */
-.harbor-world-island {
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  color: color-mix(in srgb, var(--harbor-sand) 80%, transparent);
-  background: color-mix(in srgb, #123830 55%, transparent);
+/* 陸上をリアルタイムで動いている仲間の名前。緑の点がライブ状態の印。 */
+.harbor-live-sailor-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, #5dcaa5 24%, transparent);
   border-radius: 999px;
-  padding: 3px 10px;
+  color: var(--harbor-sand);
+  background: color-mix(in srgb, #123830 68%, transparent);
+  font-size: 11px;
+  font-weight: 600;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* 港町の上の港名。家々より前へ出しつつ、景色を隠さない小さな銘板に。 */
+.harbor-world-island {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  color: color-mix(in srgb, var(--harbor-sand) 90%, transparent);
+  background: color-mix(in srgb, #123830 62%, transparent);
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 16%, transparent);
+  border-radius: 999px;
+  padding: 4px 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.harbor-world.immersive .harbor-world-island {
+  display: none;
+}
+
+/* 朝昼も航海画面と同じ空になる。文字UIだけは濃い海色へ寄せ、
+   明るい空の上でも港名と入場の誘いを見失わない。 */
+.harbor-world.time-morning .harbor-world-enter-hint,
+.harbor-world.time-day .harbor-world-enter-hint,
+.harbor-world.time-morning .harbor-world-name,
+.harbor-world.time-day .harbor-world-name,
+.harbor-world.time-morning .harbor-world-island,
+.harbor-world.time-day .harbor-world-island {
+  color: #123830;
+  background: color-mix(in srgb, #eadebd 78%, transparent);
+  border-color: color-mix(in srgb, #123830 14%, transparent);
+}
+
+@media (max-width: 600px) {
+  .harbor-world,
+  .harbor-world-fallback {
+    height: 286px;
+    margin-inline: -4px;
+  }
+
+  .harbor-world-enter-hint {
+    top: 8px;
+    font-size: 10px;
+  }
 }
 
 /* 写真ボタン。シーン右下に小さく。 */
@@ -3550,6 +6001,51 @@ textarea {
   color: var(--return-orange);
 }
 
+.manual-time-hint {
+  margin: 18px 0 9px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--ink) 48%, transparent);
+}
+
+.minute-additions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.minute-additions .chip {
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.minute-additions .chip:active:not(:disabled) {
+  transform: translateY(1px);
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
+.manual-time-actions {
+  min-height: 42px;
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 12px;
+}
+
+.manual-time-actions .quiet-button {
+  min-height: 38px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+}
+
+.manual-time-actions .quiet-button:disabled {
+  opacity: 0.28;
+}
+
 /* 狭い画面のピル。操作が4つ(音・休憩・終了・✕)あると一行には収まらず、
    右端の✕から順にはみ出す。名前と時計を一行目に回して二段にする —
    どれかを削るより、少し背の高い小さなカードになるほうが理に適っている。 */
@@ -3575,6 +6071,42 @@ textarea {
   }
 }
 
+/* ---- PC: スマホ幅の一枚板に閉じ込めず、海と情報を画面全体へ広げる ---- */
+
+@media (min-width: 901px) {
+  .shell {
+    min-height: 100dvh;
+    padding-bottom: 72px;
+  }
+
+  .topbar {
+    padding-top: 24px;
+  }
+
+  .tabs {
+    gap: clamp(28px, 2.6vw, 52px);
+    padding-bottom: 28px;
+  }
+
+  #main-content {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* 空き幅を列数へ変換する。項目が少ない場合も auto-fill の空列が残るため、
+     一枚だけが巨大なスマホタイルのように引き伸ばされない。 */
+  .tile-grid {
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    gap: clamp(18px, 1.5vw, 28px);
+  }
+
+  /* 港へ入る前の景色もPCでは横長の窓として見せる。没入時は従来どおり全画面。 */
+  .harbor-world:not(.immersive),
+  .harbor-world-fallback {
+    height: clamp(400px, 56vh, 620px);
+  }
+}
+
 /* 記録を消す「−」。見た目は30pxの小さな丸のままに、当たり判定だけ44pxへ広げる。
    消す操作なのに指の基準より小さく、しかも記録の行の右端で他の要素と近い。
    (確認ダイアログは出るが、そこへ辿り着く前の誤爆を減らす) */
@@ -3587,22 +6119,6 @@ textarea {
   content: "";
   position: absolute;
   inset: -7px;
-}
-
-/* 項目の「…」。見た目は小さな丸のままに、当たり判定を44pxへ広げる。
-   項目の改名・配色変更・削除・並び替えへの唯一の入口なので、押し外すと
-   代わりにタイル(=計測開始)が反応してしまう。 */
-.tile-edit {
-  position: absolute;
-  touch-action: manipulation;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.tile-edit::after {
-  content: "";
-  position: absolute;
-  inset: -9px;
 }
 
 /* 繋がらなかったときの案内。文と再試行を縦に並べて中央へ。 */

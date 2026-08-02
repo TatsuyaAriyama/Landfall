@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
+import { useGLTF } from "@react-three/drei";
 import { navigatorHood } from "../boat";
 
 // 航海士フェニックス(プレイヤーキャラクター)。
@@ -8,7 +9,6 @@ import { navigatorHood } from "../boat";
 //  - 尖ったフード = 紋章の冠羽
 //  - 燕尾のケープ = 紋章の翼と二叉の尾(背中に紋章のシルエットが宿る)
 //  - 胸の留め具   = 紋章の丸い目穴(sandの環+midnightの芯)
-//  - 手に提げるランタン = この世界の「今日の灯」
 // フードの闇に sand の両目が灯る。体は体積で作り、どの角度でも成立する。
 // 配色は世界と同じフラットだが、キャラクターだけは布も体もスムース
 // シェーディング — 低ポリの世界(船・島)との対比で「生きもの」を際立たせる。
@@ -19,15 +19,14 @@ import { navigatorHood } from "../boat";
 //  - HarborWorld の船(scale 0.45)の甲板に立たせるなら scale 0.20〜0.24
 //    (全高 0.27〜0.32 ≒ マストの半分弱。舳先寄り +0.6, デッキ上 y≈0.32)
 //  - BoatStudio のような単体ステージなら scale 0.9〜1.1
-// 首・両肩・ケープ・ランタンはピボットグループ — 将来の歩行・手振りにも使える。
+// 首・両肩・ケープはピボットグループ — 将来の歩行・手振りにも使える。
 // 360度ビューアは URL ハッシュ #phoenix(PhoenixViewer.tsx)。
 
 const CORAL = "#F0997B"; // コート・ケープ・フード(紋章の主色)
-const RUST = "#7A3B22"; // 深い錆(コートの裾陰・ランタンの枠)
+const RUST = "#7A3B22"; // 深い錆(コートの裾陰)
 const RUST_DEEP = "#4A1B0C"; // ブーツ・手袋
 const SAND = "#EADEBD"; // 襟巻き・目・留め具の環
 const MIDNIGHT = "#1A1130"; // フードの闇(顔)・留め具の芯
-const LANTERN = "#F3C065"; // ランタンの灯(船のランタンと同色)
 
 // ---- マント(布の格子メッシュ) ----
 // 紋章の背景色(midnight)の一枚布。押し出し板ではなく、肩から垂れる
@@ -283,13 +282,6 @@ const ROSE_POINT_GEO = new THREE.ConeGeometry(0.0085, 0.032, 4);
 const ROSE_HUB_GEO = new THREE.SphereGeometry(0.0075, 10, 8);
 /// 八方位。偶数が四方位(長い)、奇数が間方位(短い)。
 const ROSE_DIRS = [0, 1, 2, 3, 4, 5, 6, 7];
-// ランタンは開放型(上蓋+灯+底皿)。灯が枠に隠れず、どの角度からも見える。
-// 六角のシルエットは職人の道具らしさとして残す(面の陰影は滑らかに)。
-const LANTERN_CAP_GEO = new THREE.ConeGeometry(0.058, 0.05, 6);
-const LANTERN_BASE_GEO = new THREE.CylinderGeometry(0.045, 0.05, 0.02, 6);
-const LANTERN_GLOW_GEO = new THREE.SphereGeometry(0.042, 12, 9);
-const LANTERN_HANDLE_GEO = new THREE.CylinderGeometry(0.008, 0.008, 0.06, 8);
-
 const CORAL_MAT = new THREE.MeshStandardMaterial({
   color: CORAL,
   flatShading: false,
@@ -352,26 +344,64 @@ const EYE_MAT = new THREE.MeshStandardMaterial({
   emissiveIntensity: 0.85,
   fog: false,
 });
-/// ランタンの灯。船のランタンと同じ色・同じゆらぎ(同時に1体なので共有で良い)。
-const LANTERN_GLOW_MAT = new THREE.MeshStandardMaterial({
-  color: LANTERN,
-  flatShading: false,
-  roughness: 0.8,
-  emissive: new THREE.Color(LANTERN),
-  emissiveIntensity: 1.5,
-  fog: false,
+
+// ---- 読書の本 ----
+// 旧航海士の丸い造形に合わせ、表紙・紙・文字だけで読める小さな開き本にする。
+// 左右のページを少し持ち上げたV字にして、正面からも「開いている」と分かる。
+const BOOK_COVER_GEO = new THREE.BoxGeometry(0.18, 0.014, 0.235);
+const BOOK_PAGE_GEO = new THREE.BoxGeometry(0.17, 0.012, 0.22);
+const BOOK_SPINE_GEO = new THREE.BoxGeometry(0.018, 0.025, 0.235);
+const BOOK_LINE_GEO = new THREE.BoxGeometry(0.09, 0.005, 0.009);
+const BOOK_PAGE_MAT = new THREE.MeshStandardMaterial({
+  color: SAND,
+  roughness: 0.95,
+});
+const BOOK_INK_MAT = new THREE.MeshStandardMaterial({
+  color: MIDNIGHT,
+  roughness: 0.9,
 });
 
+function OpenBook() {
+  return (
+    <group position={[0, 0.6, 0.29]} rotation={[0.56, 0, 0]}>
+      {([-1, 1] as const).map((side) => (
+        <group
+          key={side}
+          position={[side * 0.09, 0, 0]}
+          rotation={[0, 0, side * 0.14]}
+        >
+          <mesh
+            geometry={BOOK_COVER_GEO}
+            material={RUST_DEEP_MAT}
+            position={[0, -0.014, 0]}
+          />
+          <mesh geometry={BOOK_PAGE_GEO} material={BOOK_PAGE_MAT} />
+          {[-0.065, -0.025, 0.015, 0.055].map((z) => (
+            <mesh
+              key={z}
+              geometry={BOOK_LINE_GEO}
+              material={BOOK_INK_MAT}
+              position={[side * 0.012, 0.009, z]}
+            />
+          ))}
+        </group>
+      ))}
+      <mesh geometry={BOOK_SPINE_GEO} material={RUST_MAT} position={[0, -0.008, 0]} />
+    </group>
+  );
+}
+
 /// キャラクターのポーズ。ゲーム側から切り替えると、減衰補間でなめらかに遷移する。
-///  - idle:     待機。呼吸と見渡し、ランタンの静かな振り子
+///  - idle:     待機。呼吸と見渡し
 ///  - walk:     歩行(その場)。移動そのものはゲーム側が position を動かす
-///  - raise:    灯を高く掲げる(記録の瞬間・お祝いに)
+///  - raise:    右手を高く掲げる(記録の瞬間・お祝いに)
 ///  - hail:     手を振って挨拶(港の仲間へ)
 ///  - point:    空いた手で水平線の先を指す(目的地が見えた)
 ///  - stargaze: 灯を落として星を読む(進路を確かめる静かな夜)
 ///  - rest:     灯を両手で囲んで一息つく(休んだ日も、航海のうち)
 ///  - lookout:  体ごと向きを変えて辺りを見渡す(見張り)
 ///  - sit:      甲板に腰を下ろす(休憩。立ち座りだけは遅く補間される)
+///  - read:     甲板に腰を下ろし、膝の上で本を広げて読む
 export type PhoenixPose =
   | "idle"
   | "walk"
@@ -381,13 +411,19 @@ export type PhoenixPose =
   | "point"
   | "stargaze"
   | "rest"
-  | "sit";
+  | "sit"
+  | "read"
+  | "pickupRod"
+  | "equipRod"
+  | "holdRod"
+  | "walkRod"
+  | "stowRod";
 
 /// ポーズごとの基本値(振りの中心)。振動はこの上に足す。
 /// 全項目が減衰補間の対象なので、どのポーズからどのポーズへ切り替えても
 /// 姿勢・首・呼吸・風・灯が同時に、跳ねずに移り変わる。
 interface PoseBase {
-  /// 肩からの腕の角(R=ランタンを提げる右腕、L=空いた左手)。
+  /// 肩からの腕の角(R=右腕、L=左腕)。
   /// x: 負ほど前へ振り上げる(-π/2 でほぼ水平) / z: 体から左右へ開く。
   armRx: number;
   armRz: number;
@@ -405,12 +441,12 @@ interface PoseBase {
   /// 上体ごと左右へ向き直る振幅(rad)。首と同じ周期で、少し遅れて追う
   /// (首だけが動くのは「気配を窺う」、体まで回るのが「見渡す」)。
   turn: number;
-  /// 腕とランタンのゆらぎの強さ。止まって見せたいポーズほど小さく。
+  /// 腕のゆらぎの強さ。止まって見せたいポーズほど小さく。
   sway: number;
   /// 呼吸の深さ(1=待機)と速さ(rad/s)。休むポーズほど深く、遅く。
   breathAmp: number;
   breathSpeed: number;
-  /// ランタンの灯の明るさ(1.5=通常)。
+  /// 旧ポーズデータとの互換値。見た目には使用しない。
   glow: number;
   /// 腰を下ろしている度合い(0=立つ、1=座る)。腰の高さと脚の角度を同時に動かす。
   sit: number;
@@ -505,7 +541,7 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
     sit: 0,
   },
   // 腰を下ろす: 甲板に座り、脚を前へ投げ出して、両手を後ろの床につく。
-  // ランタンは提げたまま下がるので、自然と傍らの床へ置いた高さに来る。
+  // 腕は力を抜き、自然と傍らへ下がる。
   // 顔は水平線へ — 休んでいるのであって、うなだれているのではない。
   sit: {
     armRx: 0.62, armRz: 0.3, armLx: 0.62, armLz: -0.3,
@@ -514,19 +550,86 @@ const POSE_BASE: Record<PhoenixPose, PoseBase> = {
     sway: 0.45, breathAmp: 1.6, breathSpeed: 0.6, glow: 1.8,
     sit: 1,
   },
+  // 読書: 甲板に腰を下ろし、膝の上で本を広げる。
+  // 両腕は本の外側へ添え、顔はページへ。呼吸とマントだけが静かに動く。
+  read: {
+    armRx: -0.92, armRz: -0.18, armLx: -0.92, armLz: 0.18,
+    lean: 0.13, wind: 0.62, headX: 0.4, scan: 0.025, scanSpeed: 0.14,
+    turn: 0,
+    sway: 0.22, breathAmp: 1.15, breathSpeed: 0.55, glow: 1.2,
+    sit: 1,
+  },
+  // 砂に置かれた道具へ目線から先に近づき、腰を折って左手を下ろす。
+  pickupRod: {
+    armRx: 0.2, armRz: 0.24, armLx: 0.42, armLz: -0.12,
+    lean: 0.42, wind: 0.62, headX: 0.46, scan: 0.01, scanSpeed: 0.12,
+    turn: 0,
+    sway: 0.08, breathAmp: 0.65, breathSpeed: 0.66, glow: 1.05,
+    sit: 0,
+  },
+  // 腰のバッグから道具を取り出す。視線→空いた左手→道具の順で動かす。
+  equipRod: {
+    armRx: 0.34, armRz: 0.36, armLx: -0.58, armLz: 0.34,
+    lean: 0.08, wind: 0.82, headX: 0.3, scan: 0.02, scanSpeed: 0.18,
+    turn: 0,
+    sway: 0.18, breathAmp: 0.75, breathSpeed: 0.72, glow: 1.25,
+    sit: 0,
+  },
+  // 釣竿を左手で支える待機姿勢。穂先が呼吸に合わせてわずかに揺れる。
+  holdRod: {
+    armRx: 0.04, armRz: 0.1, armLx: -1.12, armLz: -0.06,
+    lean: 0.035, wind: 1.0, headX: -0.08, scan: 0.08, scanSpeed: 0.24,
+    turn: 0,
+    sway: 0.36, breathAmp: 0.9, breathSpeed: 0.78, glow: 1.45,
+    sit: 0,
+  },
+  // 装備したまま歩く。竿を支える左腕は固定し、歩調は脚と右腕で見せる。
+  walkRod: {
+    armRx: 0, armRz: 0.12, armLx: -1.08, armLz: -0.05,
+    lean: 0.095, wind: 1.7, headX: -0.02, scan: 0.04, scanSpeed: 0.24,
+    turn: 0,
+    sway: 0.2, breathAmp: 1, breathSpeed: 0.85, glow: 1.45,
+    sit: 0,
+  },
+  // 釣竿をバッグへ戻す。装備時と同じ経路を逆に辿り、瞬間移動を避ける。
+  stowRod: {
+    armRx: 0.24, armRz: 0.3, armLx: -0.36, armLz: 0.42,
+    lean: 0.1, wind: 0.78, headX: 0.34, scan: 0.02, scanSpeed: 0.18,
+    turn: 0,
+    sway: 0.12, breathAmp: 0.72, breathSpeed: 0.7, glow: 1.2,
+    sit: 0,
+  },
 };
 
-/// 小さな航海士。ローブの体積+燕尾のケープ+尖ったフード+提げたランタンで、
+const FISHING_ROD_URL = "/models/fishing_rod.glb";
+
+/// GLBの GripSocket を左手に合わせる。手首を返し、穂先は航海士の前上方へ向ける。
+function HeldFishingRod() {
+  const { scene } = useGLTF(FISHING_ROD_URL);
+  const model = useMemo(() => scene.clone(true), [scene]);
+  return (
+    <group position={[0, -0.28, 0]} rotation={[1.95, 0, -0.08]}>
+      <primitive object={model} />
+    </group>
+  );
+}
+
+useGLTF.preload(FISHING_ROD_URL);
+
+/// 小さな航海士。ローブの体積+燕尾のケープ+尖ったフードで、
 /// 「夜の海を渡ってきた旅の相棒」を2.5頭身に凝縮する。
 export default function PhoenixModel({
   animate = true,
   pose = "idle",
   hood,
+  fishingRod = false,
 }: {
   animate?: boolean;
   pose?: PhoenixPose;
   /// フードの形。省略時はこの端末で選ばれているものを使う。
   hood?: HoodShape;
+  /// 左手の GripSocket に釣竿を装着する。
+  fishingRod?: boolean;
 }) {
   // フードは指定が無ければ、この端末で選ばれている形を使う
   // (甲板・港・カードなど、呼び出し側が装いを知らない場所のため)。
@@ -538,7 +641,6 @@ export default function PhoenixModel({
   const armL = useRef<THREE.Group>(null);
   const legR = useRef<THREE.Group>(null);
   const legL = useRef<THREE.Group>(null);
-  const lantern = useRef<THREE.Group>(null);
   // 接地判定用。root=モデルの座標系、contact=床に押し上げられる体ぜんたい。
   const root = useRef<THREE.Group>(null);
   // 座ったとき、床に広がる裾。
@@ -572,7 +674,7 @@ export default function PhoenixModel({
     const c = cur.current;
     // 立ち座りをまたぐ持ち替えかどうかを、ポーズが変わった瞬間に決める。
     if (pose !== lastPose.current) {
-      heavy.current = pose === "sit" || lastPose.current === "sit";
+      heavy.current = target.sit > 0.5 || POSE_BASE[lastPose.current].sit > 0.5;
       lastPose.current = pose;
     }
     // ポーズの基本値へなめらかに寄せる(切替の瞬間に跳ねない)。
@@ -607,7 +709,7 @@ export default function PhoenixModel({
     // マント: 布の波。歩行中は向かい風で強く靡く。
     updateCape(capeGeo, time, c.wind);
 
-    const walking = pose === "walk";
+    const walking = pose === "walk" || pose === "walkRod";
     const stride = 5.4; // 歩調(rad/s)
     const step = Math.sin(time * stride);
     // 座ったときに股関節が落ちる量。脚を前へ倒したときブーツが甲板に触れる高さ。
@@ -636,7 +738,9 @@ export default function PhoenixModel({
     // (一本の脚なので膝は折らない — 甲板に脚を投げ出して座る姿になる)。
     // それ以外は接地に戻す。
     const legSwing = walking ? 0.55 : 0;
-    const legSit = -SIT_SPREAD * c.sit;
+    // 読書は脚を投げ出さず、少し曲げて左右へ開く。ページの下に靴底が
+    // 正面を向いて並ぶのを避け、落ち着いて腰を据えた輪郭にする。
+    const legSit = -(pose === "read" ? 0.82 : SIT_SPREAD) * c.sit;
     for (const [leg, sign] of [
       [legR, 1],
       [legL, -1],
@@ -647,6 +751,12 @@ export default function PhoenixModel({
         leg.current.rotation.x,
         sign * step * legSwing + legSit,
         10,
+        delta,
+      );
+      leg.current.rotation.z = THREE.MathUtils.damp(
+        leg.current.rotation.z,
+        pose === "read" ? sign * 0.42 : 0,
+        8,
         delta,
       );
     }
@@ -662,19 +772,12 @@ export default function PhoenixModel({
     if (armL.current) {
       const wave = pose === "hail" ? Math.sin(time * 7.2) * 0.3 : 0;
       armL.current.rotation.x =
-        c.armLx + (walking ? step * 0.32 : Math.sin(ph.breath + 1.1) * 0.025 * c.sway);
+        c.armLx +
+        (pose === "walk"
+          ? step * 0.32
+          : Math.sin(ph.breath + 1.1) * 0.025 * c.sway);
       armL.current.rotation.z = c.armLz + wave;
     }
-    // ランタン: 腕の傾きを打ち消して常にほぼ鉛直に垂れる振り子。
-    if (lantern.current) {
-      lantern.current.rotation.x =
-        -(c.armRx + armSwing) + Math.sin(time * 0.9) * (walking ? 0.2 : 0.1 * c.sway);
-      lantern.current.rotation.z = Math.sin(time * 0.7 + 0.6) * 0.12 * c.sway;
-    }
-    // 灯: ポーズごとの明るさ。掲げれば燃え、星を読むときは落とす。
-    // ゆらぎは明るさに比例させる(暗く落とした灯がちらついて見えないように)。
-    LANTERN_GLOW_MAT.emissiveIntensity = c.glow + Math.sin(time * 2.1) * 0.2 * c.glow;
-
     // 裾: 座ると布は床に溜まって外へ広がる。コートは硬い円錐なので、そのままだと
     // 「立ったまま脚だけ前に出した人」に見えてしまう。腰の高さに合わせて裾を
     // 広げ、低くすると、はじめて座って見える(接地判定がこの形も含めて測る)。
@@ -864,20 +967,18 @@ export default function PhoenixModel({
             <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.1, 0]} />
             <mesh geometry={SLEEVE_CUFF_GEO} material={RUST_MAT} position={[0, -0.22, 0]} />
             <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
+            {fishingRod && <HeldFishingRod />}
           </group>
 
-          {/* 右腕+ランタン: 「今日の灯」を提げる */}
+          {/* 右腕。旧ランタンは採用デザインに合わせて外した。 */}
           <group ref={armR} position={[0.163, 0.8, 0.035]} rotation={[0, 0, 0.14]}>
             <mesh geometry={ARM_GEO} material={CORAL_MAT} position={[0, -0.1, 0]} />
             <mesh geometry={SLEEVE_CUFF_GEO} material={RUST_MAT} position={[0, -0.22, 0]} />
             <mesh geometry={HAND_GEO} material={RUST_DEEP_MAT} position={[0, -0.28, 0]} />
-            <group ref={lantern} position={[0, -0.33, 0]}>
-              <mesh geometry={LANTERN_HANDLE_GEO} material={RUST_MAT} position={[0, -0.03, 0]} />
-              <mesh geometry={LANTERN_CAP_GEO} material={RUST_MAT} position={[0, -0.075, 0]} />
-              <mesh geometry={LANTERN_GLOW_GEO} material={LANTERN_GLOW_MAT} position={[0, -0.14, 0]} />
-              <mesh geometry={LANTERN_BASE_GEO} material={RUST_MAT} position={[0, -0.19, 0]} />
-            </group>
           </group>
+
+          {/* 読書中だけ膝の上へ現れる開き本。体と一緒に座り、呼吸にも追従する。 */}
+          {pose === "read" && <OpenBook />}
         </group>
       </group>
     </group>

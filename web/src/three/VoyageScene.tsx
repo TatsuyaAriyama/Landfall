@@ -4,17 +4,18 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
-import { Moon, NIGHT_BG, Ripples, Sea } from "./SeaParts";
+import { Moon, Ripples, Sea, Sun } from "./SeaParts";
 import { Gulls, type GullFlock } from "./Gulls";
 import { TAP_SLOP } from "./voyageConstants";
 import { boatProps } from "../boat";
 import { useNavigatorPose } from "./navigatorPose";
 import { shortDateLabel } from "../i18n";
+import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 import WindsweptTree from "./WindsweptTree";
 
-// 目的地の航海シーン。自分の船が、夜の海を島へ向かって走っている。
+// 目的地の航海シーン。自分の船が、現在の時間帯の海を島へ向かって走っている。
 // 記録するほど(ratioが増えるほど)船が島に近づく。BoatStudioと同じ
-// 品質言語(低ポリ+flatShading、夜の海、星、月、波紋)に従う。
+// 品質言語(低ポリ+flatShading、空と海の光、天体、波紋)に従う。
 
 /// 航路に置くステップ1つ分。達成の有無と、いつ辿り着いたか
 /// (iOS の VoyageStep と同じ形)。
@@ -72,6 +73,12 @@ const CARD_GULLS: GullFlock = [
 ];
 /// カモメが旋回する中心。カメラが見ている先(CAM_TARGET)の真上。
 const CARD_GULL_CENTER: [number, number, number] = [-2.2, 0, 0.2];
+const CARD_LIGHT_POS: Record<TimeOfDay, [number, number, number]> = {
+  morning: [-4.2, 1.2, -14],
+  day: [0.8, 3.8, -14],
+  evening: [4.3, 0.95, -14],
+  night: [1.8, 1.25, -14],
+};
 
 export const X_START = -9.0;
 export const X_END = 4.2;
@@ -355,17 +362,21 @@ export function StepBuoys({
   );
 }
 
-/// シーン本体。夜の海と島、ratioに応じた位置へlerpで進む船、微かなカメラの揺れ。
+/// シーン本体。時刻に沿う海と島、ratioに応じて進む船、微かなカメラの揺れ。
 function VoyageSea({
   ratio,
   animate,
   steps,
+  timeOfDay,
 }: {
   ratio: number;
   animate: boolean;
   steps?: VoyageStep[];
+  timeOfDay: TimeOfDay;
 }) {
   const parts = useMemo(() => boatProps(), []);
+  const light = SEA_LIGHT[timeOfDay];
+  const lightPosition = CARD_LIGHT_POS[timeOfDay];
   // 甲板の航海士。待機を基本に、ときどき辺りを見渡す(navigatorPose.ts)。
   const pose = useNavigatorPose(animate);
   const travel = useRef<THREE.Group>(null);
@@ -402,25 +413,43 @@ function VoyageSea({
 
   return (
     <>
-      <color attach="background" args={[NIGHT_BG]} />
-      <fog attach="fog" args={[NIGHT_BG, 12, 30]} />
-      {/* 月光: BoatStudioと同じトーン。影は使わない。 */}
-      <ambientLight color="#ffe9c8" intensity={0.45} />
-      <directionalLight color="#EADEBD" intensity={1.15} position={[-6, 8, -5]} />
-      <directionalLight color="#5DCAA5" intensity={0.2} position={[5, 3, 6]} />
-      <Stars
-        radius={42}
-        depth={18}
-        count={380}
-        factor={2.0}
-        saturation={0}
-        fade
-        speed={animate ? 0.5 : 0}
+      <color attach="background" args={[light.sky]} />
+      <fog attach="fog" args={[light.fog, 12, 30]} />
+      <ambientLight color={light.ambient} intensity={timeOfDay === "day" ? 0.85 : 0.48} />
+      <directionalLight
+        color={light.keyLight}
+        intensity={timeOfDay === "day" ? 1.45 : 1.08}
+        position={[-6, 8, -5]}
       />
-      <Moon position={[1.8, 1.25, -14]} />
-      <Sea moonX={1.8} animate={animate} />
+      <directionalLight color={light.fillLight} intensity={0.24} position={[5, 3, 6]} />
+      {light.stars > 0 && (
+        <Stars
+          radius={42}
+          depth={18}
+          count={light.stars}
+          factor={2.0}
+          saturation={0}
+          fade
+          speed={animate ? 0.5 : 0}
+        />
+      )}
+      {light.celestial === "moon" ? (
+        <Moon position={lightPosition} />
+      ) : (
+        <Sun position={lightPosition} color={light.reflection} />
+      )}
+      <Sea
+        moonX={lightPosition[0]}
+        animate={animate}
+        seaColor={light.sea}
+        deepColor={light.seaDeep}
+        lightColor={light.reflection}
+        reflection={timeOfDay === "day" ? 0.34 : 0.5}
+      />
       <Horizon />
-      <Gulls flock={CARD_GULLS} animate={animate} center={CARD_GULL_CENTER} />
+      {timeOfDay !== "night" && (
+        <Gulls flock={CARD_GULLS} animate={animate} center={CARD_GULL_CENTER} />
+      )}
       <Island />
       {/* ステップ目標なら、航路に目印のブイを浮かべる(達成で点灯)。 */}
       {steps && steps.length > 0 && <StepBuoys steps={steps} />}
@@ -458,6 +487,7 @@ export default function VoyageScene({
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
+  const timeOfDay = useTimeOfDay();
   const rootRef = useRef<HTMLDivElement>(null);
   // カードがスクロールで画面外に出たらrAFループを止める(電池・GPU対策)。
   // IntersectionObserverが無い環境では従来どおり常時描画にフォールバック。
@@ -493,7 +523,8 @@ export default function VoyageScene({
   return (
     <div
       ref={rootRef}
-      className="voyage-scene"
+      className={`voyage-scene time-${timeOfDay}`}
+      data-time-of-day={timeOfDay}
       role="button"
       tabIndex={0}
       aria-label={label ? `${name} · ${label}` : name}
@@ -518,7 +549,12 @@ export default function VoyageScene({
         frameloop={animate && visible && !paused ? "always" : "demand"}
         camera={{ position: CAM_POS, fov: CAM_FOV }}
       >
-        <VoyageSea ratio={ratio} animate={animate && !paused} steps={steps} />
+        <VoyageSea
+          ratio={ratio}
+          animate={animate && !paused}
+          steps={steps}
+          timeOfDay={timeOfDay}
+        />
       </Canvas>
     </div>
   );

@@ -4,7 +4,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, Stars } from "@react-three/drei";
 import BoatModel from "./BoatModel";
 import PhoenixModel from "./PhoenixModel";
-import { Moon, NIGHT_BG, PassingSwells, Sea } from "./SeaParts";
+import { Moon, PassingSwells, Sea, Sun } from "./SeaParts";
 import { Horizon, Island, Wake } from "./VoyageScene";
 import { Gulls, type GullFlock } from "./Gulls";
 import PassingShip from "./PassingShip";
@@ -19,14 +19,18 @@ import {
   type SoundMode,
 } from "../audio";
 import { clockLabel, elapsedSec, isOnBreak, pomoPhase, type RunningTimer } from "../timer";
-import { t } from "../i18n";
+import { durationLabel, t } from "../i18n";
 import { useBackToClose } from "../backClose";
+import { useBodyScrollLock } from "../scrollLock";
+import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
+import { itemStyleColors, normalizeSymbol } from "../types";
+import { TileSymbolSvg } from "../symbols";
 
-// 作業中の世界。自分の船が夜の海を走り、その上に経過時間が出る。
+// 作業中の世界。自分の船が現在の時間帯の海を走り、その上に経過時間が出る。
 // 「分数を入力する」のではなく、この航海そのものが記録になる。
 //
 // 構図・素材は目的地の航海シーン(VoyageScene)と同じ言語に揃える
-// (低ポリ+flatShading、夜の海、星、月、波紋、甲板の航海士)。違いは
+// (低ポリ+flatShading、時間に沿う空と海、天体、波紋、甲板の航海士)。違いは
 // 島へ近づくのではなく、いま進んでいる最中を見せること。
 
 // 船は原点に置いたまま、海と波を後ろへ流して前進を感じさせる。
@@ -45,6 +49,12 @@ const VIEW_YAW = Math.atan2(-(CAM_TARGET.x - CAM_POS[0]), -(CAM_TARGET.z - CAM_P
 // 月と目的地の島の位置。縦長画面での見え方を実機で合わせた値。
 const MOON_POS: [number, number, number] = [5.1, 3.3, -5.5];
 const ISLAND_POS: [number, number, number] = [6.5, 0, -5.5];
+const VOYAGING_LIGHT_POS: Record<TimeOfDay, [number, number, number]> = {
+  morning: [-5.2, 1.7, -5.5],
+  day: [0.8, 5.1, -5.5],
+  evening: [5.4, 1.25, -5.5],
+  night: MOON_POS,
+};
 
 /// 休憩中の流れの速さ(通常=1)。錨を下ろしたら止まりきらずに漂う程度まで落ちる。
 const RESTING_FLOW = 0.12;
@@ -103,13 +113,17 @@ function VoyagingSea({
   showIsland,
   timer,
   resting,
+  timeOfDay,
 }: {
   animate: boolean;
   showIsland: boolean;
   timer: RunningTimer;
   resting: boolean;
+  timeOfDay: TimeOfDay;
 }) {
   const parts = useMemo(() => boatProps(), []);
+  const light = SEA_LIGHT[timeOfDay];
+  const lightPosition = VOYAGING_LIGHT_POS[timeOfDay];
   // 甲板の航海士。待機を基本にときどき辺りを見渡し、休憩中は腰を下ろす
   // (立ち座りだけは PhoenixModel がゆっくり補間する)。
   const pose = useNavigatorPose(animate, resting ? "sit" : null);
@@ -119,30 +133,46 @@ function VoyagingSea({
 
   return (
     <>
-      <color attach="background" args={[NIGHT_BG]} />
-      <fog attach="fog" args={[NIGHT_BG, 12, 34]} />
-      <ambientLight color="#ffe9c8" intensity={0.45} />
-      <directionalLight color="#EADEBD" intensity={1.15} position={[-6, 8, -5]} />
-      <directionalLight color="#5DCAA5" intensity={0.2} position={[5, 3, 6]} />
-      <Stars
-        radius={42}
-        depth={18}
-        count={380}
-        factor={2.0}
-        saturation={0}
-        fade
-        speed={animate ? 0.5 : 0}
+      <color attach="background" args={[light.sky]} />
+      <fog attach="fog" args={[light.fog, 12, 34]} />
+      <ambientLight color={light.ambient} intensity={timeOfDay === "day" ? 0.85 : 0.48} />
+      <directionalLight
+        color={light.keyLight}
+        intensity={timeOfDay === "day" ? 1.45 : 1.08}
+        position={[-6, 8, -5]}
       />
-      {/* 月。縦長の画面は左右の視野が狭いので、置く場所と大きさを分けて決める:
-          位置はgroupで、見かけの大きさはscaleで(近くに置くと巨大になり時計に被る)。 */}
-      <group position={MOON_POS} scale={0.4}>
-        <Moon position={[0, 0, 0]} />
+      <directionalLight color={light.fillLight} intensity={0.24} position={[5, 3, 6]} />
+      {light.stars > 0 && (
+        <Stars
+          radius={42}
+          depth={18}
+          count={light.stars}
+          factor={2.0}
+          saturation={0}
+          fade
+          speed={animate ? 0.5 : 0}
+        />
+      )}
+      {/* 天体。縦長画面では位置と見かけの大きさを分けて調整する。 */}
+      <group position={lightPosition} scale={light.celestial === "moon" ? 0.4 : 0.72}>
+        {light.celestial === "moon" ? (
+          <Moon position={[0, 0, 0]} />
+        ) : (
+          <Sun position={[0, 0, 0]} color={light.reflection} />
+        )}
       </group>
-      {/* 水面の月光の筋は月の真下に立てる。 */}
-      <Sea moonX={MOON_POS[0]} animate={animate} />
+      {/* 水面の反射は、その時間の太陽/月の真下に立てる。 */}
+      <Sea
+        moonX={lightPosition[0]}
+        animate={animate}
+        seaColor={light.sea}
+        deepColor={light.seaDeep}
+        lightColor={light.reflection}
+        reflection={timeOfDay === "day" ? 0.34 : 0.5}
+      />
       <Horizon />
       <PassingSwells animate={animate} flow={resting ? RESTING_FLOW : 1} />
-      <Gulls flock={VOYAGING_GULLS} animate={animate} />
+      {timeOfDay !== "night" && <Gulls flock={VOYAGING_GULLS} animate={animate} />}
       {/* 数分に一度、水平線の手前を他人の船の灯が渡っていく。
           既定の視線を横切る向きに置く(VIEW_YAW)。 */}
       <group rotation={[0, VIEW_YAW, 0]}>
@@ -183,7 +213,15 @@ export interface VoyagingWorldProps {
   hasDestination: boolean;
   /// 記録の書き込み中。二重に押させない。
   saving?: boolean;
+  /// 保存成功後に、航海中の海を残したまま表示する完了内容。
+  completion?: {
+    minutes: number;
+    note?: string;
+    styleToken: string;
+    symbolToken: string;
+  };
   onFinish: (note: string) => void;
+  onHome: () => void;
   onDiscard: () => void;
   /// 世界を閉じるだけ(計測は続く)。
   onMinimize: () => void;
@@ -199,7 +237,9 @@ export default function VoyagingWorld({
   timer,
   hasDestination,
   saving = false,
+  completion,
   onFinish,
+  onHome,
   onDiscard,
   onMinimize,
   onToggleMode,
@@ -207,10 +247,11 @@ export default function VoyagingWorld({
   onToggleBreak,
 }: VoyagingWorldProps) {
   const mode = timer.mode;
-  const resting = isOnBreak(timer);
+  const resting = completion ? false : isOnBreak(timer);
   const [animate] = useState(
     () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
+  const timeOfDay = useTimeOfDay();
   const [note, setNote] = useState("");
   const [sound, setSound] = useState<SoundMode>(() => soundPref());
   const [now, setNow] = useState(() => Date.now());
@@ -220,9 +261,10 @@ export default function VoyagingWorld({
   const pointerDown = useRef<{ x: number; y: number; onWorld: boolean } | null>(null);
 
   useEffect(() => {
+    if (completion) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [completion]);
 
   const sec = elapsedSec(timer, now);
   const phase = mode === "pomo" && !resting ? pomoPhase(sec) : null;
@@ -239,11 +281,18 @@ export default function VoyagingWorld({
 
   // タイトルにも出す。タブが後ろにいても進み具合が分かる。
   useEffect(() => {
-    document.title = `${display} · ${itemName} · Landfall`;
+    document.title = completion
+      ? `${durationLabel(completion.minutes)} · ${itemName} · KeelMira`
+      : `${display} · ${itemName} · KeelMira`;
     return () => {
-      document.title = "Landfall — Study Log";
+      document.title = "KeelMira — Study Log";
     };
-  }, [display, itemName]);
+  }, [completion, display, itemName]);
+
+  // 記録が海へ刻まれた瞬間を、短い音でも知らせる。
+  useEffect(() => {
+    if (completion) playChime();
+  }, [completion]);
 
   // BGM。航海の世界を見ているあいだ流れる(畳んでいるあいだは浮きピル側が受け持つ)。
   useEffect(() => {
@@ -260,26 +309,27 @@ export default function VoyagingWorld({
   const soundLabel =
     sound === "off" ? t("soundOff") : sound === "waves" ? t("soundWaves") : t("soundPiano");
 
-  // 端末の「戻る」は「閉じるだけ」(計測は続ける)。Androidでアプリが終了するのを防ぐ。
-  useBackToClose(true, onMinimize);
+  // 計測中の「戻る」は世界を畳む。完了後は戻り先のない浮きチップを作らず、
+  // 明示ボタンと同じくホームへ戻す。
+  const closeAction = completion ? onHome : onMinimize;
+  useBackToClose(true, closeAction);
+  useBodyScrollLock();
 
   // Escは「閉じるだけ」(計測は続ける)。取り消しと混同させない。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onMinimize();
+      if (e.key === "Escape") closeAction();
     };
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
     };
-  }, [onMinimize]);
+  }, [closeAction]);
 
   return (
     <div
-      className="voyaging-world"
+      className={`voyaging-world time-${timeOfDay}`}
+      data-time-of-day={timeOfDay}
       role="dialog"
       aria-modal="true"
       // 世界を「タップ」したらUIを消して世界だけにする(もう一度で戻る)。
@@ -292,9 +342,11 @@ export default function VoyagingWorld({
         pointerDown.current = {
           x: e.clientX,
           y: e.clientY,
-          onWorld: !(e.target as HTMLElement).closest(
-            ".voyaging-top, .voyaging-panel",
-          ),
+          onWorld:
+            !completion &&
+            !(e.target as HTMLElement).closest(
+              ".voyaging-top, .voyaging-panel, .voyaging-complete",
+            ),
         };
       }}
       onPointerUp={(e) => {
@@ -312,86 +364,152 @@ export default function VoyagingWorld({
           showIsland={hasDestination}
           timer={timer}
           resting={resting}
+          timeOfDay={timeOfDay}
         />
       </Canvas>
 
-      <div className={`voyaging-ui${uiHidden ? " hidden" : ""}`}>
-        <div className="voyaging-top">
-          <div className="voyaging-heading">
-            <p className="voyaging-item">{itemName}</p>
-            <p className="voyaging-clock">{display}</p>
-            <p className="voyaging-phase">
-              {resting
-                ? t("restingNow")
-                : phase
-                  ? phase.inFocus
-                    ? t("focusLabel")
-                    : t("breakLabel")
-                  : t("voyagingNow")}
-            </p>
-            {/* 休憩。押すと時計が止まり、甲板の航海士が腰を下ろす。
-                設定(下のチップ)でも記録の締め(下のパネル)でもない、
-                この航海の途中の行動なので、時計のすぐ下に単独で置く。 */}
-            <button
-              className={`voyaging-break${resting ? " on" : ""}`}
-              onClick={() => {
-                // 休憩ぶんはこの瞬間に引かれる。1秒ごとの now のままだと
-                // 再開した瞬間だけ時計が1秒巻き戻って見えるので、取り直す。
-                setNow(Date.now());
-                onToggleBreak();
-              }}
-            >
-              {resting ? t("endBreak") : t("takeBreak")}
-            </button>
-            {/* 航海の「進み方」の設定。下の行動(記録する/やめる)とは別ものなので、
-                時計のそばに小さく置いて混ぜない。 */}
-            <div className="voyaging-modes">
+      {!completion && (
+        <div className={`voyaging-ui${uiHidden ? " hidden" : ""}`}>
+          <div className="voyaging-top">
+            <div className="voyaging-heading">
+              <p className="voyaging-item">{itemName}</p>
+              <p className="voyaging-clock">{display}</p>
+              <p className="voyaging-phase">
+                {resting
+                  ? t("restingNow")
+                  : phase
+                    ? phase.inFocus
+                      ? t("focusLabel")
+                      : t("breakLabel")
+                    : t("voyagingNow")}
+              </p>
+              {/* 休憩。押すと時計が止まり、甲板の航海士が腰を下ろす。
+                  設定(下のチップ)でも記録の締め(下のパネル)でもない、
+                  この航海の途中の行動なので、時計のすぐ下に単独で置く。 */}
               <button
-                className={`voyaging-mode${mode === "pomo" ? " on" : ""}`}
-                onClick={onToggleMode}
-                aria-pressed={mode === "pomo"}
+                className={`voyaging-break${resting ? " on" : ""}`}
+                onClick={() => {
+                  // 休憩ぶんはこの瞬間に引かれる。1秒ごとの now のままだと
+                  // 再開した瞬間だけ時計が1秒巻き戻って見えるので、取り直す。
+                  setNow(Date.now());
+                  onToggleBreak();
+                }}
               >
-                {t("pomodoroChip")}
+                {resting ? t("endBreak") : t("takeBreak")}
               </button>
-              <button className="voyaging-mode" onClick={cycleSound}>
-                {soundLabel}
+              {/* 航海の「進み方」の設定。下の行動(記録する/やめる)とは別ものなので、
+                  時計のそばに小さく置いて混ぜない。 */}
+              <div className="voyaging-modes">
+                <button
+                  className={`voyaging-mode${mode === "pomo" ? " on" : ""}`}
+                  onClick={onToggleMode}
+                  aria-pressed={mode === "pomo"}
+                >
+                  {t("pomodoroChip")}
+                </button>
+                <button className="voyaging-mode" onClick={cycleSound}>
+                  {soundLabel}
+                </button>
+              </div>
+              {/* 見渡せること・世界だけにできることを知らせる。 */}
+              <p className="voyaging-hint">{t("lookAroundHint")}</p>
+            </div>
+            <button className="voyage-world-close" onClick={onMinimize}>
+              {t("close")}
+            </button>
+          </div>
+
+          {/* 下のパネルは「この航海をどうするか」だけ。 */}
+          <div className="voyaging-panel">
+            <input
+              className="field"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder={t("noteOptional")}
+              maxLength={120}
+              aria-label={t("noteOptional")}
+            />
+            <button
+              className="primary-button voyaging-record"
+              onClick={() => onFinish(note)}
+              disabled={saving}
+            >
+              {t("finishVoyage")}
+            </button>
+            <div className="voyaging-alt">
+              <button className="voyaging-link" onClick={onManual}>
+                {t("enterByHand")}
+              </button>
+              <button className="voyaging-link danger" onClick={onDiscard}>
+                {t("discardVoyage")}
               </button>
             </div>
-            {/* 見渡せること・世界だけにできることを知らせる。 */}
-            <p className="voyaging-hint">{t("lookAroundHint")}</p>
           </div>
-          <button className="voyage-world-close" onClick={onMinimize}>
-            {t("close")}
-          </button>
         </div>
+      )}
 
-        {/* 下のパネルは「この航海をどうするか」だけ。 */}
-        <div className="voyaging-panel">
-          <input
-            className="field"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder={t("noteOptional")}
-            maxLength={120}
-            aria-label={t("noteOptional")}
-          />
-          <button
-            className="primary-button voyaging-record"
-            onClick={() => onFinish(note)}
-            disabled={saving}
-          >
-            {t("finishVoyage")}
-          </button>
-          <div className="voyaging-alt">
-            <button className="voyaging-link" onClick={onManual}>
-              {t("enterByHand")}
-            </button>
-            <button className="voyaging-link danger" onClick={onDiscard}>
-              {t("discardVoyage")}
-            </button>
-          </div>
-        </div>
-      </div>
+      {completion && (
+        <VoyageCompletion
+          itemName={itemName}
+          minutes={completion.minutes}
+          note={completion.note}
+          styleToken={completion.styleToken}
+          symbolToken={completion.symbolToken}
+          onHome={onHome}
+        />
+      )}
     </div>
+  );
+}
+
+function VoyageCompletion({
+  itemName,
+  minutes,
+  note,
+  styleToken,
+  symbolToken,
+  onHome,
+}: {
+  itemName: string;
+  minutes: number;
+  note?: string;
+  styleToken: string;
+  symbolToken: string;
+  onHome: () => void;
+}) {
+  const style = itemStyleColors(styleToken);
+
+  return (
+    <section
+      className="voyaging-complete"
+      role="status"
+      aria-live="polite"
+      aria-label={t("voyageComplete")}
+    >
+      <div className="voyaging-complete-card">
+        <span className="voyaging-complete-line" aria-hidden="true" />
+        <p className="voyaging-complete-eyebrow">{t("voyageComplete")}</p>
+        <div
+          className="voyaging-complete-icon"
+          style={{ background: style.bg }}
+          aria-hidden="true"
+        >
+          <TileSymbolSvg
+            symbol={normalizeSymbol(symbolToken)}
+            fg={style.fg}
+            bg={style.bg}
+          />
+        </div>
+        <p className="voyaging-complete-label">{t("completedWork")}</p>
+        <h2 className="voyaging-complete-name">{itemName}</h2>
+        {note && <p className="voyaging-complete-note">{note}</p>}
+        <p className="voyaging-complete-time">
+          {t("completedTotal")} {durationLabel(minutes)}
+        </p>
+        <button className="primary-button voyaging-complete-home" onClick={onHome}>
+          {t("returnHome")}
+        </button>
+      </div>
+    </section>
   );
 }

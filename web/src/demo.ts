@@ -4,9 +4,12 @@ import type { HarborMember, HarborRoom, HarborVoyage } from "./harbor";
 import { generateRoutes } from "./voyageMap";
 
 // URLに #demo を付けたときだけ使う見本データ(デザイン確認用。Firestoreには触れない)。
+// 本番で #demo が残ると、実データが消えたように見えてしまうため開発環境だけで有効にする。
 
 export const isDemo =
-  typeof window !== "undefined" && window.location.hash === "#demo";
+  import.meta.env.DEV &&
+  typeof window !== "undefined" &&
+  window.location.hash === "#demo";
 
 // ---- 港のデモ(プライベートの港と「みんなの海」の見本) ----
 
@@ -194,5 +197,28 @@ export function demoData(): UserData {
       updatedAt: now,
     },
   ];
-  return { items, sessions, days, destinations, ready: true, failed: false, retry: () => {} };
+  const voyageLogs = [
+    {
+      id: dayId(now),
+      date: startOfDay(now),
+      body: "朝は静かな海。英語を30分進め、夜は読書の続きを開いた。",
+      updatedAt: now,
+    },
+    {
+      id: dayId(new Date(now.getFullYear() - 1, 10, 3)),
+      date: startOfDay(new Date(now.getFullYear() - 1, 10, 3)),
+      body: "遠くまで進めた日。迷いながらも、昨日より少し先の景色が見えた。",
+      updatedAt: new Date(now.getFullYear() - 1, 10, 3, 21),
+    },
+  ];
+  return {
+    items,
+    sessions,
+    days,
+    voyageLogs,
+    destinations,
+    ready: true,
+    failed: false,
+    retry: () => {},
+  };
 }

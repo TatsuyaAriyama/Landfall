@@ -7,8 +7,6 @@ import type { BoatParts } from "../symbols";
 // 低ポリ+flatShadingのフラットな質感で、2DのBoatSvgと同じ配色契約(boatProps)に従う。
 
 const WOOD = "#5A2A15";
-export const NAVIGATOR_DECK_POSITION: [number, number, number] = [0.74, 0.68, 0.18];
-export const NAVIGATOR_DECK_SCALE = 0.62;
 
 /// 舳先の上がった三日月型の船体。側面プロフィールを押し出し、
 /// 端に向かって幅を絞って(plan view も船形に)低ポリの丸みはベベルで作る。
@@ -81,31 +79,6 @@ function makeSailGeometry(
   return geo;
 }
 
-function makeFlagGeometry(kind: "pennant" | "swallow" | "kraken"): THREE.BufferGeometry {
-  const s = new THREE.Shape();
-  if (kind === "pennant") {
-    s.moveTo(0, 0);
-    s.lineTo(0, 0.22);
-    s.lineTo(-0.5, 0.11);
-  } else if (kind === "swallow") {
-    s.moveTo(0, 0);
-    s.lineTo(0, 0.22);
-    s.lineTo(-0.52, 0.22);
-    s.lineTo(-0.33, 0.11);
-    s.lineTo(-0.52, 0);
-  } else {
-    // 港の試練の戦利品。触腕を思わせる、曲線の二叉。
-    s.moveTo(0, 0);
-    s.lineTo(0, 0.22);
-    s.quadraticCurveTo(-0.36, 0.28, -0.56, 0.21);
-    s.quadraticCurveTo(-0.36, 0.16, -0.27, 0.11);
-    s.quadraticCurveTo(-0.36, 0.06, -0.56, 0.01);
-    s.quadraticCurveTo(-0.36, -0.06, 0, 0);
-  }
-  s.closePath();
-  return new THREE.ShapeGeometry(s);
-}
-
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
 const HULL_GEO = makeHullGeometry();
 const MAIN_SAIL_GEO = makeSailGeometry(1.0, 1.8, 0.16, 0);
@@ -114,32 +87,14 @@ const DECK_GEO = new THREE.CylinderGeometry(1, 1, 0.06, 14);
 const MAST_GEO = new THREE.CylinderGeometry(0.035, 0.028, 2.3, 8);
 const BOOM_GEO = new THREE.CylinderGeometry(0.024, 0.024, 1.15, 8);
 const STRIPE_GEO = new THREE.TorusGeometry(1, 0.05, 8, 40);
-const PENNANT_GEO = makeFlagGeometry("pennant");
-const SWALLOW_GEO = makeFlagGeometry("swallow");
-const KRAKEN_FLAG_GEO = makeFlagGeometry("kraken");
-const KRAKEN_FLAG_EYE_GEO = new THREE.CircleGeometry(0.028, 8);
-
-const FLAG_GEOS: Record<string, THREE.BufferGeometry> = {
-  pennant: PENNANT_GEO,
-  swallow: SWALLOW_GEO,
-  kraken: KRAKEN_FLAG_GEO,
-};
-const FLAG_COLORS: Record<string, string> = {
-  pennant: "#F5822A",
-  swallow: "#F0997B",
-  kraken: "#1A1130",
-};
-
 /// 船本体。ゆっくり上下+ロール+微ピッチで、錨泊中の揺れを再現する。
 export default function BoatModel({ parts, animate }: { parts: BoatParts; animate: boolean }) {
   const sail = parts.sail ?? "#EADEBD";
   const jib = parts.jib ?? "#EADEBD";
   const hull = parts.hull ?? "#EADEBD";
   const stripe = parts.stripe ?? "none";
-  const flag = parts.flag ?? "none";
   const deck = new THREE.Color(hull).multiplyScalar(0.72);
   const group = useRef<THREE.Group>(null);
-  const flagGroup = useRef<THREE.Group>(null);
 
   useFrame(({ clock }) => {
     if (!animate) return;
@@ -150,7 +105,6 @@ export default function BoatModel({ parts, animate }: { parts: BoatParts; animat
       g.rotation.z = Math.sin(time * 0.6) * 0.03;
       g.rotation.x = Math.sin(time * 0.5 + 1.2) * 0.015;
     }
-    if (flagGroup.current) flagGroup.current.rotation.y = Math.sin(time * 5.2) * 0.22;
   });
 
   return (
@@ -195,25 +149,6 @@ export default function BoatModel({ parts, animate }: { parts: BoatParts; animat
         >
           <meshStandardMaterial color={stripe} flatShading roughness={0.85} />
         </mesh>
-      )}
-      {/* 旗(マスト頂ではためく) */}
-      {flag in FLAG_GEOS && (
-        <group ref={flagGroup} position={[0.1, 2.34, 0]}>
-          <mesh geometry={FLAG_GEOS[flag]}>
-            <meshStandardMaterial
-              color={FLAG_COLORS[flag]}
-              flatShading
-              roughness={0.9}
-              side={THREE.DoubleSide}
-            />
-          </mesh>
-          {/* 海獣の旗には returnOrange の小さな目を添える(2Dの図案と同じ) */}
-          {flag === "kraken" && (
-            <mesh geometry={KRAKEN_FLAG_EYE_GEO} position={[-0.12, 0.11, 0.002]}>
-              <meshBasicMaterial color="#F5822A" side={THREE.DoubleSide} />
-            </mesh>
-          )}
-        </group>
       )}
     </group>
   );

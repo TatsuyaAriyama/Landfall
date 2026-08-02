@@ -10,7 +10,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  CHAT_REACTIONS,
   HarborError,
   PUBLIC_HARBORS,
   blockUser,
@@ -27,10 +26,12 @@ import {
   leavePublic,
   leaveRoom,
   listenChat,
+  listenMembers,
+  listenRooms,
   listenVoyage,
   loadBlocked,
   markVoyageArrived,
-  reactChat,
+  normalizeRoomCode,
   reportUser,
   sendChat,
   voyageProgressMinutes,
@@ -57,7 +58,6 @@ import {
 import { PlayerAvatar, TileSymbolSvg } from "../symbols";
 import { ProfileEditor } from "./ProfileEditor";
 import { MemberTrace } from "./MemberTrace";
-import { VoyageChartPanel } from "./VoyageChart";
 import { Modal, askConfirm, showToast } from "../overlays";
 import {
   chatDateLabel,
@@ -68,9 +68,9 @@ import {
   inviteShareLine,
   t,
   tf,
-  type I18nKey,
 } from "../i18n";
 import { serviceStartDay } from "../since";
+import { useVoyagePass } from "../billing";
 
 // three.js を含む「みんなの海」は重いので、プライベートの港を開いたときだけ読み込む。
 const HarborWorld = lazy(() => import("../three/HarborWorld"));
@@ -151,13 +151,23 @@ async function checkVoyageLootOnce(rooms: HarborRoom[]): Promise<void> {
   if (granted) showToast(t("lootToast"));
 }
 
-export function HarborView({ uid, data }: { uid: string; data: UserData }) {
+export function HarborView({
+  uid,
+  data,
+  inviteCode,
+}: {
+  uid: string;
+  data: UserData;
+  inviteCode?: string;
+}) {
   const [nav, setNav] = useState<HarborNav>({ type: "root" });
   const [rooms, setRooms] = useState<HarborRoom[]>([]);
   const [publicJoined, setPublicJoined] = useState<Set<string>>(cachedPublicJoined());
   const [blocked, setBlocked] = useState<Set<string>>(new Set());
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileTick, setProfileTick] = useState(0);
+  const [pendingInvite, setPendingInvite] = useState(inviteCode);
+  const voyagePass = useVoyagePass();
 
   const reload = useCallback(async () => {
     // デモ(#demo)はFirestoreに触れず、見本の港をひとつ見せる。
@@ -178,7 +188,20 @@ export function HarborView({ uid, data }: { uid: string; data: UserData }) {
 
   useEffect(() => {
     void reload();
+    if (isDemo) return;
+    return listenRooms((next) => {
+      setRooms(next);
+      void checkVoyageLootOnce(next);
+    });
   }, [reload]);
+
+  const clearInvite = useCallback(() => {
+    setPendingInvite(undefined);
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("invite")) return;
+    url.searchParams.delete("invite");
+    history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   if (nav.type === "member") {
     return (
@@ -251,10 +274,13 @@ export function HarborView({ uid, data }: { uid: string; data: UserData }) {
       onEditProfile={() => setEditingProfile(true)}
       onChanged={reload}
       editingProfile={editingProfile}
+      inviteCode={pendingInvite}
+      onInviteHandled={clearInvite}
       onCloseProfile={() => {
         setEditingProfile(false);
         setProfileTick((n) => n + 1);
       }}
+      hasVoyagePass={voyagePass.active}
     />
   );
 }
@@ -270,7 +296,10 @@ function HarborRoot({
   onEditProfile,
   onChanged,
   editingProfile,
+  inviteCode,
+  onInviteHandled,
   onCloseProfile,
+  hasVoyagePass,
 }: {
   rooms: HarborRoom[];
   publicJoined: Set<string>;
@@ -280,10 +309,13 @@ function HarborRoot({
   onEditProfile: () => void;
   onChanged: () => Promise<void>;
   editingProfile: boolean;
+  inviteCode?: string;
+  onInviteHandled: () => void;
   onCloseProfile: () => void;
+  hasVoyagePass: boolean;
 }) {
   const [creating, setCreating] = useState(false);
-  const [joining, setJoining] = useState(false);
+  const [joining, setJoining] = useState(() => Boolean(inviteCode));
   const cardStyle = STYLE_COLORS[normalizeProfileStyle(PlayerProfile.styleToken)];
   // このサービスを使い始めた日(since.ts)。
   const sinceDay = serviceStartDay(data.days, data.sessions);
@@ -302,7 +334,14 @@ function HarborRoot({
           size={56}
         />
         <div className="player-card-texts">
-          <div className="player-card-name">{PlayerProfile.displayName}</div>
+          <div className="player-card-name-row">
+            <div className="player-card-name">{PlayerProfile.displayName}</div>
+            {hasVoyagePass && (
+              <span className="player-card-pass" aria-label={t("voyagePass")}>
+                <TileSymbolSvg symbol="compass" fg="#ffd84d" bg="#2c2a28" />
+              </span>
+            )}
+          </div>
           {PlayerProfile.resolve && (
             <div className="player-card-resolve">{PlayerProfile.resolve}</div>
           )}
@@ -381,8 +420,10 @@ function HarborRoot({
       {joining && (
         <JoinRoomDialog
           data={data}
+          initialCode={inviteCode}
           onClose={async (changed) => {
             setJoining(false);
+            onInviteHandled();
             if (changed) await onChanged();
           }}
         />
@@ -445,17 +486,19 @@ function CreateRoomDialog({
 
 function JoinRoomDialog({
   data,
+  initialCode,
   onClose,
 }: {
   data: UserData;
+  initialCode?: string;
   onClose: (changed: boolean) => void;
 }) {
-  const [code, setCode] = useState("");
+  const [code, setCode] = useState(() => normalizeRoomCode(initialCode ?? ""));
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
 
   const join = async () => {
-    if (code.trim().length < 6 || working) return;
+    if (code.length !== 6 || working) return;
     setWorking(true);
     try {
       await joinRoom(code, data);
@@ -474,19 +517,22 @@ function JoinRoomDialog({
         <input
           className="field code-field"
           value={code}
-          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          onChange={(e) => setCode(normalizeRoomCode(e.target.value))}
           placeholder={t("codePlaceholder")}
-          maxLength={6}
           autoCapitalize="characters"
           autoCorrect="off"
+          spellCheck={false}
           autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && code.length === 6) void join();
+          }}
         />
         {error && <p className="harbor-error">{error}</p>}
         <div style={{ height: 24 }} />
         <button
           className="primary-button"
           onClick={join}
-          disabled={code.trim().length < 6 || working}
+          disabled={code.length !== 6 || working}
         >
           {t("join")}
         </button>
@@ -728,9 +774,47 @@ function RoomDetail({
   const [members, setMembers] = useState<HarborMember[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [arrivingMemberIds, setArrivingMemberIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const compactInputRef = useRef<HTMLInputElement>(null);
+  const compactMessagesRef = useRef<HTMLDivElement>(null);
+  const knownMemberIds = useRef<Set<string> | null>(null);
+  const arrivalTimers = useRef<number[]>([]);
+
+  const applyMembers = useCallback((next: HarborMember[]) => {
+    const ids = new Set(next.map((member) => member.id));
+    const known = knownMemberIds.current;
+    knownMemberIds.current = ids;
+    setMembers(next);
+    // 最初の取得は既に在港していた船なので静かに配置する。以後に増えた船だけを
+    // 画面外から入港させ、プロフィール更新では演出を繰り返さない。
+    if (known === null) return;
+    const added = [...ids].filter((id) => !known.has(id));
+    if (added.length === 0) return;
+    setArrivingMemberIds((current) => new Set([...current, ...added]));
+    arrivalTimers.current.push(
+      window.setTimeout(() => {
+        setArrivingMemberIds((current) => {
+          const remaining = new Set(current);
+          for (const id of added) remaining.delete(id);
+          return remaining;
+        });
+      }, 4200),
+    );
+  }, []);
+
+  useEffect(
+    () => () => {
+      arrivalTimers.current.forEach((id) => window.clearTimeout(id));
+      arrivalTimers.current.length = 0;
+    },
+    [],
+  );
 
   // 削除できる一時間の窓を、新着メッセージが無くても数え切れるように
   // 1分おきに再評価する(でないと1時間を過ぎても削除ボタンが残り続ける)。
@@ -770,12 +854,15 @@ function RoomDetail({
   useEffect(() => {
     // デモ(#demo)は見本のメンバーと航海だけ(Firestoreは購読しない)。
     if (isDemo) {
-      setMembers(demoHarborMembers());
+      const demoMembers = demoHarborMembers();
+      applyMembers(demoMembers.slice(0, -1));
+      // 招待された船の入港を、Firestoreを使わずデザイン確認できる見本。
+      const arrival = window.setTimeout(() => applyMembers(demoMembers), 900);
       setVoyage(demoVoyage());
       setVoyageProgress(demoVoyageProgressMinutes());
-      return;
+      return () => window.clearTimeout(arrival);
     }
-    void fetchMembers("rooms", room.id).then(setMembers);
+    const stopMembers = listenMembers("rooms", room.id, applyMembers);
     const stopChat = listenChat(room.id, (msgs) => {
       setMessages(msgs);
       // マウント後に新しく届いた着岸/帰還を「一撃」として世界へ流し、
@@ -807,10 +894,11 @@ function RoomDetail({
       if (v && !v.arrivedAt) void refreshVoyageProgress();
     });
     return () => {
+      stopMembers();
       stopChat();
       stopVoyage();
     };
-  }, [room.id, refreshVoyageProgress]);
+  }, [room.id, refreshVoyageProgress, applyMembers]);
 
   // 合算が目標に達したのを見た閲覧者が、到着を一度だけ刻む。
   // (並走した他の閲覧者の2回目はルールで拒否される — 握りつぶす。)
@@ -829,24 +917,59 @@ function RoomDetail({
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
+    const compact = compactMessagesRef.current;
+    if (!compact) return;
+    // 最新付近を読んでいる間だけ新着へ追従する。過去ログを読んで上へ
+    // スクロールしている最中は、勝手に最下部へ戻さない。
+    const distanceFromBottom =
+      compact.scrollHeight - compact.scrollTop - compact.clientHeight;
+    if (distanceFromBottom < 80) {
+      requestAnimationFrame(() => {
+        compact.scrollTop = compact.scrollHeight;
+      });
+    }
   }, [messages.length]);
+
+  const attachCompactMessages = useCallback((node: HTMLDivElement | null) => {
+    compactMessagesRef.current = node;
+    if (!node) return;
+    // 世界へ入ってチャットが初めてマウントされたときは、最新の発言を見せる。
+    requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+  }, []);
 
   const memberById = new Map(members.map((m) => [m.id, m]));
   const nameOf = (id: string) => memberById.get(id)?.displayName ?? t("sailor");
   const visibleMessages = messages.filter((m) => !blocked.has(m.uid));
+  const compactMessages = visibleMessages;
+  const compactMessageLine = (message: ChatMessage): string => {
+    const name = nameOf(message.uid);
+    if (message.kind === "text") return `${name}: ${message.text ?? ""}`;
+    return message.kind === "return"
+      ? chatReturnLine(name, message.gapDays ?? 0)
+      : chatLandfallLine(name, message.itemName ?? "—", message.minutes ?? 0);
+  };
 
   const send = async () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || sending) return;
+    setSending(true);
     setDraft("");
     // 送信後もフォーカスを保ち、続けて書けるようにする。
-    inputRef.current?.focus();
+    const focused =
+      document.activeElement instanceof HTMLInputElement
+        ? document.activeElement
+        : compactInputRef.current ?? inputRef.current;
+    focused?.focus();
     try {
       await sendChat(room.id, text);
     } catch {
       // 書いた言葉を消さない — 入力欄へ戻して再送できるようにする。
       setDraft(text);
       showToast(t("errGeneric"));
+    } finally {
+      setSending(false);
     }
   };
 
@@ -866,10 +989,13 @@ function RoomDetail({
 
   // 招待をOSの共有シートで送る(対応ブラウザのみ表示)。
   const shareInvite = () => {
+    const inviteUrl = new URL("https://aftide.app");
+    inviteUrl.searchParams.set("invite", room.id);
+    inviteUrl.hash = "harbor";
     void navigator
       .share({
         text: inviteShareLine(room.name, room.id),
-        url: "https://landfall-studylog.com",
+        url: inviteUrl.toString(),
       })
       .catch(() => {});
   };
@@ -937,27 +1063,75 @@ function RoomDetail({
         </div>
       </div>
 
-      {/* みんなの海: メンバー全員の船が同じ夜の海で島へ並走する3D。
-          船をタップするとその人の軌跡へ。失敗時は静かに何も出さない。 */}
+      {/* みんなの海: メンバー全員の船と航海士が同じ夜の海で島へ並走する3D。
+          船は詳細ボタンにせず、港の景色として扱う。 */}
       {canUseWebGL() && (
         <HarborWorldBoundary>
           <Suspense fallback={<div className="harbor-world-fallback" />}>
             <HarborWorld
+              currentUid={uid}
               room={room}
               members={members}
-              selfUid={uid}
-              onSelectMember={onOpenMember}
               voyage={voyage}
               route={route}
               progressMinutes={voyageProgress}
               strike={strike}
+              arrivingMemberIds={arrivingMemberIds}
+              immersiveChat={
+                <section
+                  className="harbor-world-chat-mini"
+                  aria-label={t("chatTitle")}
+                  onPointerDown={(event) => event.stopPropagation()}
+                >
+                  <div
+                    ref={attachCompactMessages}
+                    className="harbor-world-chat-mini-messages"
+                    aria-live="polite"
+                  >
+                    {compactMessages.length === 0 ? (
+                      <span className="harbor-world-chat-mini-empty">{t("chatEmpty")}</span>
+                    ) : (
+                      compactMessages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`harbor-world-chat-mini-line${
+                            message.uid === uid ? " mine" : ""
+                          }${message.kind !== "text" ? " auto" : ""}`}
+                        >
+                          {compactMessageLine(message)}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <form
+                    className="harbor-world-chat-mini-input"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void send();
+                    }}
+                    aria-busy={sending}
+                  >
+                    <input
+                      ref={compactInputRef}
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      placeholder={t("chatPlaceholder")}
+                      aria-label={t("chatPlaceholder")}
+                      maxLength={500}
+                    />
+                    <span className="chat-count" aria-live="polite">{draft.length}/500</span>
+                    <button type="submit" disabled={!draft.trim() || sending}>
+                      {t("send")}
+                    </button>
+                  </form>
+                </section>
+              }
             />
           </Suspense>
         </HarborWorldBoundary>
       )}
 
-      {/* 共同航海: 無ければ海図パネル、到着済みなら「次の航海」。 */}
-      {!isDemo && voyage === null && <VoyageChartPanel roomId={room.id} />}
+      {/* 共同航海の新規設定UIは置かない。進行中／到着済みの航海表示だけを残す。 */}
       {!isDemo && voyage?.arrivedAt && (
         <div className="quest-done-row">
           <span className="badge">{t("voyageArrivedBadge")}</span>
@@ -1014,7 +1188,6 @@ function RoomDetail({
                 message={m}
                 name={nameOf(m.uid)}
                 sender={memberById.get(m.uid)}
-                onReact={(token) => void reactChat(room.id, m, token)}
                 onDelete={
                   m.uid === uid && nowTick - m.createdAt.getTime() < CHAT_DELETE_WINDOW_MS
                     ? async () => {
@@ -1040,7 +1213,14 @@ function RoomDetail({
         })}
         <div ref={endRef} />
       </div>
-      <div className="chat-input">
+      <form
+        className="chat-input"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
+        aria-busy={sending}
+      >
         <input
           ref={inputRef}
           className="field"
@@ -1048,14 +1228,13 @@ function RoomDetail({
           onChange={(e) => setDraft(e.target.value)}
           placeholder={t("chatPlaceholder")}
           maxLength={500}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) void send();
-          }}
+          aria-label={t("chatPlaceholder")}
         />
-        <button className="chip" onClick={send} disabled={!draft.trim()}>
+        <span className="chat-count" aria-live="polite">{draft.length}/500</span>
+        <button className="chip" type="submit" disabled={!draft.trim() || sending}>
           {t("send")}
         </button>
-      </div>
+      </form>
 
       <div style={{ marginTop: 28 }}>
         <button className="quiet-button danger-text" onClick={leave}>
@@ -1066,35 +1245,11 @@ function RoomDetail({
   );
 }
 
-const REACTION_LABEL_KEY: Record<(typeof CHAT_REACTIONS)[number], I18nKey> = {
-  heart: "reactionHeart",
-  lighthouse: "reactionLighthouse",
-};
-
-/// リアクションの印。共有アイテムアイコン(TileSymbolSvg/TILE_SYMBOLS)とは
-/// 別枠 — チャットの反応だけの語彙にして、項目アイコン一覧やiOS側の
-/// シンボル集合に影響させない。
-function ReactionSymbolSvg({ token }: { token: (typeof CHAT_REACTIONS)[number] }) {
-  if (token === "heart") {
-    return (
-      <svg viewBox="0 0 200 200" aria-hidden="true">
-        <path
-          d="M100 172 C42 130 12 92 12 56 C12 27 35 6 62 6 C82 6 96 17 100 36
-             C104 17 118 6 138 6 C165 6 188 27 188 56 C188 92 158 130 100 172 Z"
-          fill="currentColor"
-        />
-      </svg>
-    );
-  }
-  return <TileSymbolSvg symbol="lighthouse" fg="currentColor" bg="transparent" />;
-}
-
 function ChatRow({
   uid,
   message,
   name,
   sender,
-  onReact,
   onDelete,
   onReport,
   onBlock,
@@ -1103,42 +1258,12 @@ function ChatRow({
   message: ChatMessage;
   name: string;
   sender?: HarborMember;
-  onReact: (token: string) => void;
   onDelete?: () => void;
   onReport?: () => void;
   onBlock?: () => void;
 }) {
   const [actionsOpen, setActionsOpen] = useState(false);
   const mine = message.uid === uid;
-
-  const counts = new Map<string, number>();
-  for (const token of Object.values(message.reactions)) {
-    counts.set(token, (counts.get(token) ?? 0) + 1);
-  }
-  const myReaction = message.reactions[uid];
-
-  const reactions = (
-    <div className="chat-reactions">
-      {CHAT_REACTIONS.map((token) => {
-        const count = counts.get(token) ?? 0;
-        const selected = myReaction === token;
-        return (
-          <button
-            key={token}
-            className={`reaction${selected ? " selected" : ""}${!selected && count === 0 ? " quiet" : ""}`}
-            onClick={() => onReact(token)}
-            aria-label={t(REACTION_LABEL_KEY[token])}
-            title={t(REACTION_LABEL_KEY[token])}
-          >
-            <span className="reaction-symbol">
-              <ReactionSymbolSvg token={token} />
-            </span>
-            {count > 0 && <span>{count}</span>}
-          </button>
-        );
-      })}
-    </div>
-  );
 
   if (message.kind !== "text") {
     const line =
@@ -1148,14 +1273,13 @@ function ChatRow({
     return (
       <div className={`chat-auto${message.kind === "return" ? " return" : ""}`}>
         <span>{line}</span>
-        {reactions}
       </div>
     );
   }
 
   return (
     <div className={`chat-msg${mine ? " mine" : ""}`}>
-      {!mine && (
+      <div className="chat-line">
         <div className="chat-name">
           {sender && (
             <PlayerAvatar
@@ -1166,16 +1290,15 @@ function ChatRow({
           )}
           <span>{name}</span>
         </div>
-      )}
-      <div
-        className="chat-bubble"
-        onClick={() => setActionsOpen((v) => !v)}
-        role="button"
-        tabIndex={0}
-      >
-        {message.text}
+        <button
+          className="chat-text"
+          onClick={() => setActionsOpen((v) => !v)}
+          aria-expanded={actionsOpen}
+        >
+          {message.text}
+        </button>
+        <span className="chat-time">{chatTimeLabel(message.createdAt)}</span>
       </div>
-      <span className="chat-time">{chatTimeLabel(message.createdAt)}</span>
       {actionsOpen && (
         <div className="chat-actions">
           {onDelete && (
@@ -1195,7 +1318,6 @@ function ChatRow({
           )}
         </div>
       )}
-      {reactions}
     </div>
   );
 }
