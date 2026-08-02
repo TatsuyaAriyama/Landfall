@@ -1,4 +1,4 @@
-"""Build Landfall's harbor pier, render a preview, and export a web GLB."""
+"""Build KeelMira's harbor pier, render a preview, and export a web GLB."""
 
 from __future__ import annotations
 
@@ -363,7 +363,7 @@ for index, height in enumerate((0.18, 0.37, 0.56)):
         6,
     )
 
-# A small return-orange pennant at the shore end anchors it to Landfall's palette.
+# A small return-orange pennant at the shore end anchors it to KeelMira's palette.
 beam("Pennant_Mast", (-0.61, 0.27, 0.75), (-0.61, 0.27, 1.65), 0.025, MATERIALS["wood"], 6)
 mesh = bpy.data.meshes.new("Pier_Pennant_Mesh")
 mesh.from_pydata(
