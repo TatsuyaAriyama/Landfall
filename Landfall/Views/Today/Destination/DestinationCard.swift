@@ -6,6 +6,22 @@ struct DestinationCard: View {
     let destination: Destination?
     let sessions: [StudySession]
     var onTap: () -> Void
+    var onLand: ((Destination) -> Void)?
+    var onMarkDone: ((Destination) -> Void)?
+
+    init(
+        destination: Destination?,
+        sessions: [StudySession],
+        onLand: ((Destination) -> Void)? = nil,
+        onMarkDone: ((Destination) -> Void)? = nil,
+        onTap: @escaping () -> Void
+    ) {
+        self.destination = destination
+        self.sessions = sessions
+        self.onTap = onTap
+        self.onLand = onLand
+        self.onMarkDone = onMarkDone
+    }
 
     private var progress: DestinationProgress? {
         destination?.progress(sessions: sessions)
@@ -16,18 +32,66 @@ struct DestinationCard: View {
         let ratio = progress?.ratio ?? 0.32
         let stepFlags = destination?.steps.map { VoyageStep(doneAt: $0.doneAt) } ?? []
 
-        Button(action: onTap) {
-            ZStack(alignment: .top) {
-                VoyageSceneView(ratio: ratio, steps: stepFlags)
-                overlay
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
+        ZStack(alignment: .bottom) {
+            Button(action: onTap) {
+                ZStack(alignment: .top) {
+                    VoyageSceneView(ratio: ratio, steps: stepFlags)
+                    overlay
+                        .padding(.horizontal, 18)
+                        .padding(.top, 14)
+                }
+                .frame(height: 200)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
             }
-            .frame(height: 240)
-            .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
+            .buttonStyle(LFPressableButtonStyle())
+
+            if let destination,
+               (!destination.manual || destination.manualDone),
+               let onLand {
+                Button {
+                    onLand(destination)
+                } label: {
+                    Text("Go ashore")
+                        .font(LFFont.copy(14))
+                        .foregroundStyle(LFColor.inkFixed)
+                        .padding(.horizontal, 22)
+                        .frame(minHeight: 38)
+                        .background(LFColor.harborSand, in: Capsule())
+                }
+                .buttonStyle(LFPressableButtonStyle())
+                .padding(.bottom, 14)
+            }
+
+            if let destination, destination.manual, !destination.manualDone, let onMarkDone {
+                VStack {
+                    HStack {
+                        Spacer()
+                        Button {
+                            onMarkDone(destination)
+                        } label: {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(LFColor.harborSand)
+                                .frame(width: 30, height: 30)
+                                .background(
+                                    Color(VoyageSceneKit.seaDeep).opacity(0.72),
+                                    in: Circle()
+                                )
+                                .overlay(
+                                    Circle()
+                                        .stroke(LFColor.harborSand.opacity(0.36), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(LFPressableButtonStyle())
+                        .accessibilityLabel(Text("Mark complete"))
+                    }
+                    Spacer()
+                }
+                .padding(12)
+            }
         }
-        .buttonStyle(LFPressableButtonStyle())
+        .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
@@ -66,14 +130,45 @@ struct DestinationCard: View {
     /// 進捗の一言。ステップ目標=「次: 〈ステップ〉」または「n / m」、期日=「あと◯日」。
     @ViewBuilder
     private func progressLabel(for destination: Destination, progress: DestinationProgress) -> some View {
-        if progress.stepsTotal != nil {
+        if progress.reached {
+            Text("Ready to go ashore")
+        } else if progress.stepsTotal != nil {
             if let next = destination.nextStepName {
                 Text("Next: \(next)")
             } else {
                 Text(verbatim: "\(progress.stepsDone ?? 0) / \(progress.stepsTotal ?? 0)")
             }
+        } else if let minutes = progress.remainingMinutes {
+            Text(remainingMinutesLabel(minutes))
+        } else if let seconds = progress.remainingSeconds {
+            Text(deadlineRemainingLabel(seconds))
         } else if let days = progress.remainingDays {
             Text("\(days) days left")
         }
+    }
+
+    private func remainingMinutesLabel(_ minutes: Int) -> String {
+        if minutes < 60 {
+            return LF.format("%lld minutes left", Int64(minutes))
+        }
+        let hours = minutes / 60
+        let remainder = minutes % 60
+        if remainder == 0 {
+            return LF.format("%lld hours left", Int64(hours))
+        }
+        return LF.format(
+            "%lld hours %lld minutes left",
+            Int64(hours),
+            Int64(remainder)
+        )
+    }
+
+    private func deadlineRemainingLabel(_ seconds: TimeInterval) -> String {
+        let minutes = max(0, Int(ceil(seconds / 60)))
+        if minutes < 24 * 60 {
+            return remainingMinutesLabel(minutes)
+        }
+        let days = Int(ceil(seconds / 86_400))
+        return LF.format("%lld days left", Int64(days))
     }
 }

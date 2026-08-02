@@ -24,13 +24,23 @@ enum DebugSeed {
         for session in (try? context.fetch(FetchDescriptor<StudySession>())) ?? [] { context.delete(session) }
         for day in (try? context.fetch(FetchDescriptor<StudyDay>())) ?? [] { context.delete(day) }
         for item in (try? context.fetch(FetchDescriptor<StudyItem>())) ?? [] { context.delete(item) }
+        for destination in (try? context.fetch(FetchDescriptor<Destination>())) ?? [] {
+            context.delete(destination)
+        }
         try? context.save()
 
-        // ストア用スクリーンショットは英語/日本語ロケール両方で撮るため、項目名・メモも実行時ロケールに合わせる。
-        let isJapanese = Locale.preferredLanguages.first?.hasPrefix("ja") ?? false
+        // ストア用スクリーンショットは英語/日本語の両方で撮る。SwiftUIへ
+        // LANDFALL_LANGを渡してもLocale.preferredLanguages自体は変わらないため、
+        // サンプルデータも同じ明示指定を優先する。
+        let forcedLanguage = ProcessInfo.processInfo.environment["LANDFALL_LANG"]
+        let isJapanese = forcedLanguage == "ja" ||
+            (forcedLanguage == nil && (Locale.preferredLanguages.first?.hasPrefix("ja") ?? false))
 
         // 学習項目(今日画面のタイル)。
         let development = StudyItem(name: isJapanese ? "開発" : "Coding", styleToken: "midnight", symbolToken: "phoenix", sortOrder: 0)
+        if ProcessInfo.processInfo.environment["LANDFALL_PRIVATE_PREVIEW"] == "1" {
+            development.uuid = UUID(uuidString: "00000000-0000-0000-0000-000000000042")!
+        }
         let reading = StudyItem(name: isJapanese ? "読書" : "Reading", styleToken: "coral", symbolToken: "book", sortOrder: 1)
         let writing = StudyItem(name: isJapanese ? "記事作成" : "Writing", styleToken: "ink", symbolToken: "pen", sortOrder: 2)
         let security = StudyItem(name: isJapanese ? "情報セキュリティ" : "Security exam", styleToken: "seaGreen", symbolToken: "wave", sortOrder: 3)
@@ -105,6 +115,54 @@ enum DebugSeed {
             )
         }
 
+        // 日別航海誌の確認用。昨日はまだ編集できる頁、5日前は読み返すだけの綴じた頁。
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: today) {
+            context.insert(StudySession(
+                date: calendar.date(byAdding: .hour, value: 19, to: calendar.startOfDay(for: yesterday)) ?? yesterday,
+                minutes: 35,
+                note: nil,
+                item: reading
+            ))
+            StudyDayStore.markDay(yesterday, context: context)
+            try? context.save()
+            StudyDayStore.setComment(
+                isJapanese ? "急がずに進んだら、景色をよく見られた。"
+                           : "Going slowly let me notice more of the view.",
+                for: yesterday,
+                context: context
+            )
+        }
+
+        if let pastDate = calendar.date(byAdding: .day, value: -5, to: today) {
+            let pastStart = calendar.startOfDay(for: pastDate)
+            context.insert(StudySession(
+                date: calendar.date(byAdding: .hour, value: 10, to: pastStart) ?? pastDate,
+                minutes: 50,
+                note: nil,
+                item: development
+            ))
+            StudyDayStore.markDay(pastDate, context: context)
+            try? context.save()
+            var descriptor = FetchDescriptor<StudyDay>(predicate: #Predicate { $0.date == pastStart })
+            descriptor.fetchLimit = 1
+            if let pastDay = (try? context.fetch(descriptor))?.first {
+                let sealedReflection = isJapanese
+                    ? "向かい風だった。それでも帆を畳まずにいられた。"
+                    : "The wind was against me, but I kept the sail raised."
+                pastDay.note = sealedReflection
+                pastDay.updatedAt = Date()
+
+                // 保存層の期限も確認する。UIを迂回しても5日前の頁は変更できない。
+                let accepted = StudyDayStore.setComment(
+                    "This must not overwrite a sealed page.",
+                    for: pastDate,
+                    context: context,
+                    now: today
+                )
+                assert(!accepted && pastDay.note == sealedReflection)
+            }
+        }
+
         // 目的地(島)。ステップ目標を1件、途中まで達成した状態で置く(ブイの点灯/消灯と
         // 途中の船位置を確認できる)。createdAt は当月頭にして累計時間が乗るように。
         let destCreatedAt = calendar.dateInterval(of: .month, for: today)?.start ?? today
@@ -147,6 +205,7 @@ enum DebugSeed {
         }
 
         try? context.save()
+        WidgetBridge.refresh(context: context)
     }
 }
 #endif

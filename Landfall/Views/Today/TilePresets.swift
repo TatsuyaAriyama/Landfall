@@ -22,6 +22,23 @@ enum TileStyle: String, CaseIterable, Identifiable {
     /// 項目タイルで選べる配色。グリッドは一覧性が命なので、ここは意図的に増やさない。
     static let itemCases: [TileStyle] = [.midnight, .coral, .ink, .seaGreen, .violet, .sunYellow]
 
+    var accessibilityName: LocalizedStringKey {
+        switch self {
+        case .midnight: "Midnight"
+        case .coral: "Coral"
+        case .ink: "Ink"
+        case .seaGreen: "Sea green"
+        case .violet: "Violet"
+        case .sunYellow: "Sun yellow"
+        case .harbor: "Harbor"
+        case .sand: "Sand"
+        case .ember: "Ember"
+        case .rust: "Rust"
+        case .lavender: "Lavender"
+        case .sunrise: "Sunrise"
+        }
+    }
+
     var background: Color {
         switch self {
         case .midnight: LFColor.midnight
@@ -75,6 +92,21 @@ enum TileSymbol: String, CaseIterable, Identifiable {
     case attire      // 旗(装い)
 
     var id: String { rawValue }
+
+    var accessibilityName: LocalizedStringKey {
+        switch self {
+        case .anchor: "Anchor"
+        case .compass: "Compass"
+        case .wheel: "Wheel"
+        case .lighthouse: "Lighthouse"
+        case .island: "Island"
+        case .phoenix: "Phoenix"
+        case .book: "Book"
+        case .pen: "Pen"
+        case .sailboat: "Sailboat"
+        case .attire: "Attire"
+        }
+    }
 
     static func from(_ token: String) -> TileSymbol {
         // 旧トークンの移行(波→錨・彗星→羅針盤・朝日→灯台)。既存データを壊さない。
@@ -409,29 +441,22 @@ struct LighthouseRay: Shape {
     }
 }
 
-/// 項目タイルの絵柄部分。写真があれば写真、なければ配色+シンボル。
+/// 項目タイルの絵柄部分。設定した配色+シンボルだけを表示する。
 struct ItemTileArt: View {
     let item: StudyItem
 
     var body: some View {
         GeometryReader { geo in
             let s = min(geo.size.width, geo.size.height)
+            let style = TileStyle.from(item.styleToken)
             ZStack {
-                if let data = item.photoData, let image = UIImage(data: data) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: s, height: s)
-                } else {
-                    let style = TileStyle.from(item.styleToken)
-                    style.background
-                    TileSymbolView(
-                        symbol: TileSymbol.from(item.symbolToken),
-                        fg: style.foreground,
-                        bg: style.background
-                    )
-                    .frame(width: s * 0.62, height: s * 0.62)
-                }
+                style.background
+                TileSymbolView(
+                    symbol: TileSymbol.from(item.symbolToken),
+                    fg: style.foreground,
+                    bg: style.background
+                )
+                .frame(width: s * 0.62, height: s * 0.62)
             }
             .frame(width: s, height: s)
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))

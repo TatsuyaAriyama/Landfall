@@ -12,6 +12,8 @@
 		1A0000121A0000121A000012 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000171A0000171A000017 /* FirebaseFirestore */; };
 		1A0000131A0000131A000013 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000181A0000181A000018 /* GoogleSignIn */; };
 		1A0000141A0000141A000014 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 1A0000191A0000191A000019 /* GoogleSignInSwift */; };
+		7A1000017A1000017A100001 /* WidgetTimerShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1000037A1000037A100003 /* WidgetTimerShared.swift */; };
+		7A1000027A1000027A100002 /* WidgetTimerShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1000037A1000037A100003 /* WidgetTimerShared.swift */; };
 		7B2000017B2000017B200001 /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = 7B2000027B2000027B200002 /* FirebaseFunctions */; };
 		8C5F799B29E371BE9DF4EF4A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 83D091F7808839D2AAD83DA7 /* Foundation.framework */; };
 		AAB7F4C12963ECE37A7EC71A /* LandfallWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 390B82C03A4EDDF85ABEE205 /* LandfallWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -44,7 +46,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		1A00001D1A00001D1A00001D /* Landfall.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Landfall.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		390B82C03A4EDDF85ABEE205 /* LandfallWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = LandfallWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A1000037A1000037A100003 /* WidgetTimerShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetTimerShared.swift; sourceTree = "<group>"; };
 		83D091F7808839D2AAD83DA7 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		EBBF0F136DA55F0239611EF4 /* LandfallWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LandfallWidget.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -108,6 +112,7 @@
 			isa = PBXGroup;
 			children = (
 				1A0000011A0000011A000001 /* Landfall */,
+				7A1000047A1000047A100004 /* Shared */,
 				1A0000041A0000041A000004 /* Products */,
 				F56AEC83DEDA72AF9133EB9A /* Frameworks */,
 				0400074E282333F590239451 /* LandfallWidget */,
@@ -117,9 +122,18 @@
 		1A0000041A0000041A000004 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				1A00001D1A00001D1A00001D /* Landfall.app */,
 				390B82C03A4EDDF85ABEE205 /* LandfallWidget.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		7A1000047A1000047A100004 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				7A1000037A1000037A100003 /* WidgetTimerShared.swift */,
+			);
+			path = Shared;
 			sourceTree = "<group>";
 		};
 		F56AEC83DEDA72AF9133EB9A /* Frameworks */ = {
@@ -169,6 +183,7 @@
 				41FF8BA48B8E0BE3DBB313AB /* FirebaseAppCheck */,
 			);
 			productName = Landfall;
+			productReference = 1A00001D1A00001D1A00001D /* Landfall.app */;
 			productType = "com.apple.product-type.application";
 		};
 		EF7B54B6E3C34F361D0DC502 /* LandfallWidget */ = {
@@ -257,6 +272,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7A1000017A1000017A100001 /* WidgetTimerShared.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -265,6 +281,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AF4D1EF4ED836B22D527989B /* LandfallWidget.swift in Sources */,
+				7A1000027A1000027A100002 /* WidgetTimerShared.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -345,6 +362,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Landfall/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = KeelMira;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -376,6 +394,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Landfall/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = KeelMira;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -494,7 +513,7 @@
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 11.0.0;
+				minimumVersion = 12.17.0;
 			};
 		};
 		1A00001B1A00001B1A00001B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
@@ -502,7 +521,7 @@
 			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 7.0.0;
+				minimumVersion = 9.2.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -533,15 +552,15 @@
 			package = 1A00001B1A00001B1A00001B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignInSwift;
 		};
-		7B2000027B2000027B200002 /* FirebaseFunctions */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 1A00001A1A00001A1A00001A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseFunctions;
-		};
 		41FF8BA48B8E0BE3DBB313AB /* FirebaseAppCheck */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 1A00001A1A00001A1A00001A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAppCheck;
+		};
+		7B2000027B2000027B200002 /* FirebaseFunctions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A00001A1A00001A1A00001A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFunctions;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

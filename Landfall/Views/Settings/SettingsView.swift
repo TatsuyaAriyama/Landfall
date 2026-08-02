@@ -55,19 +55,27 @@ struct LFBackHeader: View {
     }
 }
 
-/// 設定シート。v1ではアプリアイコンの選択のみ。
+/// 設定シート。作業項目とアプリ全体の設定をまとめて扱う。
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var auth: AuthService
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
     @AppStorage(AppTheme.storageKey) private var appTheme = AppTheme.system.rawValue
+    @Query(sort: \StudyItem.sortOrder) private var items: [StudyItem]
+    @Query private var sessions: [StudySession]
     @Query private var destinations: [Destination]
     @State private var current: AppIconOption = .harbor
+    @State private var addingItem = false
+    @State private var editingItem: StudyItem?
     /// 削除しようとしている到達済みの島(確認ダイアログ用)。
     @State private var pendingDeleteIsland: Destination?
     @State private var confirmingDeleteAccount = false
     @State private var deletingAccount = false
+    @State private var showingTutorial = false
+    @State private var showingVoyagePass = false
+    @State private var showingAssetStudio = false
+    @StateObject private var voyagePass = VoyagePassStore.shared
     @AppStorage(NotificationService.enabledKey) private var notifyEnabled = false
     @State private var notifyTime = Calendar.current.date(
         from: DateComponents(hour: NotificationService.hour, minute: NotificationService.minute)
@@ -85,8 +93,25 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    sectionLabel("Language")
+                    sectionLabel("Voyage Pass")
                         .padding(.top, 24)
+                        .padding(.bottom, 12)
+
+                    voyagePassCard
+
+                    sectionLabel("Work items")
+                        .padding(.top, 36)
+                        .padding(.bottom, 8)
+
+                    Text("Manage names, colors, symbols, and order here.")
+                        .font(LFFont.copy(13))
+                        .foregroundStyle(LFColor.ink.opacity(0.6))
+                        .padding(.bottom, 12)
+
+                    workItemsSection
+
+                    sectionLabel("Language")
+                        .padding(.top, 36)
                         .padding(.bottom, 18)
 
                     HStack(spacing: 10) {
@@ -107,11 +132,44 @@ struct SettingsView: View {
                         Spacer(minLength: 0)
                     }
 
-                    sectionLabel("Notifications")
-                        .padding(.top, 36)
-                        .padding(.bottom, 18)
-
                     notificationSection
+                        .padding(.top, 36)
+
+                    sectionLabel("Guide")
+                        .padding(.top, 36)
+                        .padding(.bottom, 10)
+
+                    Button {
+                        showingTutorial = true
+                    } label: {
+                        HStack(spacing: 13) {
+                            TileSymbolView(
+                                symbol: .compass,
+                                fg: LFColor.harborSand,
+                                bg: LFColor.harborTeal
+                            )
+                            .frame(width: 40, height: 40)
+                            .background(LFColor.harborTeal, in: RoundedRectangle(cornerRadius: 12))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Tutorial")
+                                    .font(LFFont.copy(16))
+                                    .foregroundStyle(LFColor.ink)
+                                Text("View the basics again.")
+                                    .font(LFFont.label(13))
+                                    .foregroundStyle(LFColor.ink.opacity(0.52))
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(LFColor.ink.opacity(0.3))
+                        }
+                        .frame(minHeight: 52)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
 
                     // 代替アイコン非対応の文脈では、押しても無反応な節を出さない。
                     if AppIconStore.isSupported {
@@ -139,6 +197,41 @@ struct SettingsView: View {
                         reachedIslandsSection
                     }
 
+                    sectionLabel("Creative tools")
+                        .padding(.top, 36)
+                        .padding(.bottom, 10)
+
+                    Button {
+                        showingAssetStudio = true
+                        Haptics.tap(.light)
+                    } label: {
+                        HStack(spacing: 13) {
+                            Image(systemName: "cube.transparent.fill")
+                                .font(.system(size: 19, weight: .semibold))
+                                .foregroundStyle(LFColor.harborSand)
+                                .frame(width: 40, height: 40)
+                                .background(LFColor.harborTeal, in: RoundedRectangle(cornerRadius: 12))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("3D Asset Studio")
+                                    .font(LFFont.copy(16))
+                                    .foregroundStyle(LFColor.ink)
+                                Text("Place and arrange USDZ models.")
+                                    .font(LFFont.label(13))
+                                    .foregroundStyle(LFColor.ink.opacity(0.52))
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(LFColor.ink.opacity(0.3))
+                        }
+                        .frame(minHeight: 52)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
                     sectionLabel("Account")
                         .padding(.top, 36)
                         .padding(.bottom, 18)
@@ -152,7 +245,31 @@ struct SettingsView: View {
         .background(LFColor.paper)
         // シート自身も選択言語に追従させる(切替が即時に反映される)。
         .environment(\.locale, (AppLanguage(rawValue: appLanguage) ?? .system).locale)
-        .onAppear { current = AppIconStore.currentOption() }
+        .onAppear {
+            current = AppIconStore.currentOption()
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["LANDFALL_ASSET_STUDIO"] == "1" {
+                DispatchQueue.main.async { showingAssetStudio = true }
+            }
+            #endif
+        }
+        .sheet(isPresented: $addingItem) {
+            ItemEditorSheet(existing: nil)
+        }
+        .sheet(item: $editingItem) { item in
+            ItemEditorSheet(existing: item)
+        }
+        .sheet(isPresented: $showingVoyagePass) {
+            VoyagePassView()
+        }
+        .fullScreenCover(isPresented: $showingTutorial) {
+            OnboardingView(secondaryActionTitle: "Close") {
+                showingTutorial = false
+            }
+        }
+        .fullScreenCover(isPresented: $showingAssetStudio) {
+            AssetPlacementStudioView(homeProgressRatio: homeProgressRatio)
+        }
         .confirmationDialog(
             "Delete your account?",
             isPresented: $confirmingDeleteAccount,
@@ -180,6 +297,178 @@ struct SettingsView: View {
         } message: {
             Text("Delete this destination? Your records stay.")
         }
+    }
+
+    /// ホームと同じ進捗率で船と島の実距離をスタジオへ渡す。
+    private var homeProgressRatio: Double {
+        destinations.first { $0.achievedAt == nil }?
+            .progress(sessions: sessions)
+            .ratio ?? 0
+    }
+
+    // MARK: - 作業項目
+
+    private var voyagePassCard: some View {
+        Button {
+            showingVoyagePass = true
+            Haptics.tap(.light)
+        } label: {
+            HStack(spacing: 14) {
+                TileSymbolView(
+                    symbol: .compass,
+                    fg: LFColor.returnOrange,
+                    bg: LFColor.harborTeal
+                )
+                .frame(width: 48, height: 48)
+                .background(LFColor.harborTeal, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(voyagePass.isActive ? "Voyage Pass aboard" : "Open Voyage Pass")
+                        .font(LFFont.copy(16))
+                        .foregroundStyle(LFColor.ink)
+                    Text(
+                        voyagePass.isActive
+                            ? "Active on this Apple Account"
+                            : "Seasonal waters, shared voyages, and special attire"
+                    )
+                    .font(LFFont.label(12))
+                    .foregroundStyle(LFColor.ink.opacity(0.50))
+                    .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LFColor.ink.opacity(0.28))
+            }
+            .padding(16)
+            .background(
+                LinearGradient(
+                    colors: [
+                        LFColor.returnOrange.opacity(0.10),
+                        LFColor.harborTeal.opacity(0.08),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(LFColor.returnOrange.opacity(0.22), lineWidth: 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .buttonStyle(LFPressableButtonStyle())
+    }
+
+    private var workItemsSection: some View {
+        VStack(spacing: 0) {
+            if items.isEmpty {
+                Text("No work items yet.")
+                    .font(LFFont.copy(15))
+                    .foregroundStyle(LFColor.ink.opacity(0.5))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 12)
+            } else {
+                ForEach(Array(items.enumerated()), id: \.element.persistentModelID) { index, item in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(LFColor.ink.opacity(0.08))
+                            .frame(height: 1)
+                    }
+
+                    HStack(spacing: 12) {
+                        Button {
+                            editingItem = item
+                        } label: {
+                            HStack(spacing: 12) {
+                                ItemTileArt(item: item)
+                                    .frame(width: 44, height: 44)
+
+                                Text(verbatim: item.name)
+                                    .font(LFFont.copy(16))
+                                    .foregroundStyle(LFColor.ink)
+                                    .lineLimit(2)
+
+                                Spacer(minLength: 8)
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(LFColor.ink.opacity(0.32))
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+
+                        VStack(spacing: 0) {
+                            reorderButton(
+                                systemName: "chevron.up",
+                                label: "Move up",
+                                disabled: index == items.startIndex
+                            ) {
+                                moveItem(at: index, by: -1)
+                            }
+                            reorderButton(
+                                systemName: "chevron.down",
+                                label: "Move down",
+                                disabled: index == items.index(before: items.endIndex)
+                            ) {
+                                moveItem(at: index, by: 1)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 10)
+                }
+            }
+
+            Button {
+                addingItem = true
+            } label: {
+                Label("Add work item", systemImage: "plus")
+                    .font(LFFont.copy(16))
+                    .foregroundStyle(LFColor.ink)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 48)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func reorderButton(
+        systemName: String,
+        label: LocalizedStringKey,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(LFColor.ink.opacity(disabled ? 0.16 : 0.52))
+                .frame(width: 36, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .accessibilityLabel(Text(label))
+    }
+
+    private func moveItem(at index: Int, by offset: Int) {
+        let destination = index + offset
+        guard items.indices.contains(index), items.indices.contains(destination) else { return }
+
+        var reordered = Array(items)
+        let moved = reordered.remove(at: index)
+        reordered.insert(moved, at: destination)
+        for (sortOrder, item) in reordered.enumerated() {
+            item.sortOrder = sortOrder
+        }
+        try? modelContext.save()
+        for item in reordered {
+            SyncService.shared.push(item)
+        }
+        Haptics.tap(.rigid)
     }
 
     // MARK: - 到達した島
@@ -237,7 +526,6 @@ struct SettingsView: View {
         Haptics.tap()
     }
 
-    // そっと戻れる通知。オフ既定。オンにすると許可を求め、選んだ時刻に一度だけ静かに鳴る。
     private var notificationSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             Toggle(isOn: Binding(
@@ -256,16 +544,11 @@ struct SettingsView: View {
                     }
                 }
             )) {
-                Text("Gentle reminder")
+                Text("Notifications")
                     .font(LFFont.copy(17))
                     .foregroundStyle(LFColor.ink)
             }
             .tint(LFColor.returnOrange)
-
-            Text("A quiet nudge, never a nag. If you already showed up today, it stays silent.")
-                .font(LFFont.copy(13))
-                .foregroundStyle(LFColor.ink.opacity(0.6))
-                .fixedSize(horizontal: false, vertical: true)
 
             if notifyEnabled {
                 HStack {
@@ -293,32 +576,63 @@ struct SettingsView: View {
 
     private var accountSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Button {
-                auth.signOut()
-                dismiss()
-            } label: {
-                Text("Sign out")
-                    .font(LFFont.copy(16))
-                    .foregroundStyle(LFColor.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
+            if auth.isSignedIn {
+                Button {
+                    Task { await signOutAndClearLocalData() }
+                } label: {
+                    Text("Sign out")
+                        .font(LFFont.copy(16))
+                        .foregroundStyle(LFColor.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .disabled(deletingAccount)
 
-            Button {
-                confirmingDeleteAccount = true
-            } label: {
-                Text("Delete account")
-                    .font(LFFont.label(15))
-                    .foregroundStyle(LFColor.deepRust)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button {
+                    confirmingDeleteAccount = true
+                } label: {
+                    Text("Delete account")
+                        .font(LFFont.label(15))
+                        .foregroundStyle(LFColor.deepRust)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .disabled(deletingAccount)
+            } else {
+                Text("Records are stored only on this device.")
+                    .font(LFFont.label(13))
+                    .foregroundStyle(LFColor.ink.opacity(0.55))
+
+                Button {
+                    auth.stopLocalMode()
+                    dismiss()
+                } label: {
+                    Text("Sign in to sync and use harbors")
+                        .font(LFFont.copy(16))
+                        .foregroundStyle(LFColor.ink)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-            .disabled(deletingAccount)
 
             if let message = auth.errorMessage {
                 Text(message)
                     .font(LFFont.label(13))
                     .foregroundStyle(LFColor.coral)
+            }
+
+            Divider()
+                .overlay(LFColor.ink.opacity(0.12))
+
+            if let privacyURL = URL(string: "https://aftide.app/privacy") {
+                Link("Privacy policy", destination: privacyURL)
+                    .font(LFFont.label(14))
+                    .foregroundStyle(LFColor.ink.opacity(0.72))
+            }
+            if let supportURL = URL(string: "mailto:ari.initx@gmail.com") {
+                Link("Support", destination: supportURL)
+                    .font(LFFont.label(14))
+                    .foregroundStyle(LFColor.ink.opacity(0.72))
             }
         }
     }
@@ -327,14 +641,24 @@ struct SettingsView: View {
         deletingAccount = true
         defer { deletingAccount = false }
         do {
-            await RoomService.shared.leaveAllRooms()
-            await PublicHarborService.shared.leaveAll()
-            try await SyncService.shared.deleteAllRemoteData()
-            try await auth.deleteAccount()
+            try await auth.deleteAccount {
+                await RoomService.shared.leaveAllRooms()
+                await PublicHarborService.shared.leaveAll()
+                try await SyncService.shared.deleteAllRemoteData()
+                await LocalAccountData.clearAfterSignOut(context: modelContext)
+            }
             dismiss()
         } catch {
-            auth.errorMessage = String(localized: "Deleting your account failed. Please try signing in again and retry.")
+            auth.errorMessage = LF.text("Deleting your account failed. Please try signing in again and retry.")
         }
+    }
+
+    private func signOutAndClearLocalData() async {
+        deletingAccount = true
+        await LocalAccountData.clearAfterSignOut(context: modelContext)
+        auth.signOut()
+        deletingAccount = false
+        dismiss()
     }
 
     private func sectionLabel(_ text: LocalizedStringKey) -> some View {

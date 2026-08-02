@@ -38,6 +38,7 @@ enum VoyageSceneKit {
     static let seaBase = UIColor(rgb: 0x1E5348)   // SEA_COLOR
     static let seaDeep = nightBG
     static let sand = UIColor(rgb: 0xEADEBD)      // SAND(帆・島・月光)
+    static let coral = UIColor(rgb: 0xF0997B)     // CORAL(船上アクセント)
     static let beach = UIColor(rgb: 0xDCCFA9)     // BEACH(浜)
     static let wood = UIColor(rgb: 0x5A2A15)      // WOOD(マスト・ブーム)
     static let ember = UIColor(rgb: 0xF3C065)     // 点灯ブイ
@@ -47,17 +48,19 @@ enum VoyageSceneKit {
 
     // 航路(Web VoyageScene と同値)。ステップの島は「そう簡単には届かない目標」なので、
     // 航路を長くとって一つ一つを遠くに置く(島の間に開けた海を残す)。
-    static let xStart: Float = -9.0
-    static let xEnd: Float = 4.2
+    static let xStart: Float = -56.0
+    static let xEnd: Float = -2.0
 
     // カード(ホームの主役)の establishing 構図。航海の全景を、引き+俯瞰の斜め(3/4)で
     // 綺麗に一望する(真横を避ける)。没入エディタの入場もここから寄っていく(Web と同値)。
-    static let cardCamPos = SCNVector3(0.6, 7.2, 12.5)
-    static let cardCamTarget = SCNVector3(-2.2, 0.5, 0.2)
+    static let cardCamPos = SCNVector3(-26.0, 20.0, 52)
+    static let cardCamTarget = SCNVector3(-26.25, 1.2, -0.15)
     static let cardCamFov: CGFloat = 42
+    static let routeApproachPower: Float = 2.15
 
     static func boatX(_ ratio: Double) -> Float {
-        xStart + Float(min(max(ratio, 0), 1)) * (xEnd - xStart)
+        let progress = Float(min(max(ratio, 0), 1))
+        return xStart + pow(progress, routeApproachPower) * (xEnd - xStart)
     }
 
     // MARK: - 素材
@@ -125,38 +128,133 @@ enum VoyageSceneKit {
 
     // MARK: - 海(Webのシェーダを Metal に移植)
 
-    /// 放射グラデ(縁だけ夜色へ)+中心の月明かりの溜まり+月の真下に立つ月光の筋(シマー付き)。
+    /// Webと同じ四層の海面変形。外周だけ振幅を落とし、夜空との境界を隠す。
+    private static let seaGeometryShader = """
+    #pragma body
+    float2 p = _geometry.position.xy;
+    float t = scn_frame.time;
+    float warpPhase = p.x * 0.055 + p.y * 0.083 - t * 0.18;
+    float warp = sin(warpPhase) * 1.35;
+    float2 q = p + float2(warp, -warp * 0.55);
+    float phaseA = q.y * 0.135 + q.x * 0.095 - t * 0.34;
+    float phaseB = q.y * 0.115 - q.x * 0.105 + t * 0.27;
+    float phaseC = q.y * 0.410 + q.x * 0.330 - t * 0.58;
+    float phaseD = q.y * 0.880 - q.x * 0.630 + t * 0.92;
+    float height =
+        sin(phaseA) * 0.150
+        + sin(phaseB) * 0.090
+        + sin(phaseC) * 0.026
+        + sin(phaseD) * 0.006;
+    float edge = 1.0 - smoothstep(66.0, 88.0, length(p));
+    float dhdx =
+        cos(phaseA) * 0.150 * 0.095
+        + cos(phaseB) * 0.090 * -0.105
+        + cos(phaseC) * 0.026 * 0.330
+        + cos(phaseD) * 0.006 * -0.630;
+    float dhdy =
+        cos(phaseA) * 0.150 * 0.135
+        + cos(phaseB) * 0.090 * 0.115
+        + cos(phaseC) * 0.026 * 0.410
+        + cos(phaseD) * 0.006 * 0.880;
+    _geometry.position.z += height * edge;
+    _geometry.normal = normalize(float3(-dhdx * edge, -dhdy * edge, 1.0));
+    """
+
+    /// 深色の谷・空の反射・割れた月光を重ね、平面の色模様ではなく海面として見せる。
     private static let seaSurfaceShader = """
     #pragma arguments
     float moonX;
     #pragma body
     float2 uv = _surface.diffuseTexcoord;
-    float2 p = float2((uv.x - 0.5) * 80.0, (0.5 - uv.y) * 80.0);
-    float r = length(p) / 30.0;
+    // Web Sea は半径90のXY円盤で、local +Y = world -Z。
+    // SceneKitのPlaneも同じ向きへ倒しているため、uv.yを反転してはいけない。
+    // 濃淡の基準半径は従来の30を維持し、外側は夜色へ自然に溶かす。
+    float2 p = float2((uv.x - 0.5) * 180.0, (uv.y - 0.5) * 180.0);
+    float distanceFromBoat = length(p);
     float3 seaC = float3(0.1176, 0.3255, 0.2824);   // #1E5348
     float3 deepC = float3(0.0706, 0.2196, 0.1882);  // #123830
     float3 moonC = float3(0.7490, 0.8392, 0.7765);  // #BFD6C6
-    float3 col = mix(seaC, deepC, smoothstep(0.42, 1.0, r));
-    col += (moonC - seaC) * 0.06 * (1.0 - smoothstep(0.0, 0.5, r));
-    float dx = p.x - moonX;
+    float t = scn_frame.time;
+    float warp = sin(p.x * 0.055 + p.y * 0.083 - t * 0.18) * 1.35;
+    float2 q = p + float2(warp, -warp * 0.55);
+    float phaseA = q.y * 0.135 + q.x * 0.095 - t * 0.34;
+    float phaseB = q.y * 0.115 - q.x * 0.105 + t * 0.27;
+    float phaseC = q.y * 0.410 + q.x * 0.330 - t * 0.58;
+    float phaseD = q.y * 0.880 - q.x * 0.630 + t * 0.92;
+    float height =
+        sin(phaseA) * 0.150
+        + sin(phaseB) * 0.090
+        + sin(phaseC) * 0.026
+        + sin(phaseD) * 0.006;
+    float2 slope = float2(
+        cos(phaseA) * 0.150 * 0.095
+            + cos(phaseB) * 0.090 * -0.105
+            + cos(phaseC) * 0.026 * 0.330
+            + cos(phaseD) * 0.006 * -0.630,
+        cos(phaseA) * 0.150 * 0.135
+            + cos(phaseB) * 0.090 * 0.115
+            + cos(phaseC) * 0.026 * 0.410
+            + cos(phaseD) * 0.006 * 0.880
+    );
+    float depth = smoothstep(7.0, 72.0, distanceFromBoat);
+    float3 col = mix(seaC, deepC, 0.12 + depth * 0.68);
+    float directionalShade = clamp(0.5 + slope.x * 3.4 + slope.y * 3.0, 0.0, 1.0);
+    col *= 0.93 + directionalShade * 0.10;
+    float trough = 1.0 - smoothstep(-0.14, 0.015, height);
+    float crest = smoothstep(0.040, 0.185, height);
+    col = mix(col, deepC, trough * 0.26);
+    col = mix(col, moonC, crest * 0.070);
+    col = mix(col, mix(deepC, moonC, 0.24), smoothstep(40.0, 88.0, distanceFromBoat) * 0.14);
+
+    float grainA = sin(
+        p.y * 0.72 + sin(p.x * 0.31) * 1.7
+        + sin(p.y * 0.13 + p.x * 0.27) * 2.2 - t * 0.92
+    );
+    float grainB = sin(
+        p.x * 0.81 + sin(p.y * 0.36) * 1.3
+        - sin(p.x * 0.11 - p.y * 0.23) * 1.8 + t * 0.61
+    );
+    col *= 0.985 + grainA * grainB * 0.025
+        * (1.0 - smoothstep(34.0, 82.0, distanceFromBoat));
+    float broken = 0.5 + 0.5 * sin(
+        p.y * 1.42 - p.x * 1.91 + sin(p.x * 0.17) * 2.1 - t * 1.16
+    );
+    float capGlint = smoothstep(0.80, 0.98, broken)
+        * smoothstep(0.035, 0.18, height)
+        * (1.0 - smoothstep(25.0, 76.0, distanceFromBoat));
+    col = mix(col, moonC, capGlint * 0.095);
+
+    float laneWarp = sin(p.y * 0.22 - t * 0.38) * 0.55
+        + sin(p.y * 0.57 + t * 0.24) * 0.22;
+    float dx = p.x - moonX + laneWarp;
     float along = smoothstep(-5.0, 13.0, p.y);
     float w = mix(2.8, 0.7, along);
     float band = exp(-(dx * dx) / (w * w));
-    float t = scn_frame.time;
-    float shimmer = 0.55 + 0.45 * sin(p.y * 1.1 - t * 1.4) * sin(p.x * 0.9 + t * 0.7);
-    float streak = clamp(band * along * shimmer, 0.0, 1.0) * 0.5;
+    float shimmer = 0.5 + 0.5
+        * sin(p.y * 1.17 - t * 1.28)
+        * sin(p.x * 1.63 + t * 0.61);
+    float streak = band * along * smoothstep(0.24, 0.84, shimmer)
+        * (0.44 + crest * 0.56) * 0.5;
     col = mix(col, moonC, streak);
+    col = mix(col, deepC, smoothstep(68.0, 90.0, distanceFromBoat) * 0.82);
     // SceneKitはリニア色空間で描くため、sRGBで計算した色をリニアへ変換して渡す
     // (これをしないと全体が白っぽく浮く)。
-    _surface.diffuse = float4(pow(col, 2.2), 1.0);
+    _surface.diffuse = float4(pow(clamp(col, 0.0, 1.0), float3(2.2)), 1.0);
     """
 
     static func makeSea(moonX: Float) -> SCNNode {
-        let plane = SCNPlane(width: 80, height: 80)
+        // Web: 180角の細分化平面。最遠航路(-56)でも海面の外へ出ない。
+        let plane = SCNPlane(width: 180, height: 180)
+        plane.widthSegmentCount = 140
+        plane.heightSegmentCount = 140
         let m = SCNMaterial()
         m.lightingModel = .constant
         m.diffuse.contents = seaBase
-        m.shaderModifiers = [.surface: seaSurfaceShader]
+        m.isDoubleSided = true
+        m.shaderModifiers = [
+            .geometry: seaGeometryShader,
+            .surface: seaSurfaceShader
+        ]
         m.setValue(NSNumber(value: moonX), forKey: "moonX")
         plane.firstMaterial = m
         let node = SCNNode(geometry: plane)
@@ -222,7 +320,7 @@ enum VoyageSceneKit {
 
     /// 水平線。霧に沈む海の縁の、sandの淡い一線(Web Horizon)。
     static func makeHorizon() -> SCNNode {
-        let plane = SCNPlane(width: 60, height: 0.08)
+        let plane = SCNPlane(width: 180, height: 0.08)
         let m = SCNMaterial()
         m.lightingModel = .constant
         m.diffuse.contents = sand.withAlphaComponent(0.22)
@@ -234,44 +332,702 @@ enum VoyageSceneKit {
         return node
     }
 
-    // MARK: - 島(Web Island と同配置)
+    // MARK: - 壮大な目的地の島
 
-    static func makeIsland() -> SCNNode {
+    /// 航海のすべての画面で共有する目的地の島。遠景では段状の長い稜線、
+    /// 近景では浜から山頂へ続く道・灯り・岩・植生まで読める密度にする。
+    static func makeIsland(
+        position: SCNVector3 = SCNVector3(3.5, 0, -0.9),
+        scale: SCNVector3 = SCNVector3(1.34, 1.38, 1.34),
+        includesCustomAssets: Bool = true
+    ) -> SCNNode {
         let group = SCNNode()
         group.name = "island"
+        group.position = position
+        group.scale = scale
+        group.eulerAngles.y = AftideHomeWorldReference.islandYaw
 
-        let beachGeo = SCNCone(topRadius: 1.9, bottomRadius: 2.05, height: 0.07)
-        beachGeo.radialSegmentCount = 9
-        beachGeo.firstMaterial = litMaterial(beach, roughness: 0.95)
+        // 3Dスタジオで選んだ世界が、このゲームの「島そのもの」。
+        // 共通ファクトリの入り口で旧島と置き換えることで、ホーム・航海中・
+        // 目的地・共有画面のどこから見ても必ず同じデザインになる。
+        if let studioWorld = AssetPlacementRuntime.makeActiveStudioWorldNode() {
+            studioWorld.name = "active-studio-world"
+            group.addChildNode(studioWorld)
+            if includesCustomAssets {
+                AssetPlacementRuntime.attachSavedPlacements(context: .destinationIsland, to: group)
+            }
+            return group
+        }
+
+        let shadowGeo = SCNCone(topRadius: 3.38, bottomRadius: 3.66, height: 0.035)
+        shadowGeo.radialSegmentCount = 24
+        let shadowMaterial = unlitMaterial(UIColor(rgb: 0x0B2927).withAlphaComponent(0.28))
+        shadowMaterial.writesToDepthBuffer = false
+        shadowGeo.firstMaterial = shadowMaterial
+        let shadow = SCNNode(geometry: shadowGeo)
+        shadow.position = SCNVector3(0.08, 0.018, 0.08)
+        shadow.scale.z = 0.74
+        group.addChildNode(shadow)
+
+        let foamGeo = SCNTorus(ringRadius: 3.34, pipeRadius: 0.09)
+        foamGeo.ringSegmentCount = 72
+        foamGeo.pipeSegmentCount = 7
+        let foamMaterial = unlitMaterial(UIColor(rgb: 0xD8EBDD).withAlphaComponent(0.58))
+        foamMaterial.writesToDepthBuffer = false
+        foamGeo.firstMaterial = foamMaterial
+        let foam = SCNNode(geometry: foamGeo)
+        foam.position = SCNVector3(0, 0.055, 0.08)
+        foam.scale = SCNVector3(1.02, 1, 0.74)
+        group.addChildNode(foam)
+
+        let beachGeo = SCNCone(topRadius: 3.18, bottomRadius: 3.48, height: 0.15)
+        beachGeo.radialSegmentCount = 28
+        beachGeo.firstMaterial = litMaterial(beach, roughness: 0.97)
         let beachNode = SCNNode(geometry: beachGeo)
-        beachNode.position = SCNVector3(0, 0.03, 0.1)
+        beachNode.position = SCNVector3(0, 0.085, 0.08)
+        beachNode.scale.z = 0.74
         group.addChildNode(beachNode)
 
-        let hill = SCNCone(topRadius: 0, bottomRadius: 1.25, height: 1.05)
-        hill.radialSegmentCount = 7
-        hill.firstMaterial = flatMaterial(sand)
-        let hillNode = SCNNode(geometry: hill)
-        hillNode.position = SCNVector3(0, 0.5, 0)
-        hillNode.eulerAngles.y = 0.4
-        group.addChildNode(hillNode)
+        let terrain = SCNNode(geometry: makeGrandIslandTerrain())
+        terrain.name = "islandTerrain"
+        terrain.position.y = 0.11
+        group.addChildNode(terrain)
 
-        let hill2 = SCNCone(topRadius: 0, bottomRadius: 0.85, height: 0.72)
-        hill2.radialSegmentCount = 6
-        hill2.firstMaterial = flatMaterial(sand)
-        let hill2Node = SCNNode(geometry: hill2)
-        hill2Node.position = SCNVector3(0.8, 0.34, 0.35)
-        hill2Node.eulerAngles.y = 1.1
-        group.addChildNode(hill2Node)
+        // 岩峰は真円錐ではなく、各段の中心と半径を揺らしたファセット形状。
+        // 海側から見たときに峰が重ならないよう、左右と奥行きへ散らす。
+        let crags: [(x: Float, y: Float, z: Float, radius: Float, height: Float, color: UInt, seed: Int)] = [
+            (-0.92, 0.72, -0.82, 0.88, 2.25, 0x7E8771, 11),
+            (-0.34, 0.90, 0.62, 1.03, 2.92, 0x96967A, 23),
+            (0.36, 1.04, -0.34, 1.12, 3.62, 0xAAA486, 37),
+            (1.12, 1.14, 0.58, 0.92, 4.28, 0x737C6C, 53),
+            (1.62, 0.74, -0.78, 0.68, 2.42, 0x687467, 71),
+        ]
+        for crag in crags {
+            let node = makeIslandCrag(
+                radius: crag.radius,
+                height: crag.height,
+                color: UIColor(rgb: crag.color),
+                seed: crag.seed
+            )
+            node.position = SCNVector3(crag.x, crag.y, crag.z)
+            group.addChildNode(node)
+        }
 
-        let knoll = SCNSphere(radius: 0.6)
-        knoll.segmentCount = 8
-        knoll.firstMaterial = flatMaterial(sand)
-        let knollNode = SCNNode(geometry: knoll)
-        knollNode.position = SCNVector3(-0.85, 0.08, 0.25)
-        group.addChildNode(knollNode)
+        // 浜から尾根を折り返しながら登る道。背景画像の「先へ進める島」を
+        // 実際の3Dでも同じ意味で見せる。
+        let pathPoints = [
+            SCNVector3(-3.02, 0.20, 0.64),
+            SCNVector3(-2.34, 0.34, 0.52),
+            SCNVector3(-1.78, 0.56, 0.12),
+            SCNVector3(-1.22, 0.86, 0.52),
+            SCNVector3(-0.56, 1.15, 0.24),
+            SCNVector3(0.02, 1.48, -0.18),
+            SCNVector3(0.54, 1.94, 0.10),
+            SCNVector3(0.92, 2.48, 0.42),
+            SCNVector3(1.16, 3.08, 0.54),
+        ]
+        group.addChildNode(makeIslandPath(points: pathPoints))
 
-        group.position = SCNVector3(3.5, 0, -0.9)
+        for (index, point) in pathPoints.enumerated() where index > 0 && index < pathPoints.count - 1 {
+            if index.isMultiple(of: 2) {
+                let lamp = makeIslandLamp(strong: index == 6)
+                lamp.position = SCNVector3(point.x, point.y + 0.04, point.z + 0.28)
+                group.addChildNode(lamp)
+            }
+        }
+
+        // 海岸の岩。シルエットを崩すだけでなく、浜を「円盤」ではなく入り江に見せる。
+        for index in 0..<18 {
+            let angle = Float(index) / 18 * 2 * .pi + sin(Float(index) * 1.7) * 0.11
+            let radius = 2.68 + sin(Float(index) * 2.3) * 0.28
+            let x = cos(angle) * radius
+            let z = sin(angle) * radius * 0.70
+            let size = 0.18 + Float(index % 5) * 0.035
+            let rock = SCNSphere(radius: CGFloat(size))
+            rock.segmentCount = 6
+            rock.firstMaterial = litMaterial(
+                UIColor(rgb: index.isMultiple(of: 3) ? 0x6E6B5D : 0x827A65),
+                roughness: 0.98
+            )
+            let node = SCNNode(geometry: rock)
+            node.position = SCNVector3(x, 0.18 + size * 0.42, z)
+            node.scale = SCNVector3(1.18, 0.78 + Float(index % 3) * 0.10, 0.92)
+            node.eulerAngles = SCNVector3(0.12, Float(index) * 0.73, 0.08)
+            group.addChildNode(node)
+        }
+
+        // 植生は乱数で全面へ散らさず、海風の弱い谷筋と岩陰へ群落を作る。
+        // 地表を這う苔 → 低木 → 草の順に重ね、地形から自然に生えた密度へする。
+        let coverPatches: [(x: Float, z: Float, radius: Float, seed: Int)] = [
+            (-2.18, -0.62, 0.64, 3), (-1.92, 1.06, 0.52, 7),
+            (-1.24, -1.28, 0.58, 11), (-0.58, 1.58, 0.48, 17),
+            (0.12, -1.72, 0.56, 23), (0.78, 1.58, 0.44, 29),
+            (1.58, 1.30, 0.48, 31), (2.08, -0.74, 0.55, 37),
+        ]
+        for patch in coverPatches {
+            group.addChildNode(makeIslandGroundCover(
+                center: SCNVector3(patch.x, 0, patch.z),
+                radius: patch.radius,
+                seed: patch.seed
+            ))
+        }
+
+        let shrubs: [(x: Float, z: Float, scale: Float, seed: Int)] = [
+            (-2.38, -0.50, 0.86, 5), (-2.04, -0.92, 1.02, 9),
+            (-1.82, 1.20, 0.88, 13), (-1.38, -1.48, 0.96, 19),
+            (-0.92, 1.72, 0.78, 27), (-0.20, -1.84, 0.92, 33),
+            (0.44, 1.82, 0.82, 39), (1.12, 1.66, 0.90, 43),
+            (1.84, 1.10, 0.80, 51), (2.18, -0.58, 0.94, 57),
+            (2.38, 0.28, 0.76, 63),
+        ]
+        for shrub in shrubs {
+            let normalizedRadius = islandNormalizedRadius(x: shrub.x, z: shrub.z)
+            let ground = grandIslandHeight(x: shrub.x, z: shrub.z, radius: normalizedRadius)
+            let plant = makeIslandShrub(seed: shrub.seed, scale: shrub.scale)
+            plant.position = SCNVector3(shrub.x, 0.11 + ground, shrub.z)
+            plant.eulerAngles.y = Float(shrub.seed) * 0.41
+            group.addChildNode(plant)
+        }
+
+        let grasses: [(x: Float, z: Float, seed: Int)] = [
+            (-2.62, 0.18, 2), (-2.34, 0.86, 4), (-2.08, -1.22, 6),
+            (-1.72, -1.58, 8), (-1.48, 1.62, 10), (-1.06, -1.86, 12),
+            (-0.70, 1.92, 14), (-0.28, -1.98, 16), (0.18, 2.00, 18),
+            (0.72, -1.88, 20), (1.10, 1.86, 22), (1.56, -1.58, 24),
+            (1.94, 1.28, 26), (2.28, -1.02, 28), (2.56, 0.22, 30),
+        ]
+        for grass in grasses {
+            let normalizedRadius = islandNormalizedRadius(x: grass.x, z: grass.z)
+            let ground = grandIslandHeight(x: grass.x, z: grass.z, radius: normalizedRadius)
+            let plant = makeIslandGrass(seed: grass.seed)
+            plant.position = SCNVector3(grass.x, 0.11 + ground, grass.z)
+            plant.eulerAngles.y = Float(grass.seed) * 0.29
+            group.addChildNode(plant)
+        }
+
+        let summitBeacon = makeIslandSummitBeacon()
+        summitBeacon.position = SCNVector3(1.16, 5.37, 0.54)
+        group.addChildNode(summitBeacon)
+
+        // 3D Asset Studioで保存した配置を島のローカル座標として復元する。
+        // Studio自身は false を渡し、編集対象が二重表示されないようにする。
+        if includesCustomAssets {
+            AssetPlacementRuntime.attachSavedPlacements(context: .destinationIsland, to: group)
+        }
+
         return group
+    }
+
+    /// 海岸から複数の丘が連続して立ち上がる、低ポリの一枚地形。
+    private static func makeGrandIslandTerrain(segments: Int = 48, rings: Int = 10) -> SCNGeometry {
+        var vertices = [SCNVector3(0, grandIslandHeight(x: 0, z: 0, radius: 0), 0)]
+        var colors = [grandIslandColor(height: vertices[0].y, x: 0, z: 0)]
+        var indices: [UInt32] = []
+
+        for ring in 1...rings {
+            let radius = Float(ring) / Float(rings)
+            for segment in 0..<segments {
+                let angle = Float(segment) / Float(segments) * 2 * .pi
+                let coast = 1
+                    + sin(angle * 3 + 0.4) * 0.055
+                    + cos(angle * 5 - 0.7) * 0.035
+                    + sin(angle * 9 + 1.3) * 0.018
+                let x = cos(angle) * 3.12 * radius * coast
+                let z = sin(angle) * 2.22 * radius * (1 + sin(angle * 4 + 0.2) * 0.05)
+                let y = grandIslandHeight(x: x, z: z, radius: radius)
+                vertices.append(SCNVector3(x, y, z))
+                colors.append(grandIslandColor(height: y, x: x, z: z))
+            }
+        }
+
+        for segment in 0..<segments {
+            let next = (segment + 1) % segments
+            indices += [0, UInt32(1 + next), UInt32(1 + segment)]
+        }
+        for ring in 2...rings {
+            let previous = 1 + (ring - 2) * segments
+            let current = 1 + (ring - 1) * segments
+            for segment in 0..<segments {
+                let next = (segment + 1) % segments
+                let a = UInt32(previous + segment)
+                let b = UInt32(previous + next)
+                let c = UInt32(current + segment)
+                let d = UInt32(current + next)
+                indices += [a, b, c, b, d, c]
+            }
+        }
+
+        let normals = islandNormals(vertices: vertices, indices: indices)
+        let element = indices.withUnsafeBufferPointer {
+            SCNGeometryElement(
+                data: Data(buffer: $0),
+                primitiveType: .triangles,
+                primitiveCount: indices.count / 3,
+                bytesPerIndex: MemoryLayout<UInt32>.size
+            )
+        }
+        let geometry = SCNGeometry(
+            sources: [
+                SCNGeometrySource(vertices: vertices),
+                SCNGeometrySource(normals: normals),
+                islandColorSource(colors),
+            ],
+            elements: [element]
+        )
+        geometry.firstMaterial = litMaterial(.white, roughness: 0.96, fogged: false)
+        return geometry
+    }
+
+    private static func grandIslandHeight(x: Float, z: Float, radius: Float) -> Float {
+        if radius >= 0.995 { return 0.08 }
+        let front = 0.72 * exp(-(((x + 1.55) * (x + 1.55)) / 1.65 + ((z - 0.18) * (z - 0.18)) / 0.72))
+        let center = 1.24 * exp(-(((x + 0.25) * (x + 0.25)) / 1.85 + ((z + 0.10) * (z + 0.10)) / 1.10))
+        let rear = 1.46 * exp(-(((x - 1.02) * (x - 1.02)) / 1.28 + ((z - 0.12) * (z - 0.12)) / 0.86))
+        let ridge = 0.54 * exp(-(((x - 0.08) * (x - 0.08)) / 3.4 + (z * z) / 0.48))
+        let coastFade = pow(max(0, 1 - radius), 0.42)
+        let foothill = 0.30 * pow(max(0, 1 - radius), 0.66)
+        let facets = (sin(x * 3.8 + z * 1.6) + sin(x * 1.7 - z * 4.8))
+            * 0.045 * pow(max(0, 1 - radius), 1.2)
+        let raw = 0.08 + foothill + (front + center + rear + ridge) * coastFade + facets
+        // わずかな段差を混ぜ、生成背景の登れる岩棚のリズムを作る。
+        let terraced = floor(raw * 5) / 5
+        return max(0.08, raw * 0.72 + terraced * 0.28)
+    }
+
+    /// Asset Studioの「地面に合わせる」で使う、島ローカル座標の地表高。
+    static func islandSurfaceHeight(x: Float, z: Float) -> Float {
+        let radius = islandNormalizedRadius(x: x, z: z)
+        return 0.11 + grandIslandHeight(x: x, z: z, radius: radius)
+    }
+
+    private static func grandIslandColor(height: Float, x: Float, z: Float) -> UIColor {
+        let rock: UIColor
+        switch height {
+        case ..<0.34: rock = UIColor(rgb: 0xB6B187)
+        case ..<0.78: rock = UIColor(rgb: 0x7F9070)
+        case ..<1.24: rock = UIColor(rgb: 0x929276)
+        default: rock = UIColor(rgb: 0xAAA481)
+        }
+        // 低地と谷筋だけに連続した植生帯を作る。頂点単位で地形へ焼き込むため、
+        // 緑の板や球が岩から浮かず、斜面の形に沿って見える。
+        let moisture = sin(x * 2.15 + z * 3.70) + cos(x * 3.05 - z * 1.85)
+        let altitude = max(0, min(1, (1.42 - height) / 1.18))
+        let moss = max(0, min(0.52, (moisture + 0.18) * 0.24 * altitude))
+        return islandBlend(rock, UIColor(rgb: 0x58705A), moss)
+    }
+
+    /// 半径と中心を段ごとにずらした、左右非対称の岩峰。
+    private static func makeIslandCrag(
+        radius: Float,
+        height: Float,
+        color: UIColor,
+        seed: Int
+    ) -> SCNNode {
+        let segments = 9
+        let levels: [(y: Float, radius: Float)] = [
+            (0, 1), (0.20, 0.93), (0.27, 0.78),
+            (0.47, 0.74), (0.55, 0.55), (0.72, 0.50),
+            (0.80, 0.32), (0.92, 0.26),
+        ]
+        var vertices: [SCNVector3] = []
+        var colors: [UIColor] = []
+        for (levelIndex, level) in levels.enumerated() {
+            let driftX = sin(Float(seed + levelIndex * 17)) * radius * 0.11
+            let driftZ = cos(Float(seed * 3 + levelIndex * 13)) * radius * 0.09
+            for segment in 0..<segments {
+                let angle = Float(segment) / Float(segments) * 2 * .pi
+                let jitter = 1 + sin(Float(seed * 19 + levelIndex * 11 + segment * 7)) * 0.10
+                vertices.append(SCNVector3(
+                    driftX + cos(angle) * radius * level.radius * jitter,
+                    height * level.y,
+                    driftZ + sin(angle) * radius * level.radius * jitter
+                ))
+                let faceVariation = sin(Float(seed + segment * 5 + levelIndex * 11)) * 0.035
+                let rockColor = islandBlend(color, sand, level.y * 0.18 + faceVariation)
+                let moisture = sin(angle * 2.3 + Float(seed) * 0.17 + level.y * 4.8)
+                    + cos(angle * 4.1 - Float(seed) * 0.11)
+                let altitudeBand = max(0, sin(level.y * .pi))
+                let moss = max(0, min(0.46, (moisture - 0.12) * 0.25 * altitudeBand))
+                colors.append(islandBlend(rockColor, UIColor(rgb: 0x4C6852), moss))
+            }
+        }
+        let topIndex = UInt32(vertices.count)
+        vertices.append(SCNVector3(
+            sin(Float(seed)) * radius * 0.16,
+            height,
+            cos(Float(seed * 2)) * radius * 0.12
+        ))
+        colors.append(islandBlend(color, sand, 0.24))
+
+        var indices: [UInt32] = []
+        for level in 0..<(levels.count - 1) {
+            let current = level * segments
+            let nextLevel = (level + 1) * segments
+            for segment in 0..<segments {
+                let next = (segment + 1) % segments
+                indices += [
+                    UInt32(current + segment), UInt32(current + next), UInt32(nextLevel + segment),
+                    UInt32(current + next), UInt32(nextLevel + next), UInt32(nextLevel + segment),
+                ]
+            }
+        }
+        let lastRing = (levels.count - 1) * segments
+        for segment in 0..<segments {
+            let next = (segment + 1) % segments
+            indices += [UInt32(lastRing + segment), UInt32(lastRing + next), topIndex]
+        }
+
+        let normals = islandNormals(vertices: vertices, indices: indices)
+        let element = indices.withUnsafeBufferPointer {
+            SCNGeometryElement(
+                data: Data(buffer: $0),
+                primitiveType: .triangles,
+                primitiveCount: indices.count / 3,
+                bytesPerIndex: MemoryLayout<UInt32>.size
+            )
+        }
+        let geometry = SCNGeometry(
+            sources: [
+                SCNGeometrySource(vertices: vertices),
+                SCNGeometrySource(normals: normals),
+                islandColorSource(colors),
+            ],
+            elements: [element]
+        )
+        geometry.firstMaterial = litMaterial(.white, roughness: 0.97, fogged: false)
+        return SCNNode(geometry: geometry)
+    }
+
+    private static func makeIslandPath(points: [SCNVector3]) -> SCNNode {
+        let root = SCNNode()
+        root.name = "islandPath"
+        guard points.count > 1 else { return root }
+        for index in 0..<(points.count - 1) {
+            let from = points[index]
+            let to = points[index + 1]
+            let dx = to.x - from.x
+            let dy = to.y - from.y
+            let dz = to.z - from.z
+            let horizontal = sqrt(dx * dx + dz * dz)
+            let length = sqrt(horizontal * horizontal + dy * dy)
+            let geometry = SCNBox(
+                width: CGFloat(length + 0.08),
+                height: 0.055,
+                length: index < 2 ? 0.38 : 0.30,
+                chamferRadius: 0.06
+            )
+            geometry.chamferSegmentCount = 1
+            geometry.firstMaterial = litMaterial(UIColor(rgb: 0xD7CBA5), roughness: 0.98, fogged: false)
+            let segment = SCNNode(geometry: geometry)
+            segment.position = SCNVector3(
+                (from.x + to.x) * 0.5,
+                (from.y + to.y) * 0.5 + 0.025,
+                (from.z + to.z) * 0.5
+            )
+            segment.eulerAngles.y = -atan2(dz, dx)
+            segment.eulerAngles.z = atan2(dy, max(horizontal, 0.001))
+            root.addChildNode(segment)
+        }
+        return root
+    }
+
+    private static func makeIslandLamp(strong: Bool) -> SCNNode {
+        let root = SCNNode()
+        let poleHeight: Float = 0.42
+        let poleGeo = SCNCylinder(radius: 0.018, height: CGFloat(poleHeight))
+        poleGeo.radialSegmentCount = 6
+        poleGeo.firstMaterial = litMaterial(wood, roughness: 0.9, fogged: false)
+        let pole = SCNNode(geometry: poleGeo)
+        pole.position.y = poleHeight * 0.5
+        root.addChildNode(pole)
+
+        let lightGeo = SCNSphere(radius: strong ? 0.075 : 0.058)
+        lightGeo.segmentCount = 8
+        let material = litMaterial(ember, roughness: 0.4, fogged: false)
+        material.emission.contents = returnOrange
+        material.emission.intensity = strong ? 2.2 : 1.6
+        lightGeo.firstMaterial = material
+        let glow = SCNNode(geometry: lightGeo)
+        glow.position.y = poleHeight + 0.03
+        root.addChildNode(glow)
+        return root
+    }
+
+    private static func makeIslandGrass(seed: Int) -> SCNNode {
+        let root = SCNNode()
+        let colors = [UIColor(rgb: 0x526F59), UIColor(rgb: 0x637A5E), UIColor(rgb: 0x455F50)]
+        for blade in 0..<3 {
+            let height = 0.22 + Float((seed + blade) % 3) * 0.035
+            let geometry = SCNCone(topRadius: 0, bottomRadius: 0.035, height: CGFloat(height))
+            geometry.radialSegmentCount = 4
+            geometry.firstMaterial = litMaterial(colors[(seed + blade) % colors.count], roughness: 0.98, fogged: false)
+            let node = SCNNode(geometry: geometry)
+            node.position = SCNVector3(Float(blade - 1) * 0.055, height * 0.5, Float(blade % 2) * 0.028)
+            node.eulerAngles.z = Float(blade - 1) * 0.20
+            root.addChildNode(node)
+        }
+        return root
+    }
+
+    /// 地形の各頂点高を再計算して密着させる、不定形の苔・下草パッチ。
+    private static func makeIslandGroundCover(
+        center: SCNVector3,
+        radius: Float,
+        seed: Int
+    ) -> SCNNode {
+        let segments = 12
+        var vertices: [SCNVector3] = []
+        let centerRadius = islandNormalizedRadius(x: center.x, z: center.z)
+        vertices.append(SCNVector3(
+            center.x,
+            0.126 + grandIslandHeight(x: center.x, z: center.z, radius: centerRadius),
+            center.z
+        ))
+        for index in 0..<segments {
+            let angle = Float(index) / Float(segments) * 2 * .pi
+            let wobble = 0.78 + 0.22 * sin(Float(seed * 13 + index * 7))
+            let x = center.x + cos(angle) * radius * wobble
+            let z = center.z + sin(angle) * radius * 0.72 * wobble
+            let normalizedRadius = islandNormalizedRadius(x: x, z: z)
+            vertices.append(SCNVector3(
+                x,
+                0.126 + grandIslandHeight(x: x, z: z, radius: normalizedRadius),
+                z
+            ))
+        }
+
+        var indices: [UInt32] = []
+        for index in 0..<segments {
+            indices += [0, UInt32(index + 1), UInt32((index + 1) % segments + 1)]
+        }
+        let normals = islandNormals(vertices: vertices, indices: indices)
+        let element = indices.withUnsafeBufferPointer {
+            SCNGeometryElement(
+                data: Data(buffer: $0),
+                primitiveType: .triangles,
+                primitiveCount: indices.count / 3,
+                bytesPerIndex: MemoryLayout<UInt32>.size
+            )
+        }
+        let geometry = SCNGeometry(
+            sources: [SCNGeometrySource(vertices: vertices), SCNGeometrySource(normals: normals)],
+            elements: [element]
+        )
+        let colors = [0x486655, 0x526E59, 0x5B755E]
+        geometry.firstMaterial = litMaterial(
+            UIColor(rgb: UInt(colors[abs(seed) % colors.count])),
+            roughness: 1,
+            doubleSided: true,
+            fogged: false
+        )
+        return SCNNode(geometry: geometry)
+    }
+
+    /// 球形のトピアリーに見えないよう、中心をずらした二つの不定形な葉房で作る低木。
+    private static func makeIslandShrub(seed: Int, scale: Float) -> SCNNode {
+        let root = SCNNode()
+        let trunkHeight = 0.28 * scale
+        let trunkGeometry = SCNCylinder(radius: CGFloat(0.025 * scale), height: CGFloat(trunkHeight))
+        trunkGeometry.radialSegmentCount = 5
+        trunkGeometry.firstMaterial = litMaterial(UIColor(rgb: 0x5B4934), roughness: 1, fogged: false)
+        let trunk = SCNNode(geometry: trunkGeometry)
+        trunk.position.y = trunkHeight * 0.5
+        trunk.eulerAngles.z = sin(Float(seed)) * 0.08
+        root.addChildNode(trunk)
+
+        let leafColors = [0x355747, 0x42644F, 0x4E6E55, 0x5B775B]
+        let crownCount = seed.isMultiple(of: 2) ? 2 : 1
+        for index in 0..<crownCount {
+            let radius = (index == 0 ? 0.23 : 0.16) * scale
+            let height = (index == 0 ? 0.34 : 0.26) * scale
+            let geometry = makeIslandFoliageCrown(
+                radius: radius,
+                height: height,
+                color: UIColor(rgb: UInt(leafColors[(seed + index) % leafColors.count])),
+                seed: seed + index * 11
+            )
+            let node = SCNNode(geometry: geometry)
+            node.position = SCNVector3(
+                (index == 0 ? -0.025 : 0.13) * scale,
+                (index == 0 ? 0.23 : 0.26) * scale,
+                (index == 0 ? 0.01 : -0.07) * scale
+            )
+            root.addChildNode(node)
+        }
+        return root
+    }
+
+    private static func makeIslandFoliageCrown(
+        radius: Float,
+        height: Float,
+        color: UIColor,
+        seed: Int
+    ) -> SCNGeometry {
+        let segments = 7
+        let levels: [(y: Float, radius: Float)] = [
+            (0, 0.62), (0.28, 0.96), (0.66, 0.78), (0.88, 0.42),
+        ]
+        var vertices: [SCNVector3] = []
+        for (levelIndex, level) in levels.enumerated() {
+            let driftX = sin(Float(seed + levelIndex * 7)) * radius * 0.14
+            let driftZ = cos(Float(seed * 2 + levelIndex * 5)) * radius * 0.12
+            for segment in 0..<segments {
+                let angle = Float(segment) / Float(segments) * 2 * .pi
+                let jitter = 0.84 + 0.18 * (0.5 + 0.5 * sin(Float(seed * 3 + levelIndex * 13 + segment * 5)))
+                vertices.append(SCNVector3(
+                    driftX + cos(angle) * radius * level.radius * jitter,
+                    height * level.y,
+                    driftZ + sin(angle) * radius * level.radius * jitter
+                ))
+            }
+        }
+        let topIndex = UInt32(vertices.count)
+        vertices.append(SCNVector3(
+            sin(Float(seed)) * radius * 0.12,
+            height,
+            cos(Float(seed)) * radius * 0.10
+        ))
+
+        var indices: [UInt32] = []
+        for level in 0..<(levels.count - 1) {
+            let current = level * segments
+            let nextLevel = (level + 1) * segments
+            for segment in 0..<segments {
+                let next = (segment + 1) % segments
+                indices += [
+                    UInt32(current + segment), UInt32(current + next), UInt32(nextLevel + segment),
+                    UInt32(current + next), UInt32(nextLevel + next), UInt32(nextLevel + segment),
+                ]
+            }
+        }
+        let lastRing = (levels.count - 1) * segments
+        for segment in 0..<segments {
+            let next = (segment + 1) % segments
+            indices += [UInt32(lastRing + segment), UInt32(lastRing + next), topIndex]
+        }
+        let normals = islandNormals(vertices: vertices, indices: indices)
+        let element = indices.withUnsafeBufferPointer {
+            SCNGeometryElement(
+                data: Data(buffer: $0),
+                primitiveType: .triangles,
+                primitiveCount: indices.count / 3,
+                bytesPerIndex: MemoryLayout<UInt32>.size
+            )
+        }
+        let geometry = SCNGeometry(
+            sources: [SCNGeometrySource(vertices: vertices), SCNGeometrySource(normals: normals)],
+            elements: [element]
+        )
+        geometry.firstMaterial = litMaterial(color, roughness: 1, fogged: false)
+        return geometry
+    }
+
+    private static func islandNormalizedRadius(x: Float, z: Float) -> Float {
+        min(1, sqrt((x / 3.1) * (x / 3.1) + (z / 2.25) * (z / 2.25)))
+    }
+
+    private static func makeIslandSummitBeacon() -> SCNNode {
+        let root = SCNNode()
+        let poleGeo = SCNCylinder(radius: 0.024, height: 0.72)
+        poleGeo.radialSegmentCount = 7
+        poleGeo.firstMaterial = litMaterial(wood, roughness: 0.9, fogged: false)
+        let pole = SCNNode(geometry: poleGeo)
+        pole.position.y = 0.36
+        root.addChildNode(pole)
+
+        let flagPath = UIBezierPath()
+        flagPath.move(to: CGPoint(x: 0, y: 0))
+        flagPath.addLine(to: CGPoint(x: 0, y: 0.24))
+        flagPath.addLine(to: CGPoint(x: 0.46, y: 0.17))
+        flagPath.addLine(to: CGPoint(x: 0.34, y: 0.09))
+        flagPath.addLine(to: CGPoint(x: 0.46, y: 0.02))
+        flagPath.close()
+        let flagGeo = SCNShape(path: flagPath, extrusionDepth: 0.006)
+        flagGeo.firstMaterial = litMaterial(returnOrange, roughness: 0.92, doubleSided: true, fogged: false)
+        let flag = SCNNode(geometry: flagGeo)
+        flag.position = SCNVector3(0.02, 0.45, 0)
+        root.addChildNode(flag)
+
+        let glowGeo = SCNSphere(radius: 0.065)
+        glowGeo.segmentCount = 8
+        let glowMaterial = litMaterial(ember, roughness: 0.35, fogged: false)
+        glowMaterial.emission.contents = returnOrange
+        glowMaterial.emission.intensity = 2.4
+        glowGeo.firstMaterial = glowMaterial
+        let glow = SCNNode(geometry: glowGeo)
+        glow.position.y = 0.76
+        root.addChildNode(glow)
+        return root
+    }
+
+    private static func islandColorSource(_ colors: [UIColor]) -> SCNGeometrySource {
+        let values: [SIMD4<Float>] = colors.map { color in
+            var red: CGFloat = 0
+            var green: CGFloat = 0
+            var blue: CGFloat = 0
+            var alpha: CGFloat = 0
+            color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            return SIMD4(Float(red), Float(green), Float(blue), Float(alpha))
+        }
+        let data = values.withUnsafeBytes { Data($0) }
+        return SCNGeometrySource(
+            data: data,
+            semantic: .color,
+            vectorCount: values.count,
+            usesFloatComponents: true,
+            componentsPerVector: 4,
+            bytesPerComponent: MemoryLayout<Float>.size,
+            dataOffset: 0,
+            dataStride: MemoryLayout<SIMD4<Float>>.stride
+        )
+    }
+
+    private static func islandBlend(_ a: UIColor, _ b: UIColor, _ t: Float) -> UIColor {
+        var ar: CGFloat = 0, ag: CGFloat = 0, ab: CGFloat = 0
+        var br: CGFloat = 0, bg: CGFloat = 0, bb: CGFloat = 0
+        a.getRed(&ar, green: &ag, blue: &ab, alpha: nil)
+        b.getRed(&br, green: &bg, blue: &bb, alpha: nil)
+        let amount = CGFloat(min(1, max(0, t)))
+        return UIColor(
+            red: ar + (br - ar) * amount,
+            green: ag + (bg - ag) * amount,
+            blue: ab + (bb - ab) * amount,
+            alpha: 1
+        )
+    }
+
+    private static func islandNormals(vertices: [SCNVector3], indices: [UInt32]) -> [SCNVector3] {
+        var normals = [SCNVector3](repeating: SCNVector3Zero, count: vertices.count)
+        for index in stride(from: 0, to: indices.count, by: 3) {
+            let ia = Int(indices[index])
+            let ib = Int(indices[index + 1])
+            let ic = Int(indices[index + 2])
+            let ab = SCNVector3(
+                vertices[ib].x - vertices[ia].x,
+                vertices[ib].y - vertices[ia].y,
+                vertices[ib].z - vertices[ia].z
+            )
+            let ac = SCNVector3(
+                vertices[ic].x - vertices[ia].x,
+                vertices[ic].y - vertices[ia].y,
+                vertices[ic].z - vertices[ia].z
+            )
+            let normal = SCNVector3(
+                ab.y * ac.z - ab.z * ac.y,
+                ab.z * ac.x - ab.x * ac.z,
+                ab.x * ac.y - ab.y * ac.x
+            )
+            for vertexIndex in [ia, ib, ic] {
+                normals[vertexIndex].x += normal.x
+                normals[vertexIndex].y += normal.y
+                normals[vertexIndex].z += normal.z
+            }
+        }
+        return normals.map { value in
+            let length = sqrt(value.x * value.x + value.y * value.y + value.z * value.z)
+            guard length > 0.0001 else { return SCNVector3(0, 1, 0) }
+            return SCNVector3(value.x / length, value.y / length, value.z / length)
+        }
     }
 
     // MARK: - 船(Web BoatModel の忠実移植)
@@ -362,14 +1118,84 @@ enum VoyageSceneKit {
         return geo
     }
 
-    /// 帆船一式(Web BoatModel 完全移植)。"boatBob" 直下に組み、揺れは外側のアニメータが担う。
+    /// 完成船モデルの実甲板上に置く航海士の足元。Webの定数と同値。
+    static let navigatorDeckPosition = SCNVector3(0.74, 0.68, 0.18)
+    static let navigatorDeckScale: Float = 0.62
+
+    /// 航海士は船と同じBlenderモデル内の甲板アンカーへ取り付ける。
+    /// GLB/USDZの軸変換後にワールド座標を足すと、視点を回した際に船から離れるため。
+    private static func attachNavigator(to boat: SCNNode) {
+        let sailor = PhoenixNavigator.makeNavigatorNode()
+        sailor.position = SCNVector3Zero
+        sailor.scale = SCNVector3(navigatorDeckScale, navigatorDeckScale, navigatorDeckScale)
+        if let anchor = boat.childNode(withName: "Navigator_Anchor", recursively: true) {
+            anchor.addChildNode(sailor)
+        } else {
+            sailor.position = navigatorDeckPosition
+            boat.addChildNode(sailor)
+        }
+    }
+
+    /// Webと同じBlenderソースから出力した完成船。簡易プリミティブを組み直さず、
+    /// 船体・甲板・舷縁・索具の形と座標系を両プラットフォームで共有する。
     static func makeBoatModel(_ parts: BoatParts) -> SCNNode {
+        guard let url = Bundle.main.url(forResource: "landfall_boat", withExtension: "usdz"),
+              let importedScene = try? SCNScene(url: url, options: nil) else {
+            assertionFailure("landfall_boat.usdz could not be loaded")
+            return makeProceduralBoatModel(parts)
+        }
+
+        let model = SCNNode()
+        model.name = "boatModel"
+        for child in importedScene.rootNode.childNodes {
+            model.addChildNode(child.clone())
+        }
+
+        model.enumerateChildNodes { node, _ in
+            guard let geometry = node.geometry else { return }
+            geometry.materials = geometry.materials.map { source in
+                guard let material = source.copy() as? SCNMaterial else {
+                    return source
+                }
+                switch material.name {
+                case "LF_BoatHull":
+                    material.diffuse.contents = parts.hull
+                case "LF_BoatDeck":
+                    material.diffuse.contents = parts.hull.scaled(0.72)
+                case "LF_BoatMainSail":
+                    material.diffuse.contents = parts.sail
+                case "LF_BoatJib":
+                    material.diffuse.contents = parts.jib
+                case "LF_BoatCockpit":
+                    // 帆色の選択とは切り離し、船上のアクセントはブランドの
+                    // コーラルへ固定する。元モデルのミッドナイト色もここで上書きする。
+                    material.diffuse.contents = coral
+                case "LF_BoatStripe":
+                    node.isHidden = parts.stripe == nil
+                    if let stripe = parts.stripe { material.diffuse.contents = stripe }
+                case "LF_BoatFlag":
+                    node.isHidden = parts.flag == "none"
+                    material.diffuse.contents = flagColorFor(parts.flag)
+                default:
+                    break
+                }
+                return material
+            }
+        }
+        return model
+    }
+
+    /// 読み込み失敗時だけ使う旧簡易船。通常の航海画面では使用しない。
+    private static func makeProceduralBoatModel(_ parts: BoatParts) -> SCNNode {
         let model = SCNNode()
         model.name = "boatModel"
 
         // 船体
         let hullNode = SCNNode(geometry: makeHullGeometry(color: parts.hull))
         hullNode.name = "boatHull"
+        // SCNShapeは押し出しが z=0...depth。Webは生成後に-depth/2だけ戻して
+        // 船体をマスト中心(z=0)へ揃えるため、同じ補正を入れる。
+        hullNode.position.z = -0.25
         model.addChildNode(hullNode)
 
         // デッキ(少し暗い同系色の薄い蓋 = hull*0.72)
@@ -599,7 +1425,8 @@ enum VoyageSceneKit {
         }
 
         // 前後に散らして群島感を出す(一直線に並べない)。
-        let x = xStart + (Float(index + 1) / Float(total + 1)) * (xEnd - xStart)
+        let progress = Float(index + 1) / Float(total + 1)
+        let x = xStart + pow(progress, routeApproachPower) * (xEnd - xStart)
         let z: Float = 0.7 + Float(index % 2) * 0.7
         group.position = SCNVector3(x, 0, z)
         return group
@@ -737,21 +1564,19 @@ enum VoyageSceneKit {
         travel.name = "travel"
         travel.position = SCNVector3(boatX(ratio), 0, 0)
         travel.eulerAngles.y = 0.1
-        travel.scale = SCNVector3(0.55, 0.55, 0.55)
+        travel.scale = SCNVector3(0.35, 0.35, 0.35)
         travel.addChildNode(makeRipples())
         travel.addChildNode(makeWake())
         let bob = SCNNode()
         bob.name = "boatBob"
-        bob.addChildNode(makeBoatModel(BoatCustomization.currentParts))
+        let boat = makeBoatModel(BoatCustomization.currentParts)
+        attachNavigator(to: boat)
+        bob.addChildNode(boat)
         // 自分の航海士を船首寄りの甲板に立たせる(舳先を見て進む姿)。
         // 船体は x=-1.02(船尾)〜1.32(舳先の先端)で、舷縁は y≈0.5〜0.58。
         // 原点が足元なので舷縁の上(y=0.57)に置く。マスト(x=0.1)とメインセイルを
         // 避けつつ、舳先の反りに脚が入らない x=0.88 に。帆に隠れないよう
         // 手前の舷側(z=+0.22)へ寄せる。
-        let sailor = PhoenixNavigator.makeNavigatorNode()
-        sailor.position = SCNVector3(0.88, 0.57, 0.22)
-        sailor.scale = SCNVector3(0.62, 0.62, 0.62)
-        bob.addChildNode(sailor)
         travel.addChildNode(bob)
         if immersive {
             // 船タップの当たり判定(船体+帆を覆う。Web BOAT_HIT_GEO)+ タップ波紋リング。
@@ -774,6 +1599,399 @@ enum VoyageSceneKit {
             makeCamera(position: cardCamPos, target: cardCamTarget, fov: cardCamFov)
         )
         return scene
+    }
+
+    // MARK: - シーン(上陸)
+
+    /// 航海中と同じ海・船・航海士・島を、浜へ到着した瞬間の構図へ組み直す。
+    /// 静止画へ切り替えず、航海の世界がそのまま上陸記録へ続く。
+    static func makeLandfallScene() -> SCNScene {
+        let scene = SCNScene()
+        scene.background.contents = nightBG
+        scene.rootNode.addChildNode(makeSea(moonX: -5.2))
+        scene.rootNode.addChildNode(makeStars(count: 560))
+        scene.rootNode.addChildNode(makeMoon(position: SCNVector3(-5.2, 3.6, -17)))
+        scene.rootNode.addChildNode(makeHorizon())
+
+        let islandPosition = SCNVector3(1.65, 0, -0.72)
+        let island = makeIsland(
+            position: islandPosition,
+            scale: SCNVector3(1.16, 1.16, 1.16)
+        )
+        island.name = "landfallIsland"
+
+        // 到着後の航海士。アニメーション中は船上の航海士を表示し、
+        // 浜へ着いた瞬間にこちらへ自然にクロスフェードする。
+        let shoreX: Float = -2.10
+        let shoreZ: Float = 0.76
+        let shoreRadius = islandNormalizedRadius(x: shoreX, z: shoreZ)
+        let shoreNavigator = PhoenixNavigator.makeNavigatorNode()
+        shoreNavigator.name = "landfallShoreNavigator"
+        shoreNavigator.position = SCNVector3(
+            shoreX,
+            0.13 + grandIslandHeight(x: shoreX, z: shoreZ, radius: shoreRadius),
+            shoreZ
+        )
+        shoreNavigator.scale = SCNVector3(0.46, 0.46, 0.46)
+        shoreNavigator.eulerAngles.y = -.pi * 0.43
+        island.addChildNode(shoreNavigator)
+        scene.rootNode.addChildNode(island)
+
+        let travel = SCNNode()
+        travel.name = "landfallTravel"
+        travel.position = SCNVector3(-2.15, 0.025, 0.66)
+        travel.eulerAngles.y = 0.10
+        travel.scale = SCNVector3(0.54, 0.54, 0.54)
+        travel.addChildNode(makeRipples())
+        let bob = SCNNode()
+        bob.name = "landfallBoatBob"
+        let boat = makeBoatModel(BoatCustomization.currentParts)
+        attachNavigator(to: boat)
+        if let boatNavigator = boat.childNode(withName: "navigator", recursively: true) {
+            boatNavigator.name = "landfallBoatNavigator"
+            boatNavigator.opacity = 0
+        }
+        bob.addChildNode(boat)
+        travel.addChildNode(bob)
+        scene.rootNode.addChildNode(travel)
+
+        makeLights().forEach { scene.rootNode.addChildNode($0) }
+
+        let target = SCNNode()
+        target.name = "landfallCameraTarget"
+        target.position = SCNVector3(0.15, 1.65, -0.18)
+        scene.rootNode.addChildNode(target)
+
+        let camera = makeCamera(
+            position: SCNVector3(-7.35, 4.75, 13.1),
+            target: target.position,
+            fov: 43
+        )
+        camera.camera?.contrast = 0.08
+        camera.camera?.saturation = 1.04
+        camera.camera?.screenSpaceAmbientOcclusionIntensity = 0.58
+        camera.camera?.screenSpaceAmbientOcclusionRadius = 1.35
+        camera.camera?.screenSpaceAmbientOcclusionBias = 0.025
+        let look = SCNLookAtConstraint(target: target)
+        look.isGimbalLockEnabled = true
+        camera.constraints = [look]
+        scene.rootNode.addChildNode(camera)
+        return scene
+    }
+
+    // MARK: - シーン(航海ホーム / Web VoyagingWorld)
+
+    /// Web Gulls と同じ10羽の低ポリの群れ。各ノードの軌道値はKVCでアニメータへ渡す。
+    static func makeVoyagingGulls() -> SCNNode {
+        let root = SCNNode()
+        root.name = "gulls"
+        let flock: [(r: Float, y: Float, omega: Float, scale: Float, flap: Float, phase: Float)] = [
+            (4.2, 2.3, 0.085, 0.15, 2.1, 0.0), (5.0, 2.8, -0.065, 0.14, 1.7, 0.8),
+            (4.6, 2.0, 0.11, 0.16, 2.5, 1.6), (5.6, 3.2, 0.055, 0.13, 1.6, 2.4),
+            (3.9, 2.6, -0.1, 0.17, 2.3, 3.2), (6.0, 2.2, 0.07, 0.12, 1.9, 4.0),
+            (5.2, 3.5, -0.05, 0.14, 1.5, 4.8), (4.4, 3.0, 0.095, 0.16, 2.2, 5.6),
+            (6.6, 2.5, -0.045, 0.12, 1.8, 6.1), (3.6, 3.3, 0.125, 0.18, 2.6, 2.0)
+        ]
+        let vertices = [
+            SCNVector3(0, 0, 0), SCNVector3(1, 0.06, -0.12), SCNVector3(0.34, 0, 0.24)
+        ]
+        let source = SCNGeometrySource(vertices: vertices)
+        var indices: [UInt32] = [0, 1, 2]
+        let data = Data(bytes: &indices, count: indices.count * MemoryLayout<UInt32>.size)
+        let element = SCNGeometryElement(data: data, primitiveType: .triangles, primitiveCount: 1, bytesPerIndex: 4)
+        for (index, gull) in flock.enumerated() {
+            let bird = SCNNode()
+            bird.name = "gull_\(index)"
+            bird.scale = SCNVector3(gull.scale, gull.scale, gull.scale)
+            for wingIndex in 0..<2 {
+                let geometry = SCNGeometry(sources: [source], elements: [element])
+                let material = unlitMaterial(sand)
+                material.diffuse.contents = sand.withAlphaComponent(0.5)
+                geometry.firstMaterial = material
+                let wing = SCNNode(geometry: geometry)
+                wing.name = wingIndex == 0 ? "leftWing" : "rightWing"
+                wing.scale.x = wingIndex == 0 ? -1 : 1
+                wing.eulerAngles.z = wingIndex == 0 ? -0.22 : 0.22
+                bird.addChildNode(wing)
+            }
+            root.addChildNode(bird)
+        }
+        return root
+    }
+
+    /// Web VoyagingWorld の定数をそのまま使うログイン後の航海ホーム。
+    /// Webと同様、航海を始めた時刻ではなく現在の朝・昼・夕・夜を海へ反映する。
+    static func makeVoyagingScene(
+        showIsland: Bool,
+        timeOfDay: AftideHomeTimeOfDay = .night
+    ) -> SCNScene {
+        let palette = timeOfDay == .night ? AftideHomePalette.voyagingNight : timeOfDay.palette
+        let scene = SCNScene()
+        scene.background.contents = UIColor(rgb: palette.sky)
+        scene.fogColor = UIColor(rgb: palette.fog)
+        scene.fogStartDistance = 12
+        scene.fogEndDistance = 34
+        if palette.stars > 0 {
+            scene.rootNode.addChildNode(makeStars(count: palette.stars))
+        }
+
+        scene.rootNode.addChildNode(makeVoyagingCelestial(timeOfDay: timeOfDay))
+        scene.rootNode.addChildNode(makeVoyagingSea(palette: palette))
+        // Web Horizon と同じ、z=-20の細い平面。円形の水平線は投影位置が変わり、
+        // 同じカメラ定数でも世界全体が上下にずれて見えるため使わない。
+        scene.rootNode.addChildNode(makeHorizon())
+        scene.rootNode.addChildNode(makeVoyagingGulls())
+
+        if showIsland {
+            // Web ApproachingIsland と同じ二重group構造。開始時の距離はアニメータが
+            // 経過時間から決め、25分ほどかけて最終位置へ近づける。
+            let approach = SCNNode()
+            approach.name = "approachingIsland"
+            approach.scale = SCNVector3(0.7, 0.7, 0.7)
+            approach.addChildNode(makeIsland())
+            scene.rootNode.addChildNode(approach)
+        }
+
+        let travel = SCNNode()
+        travel.name = "travel"
+        travel.eulerAngles.y = 0.1
+        travel.scale = SCNVector3(0.55, 0.55, 0.55)
+        travel.addChildNode(makeWake())
+        let bob = SCNNode()
+        bob.name = "boatBob"
+        let boat = makeBoatModel(BoatCustomization.currentParts)
+        attachNavigator(to: boat)
+        bob.addChildNode(boat)
+        travel.addChildNode(bob)
+        scene.rootNode.addChildNode(travel)
+
+        makeVoyagingLights(timeOfDay: timeOfDay).forEach {
+            scene.rootNode.addChildNode($0)
+        }
+        let camera = makeCamera(
+            position: SCNVector3(-5.6, 2.4, 8.6),
+            target: SCNVector3(0.8, 1.15, 0),
+            fov: 38
+        )
+        // タイマーの近景だけ、甲板・航海士・島の接地感を補う。
+        // ブルームや被写界深度は輪郭をぼかすため使わず、控えめなAOと色調整に留める。
+        camera.camera?.contrast = 0.06
+        camera.camera?.saturation = 1.04
+        camera.camera?.screenSpaceAmbientOcclusionIntensity = 0.42
+        camera.camera?.screenSpaceAmbientOcclusionRadius = 1.25
+        camera.camera?.screenSpaceAmbientOcclusionBias = 0.025
+        camera.camera?.screenSpaceAmbientOcclusionDepthThreshold = 2.0
+        scene.rootNode.addChildNode(camera)
+        return scene
+    }
+
+    /// 平面の頂点自体を上下させる三層の波。XY平面のlocal +Zが、ノード回転後のworld +Y。
+    /// 外周は水平線へ自然につなぐため振幅を落とす。
+    private static let voyagingSeaGeometryShader = """
+    #pragma body
+    float2 p = _geometry.position.xy;
+    float t = scn_frame.time;
+    float phaseA = p.x * 0.31 + p.y * 0.17 - t * 0.72;
+    float phaseB = -p.x * 0.19 + p.y * 0.43 + t * 0.51;
+    float phaseC = p.x * 0.91 + p.y * 0.67 - t * 1.16;
+    float edge = 1.0 - smoothstep(21.0, 29.0, length(p));
+    float height =
+        sin(phaseA) * 0.070
+        + sin(phaseB) * 0.042
+        + sin(phaseC) * 0.014;
+    float dhdx =
+        cos(phaseA) * 0.070 * 0.31
+        + cos(phaseB) * 0.042 * -0.19
+        + cos(phaseC) * 0.014 * 0.91;
+    float dhdy =
+        cos(phaseA) * 0.070 * 0.17
+        + cos(phaseB) * 0.042 * 0.43
+        + cos(phaseC) * 0.014 * 0.67;
+    _geometry.position.z += height * edge;
+    _geometry.normal = normalize(float3(-dhdx * edge, -dhdy * edge, 1.0));
+    """
+
+    /// 波高・傾斜から陰影を作り、遠景の空色反射、細かな波頭、船尾の航跡を重ねる。
+    /// 色はPCCSパレットのsRGB値なので、最後にlinearへ変換して白っぽい映像を防ぐ。
+    private static let voyagingSeaSurfaceShader = """
+    #pragma arguments
+    float3 uSea;
+    float3 uDeep;
+    float3 uLight;
+    float3 uFog;
+    #pragma body
+    float2 p = (_surface.diffuseTexcoord - float2(0.5)) * 60.0;
+    float r = length(p) / 30.0;
+    float t = scn_frame.time;
+
+    float phaseA = p.x * 0.31 + p.y * 0.17 - t * 0.72;
+    float phaseB = -p.x * 0.19 + p.y * 0.43 + t * 0.51;
+    float phaseC = p.x * 0.91 + p.y * 0.67 - t * 1.16;
+    float height =
+        sin(phaseA) * 0.070
+        + sin(phaseB) * 0.042
+        + sin(phaseC) * 0.014;
+    float2 slope = float2(
+        cos(phaseA) * 0.070 * 0.31
+            + cos(phaseB) * 0.042 * -0.19
+            + cos(phaseC) * 0.014 * 0.91,
+        cos(phaseA) * 0.070 * 0.17
+            + cos(phaseB) * 0.042 * 0.43
+            + cos(phaseC) * 0.014 * 0.67
+    );
+    float3 waveNormal = normalize(float3(-slope, 1.0));
+
+    float depth = smoothstep(0.08, 1.0, r);
+    float3 col = mix(uSea, uDeep, depth * 0.72);
+    // 波の向きに応じた明暗。単なる模様ではなく面の起伏として読める強さ。
+    float facing = clamp(dot(waveNormal, normalize(float3(-0.28, 0.18, 0.94))), 0.0, 1.0);
+    float directionalShade = clamp(
+        0.5 + slope.x * 7.2 + slope.y * 5.4,
+        0.0,
+        1.0
+    );
+    col *= 0.84 + directionalShade * 0.24;
+
+    // 遠景では空と霧を水面へ薄く映し込み、水平線へ連続させる。
+    float grazing = smoothstep(0.30, 0.96, r);
+    col = mix(col, mix(uLight, uFog, 0.52), grazing * 0.16);
+
+    // 高い波頭だけに出る不規則な反射。均等な白線にしない。
+    float micro = sin(p.x * 3.8 - p.y * 2.7 + t * 1.7)
+        * sin(p.x * 1.6 + p.y * 4.1 - t * 1.1);
+    float crest = smoothstep(0.060, 0.115, height + micro * 0.018);
+    float broken = 0.58 + 0.42 * sin(p.x * 2.9 + p.y * 1.7 - t * 1.4);
+    col = mix(col, uLight, crest * broken * 0.18);
+
+    // 日月の反射は一本の帯ではなく、波で細かく切れた光片として描く。
+    float lane = exp(-((p.x - 5.1) * (p.x - 5.1)) / 6.4);
+    float shimmer = 0.5 + 0.5
+        * sin(p.y * 1.23 - t * 1.19)
+        * sin(p.x * 1.08 + t * 0.54);
+    float specular = pow(facing, 52.0) * (0.45 + 0.55 * max(micro, 0.0));
+    col = mix(col, uLight, clamp(lane * shimmer * 0.21 + specular * 0.20, 0.0, 0.34));
+
+    // 船尾(-X)に残る、幅が少しずつ広がる二筋の航跡。
+    float aft = (1.0 - smoothstep(-0.45, 0.35, p.x)) * smoothstep(-19.0, -1.1, p.x);
+    float wakeWidth = 0.20 + max(-p.x, 0.0) * 0.045;
+    float wakeL = exp(-pow((p.y - wakeWidth) / 0.15, 2.0));
+    float wakeR = exp(-pow((p.y + wakeWidth) / 0.15, 2.0));
+    float wakeBreak = 0.45 + 0.55 * sin(-p.x * 2.6 + t * 1.9);
+    col = mix(col, uLight, aft * (wakeL + wakeR) * wakeBreak * 0.13);
+
+    _surface.diffuse = float4(pow(clamp(col, 0.0, 1.0), float3(2.2)), 1.0);
+    """
+
+    private static func makeVoyagingSea(palette: AftideHomePalette) -> SCNNode {
+        let root = SCNNode()
+        root.name = "voyagingSea"
+
+        let plane = SCNPlane(width: 60, height: 60)
+        // 約1.6万頂点。60fpsを保ちつつ、近景で波の輪郭が角張らない密度。
+        plane.widthSegmentCount = 128
+        plane.heightSegmentCount = 128
+        let material = SCNMaterial()
+        // WebのShaderMaterialと同じ非照明。PBR光を重ねると同じ#1E5348でも
+        // iOSだけ明るい緑へ転ぶため、波の陰影・反射はsurface shader内で完結させる。
+        material.lightingModel = .constant
+        material.diffuse.contents = UIColor(rgb: palette.sea)
+        material.isDoubleSided = true
+        material.shaderModifiers = [
+            .geometry: voyagingSeaGeometryShader,
+            .surface: voyagingSeaSurfaceShader
+        ]
+        material.setValue(colorVector(palette.sea), forKey: "uSea")
+        material.setValue(colorVector(palette.seaDeep), forKey: "uDeep")
+        material.setValue(colorVector(palette.reflection), forKey: "uLight")
+        material.setValue(colorVector(palette.fog), forKey: "uFog")
+        plane.firstMaterial = material
+        let surface = SCNNode(geometry: plane)
+        surface.name = "voyagingSeaSurface"
+        surface.eulerAngles.x = -.pi / 2
+        root.addChildNode(surface)
+
+        // 波が持ち上がった隙間から背景色が覗かないための深い水の下地。
+        let underlayPlane = SCNPlane(width: 60, height: 60)
+        underlayPlane.firstMaterial = unlitMaterial(UIColor(rgb: palette.seaDeep))
+        let underlay = SCNNode(geometry: underlayPlane)
+        underlay.name = "voyagingSeaUnderlay"
+        underlay.position.y = -0.14
+        underlay.eulerAngles.x = -.pi / 2
+        root.addChildNode(underlay)
+        return root
+    }
+
+    private static func makeVoyagingHorizon(palette: AftideHomePalette) -> SCNNode {
+        // カメラを360°回しても途切れない、水平方向を一周する淡い水平線。
+        let ring = SCNTorus(ringRadius: 25, pipeRadius: 0.022)
+        ring.ringSegmentCount = 128
+        ring.pipeSegmentCount = 5
+        let material = unlitMaterial(UIColor(rgb: palette.reflection))
+        material.diffuse.contents = UIColor(rgb: palette.reflection).withAlphaComponent(0.14)
+        material.writesToDepthBuffer = false
+        ring.firstMaterial = material
+        let node = SCNNode(geometry: ring)
+        node.name = "voyagingHorizon"
+        node.position = SCNVector3(0.8, 0.035, 0)
+        return node
+    }
+
+    private static func makeVoyagingCelestial(
+        timeOfDay: AftideHomeTimeOfDay
+    ) -> SCNNode {
+        let palette = timeOfDay == .night ? AftideHomePalette.voyagingNight : timeOfDay.palette
+        let sphere = SCNSphere(radius: timeOfDay == .night ? 1.1 : 1.25)
+        sphere.segmentCount = 24
+        let material = unlitMaterial(UIColor(rgb: palette.reflection))
+        material.emission.contents = UIColor(rgb: palette.reflection)
+        material.emission.intensity = timeOfDay == .night ? 0.9 : 0.62
+        sphere.firstMaterial = material
+        let node = SCNNode(geometry: sphere)
+        node.position = SCNVector3(
+            timeOfDay == .morning ? -5.2 : (timeOfDay == .day ? 0.8 : 5.1),
+            timeOfDay == .day ? 5.1 : (timeOfDay == .evening ? 1.25 : 3.3),
+            -5.5
+        )
+        node.scale = timeOfDay == .night
+            ? SCNVector3(0.4, 0.4, 0.4)
+            : SCNVector3(0.72, 0.72, 0.72)
+        return node
+    }
+
+    private static func makeVoyagingLights(
+        timeOfDay: AftideHomeTimeOfDay
+    ) -> [SCNNode] {
+        let palette = timeOfDay == .night ? AftideHomePalette.voyagingNight : timeOfDay.palette
+        let ambient = SCNNode()
+        ambient.light = SCNLight()
+        ambient.light?.type = .ambient
+        ambient.light?.color = UIColor(rgb: palette.ambient)
+        ambient.light?.intensity = timeOfDay == .day ? 850 : 520
+
+        let key = SCNNode()
+        key.light = SCNLight()
+        key.light?.type = .directional
+        key.light?.color = UIColor(rgb: palette.key)
+        key.light?.intensity = timeOfDay == .day ? 1_450 : 1_080
+        key.position = SCNVector3(-6, 8, -5)
+        key.look(at: SCNVector3(0.8, 1.15, 0))
+
+        let fill = SCNNode()
+        fill.light = SCNLight()
+        fill.light?.type = .directional
+        fill.light?.color = UIColor(rgb: palette.fill)
+        fill.light?.intensity = 240
+        fill.position = SCNVector3(5, 3, 6)
+        fill.look(at: SCNVector3(0.8, 1.15, 0))
+        return [ambient, key, fill]
+    }
+
+    private static func colorVector(_ rgb: UInt) -> SCNVector3 {
+        SCNVector3(
+            Float((rgb >> 16) & 0xFF) / 255,
+            Float((rgb >> 8) & 0xFF) / 255,
+            Float(rgb & 0xFF) / 255
+        )
     }
 
     // MARK: - 没入エディタ専用の部品(Web VoyageWorld)
@@ -858,25 +2076,57 @@ enum VoyageSceneKit {
 
     // MARK: - シーン(装い: 船スタジオ)
 
-    /// 夜の海に浮かぶ自分の船(Web BoatStudio NightSea)。
-    static func makeBoatStudioScene(parts: BoatParts) -> SCNScene {
+    /// 装い専用の夜の海。Web版の Canvas と同じく、船と航海士のどちらを
+    /// 表示しても背景・照明・カメラはこの一つの世界を使い続ける。
+    static func makeDressStudioWorld() -> SCNScene {
         let scene = SCNScene()
         scene.background.contents = nightBG
+        scene.fogColor = nightBG
+        scene.fogStartDistance = 11
+        scene.fogEndDistance = 30
         scene.rootNode.addChildNode(makeSea(moonX: -8.5))
-        scene.rootNode.addChildNode(makeStars(count: 620))
+        scene.rootNode.addChildNode(makeStars(count: 900))
         scene.rootNode.addChildNode(makeMoon(position: SCNVector3(-8.5, 5.6, -14)))
+        scene.rootNode.addChildNode(makeRipples())
+
+        // NightSea と SailorStage の中間値。背景世界の光は切替時にも変えず、
+        // 船と航海士が同じ月明かりの中にいるようにする。
+        let lights = makeLights()
+        lights[0].light?.intensity = 520
+        lights[1].light?.intensity = 1_250
+        lights[2].light?.intensity = 240
+        lights.forEach { scene.rootNode.addChildNode($0) }
+        let camera = makeCamera(
+            position: SCNVector3(3.1, 1.7, 4.3),
+            target: SCNVector3(0, 0.7, 0),
+            fov: 40
+        )
+        // 全画面の縦長viewportでもFOVを縦方向で固定する。SceneKitの自動選択に
+        // 任せると横幅基準になり、端末比率によって船が極端に拡大される。
+        camera.camera?.projectionDirection = .vertical
+        scene.rootNode.addChildNode(camera)
+        return scene
+    }
+
+    /// 装い世界へ差し込む船。背景やカメラを含めないため、表示対象だけを
+    /// 入れ替えても視点が飛ばない。
+    static func makeBoatStudioSubject(parts: BoatParts) -> SCNNode {
         let travel = SCNNode()
         travel.name = "travel"
-        travel.addChildNode(makeRipples())
+        // 全画面では操作パネルが海の上へ重なるため、カード用の実寸のままだと
+        // 船が上下のUIを覆う。世界の中心は変えず、展示物だけを一段引いて見せる。
+        travel.scale = SCNVector3(0.55, 0.55, 0.55)
         let bob = SCNNode()
         bob.name = "boatBob"
         bob.addChildNode(makeBoatModel(parts))
         travel.addChildNode(bob)
-        scene.rootNode.addChildNode(travel)
-        makeLights().forEach { scene.rootNode.addChildNode($0) }
-        scene.rootNode.addChildNode(
-            makeCamera(position: SCNVector3(3.1, 1.7, 4.3), target: SCNVector3(0, 0.7, 0), fov: 40)
-        )
+        return travel
+    }
+
+    /// 夜の海に浮かぶ自分の船(Web BoatStudio NightSea)。
+    static func makeBoatStudioScene(parts: BoatParts) -> SCNScene {
+        let scene = makeDressStudioWorld()
+        scene.rootNode.addChildNode(makeBoatStudioSubject(parts: parts))
         return scene
     }
 
@@ -1038,12 +2288,475 @@ final class VoyageAnimator: NSObject, SCNSceneRendererDelegate {
     }
 }
 
+/// Web VoyagingWorld の船・航跡・カモメを毎フレーム駆動する。
+final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
+    var resting = false
+    private var elapsedSeconds: Float = 0
+    private let flock: [(radius: Float, height: Float, omega: Float, flap: Float, phase: Float)] = [
+        (4.2, 2.3, 0.085, 2.1, 0.0), (5.0, 2.8, -0.065, 1.7, 0.8),
+        (4.6, 2.0, 0.11, 2.5, 1.6), (5.6, 3.2, 0.055, 1.6, 2.4),
+        (3.9, 2.6, -0.1, 2.3, 3.2), (6.0, 2.2, 0.07, 1.9, 4.0),
+        (5.2, 3.5, -0.05, 1.5, 4.8), (4.4, 3.0, 0.095, 2.2, 5.6),
+        (6.6, 2.5, -0.045, 1.8, 6.1), (3.6, 3.3, 0.125, 2.6, 2.0)
+    ]
+    private var startTime: TimeInterval?
+    private var lastTime: TimeInterval = 0
+    private weak var scene: SCNScene?
+    private weak var bob: SCNNode?
+    private weak var wake: SCNNode?
+    private weak var approachingIsland: SCNNode?
+    private var gulls: [SCNNode] = []
+    private let sailor = PhoenixAnimator()
+
+    func setElapsedSeconds(_ seconds: Int) {
+        elapsedSeconds = max(elapsedSeconds, Float(max(0, seconds)))
+        placeApproachingIsland()
+    }
+
+    private func bind(_ scene: SCNScene) {
+        self.scene = scene
+        bob = scene.rootNode.childNode(withName: "boatBob", recursively: true)
+        wake = scene.rootNode.childNode(withName: "wake", recursively: true)
+        approachingIsland = scene.rootNode.childNode(withName: "approachingIsland", recursively: false)
+        gulls = scene.rootNode.childNode(withName: "gulls", recursively: false)?.childNodes ?? []
+        placeApproachingIsland()
+    }
+
+    private func placeApproachingIsland() {
+        // Web: k = 1 + 1.2 * exp(-elapsed / 1500)。
+        // 開始直後は遠く、作業した時間だけゆっくり最終位置へ近づく。
+        let k = 1 + 1.2 * exp(-elapsedSeconds / 1_500)
+        approachingIsland?.position = SCNVector3(6.5 * k, 0, -5.5 * k)
+    }
+
+    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        guard let currentScene = renderer.scene else { return }
+        if scene !== currentScene { bind(currentScene) }
+        if startTime == nil { startTime = time; lastTime = time }
+        let t = Float(time - (startTime ?? time))
+        let dt = Float(min(max(time - lastTime, 0), 0.1))
+        lastTime = time
+        if !resting {
+            elapsedSeconds += dt
+            placeApproachingIsland()
+        }
+
+        if let bob {
+            bob.position.y = sin(t * (resting ? 0.34 : 0.8)) * (resting ? 0.025 : 0.06)
+            bob.eulerAngles.z = sin(t * (resting ? 0.28 : 0.6)) * (resting ? 0.012 : 0.03)
+            bob.eulerAngles.x = sin(t * (resting ? 0.25 : 0.5) + 1.2) * (resting ? 0.007 : 0.015)
+            bob.childNode(withName: "boatFlag", recursively: true)?
+                .eulerAngles.y = sin(t * (resting ? 1.2 : 5.2)) * (resting ? 0.07 : 0.22)
+        }
+        wake?.opacity = CGFloat(0.34 + sin(t * 1.4) * 0.07)
+
+        for (index, bird) in gulls.enumerated() {
+            guard flock.indices.contains(index) else { continue }
+            let config = flock[index]
+            let radius = config.radius
+            let height = config.height
+            let omega = config.omega
+            let flap = config.flap
+            let phase = config.phase
+            let angle = phase + t * omega
+            bird.position = SCNVector3(
+                cos(angle) * radius,
+                height + sin(t * 0.4 + phase) * 0.22,
+                sin(angle) * radius
+            )
+            let vx = -sin(angle) * omega
+            let vz = cos(angle) * omega
+            bird.eulerAngles.y = atan2(-vx, -vz)
+            bird.eulerAngles.z = omega > 0 ? -0.18 : 0.18
+            let beat = -0.22 + sin(t * flap + phase) * 0.34
+            bird.childNode(withName: "leftWing", recursively: false)?.eulerAngles.z = beat
+            bird.childNode(withName: "rightWing", recursively: false)?.eulerAngles.z = -beat
+        }
+
+        sailor.bindIfNeeded(currentScene)
+        sailor.pose = resting ? .sit : PhoenixPose.selected
+        sailor.step(t: t, dt: dt)
+    }
+}
+
 // MARK: - SwiftUI ラッパ
 
 /// ステップの見た目が変わったかを判定するための鍵(達成状態と達成日)。
 /// これが変わったときだけシーンを作り直す。
 func voyageStepsKey(_ steps: [VoyageStep]) -> String {
     steps.map { $0.doneAt.map { String(Int($0.timeIntervalSince1970)) } ?? "-" }.joined(separator: ",")
+}
+
+/// VoiceOverの調整操作でも、ピンチと同じカメラズームを使えるSceneKitビュー。
+/// 実ジェスチャと別経路を持たせることで、ズーム状態を自動検証できるようにもする。
+final class VoyagingSceneKitView: SCNView {
+    var onAccessibilityZoom: ((Float) -> Void)?
+
+    override func accessibilityIncrement() {
+        onAccessibilityZoom?(0.78)
+    }
+
+    override func accessibilityDecrement() {
+        onAccessibilityZoom?(1.28)
+    }
+}
+
+/// ログイン後に最初に見せる、Web VoyagingWorld と同じ航海中の世界。
+struct VoyagingHomeSceneView: UIViewRepresentable {
+    var showIsland: Bool
+    var timeOfDay: AftideHomeTimeOfDay = .night
+    var resting: Bool = false
+    var elapsedSeconds: Int = 0
+    var azimuthOffset: Float = 0
+    var polarOffset: Float = 0
+    var distanceScale: Float = 1
+    var onTapWorld: () -> Void = {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onTapWorld: onTapWorld)
+    }
+
+    func makeUIView(context: Context) -> VoyagingSceneKitView {
+        let view = VoyagingSceneKitView()
+        view.scene = VoyageSceneKit.makeVoyagingScene(
+            showIsland: showIsland,
+            timeOfDay: timeOfDay
+        )
+        view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
+        view.antialiasingMode = .multisampling4X
+        view.preferredFramesPerSecond = 60
+        view.contentScaleFactor = UIScreen.main.scale
+        view.autoenablesDefaultLighting = false
+        view.isMultipleTouchEnabled = true
+        view.isAccessibilityElement = true
+        view.accessibilityTraits.insert(.adjustable)
+        view.accessibilityLabel = LF.text("360° voyage view")
+        view.accessibilityHint = LF.text(
+            "Drag to look around. Pinch to zoom. Double-tap to reset the view."
+        )
+        // Web OrbitControls と同じ、船を中心にした球面オービット。
+        // カメラの上方向はworld +Yへ固定し、回転後のロールを発生させない。
+        view.allowsCameraControl = false
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        view.rendersContinuously = !reduceMotion
+        view.isPlaying = !reduceMotion
+        context.coordinator.reduceMotion = reduceMotion
+        view.delegate = reduceMotion ? nil : context.coordinator
+        view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
+        context.coordinator.attach(to: view)
+        context.coordinator.setOrbit(
+            azimuthOffset: azimuthOffset,
+            polarOffset: polarOffset,
+            distanceScale: distanceScale
+        )
+        context.coordinator.installGestures(on: view)
+        view.onAccessibilityZoom = { [weak coordinator = context.coordinator] factor in
+            coordinator?.zoom(by: factor)
+        }
+        context.coordinator.showIsland = showIsland
+        context.coordinator.timeOfDay = timeOfDay
+        context.coordinator.animator.resting = resting
+        context.coordinator.animator.setElapsedSeconds(elapsedSeconds)
+        return view
+    }
+
+    func updateUIView(_ view: VoyagingSceneKitView, context: Context) {
+        if context.coordinator.showIsland != showIsland ||
+            context.coordinator.timeOfDay != timeOfDay {
+            context.coordinator.showIsland = showIsland
+            context.coordinator.timeOfDay = timeOfDay
+            view.scene = VoyageSceneKit.makeVoyagingScene(
+                showIsland: showIsland,
+                timeOfDay: timeOfDay
+            )
+            view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
+            view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
+            context.coordinator.bindCamera()
+        }
+        context.coordinator.onTapWorld = onTapWorld
+        context.coordinator.animator.resting = resting
+        context.coordinator.animator.setElapsedSeconds(elapsedSeconds)
+        context.coordinator.setOrbit(
+            azimuthOffset: azimuthOffset,
+            polarOffset: polarOffset,
+            distanceScale: distanceScale
+        )
+    }
+
+    static func dismantleUIView(_ view: VoyagingSceneKitView, coordinator: Coordinator) {
+        coordinator.stopCameraLoop()
+        view.delegate = nil
+        view.isPlaying = false
+    }
+
+    final class Coordinator: NSObject, SCNSceneRendererDelegate, UIGestureRecognizerDelegate {
+        let animator = VoyagingHomeAnimator()
+        var showIsland = false
+        var timeOfDay: AftideHomeTimeOfDay = .night
+        var reduceMotion = false
+        var onTapWorld: () -> Void
+        private weak var view: SCNView?
+        private weak var camera: SCNNode?
+
+        // Web VoyagingWorld:
+        // camera [-5.6, 2.4, 8.6], target [0.8, 1.15, 0], fov 38
+        // min/max distance 4...16, polar 0.12π...0.49π, damping 0.05
+        private let target = SCNVector3(0.8, 1.15, 0)
+        private let initialPosition = SCNVector3(-5.6, 2.4, 8.6)
+        private let minimumDistance: Float = 4
+        private let maximumDistance: Float = 16
+        private let minimumPolar: Float = .pi * 0.12
+        private let maximumPolar: Float = .pi * 0.49
+        private let dampingFactor: Float = 0.05
+        private lazy var initialDistance: Float = {
+            let dx = initialPosition.x - target.x
+            let dy = initialPosition.y - target.y
+            let dz = initialPosition.z - target.z
+            return sqrt(dx * dx + dy * dy + dz * dz)
+        }()
+        private lazy var initialAzimuth: Float = {
+            atan2(initialPosition.x - target.x, initialPosition.z - target.z)
+        }()
+        private lazy var initialPolar: Float = {
+            acos((initialPosition.y - target.y) / initialDistance)
+        }()
+
+        private var azimuth: Float = 0
+        private var polar: Float = 0
+        private var distance: Float = 0
+        private var azimuthDelta: Float = 0
+        private var polarDelta: Float = 0
+        private var previousPanTranslation = CGPoint.zero
+        private var previousPinchScale: CGFloat = 1
+        private var externalAzimuthOffset: Float = 0
+        private var externalPolarOffset: Float = 0
+        private var externalDistanceScale: Float = 1
+        private var orbitIsInitialized = false
+        private var cameraDisplayLink: CADisplayLink?
+
+        init(onTapWorld: @escaping () -> Void) {
+            self.onTapWorld = onTapWorld
+        }
+
+        deinit {
+            cameraDisplayLink?.invalidate()
+        }
+
+        func stopCameraLoop() {
+            cameraDisplayLink?.invalidate()
+            cameraDisplayLink = nil
+        }
+
+        func attach(to view: SCNView) {
+            self.view = view
+            bindCamera()
+        }
+
+        func installGestures(on view: SCNView) {
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(onPan(_:)))
+            pan.maximumNumberOfTouches = 1
+            pan.cancelsTouchesInView = true
+            pan.delegate = self
+            view.addGestureRecognizer(pan)
+
+            let pinch = UIPinchGestureRecognizer(target: self, action: #selector(onPinch(_:)))
+            pinch.cancelsTouchesInView = false
+            pinch.delaysTouchesBegan = false
+            pinch.delaysTouchesEnded = false
+            pinch.delegate = self
+            view.addGestureRecognizer(pinch)
+
+            let doubleTap = UITapGestureRecognizer(target: self, action: #selector(onDoubleTap(_:)))
+            doubleTap.numberOfTapsRequired = 2
+            view.addGestureRecognizer(doubleTap)
+
+            let tap = UITapGestureRecognizer(target: self, action: #selector(onTap(_:)))
+            tap.require(toFail: doubleTap)
+            tap.require(toFail: pan)
+            view.addGestureRecognizer(tap)
+
+            let displayLink = CADisplayLink(target: self, selector: #selector(onCameraFrame))
+            displayLink.preferredFrameRateRange = CAFrameRateRange(
+                minimum: 30,
+                maximum: 60,
+                preferred: 60
+            )
+            displayLink.add(to: .main, forMode: .common)
+            cameraDisplayLink = displayLink
+        }
+
+        func bindCamera() {
+            camera = view?.scene?.rootNode.childNode(withName: "camera", recursively: false)
+            if !orbitIsInitialized {
+                azimuth = initialAzimuth
+                polar = initialPolar
+                distance = initialDistance
+                orbitIsInitialized = true
+            }
+            applyCamera()
+            updateAccessibilityValue()
+        }
+
+        func setOrbit(azimuthOffset: Float, polarOffset: Float, distanceScale: Float) {
+            guard orbitIsInitialized else { return }
+
+            // SwiftUI更新のたびにユーザー操作を上書きせず、外部指定が変わった差分だけ反映する。
+            let safeScale = max(distanceScale, 0.001)
+            if externalAzimuthOffset != azimuthOffset {
+                azimuth += azimuthOffset - externalAzimuthOffset
+            }
+            if externalPolarOffset != polarOffset {
+                polar += polarOffset - externalPolarOffset
+            }
+            if externalDistanceScale != safeScale {
+                distance *= safeScale / max(externalDistanceScale, 0.001)
+            }
+            externalAzimuthOffset = azimuthOffset
+            externalPolarOffset = polarOffset
+            externalDistanceScale = safeScale
+
+            clampOrbit()
+            applyCamera()
+            updateAccessibilityValue()
+        }
+
+        @objc private func onPan(_ gesture: UIPanGestureRecognizer) {
+            guard let view else { return }
+            let height = Float(max(view.bounds.height, 1))
+
+            switch gesture.state {
+            case .began:
+                previousPanTranslation = gesture.translation(in: view)
+            case .changed:
+                let translation = gesture.translation(in: view)
+                let deltaX = Float(translation.x - previousPanTranslation.x)
+                let deltaY = Float(translation.y - previousPanTranslation.y)
+                previousPanTranslation = translation
+
+                // Three.js OrbitControls:
+                // rotateLeft(2π * dx / clientHeight), rotateUp(2π * dy / clientHeight)
+                azimuthDelta -= 2 * .pi * deltaX / height
+                polarDelta -= 2 * .pi * deltaY / height
+                stepOrbit()
+            case .ended, .cancelled, .failed:
+                previousPanTranslation = .zero
+            default:
+                break
+            }
+        }
+
+        @objc private func onPinch(_ gesture: UIPinchGestureRecognizer) {
+            switch gesture.state {
+            case .began:
+                previousPinchScale = max(gesture.scale, 0.001)
+            case .changed:
+                let currentScale = max(gesture.scale, 0.001)
+                let ratio = Float(currentScale / previousPinchScale)
+                previousPinchScale = currentScale
+
+                distance = min(max(distance / ratio, minimumDistance), maximumDistance)
+                applyCamera()
+                updateAccessibilityValue()
+            case .ended, .cancelled, .failed:
+                previousPinchScale = 1
+            default:
+                break
+            }
+        }
+
+        @objc private func onTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended else { return }
+            onTapWorld()
+        }
+
+        @objc private func onDoubleTap(_ gesture: UITapGestureRecognizer) {
+            guard gesture.state == .ended else { return }
+            azimuth = initialAzimuth + externalAzimuthOffset
+            polar = initialPolar + externalPolarOffset
+            distance = min(
+                max(initialDistance * externalDistanceScale, minimumDistance),
+                maximumDistance
+            )
+            azimuthDelta = 0
+            polarDelta = 0
+            clampOrbit()
+            applyCamera()
+            updateAccessibilityValue()
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            (gestureRecognizer is UIPanGestureRecognizer &&
+                otherGestureRecognizer is UIPinchGestureRecognizer) ||
+            (gestureRecognizer is UIPinchGestureRecognizer &&
+                otherGestureRecognizer is UIPanGestureRecognizer)
+        }
+
+        func zoom(by factor: Float) {
+            distance = min(max(distance * factor, minimumDistance), maximumDistance)
+            applyCamera()
+            updateAccessibilityValue()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+
+        private func updateAccessibilityValue() {
+            guard let view else { return }
+            let magnification = Int((initialDistance / max(distance, 0.01) * 100).rounded())
+            view.accessibilityValue = LF.format("Zoom %lld%%", Int64(magnification))
+        }
+
+        func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+            animator.renderer(renderer, updateAtTime: time)
+        }
+
+        @objc private func onCameraFrame() {
+            guard !reduceMotion else { return }
+            stepOrbit()
+        }
+
+        private func stepOrbit() {
+            let appliedFactor: Float = reduceMotion ? 1 : dampingFactor
+            azimuth += azimuthDelta * appliedFactor
+            polar += polarDelta * appliedFactor
+
+            if reduceMotion {
+                azimuthDelta = 0
+                polarDelta = 0
+            } else {
+                azimuthDelta *= 1 - dampingFactor
+                polarDelta *= 1 - dampingFactor
+                if abs(azimuthDelta) < 0.00001 { azimuthDelta = 0 }
+                if abs(polarDelta) < 0.00001 { polarDelta = 0 }
+            }
+
+            clampOrbit()
+            applyCamera()
+        }
+
+        private func clampOrbit() {
+            polar = min(max(polar, minimumPolar), maximumPolar)
+            distance = min(max(distance, minimumDistance), maximumDistance)
+        }
+
+        private func applyCamera() {
+            guard let camera else { return }
+            let sinPolar = sin(polar)
+            camera.position = SCNVector3(
+                target.x + distance * sinPolar * sin(azimuth),
+                target.y + distance * cos(polar),
+                target.z + distance * sinPolar * cos(azimuth)
+            )
+            camera.camera?.fieldOfView = 38
+            camera.look(
+                at: target,
+                up: SCNVector3(0, 1, 0),
+                localFront: SCNVector3(0, 0, -1)
+            )
+        }
+    }
 }
 
 /// 目的地の3Dビュー。ratio で船が進み、steps で島に旗が立つ。
@@ -1120,7 +2833,8 @@ struct BoatSceneView: UIViewRepresentable {
         // ゆっくり一周して船体まで見せる(Web BoatStudio の autoRotate 相当)。
         if !reduceMotion,
            let travel = view.scene?.rootNode.childNode(withName: "travel", recursively: false) {
-            travel.runAction(.repeatForever(.rotateBy(x: 0, y: -2 * .pi, z: 0, duration: 48)), forKey: "turn")
+            // OrbitControls autoRotateSpeed=0.6 は約100秒で一周。
+            travel.runAction(.repeatForever(.rotateBy(x: 0, y: -2 * .pi, z: 0, duration: 100)), forKey: "turn")
         }
         return view
     }
@@ -1203,8 +2917,10 @@ struct ImmersiveVoyageView: UIViewRepresentable {
         view.rendersContinuously = !reduceMotion
 
         let coord = context.coordinator
-        coord.attach(view: view, reduceMotion: reduceMotion)
+        // 近景カメラは船の現在位置を基準に決める。attach後に代入すると、
+        // 初期値0を見たカメラだけが別の海域を向き、船が画面外へ逃げる。
         coord.targetX = VoyageSceneKit.boatX(ratio)
+        coord.attach(view: view, reduceMotion: reduceMotion)
         coord.stepsKey = voyageStepsKey(steps)
         if let label = view.scene?.rootNode.childNode(withName: "islandLabel", recursively: false) {
             VoyageSceneKit.updateIslandLabel(label, text: islandName)

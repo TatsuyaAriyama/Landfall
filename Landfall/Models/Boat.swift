@@ -54,6 +54,10 @@ enum BoatCustomization {
         UserDefaults.standard.set(id, forKey: sailStorageKey)
     }
 
+    static func reset() {
+        UserDefaults.standard.removeObject(forKey: sailStorageKey)
+    }
+
     static var selectedSail: SailColorOption {
         sailColors.first(where: { $0.id == selectedSailID }) ?? sailColors[0]
     }

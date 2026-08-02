@@ -8,7 +8,7 @@ import SwiftData
 /// v1.1: リアルタイムのスナップショットリスナー＋updatedAtによるLast-Write-Winsで、
 /// 追加だけでなく「編集」「削除」も端末間に伝わるようにした。同期に失敗してもローカル利用は継続できる。
 ///
-/// 注意: 表紙写真(StudyItem.photoData)は同期対象外(Firebase Storage 未使用、端末ローカルのみ)。
+/// 注意: 旧版の表紙写真(StudyItem.photoData)は同期対象外で、現在のUIでも使用しない。
 /// 既知の制約: 両端末がオフライン中に同一記録を編集した競合、片方がオフライン中に行われた削除は、
 /// 確実には反映されない場合がある(タイムスタンプ順の解決＋トゥームストーン無しのため)。
 @MainActor
@@ -64,14 +64,18 @@ final class SyncService {
 
     func push(_ dest: Destination) {
         guard let uid else { return }
-        // 目標は排他: ステップ目標なら期日を書かず、期日目標なら steps を書かない。
-        // 旧フィールド(targetMinutes/manual等)は書き込み用DTOに含めないので消える(意図的)。
+        // 目標は排他。Webで作られた旧目標も、iOSから保存して消さない。
         let steps = dest.steps.isEmpty
             ? nil
             : dest.steps.map { DestinationStepDTO(id: $0.id, name: $0.name, doneAt: $0.doneAt) }
         let dto = DestinationWriteDTO(
             name: dest.name,
+            itemUUID: dest.itemUUID,
+            targetMinutes: dest.steps.isEmpty ? dest.targetMinutes : nil,
             targetDate: dest.steps.isEmpty ? dest.targetDate : nil,
+            targetHasTime: dest.steps.isEmpty && dest.targetDate != nil ? dest.targetHasTime : nil,
+            manual: dest.steps.isEmpty && dest.manual ? true : nil,
+            manualDone: dest.steps.isEmpty && dest.manualDone ? true : nil,
             steps: steps,
             createdAt: dest.createdAt,
             achievedAt: dest.achievedAt,
@@ -235,12 +239,26 @@ final class SyncService {
                     if remoteAt > existing.updatedAt {
                         existing.name = dto.name; existing.createdAt = dto.createdAt
                         existing.targetDate = dto.targetDate; existing.achievedAt = dto.achievedAt
+                        existing.targetHasTime = dto.targetHasTime == true
+                        existing.itemUUID = dto.itemUUID
+                        existing.targetMinutes = dto.targetMinutes
+                        existing.manual = dto.manual == true
+                        existing.manualDone = dto.manualDone == true
                         existing.steps = steps; existing.updatedAt = remoteAt
                         changed = true
                     }
                 } else {
-                    let dest = Destination(name: dto.name, createdAt: dto.createdAt,
-                                           targetDate: dto.targetDate, steps: steps)
+                    let dest = Destination(
+                        name: dto.name,
+                        createdAt: dto.createdAt,
+                        targetDate: dto.targetDate,
+                        targetHasTime: dto.targetHasTime == true,
+                        itemUUID: dto.itemUUID,
+                        targetMinutes: dto.targetMinutes,
+                        manual: dto.manual == true,
+                        manualDone: dto.manualDone == true,
+                        steps: steps
+                    )
                     if let u = UUID(uuidString: id) { dest.uuid = u }
                     dest.achievedAt = dto.achievedAt
                     dest.updatedAt = remoteAt
@@ -344,28 +362,111 @@ private struct DestinationStepDTO: Codable {
     var doneAt: Date?
 }
 
-/// 目的地の読み取り用。旧フィールド(targetMinutes/manual/manualDone/itemUUID)は
-/// Web の旧データを読めるように残すが、書き込みには使わない。
+/// Webと共通の目的地シェイプ。旧目標も表示・同期で失わない。
 private struct DestinationDTO: Codable {
     var name: String
-    var targetDate: Date?
-    var steps: [DestinationStepDTO]?
-    var createdAt: Date
-    var achievedAt: Date?
-    var updatedAt: Date?
-    // 読み取り互換のみ(復号を通すため。参照はしない)。
+    var itemUUID: String?
     var targetMinutes: Int?
+    var targetDate: Date?
+    var targetHasTime: Bool?
     var manual: Bool?
     var manualDone: Bool?
-    var itemUUID: String?
-}
-
-/// 書き込み用。今の2種類(期日/ステップ)だけを書き、旧フィールドは残さない。
-private struct DestinationWriteDTO: Codable {
-    var name: String
-    var targetDate: Date?
     var steps: [DestinationStepDTO]?
     var createdAt: Date
     var achievedAt: Date?
     var updatedAt: Date?
+}
+
+/// 書き込み用。Webと同じシェイプを保つ。
+private struct DestinationWriteDTO: Codable {
+    var name: String
+    var itemUUID: String?
+    var targetMinutes: Int?
+    var targetDate: Date?
+    var targetHasTime: Bool?
+    var manual: Bool?
+    var manualDone: Bool?
+    var steps: [DestinationStepDTO]?
+    var createdAt: Date
+    var achievedAt: Date?
+    var updatedAt: Date?
+}
+
+// MARK: - 端末内データのアカウント境界
+
+/// SwiftData・UserDefaults・Firestoreの永続キャッシュを別アカウントへ持ち越さない。
+/// Firestore公式は、利用者を切り替えるアプリで機微なキャッシュを残す場合、
+/// セッション間の開示を避けるため永続領域の破棄を推奨している。
+@MainActor
+enum LocalAccountData {
+    private static let ownerKey = "localData.ownerUID"
+    private static var clearing = false
+
+    static func prepareForSignedInUser(uid: String, context: ModelContext) async {
+        let defaults = UserDefaults.standard
+        if let previous = defaults.string(forKey: ownerKey), previous != uid {
+            await clearOwnedData(context: context)
+        }
+        defaults.set(uid, forKey: ownerKey)
+    }
+
+    static func prepareForLocalMode(context: ModelContext) async {
+        guard UserDefaults.standard.string(forKey: ownerKey) != nil else { return }
+        await clearOwnedData(context: context)
+    }
+
+    static func clearAfterSignOut(context: ModelContext) async {
+        guard UserDefaults.standard.string(forKey: ownerKey) != nil else {
+            SyncService.shared.stopSync()
+            return
+        }
+        await clearOwnedData(context: context)
+    }
+
+    private static func clearOwnedData(context: ModelContext) async {
+        guard !clearing else { return }
+        clearing = true
+        defer { clearing = false }
+
+        SyncService.shared.stopSync()
+        HarborChatService.shared.stop()
+
+        for session in (try? context.fetch(FetchDescriptor<StudySession>())) ?? [] {
+            context.delete(session)
+        }
+        for item in (try? context.fetch(FetchDescriptor<StudyItem>())) ?? [] {
+            context.delete(item)
+        }
+        for day in (try? context.fetch(FetchDescriptor<StudyDay>())) ?? [] {
+            context.delete(day)
+        }
+        for destination in (try? context.fetch(FetchDescriptor<Destination>())) ?? [] {
+            context.delete(destination)
+        }
+        try? context.save()
+
+        StudyTimer.clearAll()
+        PlayerProfile.reset()
+        BoatCustomization.reset()
+        PhoenixPose.resetSelection()
+        RoomService.shared.resetLocalState()
+        PublicHarborService.shared.resetLocalState()
+        UserDefaults.standard.removeObject(forKey: ownerKey)
+        WidgetBridge.refresh(context: context)
+
+        await resetFirestoreCache()
+    }
+
+    private static func resetFirestoreCache() async {
+        let current = Firestore.firestore()
+        try? await current.terminate()
+        try? await current.clearPersistence()
+
+        // terminate後の取得は新しいFirestoreインスタンスになる。次のサインインでも
+        // オフライン書き込みを保てるよう、同じ永続キャッシュ設定を戻す。
+        let fresh = Firestore.firestore()
+        let settings = FirestoreSettings()
+        settings.cacheSettings = PersistentCacheSettings()
+        fresh.settings = settings
+    }
 }

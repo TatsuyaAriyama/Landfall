@@ -15,6 +15,10 @@ struct PublicHarborView: View {
     @State private var loaded = false
     @State private var working = false
     @State private var leaving = false
+    @State private var editingProfile = false
+    @State private var needsProfile = false
+    @State private var joinError: String?
+    @State private var loadError: String?
     /// 通報の確認対象(メンバー)。
     @State private var reporting: HarborMember?
     /// ブロックの確認対象(メンバー)。
@@ -30,14 +34,16 @@ struct PublicHarborView: View {
 
     var body: some View {
         ZStack {
-            LFColor.paper.ignoresSafeArea()
+            HarborOceanBackground()
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
                     joinButton
                         .padding(.top, 28)
-                    membersSection
-                        .padding(.top, 32)
+                    if auth.isSignedIn {
+                        membersSection
+                            .padding(.top, 32)
+                    }
                 }
                 .padding(LFMetrics.cardPadding)
             }
@@ -52,14 +58,29 @@ struct PublicHarborView: View {
                         Image(systemName: "chevron.left")
                         Text("Harbor")
                     }
+                    .padding(.leading, 32)
                     .font(LFFont.label(16))
                     .foregroundStyle(LFColor.ink)
                 }
             }
         }
-        .toolbarBackground(LFColor.paper, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
         .task { await reload() }
         .refreshable { await reload() }
+        .sheet(isPresented: $editingProfile) {
+            ProfileEditorSheet {
+                needsProfile = false
+                Task { await reload() }
+            }
+        }
+        .alert(
+            "Couldn't join this harbor.",
+            isPresented: Binding(get: { joinError != nil }, set: { if !$0 { joinError = nil } })
+        ) {
+            Button("OK", role: .cancel) { joinError = nil }
+        } message: {
+            Text(verbatim: joinError ?? "")
+        }
         .confirmationDialog(
             "Leave this harbor?",
             isPresented: $leaving,
@@ -109,8 +130,21 @@ struct PublicHarborView: View {
     }
 
     private func reload() async {
+        loaded = false
+        guard auth.isSignedIn else {
+            members = []
+            loadError = nil
+            loaded = true
+            return
+        }
         await chat.loadBlocked()
-        members = await service.members(of: harbor.slug)
+        await service.refresh()
+        do {
+            members = try await service.members(of: harbor.slug)
+            loadError = nil
+        } catch {
+            loadError = LF.text("Couldn't refresh this harbor.")
+        }
         loaded = true
     }
 
@@ -122,9 +156,9 @@ struct PublicHarborView: View {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(harbor.style.background)
                 TileSymbolView(symbol: harbor.symbol, fg: harbor.style.foreground, bg: harbor.style.background)
-                    .frame(width: 42, height: 42)
+                    .frame(width: 38, height: 38)
             }
-            .frame(width: 72, height: 72)
+            .frame(width: 64, height: 64)
             VStack(alignment: .leading, spacing: 6) {
                 Text(harbor.title)
                     .font(LFFont.copy(24))
@@ -159,12 +193,21 @@ struct PublicHarborView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Button {
                     guard !working else { return }
+                    guard !PlayerProfile.name.isEmpty else {
+                        needsProfile = true
+                        editingProfile = true
+                        return
+                    }
                     working = true
                     Task {
                         defer { working = false }
-                        try? await service.join(harbor.slug, context: modelContext)
-                        Haptics.success()
-                        await reload()
+                        do {
+                            try await service.join(harbor.slug, context: modelContext)
+                            Haptics.success()
+                            await reload()
+                        } catch {
+                            joinError = error.localizedDescription
+                        }
                     }
                 } label: {
                     Text("Join this harbor")
@@ -180,6 +223,11 @@ struct PublicHarborView: View {
                     .font(LFFont.label(13))
                     .foregroundStyle(LFColor.ink.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
+                if needsProfile {
+                    Text("Set up your player card first.")
+                        .font(LFFont.label(13))
+                        .foregroundStyle(LFColor.returnOrange)
+                }
             }
         }
     }
@@ -198,6 +246,36 @@ struct PublicHarborView: View {
                 .tint(LFColor.ink)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 40)
+        } else if let loadError, !members.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(verbatim: loadError)
+                    .font(LFFont.copy(15))
+                    .foregroundStyle(LFColor.ink.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Try again") {
+                    Task { await reload() }
+                }
+                .font(LFFont.label(14))
+                .foregroundStyle(LFColor.ink)
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 16)
+
+            memberRows
+        } else if let loadError, members.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(verbatim: loadError)
+                    .font(LFFont.copy(15))
+                    .foregroundStyle(LFColor.ink.opacity(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Try again") {
+                    Task { await reload() }
+                }
+                .font(LFFont.label(14))
+                .foregroundStyle(LFColor.ink)
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 16)
         } else if visibleMembers.isEmpty {
             Text("No one is in this harbor yet. Be the first to drop anchor.")
                 .font(LFFont.copy(15))
@@ -205,54 +283,81 @@ struct PublicHarborView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 16)
         } else {
-            VStack(spacing: 0) {
-                ForEach(visibleMembers) { member in
-                    if member.id != visibleMembers.first?.id {
-                        Rectangle()
-                            .fill(LFColor.ink.opacity(0.08))
-                            .frame(height: 1)
-                    }
-                    memberRow(member)
-                }
-            }
-            .padding(.top, 6)
+            memberRows
         }
     }
 
+    private var memberRows: some View {
+        VStack(spacing: 0) {
+            ForEach(visibleMembers) { member in
+                if member.id != visibleMembers.first?.id {
+                    Rectangle()
+                        .fill(LFColor.ink.opacity(0.08))
+                        .frame(height: 1)
+                }
+                memberRow(member)
+            }
+        }
+        .padding(.top, 6)
+    }
+
     private func memberRow(_ member: HarborMember) -> some View {
-        NavigationLink(value: PublicMemberKey(slug: harbor.slug, member: member)) {
-            HStack(spacing: 14) {
+        HStack(spacing: 8) {
+            NavigationLink(value: PublicMemberKey(slug: harbor.slug, member: member)) {
+                HStack(spacing: 14) {
                 // 全員同じ大きさ。序列を作らない。
-                PlayerAvatarArt(styleToken: member.styleToken, symbolToken: member.symbolToken)
-                    .frame(width: 38, height: 38)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
-                        Text(verbatim: member.displayName)
-                            .font(LFFont.copy(17))
-                            .foregroundStyle(LFColor.ink)
-                            .lineLimit(1)
-                        if member.id == myUid {
-                            Text("You")
+                    PlayerAvatarArt(styleToken: member.styleToken, symbolToken: member.symbolToken)
+                        .frame(width: 38, height: 38)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 8) {
+                            Text(verbatim: member.displayName)
+                                .font(LFFont.copy(17))
+                                .foregroundStyle(LFColor.ink)
+                                .lineLimit(1)
+                            if member.id == myUid {
+                                Text("You")
+                                    .font(LFFont.label(12))
+                                    .foregroundStyle(LFColor.ink.opacity(0.4))
+                            }
+                        }
+                        if !member.resolve.isEmpty {
+                            Text(verbatim: member.resolve)
                                 .font(LFFont.label(12))
-                                .foregroundStyle(LFColor.ink.opacity(0.4))
+                                .foregroundStyle(LFColor.ink.opacity(0.45))
+                                .lineLimit(1)
                         }
                     }
-                    if !member.resolve.isEmpty {
-                        Text(verbatim: member.resolve)
-                            .font(LFFont.label(12))
-                            .foregroundStyle(LFColor.ink.opacity(0.45))
-                            .lineLimit(1)
-                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(LFColor.ink.opacity(0.25))
                 }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(LFColor.ink.opacity(0.25))
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+
+            if member.id != myUid {
+                Menu {
+                    Button {
+                        reporting = member
+                    } label: {
+                        Label("Report", systemImage: "flag")
+                    }
+                    Button(role: .destructive) {
+                        blocking = member
+                    } label: {
+                        Label("Block this sailor", systemImage: "hand.raised")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(LFColor.ink.opacity(0.45))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 9)
         .contextMenu {
             if member.id != myUid {
                 Button {
@@ -267,7 +372,6 @@ struct PublicHarborView: View {
                 }
             }
         }
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -275,4 +379,380 @@ struct PublicHarborView: View {
 struct PublicMemberKey: Hashable {
     let slug: String
     let member: HarborMember
+}
+
+// MARK: - パブリック港のプレイヤー詳細
+
+/// Web版のメンバー詳細と同じ構成。
+/// 一覧から渡されたカードは初期表示にだけ使い、画面を開いた時点でプロフィールと記録を取り直す。
+/// プライベート港の既存の軌跡画面とは分離し、そちらの仕様には影響させない。
+struct PublicMemberProfileView: View {
+    let slug: String
+
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var service = PublicHarborService.shared
+    @State private var member: HarborMember
+    @State private var year: Int
+    @State private var month: Int
+    @State private var days: Set<Int> = []
+    @State private var sessions: [SharedSession] = []
+    @State private var selectedDay: Int?
+    @State private var loaded = false
+    @State private var loadError: String?
+
+    init(slug: String, initialMember: HarborMember) {
+        self.slug = slug
+        _member = State(initialValue: initialMember)
+        let components = Calendar.current.dateComponents([.year, .month], from: Date())
+        _year = State(initialValue: components.year ?? 2026)
+        _month = State(initialValue: components.month ?? 1)
+    }
+
+    private var monthID: String {
+        String(format: "%04d-%02d", year, month)
+    }
+
+    private var isCurrentMonth: Bool {
+        let components = Calendar.current.dateComponents([.year, .month], from: Date())
+        return year == components.year && month == components.month
+    }
+
+    private var daysInMonth: Int {
+        guard let start = Calendar.current.date(
+            from: DateComponents(year: year, month: month, day: 1)
+        ), let range = Calendar.current.range(of: .day, in: .month, for: start) else {
+            return 30
+        }
+        return range.count
+    }
+
+    private var selectedSessions: [SharedSession] {
+        guard let selectedDay else { return [] }
+        return sessions.filter { $0.day == selectedDay }
+    }
+
+    var body: some View {
+        ZStack {
+            HarborOceanBackground()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    memberHeader
+                    monthNavigation
+                        .padding(.top, 28)
+
+                    if !loaded {
+                        Text("Loading…")
+                            .font(LFFont.copy(15))
+                            .foregroundStyle(LFColor.ink.opacity(0.5))
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 40)
+                    } else {
+                        if let loadError {
+                            retryMessage(loadError)
+                                .padding(.top, 20)
+                        }
+                        dayGrid
+                            .padding(.top, 8)
+                        dayDetail
+                    }
+                }
+                .padding(LFMetrics.cardPadding)
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "chevron.left")
+                        Text("Harbor")
+                    }
+                    .padding(.leading, 32)
+                    .font(LFFont.label(16))
+                    .foregroundStyle(LFColor.ink)
+                }
+            }
+        }
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .task(id: monthID) {
+            await loadSelectedMonth()
+        }
+        .refreshable {
+            await loadSelectedMonth()
+        }
+    }
+
+    private var memberHeader: some View {
+        HStack(spacing: 16) {
+            PlayerAvatarArt(styleToken: member.styleToken, symbolToken: member.symbolToken)
+                .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: member.displayName)
+                    .font(LFFont.copy(16))
+                    .foregroundStyle(LFColor.ink)
+                    .lineLimit(1)
+                if !member.resolve.isEmpty {
+                    Text(verbatim: member.resolve)
+                        .font(LFFont.label(13))
+                        .foregroundStyle(LFColor.ink.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let start = PlayerProfile.sinceDayFormatter.date(from: member.sinceDay) {
+                    Text("Sailing since \(LF.fullDate(start))")
+                        .font(LFFont.label(12))
+                        .foregroundStyle(LFColor.ink.opacity(0.6))
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 16)
+        .padding(.bottom, 8)
+    }
+
+    private var monthNavigation: some View {
+        HStack {
+            monthArrow(systemName: "chevron.left", disabled: false) {
+                shiftMonth(-1)
+            }
+            Spacer(minLength: 8)
+            Text(verbatim: LF.monthYear(year: year, month: month))
+                .font(LFFont.copy(20))
+                .foregroundStyle(LFColor.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 8)
+            monthArrow(systemName: "chevron.right", disabled: isCurrentMonth) {
+                shiftMonth(1)
+            }
+        }
+    }
+
+    private func monthArrow(
+        systemName: String,
+        disabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(LFColor.ink.opacity(disabled ? 0.2 : 0.75))
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(LFPressableButtonStyle())
+        .disabled(disabled)
+        .accessibilityLabel(
+            systemName == "chevron.left"
+                ? Text("Previous month") : Text("Next month")
+        )
+    }
+
+    private var dayGrid: some View {
+        LazyVGrid(
+            columns: [GridItem(.adaptive(minimum: 34, maximum: 48), spacing: 6)],
+            spacing: 6
+        ) {
+            ForEach(1...daysInMonth, id: \.self) { day in
+                let studied = days.contains(day)
+                Button {
+                    selectedDay = selectedDay == day ? nil : day
+                    Haptics.tap()
+                } label: {
+                    Text(verbatim: "\(day)")
+                        .font(LFFont.label(12))
+                        .monospacedDigit()
+                        .foregroundStyle(studied ? LFColor.inkFixed : LFColor.ink.opacity(0.35))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 34)
+                        .background(studied ? LFColor.seaGreen : Color.clear)
+                        .clipShape(Capsule())
+                        .overlay {
+                            if selectedDay == day {
+                                Capsule()
+                                    .stroke(LFColor.ink, lineWidth: 2)
+                                    .padding(-3)
+                            }
+                        }
+                        // 見た目はWeb版の34pt、タップ領域はiOS推奨の44pt。
+                        .padding(.vertical, 5)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!studied)
+                .accessibilityLabel(dayAccessibilityLabel(day: day, studied: studied))
+                .accessibilityAddTraits(selectedDay == day ? .isSelected : [])
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var dayDetail: some View {
+        if days.isEmpty {
+            Text("No records this day. Rest is part of the voyage.")
+                .font(LFFont.copy(15))
+                .foregroundStyle(LFColor.ink.opacity(0.5))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 20)
+        } else if let selectedDay {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(verbatim: LF.dayMonth(dateFor(day: selectedDay)))
+                    .font(LFFont.label(13))
+                    .tracking(1)
+                    .foregroundStyle(LFColor.ink.opacity(0.5))
+                    .padding(.top, 20)
+                    .padding(.bottom, 6)
+
+                if selectedSessions.isEmpty {
+                    Text("No records this day. Rest is part of the voyage.")
+                        .font(LFFont.copy(15))
+                        .foregroundStyle(LFColor.ink.opacity(0.5))
+                        .padding(.top, 12)
+                } else {
+                    ForEach(Array(selectedSessions.enumerated()), id: \.offset) { index, session in
+                        if index > 0 {
+                            Rectangle()
+                                .fill(LFColor.ink.opacity(0.08))
+                                .frame(height: 1)
+                        }
+                        publicSessionRow(session)
+                    }
+                }
+            }
+        } else {
+            Text("Tap a day to see its records.")
+                .font(LFFont.copy(15))
+                .foregroundStyle(LFColor.ink.opacity(0.5))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 20)
+        }
+    }
+
+    private func publicSessionRow(_ session: SharedSession) -> some View {
+        let style = TileStyle.from(session.styleToken)
+        let detail = sessionDetail(session)
+        return HStack(alignment: .center, spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(style.background)
+                TileSymbolView(
+                    symbol: TileSymbol.from(session.symbolToken),
+                    fg: style.foreground,
+                    bg: style.background
+                )
+                .frame(width: 20, height: 20)
+            }
+            .frame(width: 34, height: 34)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: session.itemName ?? "—")
+                    .font(LFFont.copy(16))
+                    .foregroundStyle(LFColor.ink)
+                    .lineLimit(1)
+                if !detail.isEmpty {
+                    Text(verbatim: detail)
+                        .font(LFFont.label(13))
+                        .foregroundStyle(LFColor.ink.opacity(0.5))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 8)
+            Text(verbatim: LF.duration(minutes: session.minutes))
+                .font(LFFont.label(15))
+                .monospacedDigit()
+                .foregroundStyle(LFColor.ink.opacity(0.7))
+                .fixedSize()
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func loadSelectedMonth() async {
+        loaded = false
+        selectedDay = nil
+        do {
+            async let latestMember = service.member(of: slug, id: member.id)
+            async let latestMonth = service.monthDetail(
+                slug: slug,
+                memberID: member.id,
+                year: year,
+                month: month
+            )
+            let (freshMember, detail) = try await (latestMember, latestMonth)
+            guard !Task.isCancelled else { return }
+            guard let freshMember else {
+                days = []
+                sessions = []
+                loadError = LF.text("This sailor is no longer in this harbor.")
+                loaded = true
+                return
+            }
+            member = freshMember
+            days = detail.days
+            sessions = detail.sessions
+            loadError = nil
+        } catch {
+            guard !Task.isCancelled else { return }
+            days = []
+            sessions = []
+            loadError = LF.text("Couldn't refresh this sailor.")
+        }
+        loaded = true
+    }
+
+    private func retryMessage(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(verbatim: message)
+                .font(LFFont.copy(15))
+                .foregroundStyle(LFColor.ink.opacity(0.55))
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Try again") {
+                Task { await loadSelectedMonth() }
+            }
+            .font(LFFont.label(14))
+            .foregroundStyle(LFColor.ink)
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func shiftMonth(_ delta: Int) {
+        guard let current = Calendar.current.date(
+            from: DateComponents(year: year, month: month, day: 1)
+        ), let shifted = Calendar.current.date(byAdding: .month, value: delta, to: current) else {
+            return
+        }
+        let components = Calendar.current.dateComponents([.year, .month], from: shifted)
+        year = components.year ?? year
+        month = components.month ?? month
+    }
+
+    private func dateFor(day: Int) -> Date {
+        Calendar.current.date(
+            from: DateComponents(year: year, month: month, day: day)
+        ) ?? Date()
+    }
+
+    private func sessionDetail(_ session: SharedSession) -> String {
+        var pieces: [String] = []
+        if let date = session.date {
+            pieces.append(Self.timeFormatter.string(from: date))
+        }
+        if let note = session.note, !note.isEmpty {
+            pieces.append(note)
+        }
+        return pieces.joined(separator: " · ")
+    }
+
+    private func dayAccessibilityLabel(day: Int, studied: Bool) -> Text {
+        let date = LF.dayWithWeekday(dateFor(day: day))
+        let status = studied ? LF.text("Recorded") : LF.text("No records")
+        return Text(verbatim: "\(date), \(status)")
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
 }

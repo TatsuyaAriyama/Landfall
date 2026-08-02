@@ -10,9 +10,10 @@ struct InvitePassSheet: View {
 
     /// 文章で誘うときの本文。リンクが無い状態でもコードだけで成立する文にする。
     private var inviteText: String {
-        let base = String(
-            format: String(localized: "Come sail with me in \"%@\" on Landfall. Harbor code: %@"),
-            roomName, code
+        let base = LF.format(
+            "Come sail with me in \"%@\" on KeelMira. Harbor code: %@",
+            roomName,
+            code
         )
         // 未インストールの人向けに入手ページを添える(コードは手入力)。公開前は付けない。
         guard let download = LandfallLink.downloadURL else { return base }
@@ -90,7 +91,7 @@ struct InvitePassSheet: View {
     private func render() {
         image = WrappedShare.render(
             card: InvitePassCard(roomName: roomName, code: code),
-            fileName: "Landfall-harbor-\(code).png"
+            fileName: "KeelMira-harbor-\(code).png"
         )
     }
 }

@@ -15,9 +15,9 @@ struct WrappedCardImage: Transferable {
 /// カードViewをPNGへ書き出す。ImageRendererはメインアクター専用。
 enum WrappedShare {
 
-    /// 「Landfall-2026-05-card1.png」形式のファイル名。
+    /// 「KeelMira-2026-05-card1.png」形式のファイル名。
     static func fileName(year: Int, month: Int, cardIndex: Int) -> String {
-        String(format: "Landfall-%04d-%02d-card%d.png", year, month, cardIndex)
+        String(format: "KeelMira-%04d-%02d-card%d.png", year, month, cardIndex)
     }
 
     /// カードViewを3倍スケールでレンダリングし、PNGデータにする。

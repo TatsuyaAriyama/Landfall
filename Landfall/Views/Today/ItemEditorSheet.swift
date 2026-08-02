@@ -1,8 +1,7 @@
 import SwiftUI
 import SwiftData
-import PhotosUI
 
-/// 項目の作成・編集シート。名前+見た目(配色×シンボル、または表紙写真)。
+/// 項目の作成・編集シート。名前と配色×シンボルを設定する。
 struct ItemEditorSheet: View {
     /// nil なら新規作成。
     let existing: StudyItem?
@@ -16,8 +15,6 @@ struct ItemEditorSheet: View {
     @State private var name = ""
     @State private var style: TileStyle = .midnight
     @State private var symbol: TileSymbol = .compass
-    @State private var photoData: Data?
-    @State private var pickerItem: PhotosPickerItem?
     @State private var confirmingDelete = false
     @FocusState private var nameFocused: Bool
 
@@ -55,20 +52,15 @@ struct ItemEditorSheet: View {
                         .padding(.top, 8)
                 }
 
-                photoSection
+                sectionLabel("Color")
                     .padding(.top, 24)
+                styleRow
+                    .padding(.top, 10)
 
-                if photoData == nil {
-                    sectionLabel("Color")
-                        .padding(.top, 24)
-                    styleRow
-                        .padding(.top, 10)
-
-                    sectionLabel("Symbol")
-                        .padding(.top, 20)
-                    symbolRow
-                        .padding(.top, 10)
-                }
+                sectionLabel("Symbol")
+                    .padding(.top, 20)
+                symbolRow
+                    .padding(.top, 10)
 
                 saveButton
                     .padding(.top, 32)
@@ -83,15 +75,6 @@ struct ItemEditorSheet: View {
         .background(LFColor.paper)
         .presentationDetents([.large])
         .onAppear(perform: load)
-        .onChange(of: pickerItem) { _, newValue in
-            guard let newValue else { return }
-            Task { @MainActor in
-                if let data = try? await newValue.loadTransferable(type: Data.self) {
-                    photoData = Self.downscaledJPEG(data)
-                }
-                pickerItem = nil
-            }
-        }
         .confirmationDialog(
             "Delete this item?",
             isPresented: $confirmingDelete,
@@ -119,17 +102,15 @@ struct ItemEditorSheet: View {
     }
 
     private var previewTile: some View {
-        ZStack {
-            if let data = photoData, let image = UIImage(data: data) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 96, height: 96)
-            } else {
-                style.background
-                TileSymbolView(symbol: symbol, fg: style.foreground, bg: style.background)
-                    .frame(width: 60, height: 60)
-            }
+        let previewStyle = style
+        return ZStack {
+            previewStyle.background
+            TileSymbolView(
+                symbol: symbol,
+                fg: previewStyle.foreground,
+                bg: previewStyle.background
+            )
+            .frame(width: 60, height: 60)
         }
         .frame(width: 96, height: 96)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -139,28 +120,6 @@ struct ItemEditorSheet: View {
         Text(text)
             .font(LFFont.label(13))
             .foregroundStyle(LFColor.ink.opacity(0.5))
-    }
-
-    private var photoSection: some View {
-        HStack(spacing: 12) {
-            PhotosPicker(selection: $pickerItem, matching: .images) {
-                Text(photoData == nil ? "Choose cover photo" : "Replace photo")
-                    .font(LFFont.label(15))
-                    .foregroundStyle(LFColor.ink)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .stroke(LFColor.ink.opacity(0.25), lineWidth: 1)
-                    )
-            }
-            if photoData != nil {
-                Button("Remove photo") { photoData = nil }
-                    .font(LFFont.label(15))
-                    .foregroundStyle(LFColor.ink.opacity(0.5))
-            }
-            Spacer()
-        }
     }
 
     private var styleRow: some View {
@@ -181,6 +140,8 @@ struct ItemEditorSheet: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(Text(candidate.accessibilityName))
+                .accessibilityAddTraits(style == candidate ? .isSelected : [])
             }
             Spacer(minLength: 0)
         }
@@ -210,6 +171,8 @@ struct ItemEditorSheet: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(Text(candidate.accessibilityName))
+                    .accessibilityAddTraits(symbol == candidate ? .isSelected : [])
                 }
             }
             .padding(.vertical, 4)
@@ -271,7 +234,6 @@ struct ItemEditorSheet: View {
         name = existing.name
         style = TileStyle.from(existing.styleToken)
         symbol = TileSymbol.from(existing.symbolToken)
-        photoData = existing.photoData
     }
 
     /// 保存する項目名。前後空白を除き、上限で切り詰める(肥大化した同期データを防ぐ)。
@@ -285,14 +247,14 @@ struct ItemEditorSheet: View {
             existing.name = trimmedName
             existing.styleToken = style.rawValue
             existing.symbolToken = symbol.rawValue
-            existing.photoData = photoData
+            // 旧版で設定された写真も、編集後は選択したシンボルへ統一する。
+            existing.photoData = nil
             saved = existing
         } else {
             let item = StudyItem(
                 name: trimmedName,
                 styleToken: style.rawValue,
                 symbolToken: symbol.rawValue,
-                photoData: photoData,
                 sortOrder: (items.map(\.sortOrder).max() ?? -1) + 1
             )
             modelContext.insert(item)
@@ -313,18 +275,5 @@ struct ItemEditorSheet: View {
         try? modelContext.save()
         dismiss()
         onDeleted?()
-    }
-
-    /// 表紙写真は長辺512pxのJPEGへ縮小して保存する。
-    static func downscaledJPEG(_ data: Data, maxSide: CGFloat = 512) -> Data? {
-        guard let image = UIImage(data: data) else { return nil }
-        let longest = max(image.size.width, image.size.height)
-        let scale = min(1, maxSide / longest)
-        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let resized = renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
-        }
-        return resized.jpegData(compressionQuality: 0.85)
     }
 }

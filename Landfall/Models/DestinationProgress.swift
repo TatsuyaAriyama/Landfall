@@ -6,8 +6,12 @@ struct DestinationProgress {
     var ratio: Double
     /// createdAt 以降の累計(分)。着岸時に見せる「航海した時間」。
     var minutes: Int
+    /// 累計時間目標の残り。
+    var remainingMinutes: Int?
     /// 期日目標の残り日数。
     var remainingDays: Int?
+    /// 期日目標の締切までの残り秒数。当日は時間・分で表示する。
+    var remainingSeconds: TimeInterval?
     /// ステップ目標の完了数 / 全数。
     var stepsDone: Int?
     var stepsTotal: Int?
@@ -20,7 +24,11 @@ extension Destination {
     /// `minutes` は createdAt 以降の全セッション合計。
     func progress(sessions: [StudySession], now: Date = Date()) -> DestinationProgress {
         let since = createdAt
-        let minutes = sessions.reduce(0) { $1.date >= since ? $0 + $1.minutes : $0 }
+        let minutes = sessions.reduce(0) { sum, session in
+            guard session.date >= since else { return sum }
+            if let itemUUID, session.item?.uuid.uuidString != itemUUID { return sum }
+            return sum + session.minutes
+        }
 
         // ステップ目標: 進捗 = 完了数 / 全数。全部完了で着岸。
         if !steps.isEmpty {
@@ -28,34 +36,80 @@ extension Destination {
             return DestinationProgress(
                 ratio: Double(done) / Double(steps.count),
                 minutes: minutes,
+                remainingMinutes: nil,
                 remainingDays: nil,
+                remainingSeconds: nil,
                 stepsDone: done,
                 stepsTotal: steps.count,
                 reached: done == steps.count
             )
         }
 
-        // 期日目標: 経過時間で船が近づく。期日到来で着岸。
-        if let target = targetDate {
+        // 完了目標: 本人がチェックしたときだけ着く。期日は表示用のメモ。
+        if manual {
             let cal = Calendar.current
-            let start = cal.startOfDay(for: since)
-            let end = cal.startOfDay(for: target)
-            let today = cal.startOfDay(for: now)
-            let total = max(1, end.timeIntervalSince(start))
-            let ratio = min(1, max(0, today.timeIntervalSince(start) / total))
-            let remaining = max(0, Int((end.timeIntervalSince(today) / 86_400).rounded()))
+            let remaining = deadline(calendar: cal).map {
+                max(
+                    0,
+                    Int(
+                        (
+                            cal.startOfDay(for: $0).timeIntervalSince(
+                                cal.startOfDay(for: now)
+                            ) / 86_400
+                        ).rounded()
+                    )
+                )
+            }
+            return DestinationProgress(
+                ratio: manualDone ? 1 : 0,
+                minutes: minutes,
+                remainingMinutes: nil,
+                remainingDays: remaining,
+                remainingSeconds: nil,
+                stepsDone: nil,
+                stepsTotal: nil,
+                reached: manualDone
+            )
+        }
+
+        // 累計時間目標: 作成後の対象記録で進む。
+        if let targetMinutes, targetMinutes > 0 {
+            let ratio = min(1, Double(minutes) / Double(targetMinutes))
             return DestinationProgress(
                 ratio: ratio,
                 minutes: minutes,
-                remainingDays: remaining,
+                remainingMinutes: max(0, targetMinutes - minutes),
+                remainingDays: nil,
+                remainingSeconds: nil,
                 stepsDone: nil,
                 stepsTotal: nil,
-                reached: today >= end
+                reached: ratio >= 1
+            )
+        }
+
+        // 期日目標: 期日が7日より先なら最遠地点に留まり、残り7日を
+        // 切ってから実時刻で連続的に接近する。締切ちょうどで着岸。
+        if let end = deadline() {
+            let finish = end.timeIntervalSince1970
+            let current = now.timeIntervalSince1970
+            let remaining = max(0, finish - current)
+            let approachWindow: TimeInterval = 7 * 86_400
+            let ratio = min(1, max(0, 1 - remaining / approachWindow))
+            return DestinationProgress(
+                ratio: ratio,
+                minutes: minutes,
+                remainingMinutes: nil,
+                remainingDays: Int(ceil(remaining / 86_400)),
+                remainingSeconds: remaining,
+                stepsDone: nil,
+                stepsTotal: nil,
+                reached: current >= finish
             )
         }
 
         return DestinationProgress(
-            ratio: 0, minutes: minutes, remainingDays: nil,
+            ratio: 0, minutes: minutes, remainingMinutes: nil, remainingDays: nil,
+            remainingSeconds: nil,
             stepsDone: nil, stepsTotal: nil, reached: false
         )
     }

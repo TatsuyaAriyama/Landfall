@@ -32,14 +32,28 @@ final class PublicHarborService: ObservableObject {
 
     func refresh() async {
         guard let uid else { joined = []; return }
-        var found: Set<String> = []
+        var resolved = joined
+        var refreshedAny = false
         // 5港固定なので個別に引く(コレクショングループ不要・ルールも単純に保てる)。
         for harbor in PublicHarbor.all {
-            let doc = try? await memberRef(slug: harbor.slug, uid: uid).getDocument()
-            if doc?.exists == true { found.insert(harbor.slug) }
+            do {
+                let document = try await memberRef(slug: harbor.slug, uid: uid)
+                    .getDocument(source: .server)
+                refreshedAny = true
+                if document.exists {
+                    resolved.insert(harbor.slug)
+                } else {
+                    resolved.remove(harbor.slug)
+                }
+            } catch {
+                // 一時的な通信失敗で、正しかった参加状態を空に戻さない。
+                continue
+            }
         }
-        joined = found
-        cacheJoined()
+        if refreshedAny {
+            joined = resolved
+            cacheJoined()
+        }
     }
 
     /// 参加: プレイヤーカードを置き、当月の記録をすぐ公開する。
@@ -78,15 +92,28 @@ final class PublicHarborService: ObservableObject {
 
     /// プレイヤーカードの変更を参加中の全パブリック港へも反映する。
     func pushProfile() {
+        Task { await syncProfile() }
+    }
+
+    /// Web版の保存処理と同じく、全パブリック港への書込み完了を待てる経路。
+    /// 保存直後の再取得が書込みを追い越して古いカードを表示する競合を防ぐ。
+    func syncProfile() async {
+        // Webから参加した直後など、端末キャッシュにまだ無い港も保存対象へ含める。
+        await refresh()
         guard let uid else { return }
         for slug in joined {
-            memberRef(slug: slug, uid: uid)
+            try? await memberRef(slug: slug, uid: uid)
                 .setData(PlayerProfile.harborProfileData(), merge: true)
         }
     }
 
     private func cacheJoined() {
         UserDefaults.standard.set(Array(joined).sorted(), forKey: Self.joinedCacheKey)
+    }
+
+    func resetLocalState() {
+        joined = []
+        UserDefaults.standard.removeObject(forKey: Self.joinedCacheKey)
     }
 
     // MARK: - 記録の公開(自分の分だけ)
@@ -106,25 +133,112 @@ final class PublicHarborService: ObservableObject {
 
     // MARK: - 港のメンバー
 
-    /// 在港の船乗り(プロフィール一覧)。読みはサインイン済みなら誰でも。
-    func members(of slug: String) async -> [HarborMember] {
-        guard uid != nil else { return [] }
-        guard let snap = try? await db.collection("publicHarbors").document(slug)
+    /// 在港の船乗り(プロフィール一覧)。画面を開いた時点のサーバー値を読む。
+    /// キャッシュだけを返して「最新に見える古いカード」を出さない。
+    func members(of slug: String) async throws -> [HarborMember] {
+        guard uid != nil else { throw RoomError.notSignedIn }
+        let snapshot = try await db.collection("publicHarbors").document(slug)
             .collection("members")
-            .order(by: "joinedAt", descending: true)
             .limit(to: 200)
-            .getDocuments() else { return [] }
-        return snap.documents.compactMap { doc in
-            let data = doc.data()
-            guard let name = data["displayName"] as? String else { return nil }
-            return HarborMember(
-                id: doc.documentID,
-                displayName: name,
-                styleToken: data["styleToken"] as? String ?? TileStyle.midnight.rawValue,
-                symbolToken: data["symbolToken"] as? String ?? TileSymbol.phoenix.rawValue,
-                resolve: data["resolve"] as? String ?? "",
-                sinceDay: data["sinceDay"] as? String ?? ""
-            )
+            .getDocuments(source: .server)
+
+        // order(by: joinedAt) は古いクライアントが作った joinedAt 無しのカードを
+        // 結果から除外するため、全カードを読み、存在する日時でクライアント側ソートする。
+        return snapshot.documents
+            .sorted(by: Self.memberDocumentNewestFirst)
+            .map(Self.member)
+    }
+
+    /// 詳細を開くたびにメンバーカードを取り直す。
+    /// 一覧から遷移する間に他端末で名前やアイコンが変わっても、古い値を表示し続けない。
+    func member(of slug: String, id memberID: String) async throws -> HarborMember? {
+        guard uid != nil else { throw RoomError.notSignedIn }
+        let document = try await memberRef(slug: slug, uid: memberID)
+            .getDocument(source: .server)
+        guard document.exists else { return nil }
+        return Self.member(document)
+    }
+
+    /// パブリック港の月別記録。Web版と同じく、月を移動するたびにその月を取得する。
+    func monthDetail(
+        slug: String,
+        memberID: String,
+        year: Int,
+        month: Int
+    ) async throws -> (days: Set<Int>, sessions: [SharedSession]) {
+        guard uid != nil else { throw RoomError.notSignedIn }
+        let docID = String(format: "%04d-%02d", year, month)
+        let document = try await memberRef(slug: slug, uid: memberID)
+            .collection("months").document(docID)
+            .getDocument(source: .server)
+        guard let data = document.data() else { return ([], []) }
+
+        var days = Set((data["days"] as? [Any] ?? []).compactMap(Self.integer))
+        let sessions = (data["sessions"] as? [[String: Any]] ?? [])
+            .map(Self.sharedSession)
+            .filter { $0.day > 0 && $0.minutes > 0 }
+            .sorted {
+                if let lhs = $0.date, let rhs = $1.date { return lhs > rhs }
+                if $0.date != nil { return true }
+                if $1.date != nil { return false }
+                return $0.day > $1.day
+            }
+        // days の更新だけが欠けた旧データでも、存在する記録へ辿れるよう補完する。
+        days.formUnion(sessions.map(\.day))
+        return (days, sessions)
+    }
+
+    private static func member(_ document: DocumentSnapshot) -> HarborMember {
+        let data = document.data() ?? [:]
+        let rawName = data["displayName"] as? String ?? ""
+        let trimmedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 名前が未設定の旧カードも一覧から消さず、Web版と同じ既定名で表示する。
+        let name = trimmedName.isEmpty ? LF.text("Sailor") : trimmedName
+        let rawSince = data["sinceDay"] as? String ?? ""
+        let since = PlayerProfile.sinceDayFormatter.date(from: rawSince) == nil ? "" : rawSince
+        return HarborMember(
+            id: document.documentID,
+            displayName: name,
+            styleToken: data["styleToken"] as? String ?? TileStyle.midnight.rawValue,
+            symbolToken: data["symbolToken"] as? String ?? TileSymbol.phoenix.rawValue,
+            resolve: data["resolve"] as? String ?? "",
+            sinceDay: since,
+            boatSail: data["boatSail"] as? String,
+            boatJib: data["boatJib"] as? String,
+            boatHull: data["boatHull"] as? String,
+            boatStripe: data["boatStripe"] as? String,
+            boatFlag: data["boatFlag"] as? String
+        )
+    }
+
+    private static func sharedSession(_ raw: [String: Any]) -> SharedSession {
+        SharedSession(
+            day: integer(raw["day"]) ?? 0,
+            minutes: integer(raw["minutes"]) ?? 0,
+            date: (raw["date"] as? Timestamp)?.dateValue(),
+            note: (raw["note"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            itemName: raw["itemName"] as? String,
+            styleToken: raw["styleToken"] as? String ?? TileStyle.midnight.rawValue,
+            symbolToken: raw["symbolToken"] as? String ?? TileSymbol.phoenix.rawValue
+        )
+    }
+
+    private static func integer(_ value: Any?) -> Int? {
+        if let value = value as? Int { return value }
+        return (value as? NSNumber)?.intValue
+    }
+
+    private static func memberDocumentNewestFirst(
+        _ lhs: QueryDocumentSnapshot,
+        _ rhs: QueryDocumentSnapshot
+    ) -> Bool {
+        let left = (lhs.data()["joinedAt"] as? Timestamp)?.dateValue()
+        let right = (rhs.data()["joinedAt"] as? Timestamp)?.dateValue()
+        switch (left, right) {
+        case let (left?, right?): return left > right
+        case (_?, nil): return true
+        case (nil, _?): return false
+        case (nil, nil): return lhs.documentID < rhs.documentID
         }
     }
 }

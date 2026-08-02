@@ -16,7 +16,8 @@ struct LandfallApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
     @AppStorage(AppTheme.storageKey) private var appTheme = AppTheme.system.rawValue
-    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
+    @AppStorage(TutorialState.completionKey) private var hasCompletedTutorial = false
+    @State private var dismissedForcedTutorial = false
 
     init() {
         // App Check は FirebaseApp.configure() の前に工場を差し込む必要がある。
@@ -72,11 +73,16 @@ struct LandfallApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if !hasSeenOnboarding || Self.forceOnboarding {
-                    // 思想を先に伝える導入。ログイン壁の前に一度だけ。
-                    OnboardingView { hasSeenOnboarding = true }
-                } else if auth.isSignedIn || Self.skipAuth {
-                    ContentView()
+                if auth.canEnterApp || Self.skipAuth {
+                    if !hasCompletedTutorial || (Self.forceOnboarding && !dismissedForcedTutorial) {
+                        // サインイン後、実際の航海へ入る直前に操作を一度だけ案内する。
+                        OnboardingView {
+                            hasCompletedTutorial = true
+                            dismissedForcedTutorial = true
+                        }
+                    } else {
+                        ContentView()
+                    }
                 } else {
                     SignInView()
                 }
@@ -96,22 +102,48 @@ struct LandfallApp: App {
                 GIDSignIn.sharedInstance.handle(url)
             }
             .onAppear {
+                StudyTimer.migrateLegacyTimerIfNeeded()
+                WidgetTimerInbox.importPending(context: container.mainContext)
                 WidgetBridge.refresh(context: container.mainContext)
-                if auth.isSignedIn {
-                    Task { await SyncService.shared.performInitialSync(context: container.mainContext) }
+                if let uid = auth.user?.uid {
+                    Task {
+                        await LocalAccountData.prepareForSignedInUser(
+                            uid: uid,
+                            context: container.mainContext
+                        )
+                        await SyncService.shared.performInitialSync(
+                            context: container.mainContext
+                        )
+                    }
                 }
             }
-            .onChange(of: auth.isSignedIn) { _, isSignedIn in
-                if isSignedIn {
-                    Task { await SyncService.shared.performInitialSync(context: container.mainContext) }
+            .onChange(of: auth.user?.uid) { oldUID, newUID in
+                if let newUID {
+                    Task {
+                        await LocalAccountData.prepareForSignedInUser(
+                            uid: newUID,
+                            context: container.mainContext
+                        )
+                        await SyncService.shared.performInitialSync(
+                            context: container.mainContext
+                        )
+                    }
                 } else {
                     SyncService.shared.stopSync()
+                    if oldUID != nil {
+                        Task {
+                            await LocalAccountData.clearAfterSignOut(
+                                context: container.mainContext
+                            )
+                        }
+                    }
                 }
             }
             // 前面復帰のたびに再同期。他端末で追加された記録を取り込み、
             // 保留中の書き込みも送信される。ローカルは常に真実の源のまま。
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
+                    WidgetTimerInbox.importPending(context: container.mainContext)
                     WidgetBridge.refresh(context: container.mainContext)
                     let recorded = StudyDayStore.recordedToday(context: container.mainContext)
                     Task { await NotificationService.reschedule(recordedToday: recorded) }
@@ -134,7 +166,7 @@ struct LandfallApp: App {
         #endif
     }
 
-    /// 動作確認用: LANDFALL_ONBOARD=1 で導入を強制表示する(既に見た後でも)。
+    /// 動作確認用: LANDFALL_ONBOARD=1 でチュートリアルを強制表示する(既に見た後でも)。
     private static var forceOnboarding: Bool {
         #if DEBUG
         return ProcessInfo.processInfo.environment["LANDFALL_ONBOARD"] == "1"
@@ -146,47 +178,29 @@ struct LandfallApp: App {
 
 struct ContentView: View {
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
-    @State private var selection = ContentView.initialTab
-    @StateObject private var sailAnimator = SailAnimator.shared
-    @StateObject private var router = DeepLinkRouter.shared
 
     var body: some View {
-        TabView(selection: $selection) {
-            // タブアイコンは Web と同じ航海シンボル(舵輪/羅針盤/本/旗/帆船)。
-            TodayView()
-                .tabItem { Label { Text("Home") } icon: { TabSymbolIcon.image(.wheel) } }
-                .tag(0)
-            TraceView()
-                .tabItem { Label { Text("Trace") } icon: { TabSymbolIcon.image(.compass) } }
-                .tag(1)
-            WrappedView()
-                .tabItem { Label { Text("Logbook") } icon: { TabSymbolIcon.image(.book) } }
-                .tag(3)
-            DressView()
-                .tabItem { Label { Text("Style") } icon: { TabSymbolIcon.image(.attire) } }
-                .tag(4)
-            HarborView()
-                .tabItem { Label { Text("Harbor") } icon: { TabSymbolIcon.image(.sailboat) } }
-                .tag(2)
-        }
-        .tint(LFColor.returnOrange)
-        // 出航中の小さなタイマーチップ。どのタブでも見え、自由に動かせる。
-        .overlay {
-            FloatingTimerChip()
-        }
-        // 出航／着岸アニメーション(数秒)。記録の瞬間に全画面で帆走を見せる。
-        .overlay {
-            if let kind = sailAnimator.kind {
-                SailingOverlay(kind: kind)
-                    .transition(.opacity)
+        Group {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["LANDFALL_PRIVATE_PREVIEW"] == "1" {
+                NavigationStack {
+                    HarborChatView(
+                        room: HarborRoom(
+                            id: "W7D3UD",
+                            name: "星影の並走船団",
+                            memberIds: ["preview-self", "preview-akari", "preview-nagi"],
+                            ownerUid: "preview-self"
+                        )
+                    )
+                }
+            } else if ProcessInfo.processInfo.environment["LANDFALL_DRESS_NAV"] != nil {
+                DressView()
+            } else {
+                VoyageHomeView()
             }
-        }
-        // 招待リンクで開かれたら港タブへ運ぶ。
-        .onChange(of: router.wantsHarborTab) { _, wants in
-            if wants {
-                selection = 2
-                router.wantsHarborTab = false
-            }
+            #else
+            VoyageHomeView()
+            #endif
         }
         // アプリ内の言語設定を全体に反映(端末言語に関わらず切替可能)。
         .environment(\.locale, (AppLanguage(rawValue: appLanguage) ?? .system).locale)
@@ -208,13 +222,4 @@ struct ContentView: View {
         }
     }
 
-    /// 動作確認用: DEBUGビルドで LANDFALL_TAB を渡すと初期タブを固定できる。既定は「今日」。
-    private static var initialTab: Int {
-        #if DEBUG
-        if let raw = ProcessInfo.processInfo.environment["LANDFALL_TAB"], let tab = Int(raw) {
-            return tab
-        }
-        #endif
-        return 0
-    }
 }

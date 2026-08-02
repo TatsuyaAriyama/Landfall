@@ -1,6 +1,7 @@
 import FirebaseAuth
 import FirebaseFirestore
 import Foundation
+import SwiftUI
 
 /// プライベートの港のチャット。
 /// 言葉のやりとりに加えて、メンバーの普段の記録が「着岸」「帰還」の静かな行として自動で流れ込む。
@@ -9,7 +10,7 @@ import Foundation
 /// rooms/{code}/chat/{id}:
 ///   { uid, kind: text|landfall|return, text?, itemName?, itemStyle?, itemSymbol?,
 ///     minutes?, gapDays?, createdAt, reactions: {uid: token} }
-/// リアクションは絵文字ではなく航海のシンボル3種(灯台=見てるよ / 錨=ゆっくり / 不死鳥=おかえり)。
+/// リアクションはWeb版と共通のハート/灯台。
 struct ChatMessage: Identifiable, Equatable {
     enum Kind: String {
         case text
@@ -31,17 +32,22 @@ struct ChatMessage: Identifiable, Equatable {
     let reactions: [String: String]
 }
 
-/// リアクションの語彙。増やすときは firestore.rules の許可リストも更新する。
+/// Web版と共通のリアクション語彙。増やすときは firestore.rules も同時に更新する。
 enum ChatReaction: String, CaseIterable {
-    case lighthouse   // 見てるよ・おつかれ
-    case anchor       // ゆっくり休んで
-    case phoenix      // おかえり・いい再開
+    case heart
+    case lighthouse
 
-    var symbol: TileSymbol {
+    var title: LocalizedStringKey {
         switch self {
-        case .lighthouse: .lighthouse
-        case .anchor: .anchor
-        case .phoenix: .phoenix
+        case .heart: "Heart"
+        case .lighthouse: "I see you."
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .heart: "heart"
+        case .lighthouse: "light.beacon.max"
         }
     }
 }
@@ -67,6 +73,40 @@ final class HarborChatService: ObservableObject {
 
     func listen(roomId: String) {
         stop()
+        #if DEBUG
+        if Self.previewEnabled {
+            let now = Date()
+            messages = [
+                ChatMessage(
+                    id: "preview-1",
+                    uid: "preview-akari",
+                    kind: .text,
+                    text: "こちらは準備できたよ。いい風です。",
+                    itemName: nil,
+                    itemStyle: nil,
+                    itemSymbol: nil,
+                    minutes: nil,
+                    gapDays: nil,
+                    createdAt: now.addingTimeInterval(-420),
+                    reactions: ["preview-nagi": ChatReaction.lighthouse.rawValue]
+                ),
+                ChatMessage(
+                    id: "preview-2",
+                    uid: "preview-nagi",
+                    kind: .landfall,
+                    text: nil,
+                    itemName: "読書",
+                    itemStyle: TileStyle.coral.rawValue,
+                    itemSymbol: TileSymbol.book.rawValue,
+                    minutes: 25,
+                    gapDays: nil,
+                    createdAt: now.addingTimeInterval(-240),
+                    reactions: ["preview-self": ChatReaction.heart.rawValue]
+                ),
+            ]
+            return
+        }
+        #endif
         listener = chatRef(roomId)
             .order(by: "createdAt", descending: false)
             .limit(toLast: 120)
@@ -106,21 +146,54 @@ final class HarborChatService: ObservableObject {
 
     // MARK: - 送る
 
-    func send(roomId: String, text: String) {
-        guard let uid else { return }
+    @discardableResult
+    func send(roomId: String, text: String) -> Bool {
+        #if DEBUG
+        let senderUID = Self.previewEnabled ? "preview-self" : uid
+        #else
+        let senderUID = uid
+        #endif
+        guard let senderUID else { return false }
         let trimmed = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty, ChatSafety.isAllowed(trimmed) else { return false }
+        #if DEBUG
+        if Self.previewEnabled {
+            messages.append(
+                ChatMessage(
+                    id: UUID().uuidString,
+                    uid: senderUID,
+                    kind: .text,
+                    text: trimmed,
+                    itemName: nil,
+                    itemStyle: nil,
+                    itemSymbol: nil,
+                    minutes: nil,
+                    gapDays: nil,
+                    createdAt: Date(),
+                    reactions: [:]
+                )
+            )
+            return true
+        }
+        #endif
         chatRef(roomId).addDocument(data: [
-            "uid": uid,
+            "uid": senderUID,
             "kind": ChatMessage.Kind.text.rawValue,
             "text": trimmed,
             "createdAt": FieldValue.serverTimestamp(),
             "reactions": [:],
         ])
+        return true
     }
 
     /// 自分の発言を取り下げる(自分のものだけ。ルールでも本人限定)。
     func delete(roomId: String, messageId: String) {
+        #if DEBUG
+        if Self.previewEnabled {
+            messages.removeAll { $0.id == messageId }
+            return
+        }
+        #endif
         chatRef(roomId).document(messageId).delete()
     }
 
@@ -148,16 +221,57 @@ final class HarborChatService: ObservableObject {
 
         for room in rooms {
             chatRef(room.id).addDocument(data: data)
-        }
     }
+}
+
+/// App Review 1.2のUGC要件に沿う、送信前の最低限の有害表現フィルター。
+/// 通報・ブロックと併用し、通常の学習会話を過剰に止めない範囲で脅迫・自傷誘導・
+/// 代表的な差別語を弾く。正規化して空白や記号による単純な回避も抑える。
+private enum ChatSafety {
+    private static let blockedFragments = [
+        "killyourself", "kys", "nigger", "faggot",
+        "死ね", "しね", "殺す", "ころす", "自殺しろ",
+    ]
+
+    static func isAllowed(_ text: String) -> Bool {
+        let folded = text.folding(
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: Locale(identifier: "en_US_POSIX")
+        )
+        let compact = folded.unicodeScalars
+            .filter { CharacterSet.alphanumerics.contains($0) || $0.value > 0x7F }
+            .map(String.init)
+            .joined()
+            .lowercased()
+        return !blockedFragments.contains { compact.contains($0) }
+    }
+}
 
     // MARK: - リアクション
 
     /// 1メッセージにつき1人1つ。同じものをもう一度選ぶと取り消し。
     func react(roomId: String, message: ChatMessage, reaction: ChatReaction) {
-        guard let uid else { return }
-        let field = "reactions.\(uid)"
-        if message.reactions[uid] == reaction.rawValue {
+        #if DEBUG
+        let reactingUID = Self.previewEnabled ? "preview-self" : uid
+        #else
+        let reactingUID = uid
+        #endif
+        guard let reactingUID else { return }
+        #if DEBUG
+        if Self.previewEnabled,
+           let index = messages.firstIndex(where: { $0.id == message.id }) {
+            var reactions = messages[index].reactions
+            if reactions[reactingUID] == reaction.rawValue {
+                reactions.removeValue(forKey: reactingUID)
+            } else {
+                reactions[reactingUID] = reaction.rawValue
+            }
+            messages[index] = Self.replacingReactions(in: messages[index], with: reactions)
+            return
+        }
+        #endif
+        let field = "reactions.\(reactingUID)"
+        if message.reactions[reactingUID] == reaction.rawValue {
             chatRef(roomId).document(message.id).updateData([field: FieldValue.delete()])
         } else {
             chatRef(roomId).document(message.id).updateData([field: reaction.rawValue])
@@ -184,6 +298,12 @@ final class HarborChatService: ObservableObject {
 
     /// ブロック。自分の端末とアカウントの中だけで効く(相手には伝わらない)。
     func loadBlocked() async {
+        #if DEBUG
+        if Self.previewEnabled {
+            blocked = []
+            return
+        }
+        #endif
         guard let uid else { blocked = []; return }
         guard let snap = try? await db.collection("users").document(uid)
             .collection("blocks").getDocuments() else { return }
@@ -191,6 +311,13 @@ final class HarborChatService: ObservableObject {
     }
 
     func block(_ targetUid: String) {
+        #if DEBUG
+        if Self.previewEnabled {
+            guard targetUid != "preview-self" else { return }
+            blocked.insert(targetUid)
+            return
+        }
+        #endif
         guard let uid, targetUid != uid else { return }
         db.collection("users").document(uid).collection("blocks")
             .document(targetUid).setData(["createdAt": FieldValue.serverTimestamp()])
@@ -198,9 +325,40 @@ final class HarborChatService: ObservableObject {
     }
 
     func unblock(_ targetUid: String) {
+        #if DEBUG
+        if Self.previewEnabled {
+            blocked.remove(targetUid)
+            return
+        }
+        #endif
         guard let uid else { return }
         db.collection("users").document(uid).collection("blocks")
             .document(targetUid).delete()
         blocked.remove(targetUid)
     }
+
+    #if DEBUG
+    private static var previewEnabled: Bool {
+        ProcessInfo.processInfo.environment["LANDFALL_PRIVATE_PREVIEW"] == "1"
+    }
+
+    private static func replacingReactions(
+        in message: ChatMessage,
+        with reactions: [String: String]
+    ) -> ChatMessage {
+        ChatMessage(
+            id: message.id,
+            uid: message.uid,
+            kind: message.kind,
+            text: message.text,
+            itemName: message.itemName,
+            itemStyle: message.itemStyle,
+            itemSymbol: message.itemSymbol,
+            minutes: message.minutes,
+            gapDays: message.gapDays,
+            createdAt: message.createdAt,
+            reactions: reactions
+        )
+    }
+    #endif
 }

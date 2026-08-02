@@ -8,7 +8,6 @@ struct ItemDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var recording = false
-    @State private var editing = false
     @State private var showWelcomeBack = false
     /// おかえり演出から共有へ橋を架けるとき。
     @State private var sharingReturn = false
@@ -19,7 +18,7 @@ struct ItemDetailView: View {
 
     /// 新しい順のセッション。
     private var sessions: [StudySession] {
-        item.sessions.sorted { $0.date > $1.date }
+        item.sessions.sorted(by: StudySession.newestFirst)
     }
 
     private var totalMinutes: Int {
@@ -69,27 +68,13 @@ struct ItemDetailView: View {
                     .foregroundStyle(LFColor.ink)
                 }
             }
-            // 項目の編集・削除への直接の入口。記録シートの奥に埋もれていたのを表に出す。
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    editing = true
-                } label: {
-                    Text("Edit")
-                        .font(LFFont.label(16))
-                        .foregroundStyle(LFColor.ink)
-                }
-            }
         }
         .toolbarBackground(LFColor.paper, for: .navigationBar)
         .sheet(isPresented: $recording) {
             RecordSessionSheet(
                 item: item,
-                onSaved: handleSaved,
-                onEdit: { _ in editing = true }
+                onSaved: handleSaved
             )
-        }
-        .sheet(isPresented: $editing) {
-            ItemEditorSheet(existing: item, onDeleted: { dismiss() })
         }
         .sheet(item: $editingSession) { session in
             SessionEditSheet(session: session)

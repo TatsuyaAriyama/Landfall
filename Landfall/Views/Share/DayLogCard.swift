@@ -1,13 +1,12 @@
+import SceneKit
 import SwiftUI
+import UIKit
 
-/// 共有カードの配色。港の一日の時間帯として選ぶ。
-/// すべて固定色(明暗に追従しない)なので、端末の外観設定に関わらず書き出した絵柄が変わらない。
+/// 共有カードの時間帯。色だけでなく、背景の3D航海世界そのものを切り替える。
+/// 端末の外観設定には追従させず、SNSへ書き出した絵柄を一定に保つ。
 enum DayCardTheme: String, CaseIterable, Identifiable {
-    /// 昼の海。ティールの海に砂色の帆(サインイン画面と同じ情景)。
     case harbor
-    /// 夜の海。ミッドナイトの海にラベンダーの空気。
     case ink
-    /// 朝の海。白い靄の海にティールの帆。
     case paper
 
     var id: String { rawValue }
@@ -20,47 +19,62 @@ enum DayCardTheme: String, CaseIterable, Identifiable {
         }
     }
 
-    /// 海(カード上部)の色。
+    var timeOfDay: AftideHomeTimeOfDay {
+        switch self {
+        case .harbor: .day
+        case .ink: .night
+        case .paper: .morning
+        }
+    }
+
+    /// 配色選択の縮図と、3D描画失敗時の下地に使う。
     var sea: Color {
         switch self {
-        case .harbor: LFColor.harborTeal
-        case .ink: LFColor.midnight
-        case .paper: .white
+        case .harbor: Color(hex: 0x56A9AA)
+        case .ink: Color(hex: 0x183F3B)
+        case .paper: Color(hex: 0x69AAA6)
         }
     }
 
-    /// 海の上に置く文字の色。
-    var seaText: Color {
+    var land: Color {
         switch self {
-        case .harbor: LFColor.harborSand
-        case .ink: LFColor.lavender
-        case .paper: LFColor.harborTeal
+        case .harbor: Color(hex: 0xE7F4EF)
+        case .ink: Color(hex: 0x102F2C)
+        case .paper: Color(hex: 0xF6EEE1)
         }
     }
 
-    /// 合計時間(主役)の色。
-    var hero: Color {
+    var panel: Color {
         switch self {
-        case .harbor, .ink: LFColor.sunYellow
+        case .harbor: Color(hex: 0x123B40).opacity(0.90)
+        case .ink: Color(hex: 0x102F2C).opacity(0.92)
+        case .paper: Color(hex: 0xF6EEE1).opacity(0.92)
+        }
+    }
+
+    var ink: Color {
+        switch self {
+        case .harbor, .ink: Color(hex: 0xF4F1EC)
+        case .paper: Color(hex: 0x173F3C)
+        }
+    }
+
+    var accent: Color {
+        switch self {
+        case .harbor: LFColor.sunYellow
+        case .ink: LFColor.emberGold
         case .paper: LFColor.returnOrange
         }
     }
 
-    /// 帆船の色。
-    var boat: Color {
+    var sceneVeil: Color {
         switch self {
-        case .harbor, .ink: LFColor.harborSand
-        case .paper: LFColor.harborTeal
+        case .harbor: Color.black.opacity(0.05)
+        case .ink: Color.black.opacity(0.11)
+        case .paper: Color(hex: 0x173F3C).opacity(0.03)
         }
     }
 
-    /// 陸(カード下部)。どの時間帯でも砂浜は同じ色。
-    var land: Color { LFColor.harborSand }
-
-    /// 陸の上に置く文字の色。ティール×砂は港の基本の組み合わせ。
-    var landInk: Color { LFColor.harborTeal }
-
-    /// 白背景のSNSに貼っても輪郭が消えないよう、朝(白い海)にだけ縁を付ける。
     var border: Color {
         switch self {
         case .paper: LFColor.inkFixed.opacity(0.12)
@@ -69,214 +83,278 @@ enum DayCardTheme: String, CaseIterable, Identifiable {
     }
 }
 
-/// その日の記録を、港の情景に載せた絵はがき。
-/// 構図: 海(日付と時間が浮かぶ)→ 帆船が海岸へ着く情景 → 陸(記録が荷降ろしされている)。
-/// 「着岸したから、記録が陸にある」という一枚。
-/// 固定寸法の絵はがきなので、文字サイズ・外観設定の影響を受けない。
+/// 一日の記録を、実際の航海世界に載せる4:5の共有カード。
+/// 背景はホーム／航海中と同じ船・航海士・海・島をSceneKitで描き、
+/// 3倍書き出し時に1170×1464pxになる固定寸法で構成する。
 struct DayLogCard: View {
     let log: DayLog
     var theme: DayCardTheme = .harbor
 
-    /// 情景の帯の高さ。下端が汀(みぎわ)=陸との境界。
-    private let sceneHeight: CGFloat = 116
+    private let cardHeight: CGFloat = 488
+    private let inset: CGFloat = 18
+
+    private var visibleEntries: [DayLog.Entry] {
+        Array(log.entries.prefix(2))
+    }
+
+    private var hiddenEntryCount: Int {
+        max(0, log.entries.count - visibleEntries.count)
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            seaSection
-            scene
-            landSection
-        }
-        .frame(width: LFMetrics.cardSize.width)
-        .background(
-            // 海と陸を継ぎ目なく塗り分ける(情景の帯は海の続き)。
-            VStack(spacing: 0) {
-                theme.sea
-                theme.land.frame(height: 8)   // 端数対策。陸側は landSection が塗る。
+        ZStack {
+            voyageBackdrop
+            theme.sceneVeil
+
+            VStack(alignment: .leading, spacing: 0) {
+                masthead
+                voyageSummary
+                    .padding(.top, 22)
+
+                Spacer(minLength: 28)
+
+                logPanel
             }
-        )
+            .padding(inset)
+        }
+        .frame(width: LFMetrics.cardSize.width, height: cardHeight)
         .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
-        .overlay(
+        .overlay {
             RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous)
                 .stroke(theme.border, lineWidth: 1)
-        )
-        // 絵はがきなので、端末の文字サイズ・外観に関わらず一定に描く。
+        }
         .environment(\.lfFixedType, true)
         .environment(\.colorScheme, .light)
-        // 日付・単位(LF/heroTime)はアプリ内の言語設定に従うので、翻訳文もそこに揃える。
-        // これが無いと、端末言語とアプリ内言語が違うときにカード内で言語が混ざる。
         .environment(\.locale, AppLanguage.current.locale)
     }
 
-    // MARK: - 海(日付・合計時間)
+    private var voyageBackdrop: some View {
+        Group {
+            if let image = ShareVoyageBackdropRenderer.image(for: theme) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                theme.sea
+            }
+        }
+        .frame(width: LFMetrics.cardSize.width, height: cardHeight)
+        .clipped()
+        .accessibilityHidden(true)
+    }
 
-    private var seaSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
+    private var masthead: some View {
+        HStack(alignment: .center, spacing: 12) {
             Text(verbatim: LF.dayWithWeekday(log.date))
-                .font(LFFont.labelFixed(14))
-                .tracking(2)
-                .foregroundStyle(theme.seaText.opacity(0.65))
+                .font(LFFont.labelFixed(12))
+                .tracking(1.6)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            Text(verbatim: "KeelMira")
+                .font(LFFont.labelFixed(13))
+                .tracking(1.1)
+        }
+        .foregroundStyle(theme.ink)
+        .padding(.horizontal, 14)
+        .frame(height: 38)
+        .background(theme.panel)
+        .clipShape(Capsule(style: .continuous))
+    }
+
+    private var voyageSummary: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Today's voyage")
+                .font(LFFont.labelFixed(11))
+                .tracking(1.5)
+                .foregroundStyle(theme.ink.opacity(0.72))
 
             if log.isRestDay {
                 Text("Rested.")
-                    .font(LFFont.copyFixed(34))
-                    .foregroundStyle(LFColor.seaGreen)
-                    .padding(.top, 16)
+                    .font(LFFont.copyFixed(31))
+                    .foregroundStyle(theme.accent)
                 Text("A day at harbor is part of the voyage.")
-                    .font(LFFont.copyFixed(15))
-                    .foregroundStyle(theme.seaText.opacity(0.7))
-                    .padding(.top, 8)
+                    .font(LFFont.labelFixed(12))
+                    .foregroundStyle(theme.ink.opacity(0.82))
+                    .lineLimit(1)
             } else {
                 heroTime
-                    .padding(.top, 16)
-                // 空きが空いた日にだけ、戻ってきたことを言葉にする。
-                // 普段の日は何も足さない(日付と時間だけの静かな面を保つ)。
                 if let gap = log.daysSinceLastVoyage, gap >= 2 {
                     Text("First sail in \(gap) days.")
-                        .font(LFFont.copyFixed(16))
-                        .foregroundStyle(LFColor.sunYellow.opacity(0.9))
-                        .padding(.top, 10)
+                        .font(LFFont.labelFixed(12))
+                        .foregroundStyle(theme.ink.opacity(0.82))
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, LFMetrics.cardPadding)
-        .padding(.top, 34)
-        .padding(.bottom, 6)
-        .background(theme.sea)
+        .padding(.horizontal, 15)
+        .padding(.vertical, 12)
+        .background(theme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .fixedSize(horizontal: true, vertical: true)
     }
 
-    /// 合計時間。数字を大きく・単位を小さく置く(全部同じ大きさで並べると野暮ったい)。
-    /// 数字は主役色、単位は海の文字色で一歩引かせる。
     private var heroTime: some View {
         let hours = log.totalMinutes / 60
         let minutes = log.totalMinutes % 60
         let isJa = AppLanguage.current.locale.identifier.hasPrefix("ja")
         let hourUnit = isJa ? "時間" : "h"
         let minuteUnit = isJa ? "分" : "m"
+
         return HStack(alignment: .firstTextBaseline, spacing: 2) {
             if hours > 0 {
                 Text(verbatim: "\(hours)")
-                    .font(LFFont.numberFixed(60))
-                    .foregroundStyle(theme.hero)
+                    .font(LFFont.numberFixed(42))
+                    .foregroundStyle(theme.accent)
                 Text(verbatim: hourUnit)
-                    .font(LFFont.copyFixed(18))
-                    .foregroundStyle(theme.seaText.opacity(0.85))
-                    .padding(.trailing, hours > 0 && minutes > 0 ? 8 : 0)
+                    .font(LFFont.labelFixed(14))
+                    .foregroundStyle(theme.ink.opacity(0.85))
+                    .padding(.trailing, minutes > 0 ? 6 : 0)
             }
             if minutes > 0 || hours == 0 {
                 Text(verbatim: "\(minutes)")
-                    .font(LFFont.numberFixed(60))
-                    .foregroundStyle(theme.hero)
+                    .font(LFFont.numberFixed(42))
+                    .foregroundStyle(theme.accent)
                 Text(verbatim: minuteUnit)
-                    .font(LFFont.copyFixed(18))
-                    .foregroundStyle(theme.seaText.opacity(0.85))
+                    .font(LFFont.labelFixed(14))
+                    .foregroundStyle(theme.ink.opacity(0.85))
             }
         }
         .lineLimit(1)
-        .minimumScaleFactor(0.6)
+        .minimumScaleFactor(0.72)
     }
 
-    // MARK: - 情景(帆船と海岸)
-
-    /// 凪いだ海を渡ってきた帆船が、右手の海岸に着こうとしている。
-    /// 休んだ日は、船は岸のそばに停泊している。
-    private var scene: some View {
-        ZStack {
-            theme.sea
-
-            // 凪の水面。サインイン画面と同じ言葉づかい。
-            waterLine(width: 150, height: 6, opacity: 0.30)
-                .position(x: 150, y: sceneHeight - 20)
-            waterLine(width: 84, height: 5, opacity: 0.18)
-                .position(x: 96, y: sceneHeight - 9)
-
-            // 迎える海岸(右手)。裾は右端へ断ち落とす。
-            CoastShape()
-                .fill(theme.land)
-                .frame(width: 216, height: 74)
-                .position(x: 322, y: sceneHeight - 37)
-
-            // 帆船。休んだ日は岸のそば(重ならない手前)で停泊、それ以外は海の上。
-            BoatShape()
-                .fill(theme.boat)
-                .frame(width: 46, height: 85)
-                .position(x: log.isRestDay ? 178 : 128, y: sceneHeight - 52)
-        }
-        .frame(width: LFMetrics.cardSize.width, height: sceneHeight)
-        .clipped()
-    }
-
-    private func waterLine(width: CGFloat, height: CGFloat, opacity: Double) -> some View {
-        Capsule(style: .continuous)
-            .fill(theme.seaText.opacity(opacity))
-            .frame(width: width, height: height)
-    }
-
-    // MARK: - 陸(荷降ろしされた記録)
-
-    private var landSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if !log.entries.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(Array(log.entries.enumerated()), id: \.element.id) { index, entry in
-                        if index > 0 {
-                            Rectangle()
-                                .fill(theme.landInk.opacity(0.12))
-                                .frame(height: 1)
-                        }
+    private var logPanel: some View {
+        HStack(alignment: .bottom, spacing: 14) {
+            VStack(alignment: .leading, spacing: 0) {
+                if log.isRestDay {
+                    Text("A day at harbor is part of the voyage.")
+                        .font(LFFont.copyFixed(14))
+                        .foregroundStyle(theme.ink.opacity(0.86))
+                } else {
+                    ForEach(visibleEntries) { entry in
                         entryRow(entry)
                     }
-                }
-                .padding(.top, 10)
-            }
 
-            // その日について書いた一行だけを載せる(記録ごとのメモは載せない)。
-            if let comment = log.comment, !comment.isEmpty {
-                HStack(alignment: .top, spacing: 10) {
-                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                        .fill(LFColor.returnOrange)
-                        .frame(width: 3)
-                    Text(verbatim: comment)
-                        .font(LFFont.copyFixed(16))
-                        .foregroundStyle(theme.landInk.opacity(0.9))
-                        .fixedSize(horizontal: false, vertical: true)
+                    if hiddenEntryCount > 0 {
+                        Text("and \(hiddenEntryCount) more.")
+                            .font(LFFont.labelFixed(11))
+                            .foregroundStyle(theme.ink.opacity(0.62))
+                            .padding(.top, 3)
+                    }
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, log.entries.isEmpty ? 24 : 20)
-            }
 
-            Text(verbatim: "Landfall-StudyLog")
-                .font(LFFont.labelFixed(12))
-                .foregroundStyle(theme.landInk.opacity(0.5))
-                .padding(.top, log.isRestDay && log.comment == nil ? 22 : 26)
+                if let comment = log.comment?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !comment.isEmpty {
+                    Text(verbatim: "“\(comment)”")
+                        .font(LFFont.copyFixed(13))
+                        .foregroundStyle(theme.ink.opacity(0.88))
+                        .lineLimit(2)
+                        .padding(.top, 10)
+                }
+
+                Text("Your day, under sail.")
+                    .font(LFFont.labelFixed(10))
+                    .tracking(0.8)
+                    .foregroundStyle(theme.ink.opacity(0.52))
+                    .padding(.top, 13)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            promotionQR
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, LFMetrics.cardPadding)
-        .padding(.bottom, 24)
-        .background(theme.land)
+        .padding(15)
+        .background(theme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
     }
 
     private func entryRow(_ entry: DayLog.Entry) -> some View {
-        HStack(spacing: 13) {
-            TokenTile(
-                styleToken: entry.styleToken,
-                symbolToken: entry.symbolToken,
-                photoData: entry.photoData
-            )
-            .frame(width: 36, height: 36)
+        HStack(spacing: 9) {
+            TokenTile(styleToken: entry.styleToken, symbolToken: entry.symbolToken)
+                .frame(width: 27, height: 27)
 
             Text(verbatim: entry.name)
-                .font(LFFont.copyFixed(16))
-                .foregroundStyle(theme.landInk)
+                .font(LFFont.labelFixed(13))
+                .foregroundStyle(theme.ink)
                 .lineLimit(1)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 6)
 
             Text(verbatim: LF.duration(minutes: entry.minutes))
-                .font(LFFont.numberFixed(15))
-                .foregroundStyle(theme.landInk.opacity(0.7))
+                .font(LFFont.numberFixed(12))
+                .foregroundStyle(theme.ink.opacity(0.72))
+                .lineLimit(1)
         }
-        .padding(.vertical, 12)
+        .frame(height: 32)
+    }
+
+    @ViewBuilder
+    private var promotionQR: some View {
+        if let qr = LandfallLink.qrImage(for: LandfallLink.sharePromotionURL) {
+            VStack(spacing: 5) {
+                Image(uiImage: qr)
+                    .resizable()
+                    .interpolation(.none)
+                    .frame(width: 48, height: 48)
+                    .padding(6)
+                    .background(Color(hex: 0xF6EEE1))
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+                Text("Sail with me")
+                    .font(LFFont.labelFixed(8))
+                    .foregroundStyle(theme.ink.opacity(0.68))
+                    .lineLimit(1)
+            }
+            .frame(width: 64)
+            .fixedSize(horizontal: true, vertical: true)
+            .layoutPriority(2)
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/// 航海ホームと同じSceneKit世界を共有画像用に決定的な一枚へ焼き付ける。
+/// 共有カードの3倍書き出しと同じ実画素で先に描くため、船や海の輪郭がぼやけない。
+@MainActor
+private enum ShareVoyageBackdropRenderer {
+    private static var cachedImages: [String: UIImage] = [:]
+    private static let renderSize = CGSize(width: 1170, height: 1464)
+
+    static func image(for theme: DayCardTheme) -> UIImage? {
+        let key = "\(theme.rawValue)-\(BoatCustomization.selectedSailID)"
+        if let cached = cachedImages[key] { return cached }
+
+        let scene = VoyageSceneKit.makeVoyagingScene(
+            showIsland: true,
+            timeOfDay: theme.timeOfDay
+        )
+
+        // アニメータが無い静止画でも、島を航路の先に置き、カモメを原点へ固めない。
+        scene.rootNode.childNode(withName: "approachingIsland", recursively: false)?.position =
+            SCNVector3(10.4, 0, -8.7)
+        scene.rootNode.childNode(withName: "gulls", recursively: false)?.isHidden = true
+        scene.rootNode.childNode(withName: "boatBob", recursively: true)?.position.y = 0.04
+
+        guard let camera = scene.rootNode.childNode(withName: "camera", recursively: true) else {
+            return nil
+        }
+        camera.position = SCNVector3(-5.2, 2.6, 8.2)
+        // 船体まで情報パネルへ沈まないよう、狙点を水面寄りへ下げて世界を上へ送る。
+        camera.look(at: SCNVector3(0.55, 0.78, -0.25))
+        camera.camera?.fieldOfView = 40
+        camera.camera?.wantsExposureAdaptation = false
+
+        let renderer = SCNRenderer(device: nil, options: nil)
+        renderer.scene = scene
+        renderer.pointOfView = camera
+        renderer.autoenablesDefaultLighting = false
+        let image = renderer.snapshot(
+            atTime: 3.4,
+            with: renderSize,
+            antialiasingMode: .multisampling4X
+        )
+        cachedImages[key] = image
+        return image
     }
 }
 
@@ -284,30 +362,22 @@ struct DayLogCard: View {
 private struct TokenTile: View {
     let styleToken: String
     let symbolToken: String
-    let photoData: Data?
 
     var body: some View {
         GeometryReader { geo in
             let s = min(geo.size.width, geo.size.height)
+            let style = TileStyle.from(styleToken)
             ZStack {
-                if let photoData, let image = UIImage(data: photoData) {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: s, height: s)
-                } else {
-                    let style = TileStyle.from(styleToken)
-                    style.background
-                    TileSymbolView(
-                        symbol: TileSymbol.from(symbolToken),
-                        fg: style.foreground,
-                        bg: style.background
-                    )
-                    .frame(width: s * 0.62, height: s * 0.62)
-                }
+                style.background
+                TileSymbolView(
+                    symbol: TileSymbol.from(symbolToken),
+                    fg: style.foreground,
+                    bg: style.background
+                )
+                .frame(width: s * 0.62, height: s * 0.62)
             }
             .frame(width: s, height: s)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: s * 0.26, style: .continuous))
         }
         .aspectRatio(1, contentMode: .fit)
     }
@@ -318,8 +388,8 @@ private struct TokenTile: View {
         log: DayLog(
             date: .now,
             entries: [
-                .init(id: "1", name: "開発", styleToken: "midnight", symbolToken: "phoenix", photoData: nil, minutes: 95),
-                .init(id: "2", name: "読書", styleToken: "coral", symbolToken: "book", photoData: nil, minutes: 40),
+                .init(id: "1", name: "開発", styleToken: "midnight", symbolToken: "phoenix", minutes: 95),
+                .init(id: "2", name: "読書", styleToken: "coral", symbolToken: "book", minutes: 40),
             ],
             notes: [],
             comment: "久しぶりに読書に没頭できた。",
@@ -333,7 +403,10 @@ private struct TokenTile: View {
 
 #Preview("休んだ日") {
     DayLogCard(
-        log: DayLog(date: .now, entries: [], notes: [], comment: nil, totalMinutes: 0, sessionCount: 0, daysSinceLastVoyage: nil),
-        theme: .harbor
+        log: DayLog(
+            date: .now, entries: [], notes: [], comment: nil,
+            totalMinutes: 0, sessionCount: 0, daysSinceLastVoyage: nil
+        ),
+        theme: .ink
     )
 }

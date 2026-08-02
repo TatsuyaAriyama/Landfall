@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1A0000061A0000061A000006"
-               BuildableName = "Landfall"
+               BuildableName = "Landfall.app"
                BlueprintName = "Landfall"
                ReferencedContainer = "container:Landfall.xcodeproj">
             </BuildableReference>
@@ -44,11 +44,14 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A0000061A0000061A000006"
-            BuildableName = "Landfall"
+            BuildableName = "Landfall.app"
             BlueprintName = "Landfall"
             ReferencedContainer = "container:Landfall.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <StoreKitConfigurationFileReference
+         identifier = "../../Landfall/KeelMira.storekit">
+      </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -61,7 +64,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A0000061A0000061A000006"
-            BuildableName = "Landfall"
+            BuildableName = "Landfall.app"
             BlueprintName = "Landfall"
             ReferencedContainer = "container:Landfall.xcodeproj">
          </BuildableReference>

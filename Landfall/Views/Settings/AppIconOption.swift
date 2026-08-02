@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// 選べるアプリアイコン。harbor(Landfallティール)を既定(primary)とし、
-/// dusk(Landfall暖色)・midnight/coral(不死鳥)を代替とする。
+/// 選べるアプリアイコン。harbor(KeelMiraティール)を既定(primary)とし、
+/// dusk(KeelMira暖色)・midnight/coral(不死鳥)を代替とする。
 /// UIKit非依存にして、アイコンPNGの再生成ハーネス(macOS)からも参照できるようにする。
 enum AppIconOption: String, CaseIterable, Identifiable {
-    case harbor    // Landfall図案・ティール(既定)
-    case dusk      // Landfall図案・暖色(夕暮れ)
+    case harbor    // KeelMira図案・ティール(既定)
+    case dusk      // KeelMira図案・暖色(夕暮れ)
     case midnight  // 不死鳥・ミッドナイト
     case coral     // 不死鳥・コーラル
 
@@ -31,7 +31,7 @@ enum AppIconOption: String, CaseIterable, Identifiable {
         }
     }
 
-    /// アイコンの造形。Landfall(帆と陸)か Phoenix(不死鳥)か。
+    /// アイコンの造形。KeelMira(帆と陸)か Phoenix(不死鳥)か。
     enum Motif { case landfall, phoenix }
 
     var motif: Motif {
@@ -95,7 +95,7 @@ struct AppIconArt: View {
     }
 }
 
-/// Landfall の造形: 帰る帆(帆＋船体)と、望む陸地(大きな丘＋小さな丘)。
+/// KeelMira の造形: 帰る帆(帆＋船体)と、望む陸地(大きな丘＋小さな丘)。
 /// 1024の設計座標をrectに射影する。フラット塗りのみ。
 struct LandfallShape: Shape {
     func path(in rect: CGRect) -> Path {

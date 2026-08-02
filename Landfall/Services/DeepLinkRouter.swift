@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 /// 外から来たリンクを、画面に届ける小さな伝令。
-/// 招待リンク(landfall://join?code=XXXXXX)を受けたら港タブへ運び、コードを渡す。
+/// 招待リンク(keelmira://join?code=XXXXXX)を受けたら港タブへ運び、コードを渡す。
 @MainActor
 final class DeepLinkRouter: ObservableObject {
     static let shared = DeepLinkRouter()

@@ -14,7 +14,7 @@ struct DayDetailView: View {
         let calendar = Calendar.current
         return allSessions
             .filter { calendar.isDate($0.date, inSameDayAs: day) }
-            .sorted { $0.date < $1.date }
+            .sorted(by: StudySession.newestFirst)
     }
 
     private var totalMinutes: Int {

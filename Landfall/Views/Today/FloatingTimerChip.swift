@@ -5,8 +5,8 @@ import SwiftData
 /// 作業名と経過時間を表示し、指で自由に動かせる。タップで記録シートを開き、着岸できる。
 /// どのタブでも見えるよう ContentView 直下に重ねる。
 struct FloatingTimerChip: View {
-    @AppStorage(StudyTimer.startKey) private var timerStart: Double = 0
-    @AppStorage(StudyTimer.itemKey) private var timerItemID: String = ""
+    @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID: String = ""
     @Query private var items: [StudyItem]
 
     /// チップの停泊位置。動かした場所を覚えておく(-1は未設定=既定位置)。
@@ -30,7 +30,7 @@ struct FloatingTimerChip: View {
             }
         }
         .sheet(item: $landing) { item in
-            RecordSessionSheet(item: item, onSaved: { _ in }, onEdit: { _ in })
+            RecordSessionSheet(item: item, onSaved: { _ in })
         }
         .onAppear {
             clearOrphanedTimer()
@@ -58,7 +58,12 @@ struct FloatingTimerChip: View {
               let first = items.first else { return }
         let valid = items.contains { $0.uuid.uuidString == timerItemID }
         if timerStart == 0 || !valid {
-            timerStart = Date().timeIntervalSince1970 - 754   // 12分34秒経過
+            StudyTimer.begin(
+                itemID: first.uuid.uuidString,
+                itemName: first.name,
+                at: Date().addingTimeInterval(-754)
+            )
+            timerStart = StudyTimer.defaults.double(forKey: StudyTimer.startKey)
             timerItemID = first.uuid.uuidString
         }
         #endif

@@ -31,6 +31,9 @@ struct DayShareSheet: View {
     }
 
     private var log: DayLog { log(with: comment) }
+    private var canEditComment: Bool {
+        StudyDayStore.canEditComment(for: date)
+    }
 
     private func log(with text: String) -> DayLog {
         DayLog.make(date: date, sessions: allSessions, comment: text)
@@ -110,21 +113,43 @@ struct DayShareSheet: View {
         .padding(.top, 24)
     }
 
+    @ViewBuilder
     private var commentField: some View {
-        TextField("A word about this day (optional)", text: $comment, axis: .vertical)
-            .font(LFFont.label(16))
-            .foregroundStyle(LFColor.ink)
-            .tint(LFColor.ink)
-            .lineLimit(1...3)
-            .focused($commentFocused)
-            .submitLabel(.done)
-            .onSubmit { commentFocused = false }
+        if canEditComment {
+            TextField("A word about this day (optional)", text: $comment, axis: .vertical)
+                .font(LFFont.label(16))
+                .foregroundStyle(LFColor.ink)
+                .tint(LFColor.ink)
+                .lineLimit(1...5)
+                .focused($commentFocused)
+                .submitLabel(.done)
+                .onSubmit { commentFocused = false }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous)
+                        .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
+                )
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                if !comment.isEmpty {
+                    Text(verbatim: comment)
+                        .font(LFFont.copy(15))
+                        .foregroundStyle(LFColor.ink)
+                        .lineLimit(3)
+                }
+                Text("Only today and yesterday can be edited.")
+                    .font(LFFont.label(11))
+                    .foregroundStyle(LFColor.ink.opacity(0.45))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 18)
             .padding(.vertical, 14)
-            .background(
+            .overlay {
                 RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous)
-                    .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
-            )
+                    .stroke(LFColor.ink.opacity(0.12), lineWidth: 1)
+            }
+        }
     }
 
     private var themeRow: some View {
@@ -196,6 +221,7 @@ struct DayShareSheet: View {
     /// ひとことを保存し、画像を作り直す。
     @MainActor
     private func commitComment() {
+        guard canEditComment else { return }
         StudyDayStore.setComment(comment, for: date, context: modelContext)
         guard comment != renderedComment else { return }
         renderedComment = comment
@@ -228,11 +254,11 @@ struct DayShareSheet: View {
     }
     #endif
 
-    /// 「Landfall-2026-07-18.png」形式。
+    /// 「KeelMira-2026-07-18.png」形式。
     static func fileName(for date: Date) -> String {
         let comps = Calendar.current.dateComponents([.year, .month, .day], from: date)
         return String(
-            format: "Landfall-%04d-%02d-%02d.png",
+            format: "KeelMira-%04d-%02d-%02d.png",
             comps.year ?? 0, comps.month ?? 0, comps.day ?? 0
         )
     }

@@ -31,14 +31,19 @@ private func damp(_ cur: Float, _ target: Float, _ lambda: Float, _ dt: Float) -
 // MARK: - ポーズ
 
 enum PhoenixPose: String, CaseIterable, Identifiable {
-    case idle, walk, raise, hail
+    case idle, walk, lookout, raise, hail, point, stargaze, rest, sit
     var id: String { rawValue }
     var title: LocalizedStringKey {
         switch self {
         case .idle: "Idle"
         case .walk: "Walk"
+        case .lookout: "Look out"
         case .raise: "Raise"
         case .hail: "Wave"
+        case .point: "Sight land"
+        case .stargaze: "Stargaze"
+        case .rest: "Rest"
+        case .sit: "Sit"
         }
     }
 
@@ -53,17 +58,38 @@ enum PhoenixPose: String, CaseIterable, Identifiable {
         }
         set { UserDefaults.standard.set(newValue.rawValue, forKey: storageKey) }
     }
+
+    static func resetSelection() {
+        UserDefaults.standard.removeObject(forKey: storageKey)
+    }
 }
 
 private struct PoseBase {
-    var armRx: Float, armRz: Float, armLx: Float, armLz: Float, lean: Float, wind: Float
+    var armRx: Float, armRz: Float, armLx: Float, armLz: Float
+    var lean: Float, wind: Float, headX: Float, scan: Float, scanSpeed: Float
+    var turn: Float, sway: Float, breathAmp: Float, breathSpeed: Float
+    var glow: Float, sit: Float
 }
 private func poseBase(_ p: PhoenixPose) -> PoseBase {
     switch p {
-    case .idle:  return PoseBase(armRx: 0, armRz: 0.14, armLx: 0, armLz: -0.14, lean: 0, wind: 1)
-    case .walk:  return PoseBase(armRx: 0, armRz: 0.12, armLx: 0, armLz: -0.12, lean: 0.09, wind: 1.7)
-    case .raise: return PoseBase(armRx: -2.35, armRz: 0.06, armLx: 0, armLz: -0.16, lean: -0.04, wind: 1.15)
-    case .hail:  return PoseBase(armRx: 0, armRz: 0.14, armLx: 0, armLz: -2.55, lean: 0, wind: 1.1)
+    case .idle:
+        return PoseBase(armRx: 0, armRz: 0.14, armLx: 0, armLz: -0.14, lean: 0, wind: 1, headX: 0, scan: 0.14, scanSpeed: 0.3, turn: 0, sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5, sit: 0)
+    case .walk:
+        return PoseBase(armRx: 0, armRz: 0.12, armLx: 0, armLz: -0.12, lean: 0.09, wind: 1.7, headX: 0, scan: 0.05, scanSpeed: 0.3, turn: 0, sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5, sit: 0)
+    case .lookout:
+        return PoseBase(armRx: 0.02, armRz: 0.16, armLx: -2.3, armLz: 0.14, lean: 0.02, wind: 1.2, headX: -0.02, scan: 0.46, scanSpeed: 0.55, turn: 0.4, sway: 0.7, breathAmp: 1, breathSpeed: 0.8, glow: 1.5, sit: 0)
+    case .raise:
+        return PoseBase(armRx: -2.35, armRz: 0.06, armLx: 0, armLz: -0.16, lean: -0.04, wind: 1.15, headX: -0.14, scan: 0.14, scanSpeed: 0.3, turn: 0, sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 2.3, sit: 0)
+    case .hail:
+        return PoseBase(armRx: 0, armRz: 0.14, armLx: 0, armLz: -2.55, lean: 0, wind: 1.1, headX: 0, scan: 0.14, scanSpeed: 0.3, turn: 0, sway: 1, breathAmp: 1, breathSpeed: 0.85, glow: 1.5, sit: 0)
+    case .point:
+        return PoseBase(armRx: 0.1, armRz: 0.12, armLx: -1.8, armLz: 0.06, lean: 0.14, wind: 1.45, headX: -0.08, scan: 0.02, scanSpeed: 0.2, turn: 0, sway: 0.25, breathAmp: 0.8, breathSpeed: 0.9, glow: 1.6, sit: 0)
+    case .stargaze:
+        return PoseBase(armRx: 0.3, armRz: 0.2, armLx: -2.58, armLz: 0.1, lean: -0.1, wind: 0.8, headX: -0.46, scan: 0.2, scanSpeed: 0.16, turn: 0, sway: 0.5, breathAmp: 1.2, breathSpeed: 0.7, glow: 0.85, sit: 0)
+    case .rest:
+        return PoseBase(armRx: -0.8, armRz: -0.3, armLx: -0.86, armLz: 0.32, lean: 0.07, wind: 0.75, headX: 0.32, scan: 0.05, scanSpeed: 0.22, turn: 0, sway: 0.6, breathAmp: 1.75, breathSpeed: 0.58, glow: 2, sit: 0)
+    case .sit:
+        return PoseBase(armRx: 0.62, armRz: 0.3, armLx: 0.62, armLz: -0.3, lean: -0.12, wind: 0.7, headX: -0.05, scan: 0.13, scanSpeed: 0.18, turn: 0, sway: 0.45, breathAmp: 1.6, breathSpeed: 0.6, glow: 1.8, sit: 1)
     }
 }
 
@@ -101,9 +127,15 @@ enum PhoenixNavigator {
     private static var rustMat: SCNMaterial { mat(rust, roughness: 0.85) }
     private static var rustDeepMat: SCNMaterial { mat(rustDeep, roughness: 0.9) }
     private static var sandMat: SCNMaterial { mat(sand, roughness: 0.85) }
+    private static var ropeMat: SCNMaterial { mat(sand, roughness: 0.95) }
+    private static var collarMat: SCNMaterial {
+        mat(midnight, roughness: 0.7, doubleSided: true)
+    }
     private static var faceMat: SCNMaterial { mat(midnight, roughness: 0.6) }
     private static var capeMat: SCNMaterial { mat(midnight, roughness: 0.9, doubleSided: true) }
-    private static var eyeMat: SCNMaterial { mat(sand, roughness: 0.7, emission: sand, emissionIntensity: 0.55) }
+    private static var eyeMat: SCNMaterial {
+        mat(sand, roughness: 0.7, emission: sand, emissionIntensity: 0.85)
+    }
 
     // MARK: 汎用メッシュ(スムース法線)
 
@@ -158,8 +190,8 @@ enum PhoenixNavigator {
 
     /// 布の一点。u:-1..1(左→右)、v:0..1(肩→裾)。Web capePoint と同式。
     static func capePoint(_ u: Float, _ v: Float, _ time: Float, _ wind: Float) -> SCNVector3 {
-        let width = 0.16 + 0.21 * pow(v, 1.15)
-        let length = 0.38 + 0.19 * pow(abs(u), 1.4)
+        let width = 0.17 + 0.25 * pow(v, 1.1)
+        let length = 0.40 + 0.10 * pow(abs(u), 2.4)
         let flutter = pow(v, 1.5) * wind
         let t = time * (0.7 + 0.3 * wind)
         let x = u * width + flutter * sin(t * 1.3 + v * 2.0) * 0.02
@@ -207,14 +239,21 @@ enum PhoenixNavigator {
     static func makeNavigatorNode() -> SCNNode {
         let root = SCNNode()
         root.name = "navigator"
-        // 正面 +Z で組む。Web PhoenixModel は +π/2 だが、SceneKit と three.js は同じ +Y
-        // オイラー角でも向きが逆になるため、Web と同じ見え(顔が左向きの3/4)にするには -π/2。
-        root.eulerAngles.y = -.pi / 2
+        // 正面 +Z で組んだ素体を、船の船首 +X へ向ける。
+        // Web PhoenixModel と同じ +π/2。以前の -π/2 は -X（船尾）を向かせていた。
+        root.eulerAngles.y = .pi / 2
         #if DEBUG
         if let y = ProcessInfo.processInfo.environment["LANDFALL_NAV_YAW"], let deg = Float(y) {
             root.eulerAngles.y = deg * .pi / 180
         }
         #endif
+
+        // Web版と同じ接地単位。仕草で脚や裾が床を割るときは、このまとまりを
+        // 持ち上げるため、身体の各部をroot直下へばらばらに置かない。
+        let contact = SCNNode()
+        contact.name = "contact"
+        contact.position.y = 0.015
+        root.addChildNode(contact)
 
         // 脚(股関節ピボット)。足首は裾内、丸いブーツのつま先が前へ覗く。
         for s: Float in [1, -1] {
@@ -231,7 +270,17 @@ enum PhoenixNavigator {
             boot.position = SCNVector3(0, -0.368, 0.09)
             boot.scale = SCNVector3(0.95, 0.68, 1.55)
             leg.addChildNode(boot)
-            root.addChildNode(leg)
+            let soleGeometry = SCNBox(width: 0.115, height: 0.026, length: 0.2, chamferRadius: 0.006)
+            soleGeometry.firstMaterial = rustMat
+            let sole = SCNNode(geometry: soleGeometry)
+            sole.position = SCNVector3(0, -0.404, 0.088)
+            leg.addChildNode(sole)
+            let heelGeometry = SCNBox(width: 0.1, height: 0.03, length: 0.055, chamferRadius: 0.005)
+            heelGeometry.firstMaterial = rustDeepMat
+            let heel = SCNNode(geometry: heelGeometry)
+            heel.position = SCNVector3(0, -0.418, 0.012)
+            leg.addChildNode(heel)
+            contact.addChildNode(leg)
         }
 
         // 体(呼吸のまとまり)
@@ -239,32 +288,90 @@ enum PhoenixNavigator {
         core.name = "core"
 
         // コート: 裾へ広がる袍 + 裾内の深錆の縁
-        core.addChildNode(SCNNode(geometry: lathe(coatProfile, segments: 22, material: coralMat)))
+        let skirt = SCNNode()
+        skirt.name = "skirt"
+        skirt.addChildNode(SCNNode(geometry: lathe(coatProfile, segments: 22, material: coralMat)))
         let hem = SCNNode(geometry: lathe(coatProfile, segments: 22, material: rustMat))
         hem.position = SCNVector3(0, -0.02, 0)
         hem.scale = SCNVector3(0.97, 0.35, 0.97)
-        core.addChildNode(hem)
+        skirt.addChildNode(hem)
+        core.addChildNode(skirt)
+
+        // 腰のベルトと留め具。Web版と同寸法で、袍の胴位置を明確にする。
+        let belt = SCNNode(geometry: torus(ring: 0.176, pipe: 0.021, mat: rustDeepMat))
+        belt.position = SCNVector3(0, 0.585, 0)
+        core.addChildNode(belt)
+        let buckleGeometry = SCNBox(width: 0.05, height: 0.038, length: 0.016, chamferRadius: 0.003)
+        buckleGeometry.firstMaterial = sandMat
+        let buckle = SCNNode(geometry: buckleGeometry)
+        buckle.position = SCNVector3(0, 0.585, 0.172)
+        core.addChildNode(buckle)
 
         // 肩マント
         let mantle = SCNNode(geometry: lathe(mantleProfile, segments: 22, material: coralMat))
         mantle.position = SCNVector3(0, 0.78, 0)
         core.addChildNode(mantle)
 
-        // 留め具(sand の環 + midnight の芯)
+        // 胸の羅針図。真鍮の環・夜色の盤・八方位の針をWeb版と同寸法で重ねる。
         let clasp = SCNNode()
         clasp.position = SCNVector3(0, 0.868, 0.178)
         clasp.eulerAngles.x = -0.34
-        clasp.addChildNode(SCNNode(geometry: torus(ring: 0.036, pipe: 0.011, mat: sandMat)))
-        let pin = SCNNode(geometry: cyl(top: 0.019, bottom: 0.019, h: 0.02, mat: faceMat))
-        pin.eulerAngles.x = .pi / 2
-        clasp.addChildNode(pin)
+        let roseRim = SCNNode(geometry: torus(ring: 0.044, pipe: 0.0095, mat: sandMat))
+        roseRim.eulerAngles.x = .pi / 2
+        clasp.addChildNode(roseRim)
+        let roseFace = SCNNode(geometry: cyl(top: 0.038, bottom: 0.038, h: 0.007, mat: faceMat))
+        roseFace.eulerAngles.x = .pi / 2
+        clasp.addChildNode(roseFace)
+        for k in 0..<8 {
+            let a = Float(k) * .pi / 4
+            let cardinal = k % 2 == 0
+            let len: Float = cardinal ? 0.032 : 0.019
+            let point = SCNNode(geometry: cone(bottom: 0.0085, h: 0.032, seg: 4, mat: sandMat))
+            point.position = SCNVector3(cos(a) * len / 2, sin(a) * len / 2, 0.006)
+            point.eulerAngles.z = a - .pi / 2
+            point.scale = SCNVector3(cardinal ? 1 : 0.66, len / 0.032, 0.28)
+            clasp.addChildNode(point)
+        }
+        let roseHub = SCNNode(geometry: sphere(0.0075, seg: 10, mat: sandMat))
+        roseHub.position.z = 0.008
+        clasp.addChildNode(roseHub)
         core.addChildNode(clasp)
 
-        // 襟巻き
-        let scarf = SCNNode(geometry: torus(ring: 0.105, pipe: 0.034, mat: sandMat))
-        scarf.position = SCNVector3(0, 0.96, 0)
-        scarf.eulerAngles.x = .pi / 2 + 0.08
-        core.addChildNode(scarf)
+        // 前が開いた立ち襟。太い砂色のトーラスは首が浮き輪のように見えるため、
+        // Web版と同じ夜色の布へ置き換える。
+        let collar = SCNNode(
+            geometry: openLathe(
+                [
+                    (0.12, 0), (0.115, 0.028), (0.106, 0.055), (0.094, 0.078)
+                ],
+                segments: 22,
+                gap: 1.05,
+                material: collarMat
+            )
+        )
+        collar.position = SCNVector3(0, 0.935, 0)
+        core.addChildNode(collar)
+
+        // フードを留める船綱。輪・正面を少し外した結び目・二本の端を重ねる。
+        let rope = SCNNode()
+        rope.position = SCNVector3(0, 0.905, 0)
+        rope.addChildNode(SCNNode(geometry: torus(ring: 0.15, pipe: 0.0125, mat: ropeMat)))
+        let knotGroup = SCNNode()
+        knotGroup.eulerAngles.y = -0.62
+        let knot = SCNNode(geometry: sphere(0.022, seg: 10, mat: ropeMat))
+        knot.position = SCNVector3(0, -0.004, 0.147)
+        knot.scale = SCNVector3(1.15, 0.85, 0.85)
+        knotGroup.addChildNode(knot)
+        for s: Float in [1, -1] {
+            let tail = SCNNode(
+                geometry: cyl(top: 0.0115, bottom: 0.008, h: 0.072, mat: ropeMat)
+            )
+            tail.position = SCNVector3(s * 0.021, -0.042, 0.151)
+            tail.eulerAngles = SCNVector3(0.14, 0, s * 0.32)
+            knotGroup.addChildNode(tail)
+        }
+        rope.addChildNode(knotGroup)
+        core.addChildNode(rope)
 
         // マント(布の格子。毎フレーム波打つ)
         let cape = SCNNode(geometry: makeCapeGeometry(time: 0, wind: 1))
@@ -276,17 +383,17 @@ enum PhoenixNavigator {
         let head = SCNNode()
         head.name = "head"
         head.position = SCNVector3(0, 0.98, 0)
-        let hood = SCNNode(geometry: cone(bottom: 0.125, h: 0.3, seg: 18, mat: coralMat))
-        hood.position = SCNVector3(0, 0.12, 0)
-        hood.eulerAngles.x = -0.05
+        let hood = SCNNode(geometry: makeHoodGeometry())
+        hood.position = SCNVector3(0, -0.02, 0)
+        hood.eulerAngles.x = -0.03
         head.addChildNode(hood)
         let face = SCNNode(geometry: sphere(0.075, seg: 14, mat: faceMat))
-        face.position = SCNVector3(0, 0.045, 0.062)
-        face.scale = SCNVector3(1, 1.1, 0.55)
+        face.position = SCNVector3(0, 0.03, 0.006)
+        face.scale = SCNVector3(0.98, 1.05, 0.9)
         head.addChildNode(face)
         for s: Float in [1, -1] {
-            let eye = SCNNode(geometry: sphere(0.015, seg: 8, mat: eyeMat))
-            eye.position = SCNVector3(s * 0.028, 0.052, 0.099)
+            let eye = SCNNode(geometry: sphere(0.016, seg: 10, mat: eyeMat))
+            eye.position = SCNVector3(s * 0.028, 0.022, 0.094)
             head.addChildNode(eye)
         }
         core.addChildNode(head)
@@ -294,18 +401,18 @@ enum PhoenixNavigator {
         // 左腕(手を休める)
         let armL = makeArm(lantern: false)
         armL.name = "armL"
-        armL.position = SCNVector3(-0.14, 0.8, 0.01)
+        armL.position = SCNVector3(-0.163, 0.8, 0.035)
         armL.eulerAngles.z = -0.14
         core.addChildNode(armL)
 
         // 右腕 + ランタン(今日の灯を提げる)
         let armR = makeArm(lantern: true)
         armR.name = "armR"
-        armR.position = SCNVector3(0.14, 0.8, 0.01)
+        armR.position = SCNVector3(0.163, 0.8, 0.035)
         armR.eulerAngles.z = 0.14
         core.addChildNode(armR)
 
-        root.addChildNode(core)
+        contact.addChildNode(core)
         return root
     }
 
@@ -314,7 +421,7 @@ enum PhoenixNavigator {
         let upper = SCNNode(geometry: cyl(top: 0.036, bottom: 0.044, h: 0.22, mat: coralMat))
         upper.position = SCNVector3(0, -0.1, 0)
         arm.addChildNode(upper)
-        let sleeve = SCNNode(geometry: cyl(top: 0.046, bottom: 0.064, h: 0.1, mat: coralMat))
+        let sleeve = SCNNode(geometry: cyl(top: 0.046, bottom: 0.064, h: 0.1, mat: rustMat))
         sleeve.position = SCNVector3(0, -0.22, 0)
         arm.addChildNode(sleeve)
         let hand = SCNNode(geometry: sphere(0.048, seg: 12, mat: rustDeepMat))
@@ -371,61 +478,103 @@ enum PhoenixNavigator {
         t.ringSegmentCount = 18; t.pipeSegmentCount = 9; t.firstMaterial = mat; return t
     }
 
+    /// 前面を開けた回転体。three.js LatheGeometry と同じく
+    /// x=sin(phi)*radius / z=cos(phi)*radius で頂点を置く。
+    private static func openLathe(
+        _ profile: [(r: Float, y: Float)],
+        segments: Int,
+        gap: Float,
+        material: SCNMaterial
+    ) -> SCNGeometry {
+        let span = 2 * Float.pi - gap
+        var verts: [SCNVector3] = []
+        for p in profile {
+            for j in 0...segments {
+                let phi = gap / 2 + Float(j) / Float(segments) * span
+                verts.append(
+                    SCNVector3(p.r * sin(phi), p.y, p.r * cos(phi))
+                )
+            }
+        }
+        let stride = segments + 1
+        var indices: [UInt32] = []
+        for i in 0..<(profile.count - 1) {
+            for j in 0..<segments {
+                let a = UInt32(i * stride + j)
+                let b = a + 1
+                let d = UInt32((i + 1) * stride + j)
+                let e = d + 1
+                indices += [a, d, b, b, d, e]
+            }
+        }
+        return mesh(verts, indices, material: material)
+    }
+
+    /// Web版の「前面が開き、先だけ背へ流れる布フード」を同じ輪郭で生成する。
+    private static func makeHoodGeometry() -> SCNGeometry {
+        let profile: [(r: Float, y: Float)] = [
+            (0.148, -0.06), (0.14, 0), (0.126, 0.055),
+            (0.104, 0.105), (0.07, 0.15), (0, 0.185),
+        ]
+        let segments = 20
+        let gap: Float = 0.72
+        let span = 2 * Float.pi - gap
+        var verts: [SCNVector3] = []
+        for p in profile {
+            let k = max(0, (p.y - profile[0].y) / (profile.last!.y - profile[0].y))
+            for j in 0...segments {
+                let t = gap / 2 + Float(j) / Float(segments) * span
+                // ThreeのLatheGeometryは開口を+Zへ向ける。以前のcos/sin順では
+                // 開口だけが+Xへ90度ずれ、正面カメラから顔と目が見えなかった。
+                verts.append(
+                    SCNVector3(
+                        p.r * sin(t),
+                        p.y,
+                        p.r * cos(t) - k * k * 0.05
+                    )
+                )
+            }
+        }
+        let stride = segments + 1
+        var indices: [UInt32] = []
+        for i in 0..<(profile.count - 1) {
+            for j in 0..<segments {
+                let a = UInt32(i * stride + j)
+                let b = a + 1
+                let d = UInt32((i + 1) * stride + j)
+                let e = d + 1
+                indices += [a, d, b, b, d, e]
+            }
+        }
+        return mesh(verts, indices, material: mat(coral, roughness: 0.85, doubleSided: true))
+    }
+
     // コート/肩マントの回転体プロフィール(Web LatheGeometry の点列。r=半径, y=高さ)
     private static let coatProfile: [(r: Float, y: Float)] = [
         (0.235, 0.3), (0.225, 0.36), (0.205, 0.44), (0.185, 0.52), (0.165, 0.62),
         (0.148, 0.7), (0.135, 0.78), (0.118, 0.86), (0.105, 0.92),
     ]
     private static let mantleProfile: [(r: Float, y: Float)] = [
-        (0.2, 0), (0.185, 0.05), (0.16, 0.11), (0.125, 0.17), (0.095, 0.21), (0.078, 0.24),
+        (0.2, 0), (0.185, 0.05), (0.16, 0.11), (0.128, 0.155), (0.1, 0.175),
     ]
 
     // MARK: シーン(夜の海に立つ航海士。Web BoatStudio SailorStage 相当)
 
+    static func makeNavigatorStage() -> SCNNode {
+        let stage = SCNNode()
+        stage.name = "navigatorStage"
+        // PhoenixModel本体の+π/2を相殺して、顔・胸・つま先の+Zを
+        // スタジオの正面に合わせる。
+        stage.eulerAngles.y = -.pi / 2
+        // 全画面の上部操作と下部パネルの間へ全身が収まる展示倍率。
+        stage.scale = SCNVector3(0.95, 0.95, 0.95)
+        stage.addChildNode(makeNavigatorNode())
+        return stage
+    }
+
     static func makeScene() -> SCNScene {
-        let scene = SCNScene()
-        scene.background.contents = VoyageSceneKit.nightBG
-        scene.rootNode.addChildNode(VoyageSceneKit.makeSea(moonX: -8.5))
-        scene.rootNode.addChildNode(VoyageSceneKit.makeStars(count: 900))
-        scene.rootNode.addChildNode(VoyageSceneKit.makeMoon(position: SCNVector3(-8.5, 5.6, -14)))
-        scene.rootNode.addChildNode(VoyageSceneKit.makeRipples())
-
-        let nav = makeNavigatorNode()
-        nav.scale = SCNVector3(0.95, 0.95, 0.95)
-        scene.rootNode.addChildNode(nav)
-
-        // 照明は Web SailorStage と同値(ambient 0.6 / directional 1.4 / fill 0.28)。
-        // 船スタジオより明るく、キャラクターをしっかり見せる。
-        let ambient = SCNLight(); ambient.type = .ambient
-        ambient.color = UIColor(rgb: 0xFFE9C8); ambient.intensity = 600
-        let ambientNode = SCNNode(); ambientNode.light = ambient
-        scene.rootNode.addChildNode(ambientNode)
-
-        let key = SCNLight(); key.type = .directional
-        key.color = UIColor(rgb: 0xEADEBD); key.intensity = 1400
-        let keyNode = SCNNode(); keyNode.light = key
-        keyNode.position = SCNVector3(-6, 8, -5); keyNode.look(at: SCNVector3(0, 0.6, 0))
-        scene.rootNode.addChildNode(keyNode)
-
-        let fill = SCNLight(); fill.type = .directional
-        fill.color = UIColor(rgb: 0x5DCAA5); fill.intensity = 280
-        let fillNode = SCNNode(); fillNode.light = fill
-        fillNode.position = SCNVector3(5, 3, 6); fillNode.look(at: SCNVector3(0, 0.6, 0))
-        scene.rootNode.addChildNode(fillNode)
-
-        let cam = SCNCamera()
-        cam.fieldOfView = 40
-        cam.zNear = 0.05
-        cam.zFar = 200
-        cam.wantsHDR = true
-        cam.wantsExposureAdaptation = false
-        cam.bloomIntensity = 0
-        let camNode = SCNNode()
-        camNode.name = "camera"
-        camNode.camera = cam
-        camNode.position = SCNVector3(1.7, 1.35, 3.4)
-        camNode.look(at: SCNVector3(0, 0.62, 0))
-        scene.rootNode.addChildNode(camNode)
+        let scene = VoyageSceneKit.makeDressStudioWorld()
+        scene.rootNode.addChildNode(makeNavigatorStage())
         return scene
     }
 }
@@ -439,7 +588,9 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private var startTime: TimeInterval?
     private var lastTime: TimeInterval = 0
     private weak var boundScene: SCNScene?
+    private weak var contact: SCNNode?
     private weak var core: SCNNode?
+    private weak var skirt: SCNNode?
     private weak var head: SCNNode?
     private weak var armR: SCNNode?
     private weak var armL: SCNNode?
@@ -454,11 +605,18 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private var armRx: Float = 0, armRz: Float = 0.14
     private var armLx: Float = 0, armLz: Float = -0.14
     private var lean: Float = 0, wind: Float = 1
+    private var headX: Float = 0, scan: Float = 0.14, scanSpeed: Float = 0.3
+    private var turn: Float = 0, sway: Float = 1
+    private var breathAmp: Float = 1, breathSpeed: Float = 0.85
+    private var glow: Float = 1.5, sit: Float = 0
+    private var breathPhase: Float = 0, scanPhase: Float = 0
 
     private func bind(_ scene: SCNScene) {
         boundScene = scene
         guard let nav = scene.rootNode.childNode(withName: "navigator", recursively: true) else { return }
+        contact = nav.childNode(withName: "contact", recursively: true)
         core = nav.childNode(withName: "core", recursively: true)
+        skirt = nav.childNode(withName: "skirt", recursively: true)
         head = nav.childNode(withName: "head", recursively: true)
         armR = nav.childNode(withName: "armR", recursively: true)
         armL = nav.childNode(withName: "armL", recursively: true)
@@ -499,6 +657,17 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         armLz = damp(armLz, base.armLz, 6, dt)
         lean = damp(lean, base.lean, 6, dt)
         wind = damp(wind, base.wind, 4, dt)
+        headX = damp(headX, base.headX, 6, dt)
+        scan = damp(scan, base.scan, 6, dt)
+        scanSpeed = damp(scanSpeed, base.scanSpeed, 6, dt)
+        turn = damp(turn, base.turn, 6, dt)
+        sway = damp(sway, base.sway, 6, dt)
+        breathAmp = damp(breathAmp, base.breathAmp, 6, dt)
+        breathSpeed = damp(breathSpeed, base.breathSpeed, 6, dt)
+        glow = damp(glow, base.glow, 3, dt)
+        sit = damp(sit, base.sit, pose == .sit ? 1.5 : 6, dt)
+        breathPhase += dt * breathSpeed
+        scanPhase += dt * scanSpeed
 
         // マント: 布の波(頂点を書き直す)
         if let cape { cape.geometry = PhoenixNavigator.makeCapeGeometry(time: t, wind: wind) }
@@ -506,43 +675,59 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         let walking = pose == .walk
         let stride: Float = 5.4
         let step = sin(t * stride)
+        let drop = sit * 0.3
+
+        // Web版の接地補正。座る途中でブーツや裾が海面を割らないよう、
+        // 身体全体をわずかに持ち上げる。
+        if let contact {
+            contact.position.y = damp(contact.position.y, 0.015 + sit * 0.12, 12, dt)
+        }
 
         // 体: 待機は呼吸、歩行は歩調の弾み
         if let core {
-            core.position.y = walking ? abs(cos(t * stride)) * 0.035 : sin(t * 0.85) * 0.018
-            core.eulerAngles.x = lean + sin(t * 0.85 + 0.9) * 0.01
+            core.position.y = (walking ? abs(cos(t * stride)) * 0.035 : sin(breathPhase) * 0.018 * breathAmp) - drop
+            core.eulerAngles.x = lean + sin(breathPhase + 0.9) * 0.01 * breathAmp
+            core.eulerAngles.y = sin(scanPhase - 0.55) * turn
             core.eulerAngles.z = walking ? step * 0.03 : 0
         }
-        // 首: 見渡し。掲げ(raise)は灯を見上げる
-        if let head {
-            head.eulerAngles.y = sin(t * 0.3) * (walking ? 0.05 : 0.14)
-            head.eulerAngles.x = pose == .raise ? -0.14 : 0
-            head.eulerAngles.z = sin(t * 0.85 + 2.1) * 0.02
+        if let skirt {
+            skirt.scale = SCNVector3(1 + 0.3 * sit, 1 - 0.22 * sit, 1 + 0.3 * sit)
         }
-        // 脚: 歩行は股関節から交互に振る
+        // 首: ポーズごとの上下と見渡し。
+        if let head {
+            head.eulerAngles.y = sin(scanPhase) * scan
+            head.eulerAngles.x = headX
+            head.eulerAngles.z = sin(breathPhase + 2.1) * 0.02 * breathAmp
+        }
+        // 脚: 歩行は交互に振り、座るときは股関節ごと下げて前へ倒す。
         let legSwing: Float = walking ? 0.55 : 0
-        if let legR { legR.eulerAngles.x = damp(legR.eulerAngles.x, step * legSwing, 10, dt) }
-        if let legL { legL.eulerAngles.x = damp(legL.eulerAngles.x, -step * legSwing, 10, dt) }
+        let legSit = -1.24 * sit
+        if let legR {
+            legR.position.y = 0.42 - drop
+            legR.eulerAngles.x = damp(legR.eulerAngles.x, step * legSwing + legSit, 10, dt)
+        }
+        if let legL {
+            legL.position.y = 0.42 - drop
+            legL.eulerAngles.x = damp(legL.eulerAngles.x, -step * legSwing + legSit, 10, dt)
+        }
 
         // 腕: 基本角 + ポーズごとの振動
-        let armSwing: Float = walking ? -step * 0.32 : sin(t * 0.85 + 0.4) * 0.03
+        let armSwing: Float = walking ? -step * 0.32 : sin(breathPhase + 0.4) * 0.03 * sway
         if let armR {
             armR.eulerAngles.x = armRx + armSwing
             armR.eulerAngles.z = armRz
         }
         if let armL {
             let wave: Float = pose == .hail ? sin(t * 7.2) * 0.3 : 0
-            armL.eulerAngles.x = armLx + (walking ? step * 0.32 : sin(t * 0.85 + 1.1) * 0.025)
+            armL.eulerAngles.x = armLx + (walking ? step * 0.32 : sin(breathPhase + 1.1) * 0.025 * sway)
             armL.eulerAngles.z = armLz + wave
         }
         // ランタン: 腕の傾きを打ち消して常にほぼ鉛直に垂れる振り子
         if let lantern {
-            lantern.eulerAngles.x = -(armRx + armSwing) + sin(t * 0.9) * (walking ? 0.2 : 0.1)
-            lantern.eulerAngles.z = sin(t * 0.7 + 0.6) * 0.12
+            lantern.eulerAngles.x = -(armRx + armSwing) + sin(t * 0.9) * (walking ? 0.2 : 0.1 * sway)
+            lantern.eulerAngles.z = sin(t * 0.7 + 0.6) * 0.12 * sway
         }
-        // 灯: 掲げたときはひときわ明るく
-        let glowBase: Float = pose == .raise ? 2.3 : 1.5
-        glowMat?.emission.intensity = CGFloat(glowBase + sin(t * 2.1) * 0.3)
+        glowMat?.emission.intensity = CGFloat(glow + sin(t * 2.1) * 0.2 * glow)
     }
 
     /// 外部シーン(目的地の船上など)から使うときの束ね直し。
@@ -573,7 +758,7 @@ struct PhoenixNavigatorView: UIViewRepresentable {
         animator.pose = pose
         view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
         view.delegate = animator
-        // 360度見渡しは「航海士の胴の中心」を軸に回す(Web OrbitControls target=[0,0.62,0])。
+        // 360度見渡しは「航海士の胴の中心」を軸に回す。
         // target を設定しないと海の円盤を含む重心で回ってしまう。
         let cc = view.defaultCameraController
         cc.interactionMode = .orbitTurntable
@@ -587,5 +772,335 @@ struct PhoenixNavigatorView: UIViewRepresentable {
 
     func updateUIView(_ view: SCNView, context: Context) {
         context.coordinator.pose = pose
+    }
+}
+
+// MARK: - 装いの全画面共通スタジオ
+
+/// Web版の一つのCanvasと同じ構成。背景・カメラ・操作状態は生かしたまま、
+/// 船と航海士の表示ノードだけを切り替える。
+struct DressStudioSceneView: UIViewRepresentable {
+    var parts: BoatParts
+    var pose: PhoenixPose
+    var showsNavigator: Bool
+    var resetToken: Int
+
+    func makeCoordinator() -> DressStudioCoordinator {
+        DressStudioCoordinator()
+    }
+
+    func makeUIView(context: Context) -> SCNView {
+        let view = SCNView()
+        let scene = VoyageSceneKit.makeDressStudioWorld()
+        scene.rootNode.addChildNode(VoyageSceneKit.makeBoatStudioSubject(parts: parts))
+        scene.rootNode.addChildNode(PhoenixNavigator.makeNavigatorStage())
+
+        view.scene = scene
+        view.backgroundColor = VoyageSceneKit.nightBG
+        view.antialiasingMode = .multisampling4X
+        view.allowsCameraControl = false
+        view.autoenablesDefaultLighting = false
+        view.preferredFramesPerSecond = 60
+
+        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        view.rendersContinuously = !reduceMotion
+        view.isPlaying = !reduceMotion
+        view.pointOfView = scene.rootNode.childNode(withName: "camera", recursively: false)
+
+        context.coordinator.install(
+            on: view,
+            parts: parts,
+            pose: pose,
+            showsNavigator: showsNavigator,
+            resetToken: resetToken,
+            animate: !reduceMotion
+        )
+        view.delegate = context.coordinator
+        return view
+    }
+
+    func updateUIView(_ view: SCNView, context: Context) {
+        context.coordinator.update(
+            parts: parts,
+            pose: pose,
+            showsNavigator: showsNavigator,
+            resetToken: resetToken
+        )
+    }
+}
+
+/// drei OrbitControls のスタジオ設定。モード切替時もカメラ位置を保ち、
+/// 新しい注視点と距離制限だけを適用するのがWeb版の実際の挙動。
+private struct DressOrbit {
+    var target = SCNVector3(0, 0.7, 0)
+    var radius: Float = 1
+    var azimuth: Float = 0
+    var polar: Float = .pi / 2
+    var minRadius: Float = 3.4
+    var maxRadius: Float = 9
+    var minPolar: Float = .pi * 0.18
+    var maxPolar: Float = .pi * 0.52
+
+    mutating func capture(camera: SCNNode, target nextTarget: SCNVector3) {
+        target = nextTarget
+        let dx = camera.position.x - target.x
+        let dy = camera.position.y - target.y
+        let dz = camera.position.z - target.z
+        radius = max(0.001, sqrt(dx * dx + dy * dy + dz * dz))
+        azimuth = atan2(dx, dz)
+        polar = acos(max(-1, min(1, dy / radius)))
+        clamp()
+    }
+
+    mutating func configureForNavigator(_ enabled: Bool, camera: SCNNode) {
+        if enabled {
+            minRadius = 1.45
+            maxRadius = 5
+            minPolar = .pi * 0.14
+            maxPolar = .pi * 0.56
+            capture(camera: camera, target: SCNVector3(0, 0.8, 0))
+        } else {
+            minRadius = 3.4
+            maxRadius = 9
+            minPolar = .pi * 0.18
+            maxPolar = .pi * 0.52
+            capture(camera: camera, target: SCNVector3(0, 0.7, 0))
+        }
+    }
+
+    /// 初期の横斜め構図へ即座に戻す。船と航海士で対象の大きさだけ変える。
+    mutating func reset(forNavigator enabled: Bool) {
+        if enabled {
+            target = SCNVector3(0, 0.8, 0)
+            radius = 2.75
+            minRadius = 1.45
+            maxRadius = 5
+            minPolar = .pi * 0.14
+            maxPolar = .pi * 0.56
+        } else {
+            target = SCNVector3(0, 0.7, 0)
+            radius = 5.38
+            minRadius = 3.4
+            maxRadius = 9
+            minPolar = .pi * 0.18
+            maxPolar = .pi * 0.52
+        }
+        azimuth = 0.625
+        polar = enabled ? 1.35 : 1.38
+        clamp()
+    }
+
+    mutating func clamp() {
+        radius = max(minRadius, min(maxRadius, radius))
+        polar = max(minPolar, min(maxPolar, polar))
+    }
+
+    func apply(to camera: SCNNode) {
+        let horizontal = radius * sin(polar)
+        camera.position = SCNVector3(
+            target.x + horizontal * sin(azimuth),
+            target.y + radius * cos(polar),
+            target.z + horizontal * cos(azimuth)
+        )
+        // OrbitControlsはcamera.up=(0,1,0)を守る。単引数のlook(at:)へ任せると
+        // 連続更新でロールが混ざり、切替後に世界ごと斜めへ倒れてしまう。
+        camera.look(
+            at: target,
+            up: SCNVector3(0, 1, 0),
+            localFront: SCNVector3(0, 0, -1)
+        )
+    }
+}
+
+final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestureRecognizerDelegate {
+    private weak var view: SCNView?
+    private weak var camera: SCNNode?
+    private weak var boat: SCNNode?
+    private weak var navigator: SCNNode?
+    private weak var bob: SCNNode?
+
+    private let phoenixAnimator = PhoenixAnimator()
+    private var orbit = DressOrbit()
+    private var showsNavigator: Bool?
+    private var partsKey = ""
+    private var animate = true
+    private var autoRotate = true
+    private var angularVelocity = CGPoint.zero
+    private var lastResetToken = 0
+    private var startTime: TimeInterval?
+    private var lastTime: TimeInterval = 0
+
+    func install(
+        on view: SCNView,
+        parts: BoatParts,
+        pose: PhoenixPose,
+        showsNavigator: Bool,
+        resetToken: Int,
+        animate: Bool
+    ) {
+        self.view = view
+        self.animate = animate
+        phoenixAnimator.animate = animate
+        phoenixAnimator.pose = pose
+
+        let root = view.scene?.rootNode
+        camera = root?.childNode(withName: "camera", recursively: false)
+        boat = root?.childNode(withName: "travel", recursively: false)
+        navigator = root?.childNode(withName: "navigatorStage", recursively: false)
+        bob = root?.childNode(withName: "boatBob", recursively: true)
+        partsKey = key(for: parts)
+        lastResetToken = resetToken
+
+        if let camera {
+            orbit.capture(camera: camera, target: SCNVector3(0, 0.7, 0))
+            orbit.apply(to: camera)
+        }
+
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.maximumNumberOfTouches = 1
+        pan.delegate = self
+        view.addGestureRecognizer(pan)
+
+        let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        pinch.delegate = self
+        view.addGestureRecognizer(pinch)
+
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        doubleTap.delegate = self
+        view.addGestureRecognizer(doubleTap)
+
+        update(parts: parts, pose: pose, showsNavigator: showsNavigator, resetToken: resetToken)
+    }
+
+    func update(parts: BoatParts, pose: PhoenixPose, showsNavigator: Bool, resetToken: Int) {
+        phoenixAnimator.pose = pose
+        updatePartsIfNeeded(parts)
+
+        if self.showsNavigator != showsNavigator, let camera {
+            self.showsNavigator = showsNavigator
+            boat?.isHidden = showsNavigator
+            navigator?.isHidden = !showsNavigator
+
+            // 表示対象を切り替えても向きは保ち、距離制限と注視点だけを合わせる。
+            orbit.configureForNavigator(showsNavigator, camera: camera)
+            orbit.apply(to: camera)
+            angularVelocity = .zero
+            autoRotate = animate && !showsNavigator
+        }
+
+        if lastResetToken != resetToken {
+            lastResetToken = resetToken
+            resetView()
+        }
+    }
+
+    private func updatePartsIfNeeded(_ parts: BoatParts) {
+        let nextKey = key(for: parts)
+        guard nextKey != partsKey else { return }
+        partsKey = nextKey
+        bob?.childNode(withName: "boatModel", recursively: false)?.removeFromParentNode()
+        bob?.addChildNode(VoyageSceneKit.makeBoatModel(parts))
+    }
+
+    private func key(for parts: BoatParts) -> String {
+        let stripe = parts.stripe?.hashValue ?? 0
+        return "\(parts.sail.hashValue)|\(parts.jib.hashValue)|\(parts.hull.hashValue)|\(stripe)|\(parts.flag)"
+    }
+
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard let view, let camera else { return }
+        let height = max(view.bounds.height, 1)
+        let radiansPerPoint = 2 * CGFloat.pi / height
+        let delta = gesture.translation(in: view)
+        gesture.setTranslation(.zero, in: view)
+
+        if gesture.state == .began {
+            autoRotate = false
+            angularVelocity = .zero
+        }
+
+        orbit.azimuth -= Float(delta.x * radiansPerPoint)
+        orbit.polar -= Float(delta.y * radiansPerPoint)
+        orbit.clamp()
+        orbit.apply(to: camera)
+
+        if gesture.state == .ended {
+            let velocity = gesture.velocity(in: view)
+            angularVelocity = CGPoint(
+                x: -velocity.x * radiansPerPoint,
+                y: -velocity.y * radiansPerPoint
+            )
+        } else if gesture.state == .cancelled || gesture.state == .failed {
+            angularVelocity = .zero
+        }
+    }
+
+    @objc private func handlePinch(_ gesture: UIPinchGestureRecognizer) {
+        guard let camera else { return }
+        if gesture.state == .began {
+            autoRotate = false
+            angularVelocity = .zero
+        }
+        orbit.radius /= Float(max(gesture.scale, 0.01))
+        gesture.scale = 1
+        orbit.clamp()
+        orbit.apply(to: camera)
+    }
+
+    @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        resetView()
+    }
+
+    private func resetView() {
+        guard let camera else { return }
+        orbit.reset(forNavigator: showsNavigator == true)
+        orbit.apply(to: camera)
+        angularVelocity = .zero
+        autoRotate = animate && showsNavigator != true
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
+    }
+
+    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        guard animate, let camera else { return }
+        if startTime == nil {
+            startTime = time
+            lastTime = time
+        }
+        let t = Float(time - (startTime ?? time))
+        let dt = Float(min(max(time - lastTime, 0), 0.1))
+        lastTime = time
+
+        phoenixAnimator.renderer(renderer, updateAtTime: time)
+
+        if let bob {
+            bob.position.y = sin(t * 0.8) * 0.06
+            bob.eulerAngles.z = sin(t * 0.6) * 0.03
+            bob.eulerAngles.x = sin(t * 0.5 + 1.2) * 0.015
+            bob.childNode(withName: "boatFlag", recursively: true)?
+                .eulerAngles.y = sin(t * 5.2) * 0.22
+        }
+
+        // Web OrbitControls autoRotateSpeed=0.6 ≒ 100秒で一周。
+        if autoRotate {
+            orbit.azimuth -= 2 * .pi / 100 * dt
+        }
+
+        if abs(angularVelocity.x) > 0.001 || abs(angularVelocity.y) > 0.001 {
+            orbit.azimuth += Float(angularVelocity.x) * dt
+            orbit.polar += Float(angularVelocity.y) * dt
+            let decay = CGFloat(exp(-5 * dt))
+            angularVelocity.x *= decay
+            angularVelocity.y *= decay
+        }
+        orbit.clamp()
+        orbit.apply(to: camera)
     }
 }

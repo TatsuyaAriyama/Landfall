@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 /// 「今日」画面。学習項目のタイルが並び、タップで時間+ひとことを刻む。
-/// 催促はしない。タイルは長押しドラッグで並べ替えられる。
+/// 催促はしない。項目自体の編集は設定画面にまとめる。
 struct TodayView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -12,16 +12,18 @@ struct TodayView: View {
     @Query private var destinations: [Destination]
 
     @State private var showingSettings = false
-    @State private var creatingItem = false
     @State private var sharingToday = false
     @State private var editingDestination = false
     @State private var celebrating: Destination?
+    @State private var pendingWorldLanding: Destination?
+    @State private var pendingLandingDestination: Destination?
+    @State private var pendingCompleteDestination: Destination?
     @State private var pendingDelete: StudySession?
     @State private var path = NavigationPath()
     /// 「今日」。日跨ぎ後の初操作をブロックしないよう、前景復帰と日付変化で更新する。
     @State private var today = Date()
 
-    @AppStorage(StudyTimer.itemKey) private var timerItemID: String = ""
+    @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID: String = ""
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -35,7 +37,12 @@ struct TodayView: View {
                         .padding(.top, 32)
 
                     ScrollView {
-                        DestinationCard(destination: activeDestination, sessions: sessions) {
+                        DestinationCard(
+                            destination: activeDestination,
+                            sessions: sessions,
+                            onLand: { pendingLandingDestination = $0 },
+                            onMarkDone: { pendingCompleteDestination = $0 }
+                        ) {
                             editingDestination = true
                         }
                         .padding(.horizontal, 24)
@@ -47,7 +54,7 @@ struct TodayView: View {
                             .padding(.top, 28)
 
                         if items.isEmpty {
-                            Text("Create your first item and log a step today.")
+                            Text("Create your first item in Settings.")
                                 .font(LFFont.copy(15))
                                 .foregroundStyle(LFColor.ink.opacity(0.5))
                                 .lineSpacing(4)
@@ -61,7 +68,6 @@ struct TodayView: View {
                             ForEach(items) { item in
                                 tileCell(item)
                             }
-                            addTile
                         }
                         .padding(.horizontal, 20)
                         .padding(.top, 12)
@@ -79,7 +85,6 @@ struct TodayView: View {
             }
         }
         .sheet(isPresented: $showingSettings) { SettingsView() }
-        .sheet(isPresented: $creatingItem) { ItemEditorSheet(existing: nil) }
         .sheet(isPresented: $sharingToday) {
             DayShareSheet(date: today)
         }
@@ -93,8 +98,18 @@ struct TodayView: View {
                 pendingDelete = nil
             }
         }
-        .fullScreenCover(isPresented: $editingDestination, onDismiss: { checkLandfall() }) {
-            VoyageWorldView(existing: activeDestination, sessions: sessions)
+        .fullScreenCover(
+            isPresented: $editingDestination,
+            onDismiss: {
+                if let landed = pendingWorldLanding {
+                    pendingWorldLanding = nil
+                    DispatchQueue.main.async { celebrating = landed }
+                }
+            }
+        ) {
+            VoyageWorldView(existing: activeDestination, sessions: sessions, onLand: {
+                pendingWorldLanding = $0
+            })
         }
         .fullScreenCover(item: $celebrating) { dest in
             LandfallCelebrationView(
@@ -103,7 +118,6 @@ struct TodayView: View {
             ) { celebrating = nil }
         }
         .onAppear {
-            checkLandfall()
             #if DEBUG
             DebugCardDump.runIfRequested()
             if ProcessInfo.processInfo.environment["LANDFALL_SETTINGS"] != nil {
@@ -118,10 +132,53 @@ struct TodayView: View {
             #endif
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { today = Date(); checkLandfall() }
+            if phase == .active { today = Date() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
             today = Date()
+        }
+        .confirmationDialog(
+            "Go ashore",
+            isPresented: Binding(
+                get: { pendingLandingDestination != nil },
+                set: { if !$0 { pendingLandingDestination = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Go ashore") {
+                if let destination = pendingLandingDestination {
+                    land(destination)
+                }
+                pendingLandingDestination = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingLandingDestination = nil
+            }
+        } message: {
+            Text("Did you achieve this destination? Going ashore ends this voyage and saves it in your Logbook.")
+        }
+        .confirmationDialog(
+            "Mark complete",
+            isPresented: Binding(
+                get: { pendingCompleteDestination != nil },
+                set: { if !$0 { pendingCompleteDestination = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Mark complete") {
+                if let destination = pendingCompleteDestination {
+                    destination.manualDone = true
+                    destination.updatedAt = Date()
+                    try? modelContext.save()
+                    SyncService.shared.push(destination)
+                }
+                pendingCompleteDestination = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingCompleteDestination = nil
+            }
+        } message: {
+            Text("Mark this destination complete?")
         }
     }
 
@@ -132,17 +189,17 @@ struct TodayView: View {
         destinations.first { $0.achievedAt == nil }
     }
 
-    /// 着岸検知。到達したら achievedAt を刻んで演出を出す(一度だけ)。
-    /// 期日目標は開いた/前景復帰の瞬間、ステップ目標は編集を閉じた後にここを通る。
-    private func checkLandfall() {
-        guard let dest = activeDestination else { return }
-        let progress = dest.progress(sessions: sessions)
-        guard progress.reached else { return }
-        dest.achievedAt = Date()
-        dest.updatedAt = Date()
+    private func land(_ dest: Destination) {
+        guard dest.achievedAt == nil else { return }
+        let landedAt = Date()
+        dest.achievedAt = landedAt
+        dest.updatedAt = landedAt
         try? modelContext.save()
         SyncService.shared.push(dest)
-        celebrating = dest
+        Haptics.success()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) {
+            celebrating = dest
+        }
     }
 
     // MARK: - タイル
@@ -183,10 +240,6 @@ struct TodayView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(item.name))
         .accessibilityHint(Text("Open"))
-        .draggable(item.uuid.uuidString)
-        .dropDestination(for: String.self) { dropped, _ in
-            reorder(droppedID: dropped.first, before: item)
-        }
     }
 
     /// 4列固定(Web mobile: grid-template-columns repeat(4,1fr))。
@@ -194,59 +247,14 @@ struct TodayView: View {
         Array(repeating: GridItem(.flexible(), spacing: 12), count: 4)
     }
 
-    private var addTile: some View {
-        Button {
-            creatingItem = true
-        } label: {
-            VStack(spacing: 6) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(LFColor.ink.opacity(0.25), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
-                    Text("+")
-                        .font(LFFont.label(26))
-                        .foregroundStyle(LFColor.ink.opacity(0.45))
-                }
-                .aspectRatio(1, contentMode: .fit)
-                Text("Add")
-                    .font(LFFont.label(12))
-                    .foregroundStyle(LFColor.ink.opacity(0.45))
-                    .lineLimit(1)
-            }
-        }
-        .buttonStyle(LFPressableButtonStyle())
-        .accessibilityLabel(Text("Add item"))
-    }
-
-    /// ドラッグした項目をターゲットの位置へ差し込み、sortOrderを振り直す。
-    private func reorder(droppedID: String?, before target: StudyItem) -> Bool {
-        guard
-            let droppedID,
-            let from = items.firstIndex(where: { $0.uuid.uuidString == droppedID }),
-            let to = items.firstIndex(where: { $0.uuid == target.uuid }),
-            from != to
-        else { return false }
-        var reordered = Array(items)
-        let moved = reordered.remove(at: from)
-        reordered.insert(moved, at: to)
-        for (index, item) in reordered.enumerated() {
-            item.sortOrder = index
-        }
-        try? modelContext.save()
-        for item in reordered {
-            SyncService.shared.push(item)
-        }
-        Haptics.tap(.rigid)   // 並べ替え成立を軽い手応えで返す。
-        return true
-    }
-
     // MARK: - 今日の記録(Web: section-label「今日の記録 · 合計」+ rows)
 
-    /// 今日のセッション(時刻順 古→新)。同期の届き順に依存させない。
+    /// 今日のセッション(時刻順 新→古)。項目を横断し、同期の届き順に依存させない。
     private var todaysSessions: [StudySession] {
         let calendar = Calendar.current
         return sessions
             .filter { calendar.isDate($0.date, inSameDayAs: today) }
-            .sorted { $0.date < $1.date }
+            .sorted(by: StudySession.newestFirst)
     }
 
     /// 項目ごとの総作業時間(全期間・分)。タイルの小さなバッジに使う。

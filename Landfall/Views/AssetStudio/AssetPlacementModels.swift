@@ -1,0 +1,1892 @@
+import Combine
+import Foundation
+import SceneKit
+import UIKit
+
+extension Notification.Name {
+    /// 3Dスタジオの保存内容を参照する全SceneKit画面への更新通知。
+    static let assetStudioWorldDidChange = Notification.Name("AssetStudioWorldDidChange")
+}
+
+/// アプリへ同梱された USDZ 一つ分。ファイル名を永続IDとして扱う。
+struct Asset3DDescriptor: Identifiable, Hashable {
+    let id: String
+    let displayName: String
+
+    var resourceName: String { id }
+    var providesPlacementSurface: Bool { Asset3DCatalog.providesPlacementSurface(for: id) }
+
+    var symbolName: String {
+        let lowercased = id.lowercased()
+        if SavedAssetStudio.id(fromAssetID: id) != nil { return "square.3.layers.3d.top.filled" }
+        if lowercased.contains("island") { return "mountain.2.fill" }
+        if lowercased.contains("tree") { return "tree.fill" }
+        if lowercased.contains("boat") { return "sailboat.fill" }
+        if lowercased.contains("navigator") { return "figure.wave" }
+        return "cube.transparent.fill"
+    }
+}
+
+enum Asset3DCatalog {
+    private static let preferredOrder = [
+        "island_base",
+        "small_tree",
+        "windswept_tree",
+        "landfall_boat",
+        "navigator_main",
+    ]
+
+    static func available(in bundle: Bundle = .main) -> [Asset3DDescriptor] {
+        var names = Set(
+            (bundle.urls(forResourcesWithExtension: "usdz", subdirectory: nil) ?? [])
+                .map { $0.deletingPathExtension().lastPathComponent }
+        )
+
+        // Xcode のリソース同期方式や Preview によって列挙できない場合も、既知素材は個別に拾う。
+        for name in preferredOrder where bundle.url(forResource: name, withExtension: "usdz") != nil {
+            names.insert(name)
+        }
+
+        return names
+            .map { Asset3DDescriptor(id: $0, displayName: displayName(for: $0)) }
+            .sorted { lhs, rhs in
+                let lhsIndex = preferredOrder.firstIndex(of: lhs.id) ?? Int.max
+                let rhsIndex = preferredOrder.firstIndex(of: rhs.id) ?? Int.max
+                if lhsIndex != rhsIndex { return lhsIndex < rhsIndex }
+                return lhs.displayName.localizedStandardCompare(rhs.displayName) == .orderedAscending
+            }
+    }
+
+    static func displayName(for resourceName: String) -> String {
+        switch resourceName {
+        case "island_base": return String(localized: "Island Foundation")
+        case "small_tree": return String(localized: "Small Tree")
+        case "windswept_tree": return "Windswept Tree"
+        case "landfall_boat": return "Landfall Boat"
+        case "navigator_main": return "Navigator"
+        default:
+            return resourceName
+                .replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: "-", with: " ")
+                .capitalized
+        }
+    }
+
+    static func providesPlacementSurface(for resourceName: String) -> Bool {
+        if let studioID = SavedAssetStudio.id(fromAssetID: resourceName),
+           let contents = AssetPlacementPersistence.contents(forStudioID: studioID) {
+            return !contents.terrainStrokes.isEmpty || contents.placements.contains { placement in
+                isBundledPlacementSurface(placement.assetID)
+            }
+        }
+        return isBundledPlacementSurface(resourceName)
+    }
+
+    private static func isBundledPlacementSurface(_ resourceName: String) -> Bool {
+        let normalized = resourceName.lowercased()
+        return normalized == "island_base"
+            || normalized.contains("foundation")
+            || normalized.contains("platform")
+            || normalized.contains("ground")
+    }
+}
+
+/// 配置をどのゲーム空間へ反映するか。
+enum AssetPlacementContext: String, CaseIterable, Codable, Identifiable {
+    case destinationIsland
+    case studio
+
+    var id: String { rawValue }
+}
+
+/// 空の編集空間を名前付きで保存したもの。中身は各配置・筆跡のstudioIDで関連付ける。
+struct SavedAssetStudio: Identifiable, Codable, Equatable, Hashable {
+    static let assetIDPrefix = "saved-studio:"
+
+    var id: UUID
+    var name: String
+
+    var assetID: String { Self.assetIDPrefix + id.uuidString }
+
+    static func id(fromAssetID assetID: String) -> UUID? {
+        guard assetID.hasPrefix(assetIDPrefix) else { return nil }
+        return UUID(uuidString: String(assetID.dropFirst(assetIDPrefix.count)))
+    }
+}
+
+enum AssetManipulationMode: String, CaseIterable, Identifiable {
+    case select
+    case paint
+    case terrain
+    case place
+    case move
+    case height
+    case rotate
+    case scale
+    case camera
+
+    var id: String { rawValue }
+
+    var symbolName: String {
+        switch self {
+        case .select: return "rectangle.dashed"
+        case .paint: return "paintbrush.pointed.fill"
+        case .terrain: return "mountain.2.fill"
+        case .place: return "plus.circle.fill"
+        case .move: return "arrow.up.and.down.and.arrow.left.and.right"
+        case .height: return "arrow.up.and.down"
+        case .rotate: return "rotate.3d"
+        case .scale: return "arrow.up.left.and.arrow.down.right"
+        case .camera: return "camera.viewfinder"
+        }
+    }
+}
+
+/// SwiftUIの操作パネルからSceneKitのカメラへ送る一回限りの指示。
+enum AssetStudioCameraAction: Equatable {
+    case reset
+    case overview
+    case homeShipMarker
+    case homeShipView
+    case focusSelection
+    case moveForward
+    case moveBackward
+    case moveLeft
+    case moveRight
+    case zoomIn
+    case zoomOut
+    case top
+    case front
+    case side
+}
+
+struct AssetStudioCameraRequest: Equatable {
+    let id = UUID()
+    let action: AssetStudioCameraAction
+}
+
+struct AssetTransform: Codable, Equatable {
+    var x: Float = 0
+    var y: Float = 0
+    var z: Float = 0
+    var pitch: Float = 0
+    var yaw: Float = 0
+    var roll: Float = 0
+    var scale: Float = 1
+
+    func apply(to node: SCNNode) {
+        node.position = SCNVector3(x, y, z)
+        node.eulerAngles = SCNVector3(pitch, yaw, roll)
+        let uniformScale = max(scale, 0.001)
+        node.scale = SCNVector3(uniformScale, uniformScale, uniformScale)
+    }
+}
+
+struct AssetPlacement: Identifiable, Codable, Equatable {
+    var id: UUID
+    var assetID: String
+    var name: String
+    var context: AssetPlacementContext
+    var studioID: UUID? = nil
+    var transform: AssetTransform
+}
+
+enum AssetPaintMaterial: String, CaseIterable, Codable, Identifiable {
+    case sand
+    case grass
+    case path
+
+    var id: String { rawValue }
+
+    var color: UIColor {
+        switch self {
+        // 島の地形で実際に使っている浜・苔・中腹の岩色へ合わせる。
+        // ペンだけ別の高彩度パレットにすると、同じ光を当ててもシール状に浮いて見える。
+        case .sand: return VoyageSceneKit.beach
+        case .grass: return UIColor(rgb: 0x58705A)
+        case .path: return UIColor(rgb: 0x929276)
+        }
+    }
+}
+
+enum AssetPaintTool: String, CaseIterable, Identifiable {
+    case sand
+    case grass
+    case path
+    case eraser
+
+    var id: String { rawValue }
+
+    var material: AssetPaintMaterial? {
+        AssetPaintMaterial(rawValue: rawValue)
+    }
+
+    var symbolName: String {
+        switch self {
+        case .sand: return "circle.hexagongrid.fill"
+        case .grass: return "leaf.fill"
+        case .path: return "road.lanes"
+        case .eraser: return "eraser.fill"
+        }
+    }
+}
+
+struct AssetPaintPoint: Codable, Equatable {
+    var x: Float
+    var y: Float
+    var z: Float
+
+    var vector: SCNVector3 { SCNVector3(x, y, z) }
+}
+
+struct AssetPaintStroke: Identifiable, Codable, Equatable {
+    var id: UUID
+    var context: AssetPlacementContext
+    var studioID: UUID? = nil
+    var material: AssetPaintMaterial
+    var width: Float
+    var points: [AssetPaintPoint]
+}
+
+/// 地形ブラシ。ストロークを時系列で再生し、一枚の連続した高さフィールドを作る。
+enum AssetTerrainTool: String, CaseIterable, Codable, Identifiable {
+    case raise
+    case lower
+    case smooth
+
+    var id: String { rawValue }
+
+    var symbolName: String {
+        switch self {
+        case .raise: return "mountain.2.fill"
+        case .lower: return "arrow.down.to.line"
+        case .smooth: return "wind"
+        }
+    }
+}
+
+/// 山の断面を一操作で作るためのブラシ形状。
+/// パラメータを個別に追い込まなくても、選んでタップするだけで基本形が出来る。
+enum AssetTerrainShape: String, CaseIterable, Codable, Identifiable {
+    case hill
+    case mountain
+    case plateau
+    case ridge
+
+    var id: String { rawValue }
+
+    var symbolName: String {
+        switch self {
+        case .hill: return "mountain.2"
+        case .mountain: return "mountain.2.fill"
+        case .plateau: return "rectangle.3.group.fill"
+        case .ridge: return "waveform.path"
+        }
+    }
+
+    var radius: Float {
+        switch self {
+        case .hill: return 1.45
+        case .mountain: return 1.30
+        case .plateau: return 1.70
+        case .ridge: return 0.78
+        }
+    }
+
+    var strength: Float {
+        switch self {
+        case .hill: return 0.95
+        case .mountain: return 1.85
+        case .plateau: return 1.15
+        case .ridge: return 1.25
+        }
+    }
+}
+
+/// 地形自体に焼き込む表面素材。後から塗り直す必要を減らす。
+enum AssetTerrainMaterial: String, CaseIterable, Codable, Identifiable {
+    case grass
+    case earth
+    case sand
+    case rock
+    case snow
+
+    var id: String { rawValue }
+
+    var color: UIColor {
+        switch self {
+        case .grass: return UIColor(rgb: 0x62A164)
+        case .earth: return UIColor(rgb: 0x9A6847)
+        case .sand: return UIColor(rgb: 0xE5C980)
+        case .rock: return UIColor(rgb: 0x7D8074)
+        case .snow: return UIColor(rgb: 0xE2E9DF)
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .grass: return "leaf.fill"
+        case .earth: return "circle.hexagongrid.fill"
+        case .sand: return "sun.max.fill"
+        case .rock: return "mountain.2.fill"
+        case .snow: return "snowflake"
+        }
+    }
+}
+
+struct AssetTerrainStroke: Identifiable, Codable, Equatable {
+    var id: UUID
+    var context: AssetPlacementContext
+    var studioID: UUID? = nil
+    var tool: AssetTerrainTool
+    var radius: Float
+    var strength: Float
+    /// nilは旧データ。緑地形として安全に移行する。
+    var shape: AssetTerrainShape? = nil
+    var material: AssetTerrainMaterial? = nil
+    var points: [AssetPaintPoint]
+}
+
+private struct AssetPlacementDocument: Codable {
+    var version = 6
+    var placements: [AssetPlacement]
+    var paintStrokes: [AssetPaintStroke]?
+    var terrainStrokes: [AssetTerrainStroke]?
+    var studios: [SavedAssetStudio]?
+    var activeStudioID: UUID?
+}
+
+enum AssetPlacementPersistence {
+    static var fileURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base
+            .appendingPathComponent("Landfall", isDirectory: true)
+            .appendingPathComponent("AssetPlacements.json", isDirectory: false)
+    }
+
+    static func load() -> [AssetPlacement] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
+        else { return [] }
+        return document.placements
+    }
+
+    static func loadPaintStrokes() -> [AssetPaintStroke] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
+        else { return [] }
+        return document.paintStrokes ?? []
+    }
+
+    static func loadTerrainStrokes() -> [AssetTerrainStroke] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
+        else { return [] }
+        return document.terrainStrokes ?? []
+    }
+
+    static func loadStudios() -> [SavedAssetStudio] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
+        else { return [] }
+        return document.studios ?? []
+    }
+
+    static func loadActiveStudioID() -> UUID? {
+        guard let data = try? Data(contentsOf: fileURL),
+              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
+        else { return nil }
+        return document.activeStudioID
+    }
+
+    static func activeStudioContents(
+    ) -> (
+        studio: SavedAssetStudio,
+        placements: [AssetPlacement],
+        paintStrokes: [AssetPaintStroke],
+        terrainStrokes: [AssetTerrainStroke]
+    )? {
+        guard let data = try? Data(contentsOf: fileURL),
+              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
+        else { return nil }
+        let studios = document.studios ?? []
+        let studioIDs = Set(studios.map(\.id))
+        let formerlyPlacedStudioID = document.placements.reversed().compactMap { placement in
+            placement.context == .destinationIsland
+                ? SavedAssetStudio.id(fromAssetID: placement.assetID)
+                : nil
+        }.first(where: studioIDs.contains)
+        let firstStudioWithContent = studios.first { studio in
+            document.placements.contains {
+                $0.context == .studio && $0.studioID == studio.id
+            } || (document.paintStrokes ?? []).contains {
+                $0.context == .studio && $0.studioID == studio.id
+            } || (document.terrainStrokes ?? []).contains {
+                $0.context == .studio && $0.studioID == studio.id
+            }
+        }?.id
+        guard let studioID = [document.activeStudioID, formerlyPlacedStudioID, firstStudioWithContent]
+            .compactMap({ $0 })
+            .first(where: studioIDs.contains),
+              let studio = studios.first(where: { $0.id == studioID })
+        else { return nil }
+        return (
+            studio,
+            document.placements.filter { $0.context == .studio && $0.studioID == studioID },
+            (document.paintStrokes ?? []).filter { $0.context == .studio && $0.studioID == studioID },
+            (document.terrainStrokes ?? []).filter { $0.context == .studio && $0.studioID == studioID }
+        )
+    }
+
+    static func contents(
+        forStudioID studioID: UUID
+    ) -> (
+        studio: SavedAssetStudio,
+        placements: [AssetPlacement],
+        paintStrokes: [AssetPaintStroke],
+        terrainStrokes: [AssetTerrainStroke]
+    )? {
+        guard let data = try? Data(contentsOf: fileURL),
+              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data),
+              let studio = document.studios?.first(where: { $0.id == studioID })
+        else { return nil }
+        return (
+            studio,
+            document.placements.filter { $0.context == .studio && $0.studioID == studioID },
+            (document.paintStrokes ?? []).filter { $0.context == .studio && $0.studioID == studioID },
+            (document.terrainStrokes ?? []).filter { $0.context == .studio && $0.studioID == studioID }
+        )
+    }
+
+    static func save(
+        _ placements: [AssetPlacement],
+        paintStrokes: [AssetPaintStroke],
+        terrainStrokes: [AssetTerrainStroke],
+        studios: [SavedAssetStudio],
+        activeStudioID: UUID?
+    ) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        let data = try encoder.encode(
+            AssetPlacementDocument(
+                placements: placements,
+                paintStrokes: paintStrokes,
+                terrainStrokes: terrainStrokes,
+                studios: studios,
+                activeStudioID: activeStudioID
+            )
+        )
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: fileURL, options: .atomic)
+    }
+
+    static func encodedString(
+        _ placements: [AssetPlacement],
+        paintStrokes: [AssetPaintStroke],
+        terrainStrokes: [AssetTerrainStroke],
+        studios: [SavedAssetStudio],
+        activeStudioID: UUID?
+    ) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        guard let data = try? encoder.encode(
+            AssetPlacementDocument(
+                placements: placements,
+                paintStrokes: paintStrokes,
+                terrainStrokes: terrainStrokes,
+                studios: studios,
+                activeStudioID: activeStudioID
+            )
+        ) else {
+            return "{}"
+        }
+        return String(decoding: data, as: UTF8.self)
+    }
+}
+
+private struct AssetStudioSnapshot: Equatable {
+    var placements: [AssetPlacement]
+    var paintStrokes: [AssetPaintStroke]
+    var terrainStrokes: [AssetTerrainStroke]
+}
+
+/// 編集UIとSceneKit表示の単一の状態源。配置変更は自動保存される。
+@MainActor
+final class AssetPlacementStore: ObservableObject {
+    @Published private(set) var placements: [AssetPlacement]
+    @Published private(set) var paintStrokes: [AssetPaintStroke]
+    @Published private(set) var terrainStrokes: [AssetTerrainStroke]
+    @Published private(set) var studios: [SavedAssetStudio]
+    @Published private(set) var selectedStudioID: UUID?
+    @Published private(set) var activeStudioID: UUID?
+    @Published private(set) var selectedID: UUID?
+    @Published private(set) var selectedIDs: Set<UUID>
+    @Published var context: AssetPlacementContext
+    @Published var manipulationMode: AssetManipulationMode = .move
+    @Published var paintTool: AssetPaintTool = .sand
+    @Published var paintWidth: Float = 0.48
+    @Published var terrainTool: AssetTerrainTool = .raise
+    @Published var terrainShape: AssetTerrainShape = .mountain
+    @Published var terrainMaterial: AssetTerrainMaterial = .grass
+    @Published var terrainRadius: Float = AssetTerrainShape.mountain.radius
+    @Published var terrainStrength: Float = AssetTerrainShape.mountain.strength
+    @Published var placementBrushAssetID: String?
+    @Published var followsPlacementSurface = true
+    @Published private(set) var lastSaveSucceeded = true
+    @Published private(set) var cameraRequest: AssetStudioCameraRequest?
+    @Published private(set) var surfaceSnapRequestID: UUID?
+    @Published private(set) var surfaceSnapClampsOnly = false
+
+    let catalog: [Asset3DDescriptor]
+
+    private var history: [AssetStudioSnapshot]
+    private var historyIndex = 0
+    private var interactionStart: AssetStudioSnapshot?
+
+    init(
+        placements: [AssetPlacement]? = nil,
+        paintStrokes: [AssetPaintStroke]? = nil,
+        terrainStrokes: [AssetTerrainStroke]? = nil,
+        studios: [SavedAssetStudio]? = nil,
+        activeStudioID: UUID? = nil,
+        catalog: [Asset3DDescriptor] = Asset3DCatalog.available()
+    ) {
+        let loadedEntireDocumentFromPersistence = placements == nil
+            && paintStrokes == nil
+            && terrainStrokes == nil
+            && studios == nil
+        var didMigrateLegacyStudio = false
+        var resolvedPlacements = placements ?? AssetPlacementPersistence.load()
+        var resolvedPaintStrokes = paintStrokes ?? AssetPlacementPersistence.loadPaintStrokes()
+        var resolvedTerrainStrokes = terrainStrokes ?? AssetPlacementPersistence.loadTerrainStrokes()
+        var resolvedStudios = studios ?? AssetPlacementPersistence.loadStudios()
+        var resolvedActiveStudioID = activeStudioID
+            ?? (loadedEntireDocumentFromPersistence ? AssetPlacementPersistence.loadActiveStudioID() : nil)
+
+        // version 2までの「空のスタジオ」内データを、最初の保存済みスタジオへ無損失移行する。
+        if resolvedStudios.isEmpty {
+            resolvedStudios = [SavedAssetStudio(id: UUID(), name: String(localized: "My Studio"))]
+            didMigrateLegacyStudio = true
+        }
+        if let legacyStudioID = resolvedStudios.first?.id {
+            for index in resolvedPlacements.indices
+            where resolvedPlacements[index].context == .studio
+                && resolvedPlacements[index].studioID == nil {
+                resolvedPlacements[index].studioID = legacyStudioID
+                didMigrateLegacyStudio = true
+            }
+            for index in resolvedPaintStrokes.indices
+            where resolvedPaintStrokes[index].context == .studio
+                && resolvedPaintStrokes[index].studioID == nil {
+                resolvedPaintStrokes[index].studioID = legacyStudioID
+                didMigrateLegacyStudio = true
+            }
+            for index in resolvedTerrainStrokes.indices
+            where resolvedTerrainStrokes[index].context == .studio
+                && resolvedTerrainStrokes[index].studioID == nil {
+                resolvedTerrainStrokes[index].studioID = legacyStudioID
+                didMigrateLegacyStudio = true
+            }
+        }
+
+        // v3まではスタジオ全体を島に「配置」していた。旧参照があればそれを、
+        // なければ内容を持つ最初のスタジオをゲーム世界として無損失で引き継ぐ。
+        let existingStudioIDs = Set(resolvedStudios.map(\.id))
+        if let activeCandidate = resolvedActiveStudioID,
+           !existingStudioIDs.contains(activeCandidate) {
+            resolvedActiveStudioID = nil
+            didMigrateLegacyStudio = true
+        }
+        if resolvedActiveStudioID == nil {
+            let formerlyPlacedStudioID = resolvedPlacements.reversed().compactMap { placement in
+                placement.context == .destinationIsland
+                    ? SavedAssetStudio.id(fromAssetID: placement.assetID)
+                    : nil
+            }.first(where: existingStudioIDs.contains)
+            let firstStudioWithContent = resolvedStudios.first { studio in
+                resolvedPlacements.contains {
+                    $0.context == .studio && $0.studioID == studio.id
+                } || resolvedPaintStrokes.contains {
+                    $0.context == .studio && $0.studioID == studio.id
+                }
+            }?.id
+            let firstStudioWithTerrain = resolvedStudios.first { studio in
+                resolvedTerrainStrokes.contains {
+                    $0.context == .studio && $0.studioID == studio.id
+                }
+            }?.id
+            resolvedActiveStudioID = formerlyPlacedStudioID
+                ?? firstStudioWithContent
+                ?? firstStudioWithTerrain
+            didMigrateLegacyStudio = resolvedActiveStudioID != nil || didMigrateLegacyStudio
+        }
+
+        self.placements = resolvedPlacements
+        self.paintStrokes = resolvedPaintStrokes
+        self.terrainStrokes = resolvedTerrainStrokes
+        self.studios = resolvedStudios
+        selectedStudioID = resolvedStudios.first?.id
+        self.activeStudioID = resolvedActiveStudioID
+        self.catalog = catalog
+        context = .destinationIsland
+        history = [AssetStudioSnapshot(
+            placements: resolvedPlacements,
+            paintStrokes: resolvedPaintStrokes,
+            terrainStrokes: resolvedTerrainStrokes
+        )]
+        let initialSelection = resolvedPlacements.first {
+            $0.context == .destinationIsland
+                && SavedAssetStudio.id(fromAssetID: $0.assetID) == nil
+        }?.id
+        selectedID = initialSelection
+        selectedIDs = initialSelection.map { [$0] } ?? []
+
+        // 移行で発行したstudioIDを固定し、次回起動時にも複合アセット参照を維持する。
+        if loadedEntireDocumentFromPersistence && didMigrateLegacyStudio {
+            try? AssetPlacementPersistence.save(
+                resolvedPlacements,
+                paintStrokes: resolvedPaintStrokes,
+                terrainStrokes: resolvedTerrainStrokes,
+                studios: resolvedStudios,
+                activeStudioID: resolvedActiveStudioID
+            )
+        }
+    }
+
+    var visiblePlacements: [AssetPlacement] {
+        placements.filter { placement in
+            guard placement.context == context else { return false }
+            // v3までの複合アセット参照はアクティブ世界へ移行済み。
+            if context == .destinationIsland,
+               SavedAssetStudio.id(fromAssetID: placement.assetID) != nil {
+                return false
+            }
+            return context != .studio || placement.studioID == selectedStudioID
+        }
+    }
+
+    var visiblePaintStrokes: [AssetPaintStroke] {
+        paintStrokes.filter { stroke in
+            guard stroke.context == context else { return false }
+            return context != .studio || stroke.studioID == selectedStudioID
+        }
+    }
+
+    var visibleTerrainStrokes: [AssetTerrainStroke] {
+        terrainStrokes.filter { stroke in
+            guard stroke.context == context else { return false }
+            return context != .studio || stroke.studioID == selectedStudioID
+        }
+    }
+
+    var currentStudio: SavedAssetStudio? {
+        guard let selectedStudioID else { return nil }
+        return studios.first { $0.id == selectedStudioID }
+    }
+
+    var currentStudioHasContent: Bool {
+        !visiblePlacements.isEmpty || !visiblePaintStrokes.isEmpty || !visibleTerrainStrokes.isEmpty
+    }
+
+    var studioAssetDescriptors: [Asset3DDescriptor] {
+        studios.compactMap { studio in
+            let hasContent = placements.contains {
+                $0.context == .studio && $0.studioID == studio.id
+            } || paintStrokes.contains {
+                $0.context == .studio && $0.studioID == studio.id
+            } || terrainStrokes.contains {
+                $0.context == .studio && $0.studioID == studio.id
+            }
+            return hasContent
+                ? Asset3DDescriptor(id: studio.assetID, displayName: studio.name)
+                : nil
+        }
+    }
+
+    var availableAssetCount: Int {
+        catalog.count + (context == .destinationIsland ? studioAssetDescriptors.count : 0)
+    }
+
+    var selectedPlacement: AssetPlacement? {
+        guard let selectedID else { return nil }
+        return placements.first { $0.id == selectedID }
+    }
+
+    var selectedPlacements: [AssetPlacement] {
+        visiblePlacements.filter { selectedIDs.contains($0.id) }
+    }
+
+    var selectedPaintStrokes: [AssetPaintStroke] {
+        visiblePaintStrokes.filter { selectedIDs.contains($0.id) }
+    }
+
+    var selectedTerrainStrokes: [AssetTerrainStroke] {
+        visibleTerrainStrokes.filter { selectedIDs.contains($0.id) }
+    }
+
+    var visibleSelectableIDs: Set<UUID> {
+        Set(visiblePlacements.map(\.id))
+            .union(visiblePaintStrokes.map(\.id))
+            .union(visibleTerrainStrokes.map(\.id))
+    }
+
+    var selectionCount: Int { selectedIDs.count }
+
+    var canUndo: Bool { historyIndex > 0 }
+    var canRedo: Bool { historyIndex + 1 < history.count }
+
+    func setContext(_ newContext: AssetPlacementContext) {
+        guard context != newContext else { return }
+        endInteractiveEdit()
+        context = newContext
+        followsPlacementSurface = true
+        let initialSelection = visiblePlacements.first?.id
+        selectedID = initialSelection
+        selectedIDs = initialSelection.map { [$0] } ?? []
+    }
+
+    func selectStudio(_ studioID: UUID) {
+        guard studios.contains(where: { $0.id == studioID }) else { return }
+        endInteractiveEdit()
+        context = .studio
+        selectedStudioID = studioID
+        followsPlacementSurface = true
+        let initialSelection = placements.first {
+            $0.context == .studio && $0.studioID == studioID
+        }?.id
+        selectedID = initialSelection
+        selectedIDs = initialSelection.map { [$0] } ?? []
+        requestCamera(.reset)
+    }
+
+    @discardableResult
+    func createStudio(named proposedName: String) -> UUID {
+        endInteractiveEdit()
+        let trimmedName = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackName = String(
+            format: String(localized: "Studio %lld"),
+            Int64(studios.count + 1)
+        )
+        let studio = SavedAssetStudio(
+            id: UUID(),
+            name: trimmedName.isEmpty ? fallbackName : trimmedName
+        )
+        studios.append(studio)
+        selectedStudioID = studio.id
+        context = .studio
+        selectedID = nil
+        selectedIDs.removeAll()
+        save()
+        requestCamera(.reset)
+        return studio.id
+    }
+
+    func renameCurrentStudio(to proposedName: String) {
+        guard let selectedStudioID,
+              let index = studios.firstIndex(where: { $0.id == selectedStudioID })
+        else { return }
+        let trimmedName = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        studios[index].name = trimmedName
+        save()
+    }
+
+    func saveCurrentStudio() {
+        guard let selectedStudioID else { return }
+        endInteractiveEdit()
+        activeStudioID = selectedStudioID
+        save()
+    }
+
+    @discardableResult
+    func useCurrentStudioInGame() -> Bool {
+        guard currentStudio != nil, currentStudioHasContent else { return false }
+        saveCurrentStudio()
+        setContext(.destinationIsland)
+        return lastSaveSucceeded
+    }
+
+    @discardableResult
+    func useStudioInGame(_ studioID: UUID) -> Bool {
+        let hasContent = placements.contains {
+            $0.context == .studio && $0.studioID == studioID
+        } || paintStrokes.contains {
+            $0.context == .studio && $0.studioID == studioID
+        } || terrainStrokes.contains {
+            $0.context == .studio && $0.studioID == studioID
+        }
+        guard studios.contains(where: { $0.id == studioID }), hasContent else { return false }
+        endInteractiveEdit()
+        activeStudioID = studioID
+        save()
+        return lastSaveSucceeded
+    }
+
+    func select(_ id: UUID?) {
+        guard let id, visibleSelectableIDs.contains(id) else {
+            selectedID = nil
+            selectedIDs.removeAll()
+            return
+        }
+        selectedIDs = [id]
+        selectedID = visiblePlacements.contains(where: { $0.id == id }) ? id : nil
+    }
+
+    func select(_ ids: Set<UUID>, primary: UUID? = nil) {
+        let visibleIDs = visibleSelectableIDs
+        let validIDs = ids.intersection(visibleIDs)
+        selectedIDs = validIDs
+        if let primary,
+           validIDs.contains(primary),
+           visiblePlacements.contains(where: { $0.id == primary }) {
+            selectedID = primary
+        } else {
+            selectedID = visiblePlacements.first(where: { validIDs.contains($0.id) })?.id
+        }
+    }
+
+    func requestCamera(_ action: AssetStudioCameraAction) {
+        cameraRequest = AssetStudioCameraRequest(action: action)
+    }
+
+    func requestSurfaceSnap(clampOnly: Bool = false) {
+        surfaceSnapClampsOnly = clampOnly
+        surfaceSnapRequestID = UUID()
+    }
+
+    @discardableResult
+    func add(
+        assetID: String,
+        at surfacePoint: AssetPaintPoint? = nil,
+        interactively: Bool = false
+    ) -> UUID {
+        let awaitsSurfaceSnap = surfacePoint != nil
+        if interactively || awaitsSurfaceSnap {
+            beginInteractiveEdit()
+        } else {
+            endInteractiveEdit()
+        }
+        let duplicateCount = placements.filter { $0.assetID == assetID }.count
+        let baseName = studios.first(where: { $0.assetID == assetID })?.name
+            ?? Asset3DCatalog.displayName(for: assetID)
+        var initialTransform = AssetTransform()
+        if let surfacePoint {
+            initialTransform.x = surfacePoint.x
+            initialTransform.y = surfacePoint.y
+            initialTransform.z = surfacePoint.z
+            // 連続配置でも完全に同じ向きに並ばず、自然な密度に見える。
+            initialTransform.yaw = Float(duplicateCount % 12) * (.pi / 6)
+        } else if context == .destinationIsland {
+            // 山体の内側へ出現させず、追加直後から見つけやすい海岸沿いへ順番に置く。
+            let slot = visiblePlacements.count
+            let angle = -2.45 + Float(slot % 8) * 0.76
+            initialTransform.x = cos(angle) * 2.48
+            initialTransform.z = sin(angle) * 1.68
+            initialTransform.y = VoyageSceneKit.islandSurfaceHeight(
+                x: initialTransform.x,
+                z: initialTransform.z
+            )
+            initialTransform.yaw = -angle + .pi * 0.5
+        }
+        let placement = AssetPlacement(
+            id: UUID(),
+            assetID: assetID,
+            name: duplicateCount == 0 ? baseName : "\(baseName) \(duplicateCount + 1)",
+            context: context,
+            studioID: context == .studio ? selectedStudioID : nil,
+            transform: initialTransform
+        )
+        placements.append(placement)
+        selectedID = placement.id
+        selectedIDs = [placement.id]
+        followsPlacementSurface = true
+        if !interactively && !awaitsSurfaceSnap { commitCurrentState() }
+        requestSurfaceSnap()
+        return placement.id
+    }
+
+    func choosePlacementBrush(assetID: String) {
+        guard catalog.contains(where: { $0.id == assetID }) else { return }
+        placementBrushAssetID = assetID
+        manipulationMode = .place
+        select(nil)
+    }
+
+    func finishPlacementBrush() {
+        endInteractiveEdit()
+        placementBrushAssetID = nil
+        manipulationMode = .move
+    }
+
+    func duplicateSelected() {
+        guard selectionCount == 1, var copy = selectedPlacement else { return }
+        endInteractiveEdit()
+        copy.id = UUID()
+        copy.name += " \(String(localized: "Copy"))"
+        copy.transform.x += 0.35
+        copy.transform.z += 0.35
+        placements.append(copy)
+        selectedID = copy.id
+        selectedIDs = [copy.id]
+        commitCurrentState()
+        requestSurfaceSnap(clampOnly: !followsPlacementSurface)
+    }
+
+    func deleteSelected() {
+        let deletionIDs = selectedIDs.isEmpty ? Set([selectedID].compactMap { $0 }) : selectedIDs
+        guard !deletionIDs.isEmpty else { return }
+        endInteractiveEdit()
+        let previousCount = placements.count + paintStrokes.count + terrainStrokes.count
+        placements.removeAll { deletionIDs.contains($0.id) }
+        paintStrokes.removeAll { deletionIDs.contains($0.id) }
+        terrainStrokes.removeAll { deletionIDs.contains($0.id) }
+        guard placements.count + paintStrokes.count + terrainStrokes.count != previousCount else { return }
+        selectedID = nil
+        selectedIDs.removeAll()
+        commitCurrentState()
+    }
+
+    func updatePlacement(
+        id: UUID,
+        interactively: Bool = false,
+        _ mutation: (inout AssetPlacement) -> Void
+    ) {
+        guard let index = placements.firstIndex(where: { $0.id == id }) else { return }
+        if interactively { beginInteractiveEdit() } else { endInteractiveEdit() }
+        mutation(&placements[index])
+        placements[index].transform.scale = min(max(placements[index].transform.scale, 0.01), 20)
+        if !interactively { commitCurrentState() }
+    }
+
+    func updateSelectedTransform(
+        interactively: Bool = false,
+        _ mutation: (inout AssetTransform) -> Void
+    ) {
+        guard let selectedID else { return }
+        updatePlacement(id: selectedID, interactively: interactively) { placement in
+            mutation(&placement.transform)
+        }
+    }
+
+    @discardableResult
+    func beginPaintStroke(at point: AssetPaintPoint) -> UUID? {
+        beginInteractiveEdit()
+        guard let material = paintTool.material else {
+            erasePaint(at: point, radius: paintWidth * 0.72)
+            return nil
+        }
+        let stroke = AssetPaintStroke(
+            id: UUID(),
+            context: context,
+            studioID: context == .studio ? selectedStudioID : nil,
+            material: material,
+            width: paintWidth,
+            points: [point]
+        )
+        paintStrokes.append(stroke)
+        return stroke.id
+    }
+
+    func appendPaintPoint(_ point: AssetPaintPoint, to strokeID: UUID) {
+        guard let index = paintStrokes.firstIndex(where: { $0.id == strokeID }) else { return }
+        paintStrokes[index].points.append(point)
+    }
+
+    func erasePaint(at point: AssetPaintPoint, radius: Float? = nil) {
+        let eraserRadius = radius ?? paintWidth * 0.72
+        var result: [AssetPaintStroke] = []
+
+        for stroke in paintStrokes {
+            let belongsToCurrentWorld = stroke.context == context
+                && (context != .studio || stroke.studioID == selectedStudioID)
+            guard belongsToCurrentWorld else {
+                result.append(stroke)
+                continue
+            }
+
+            var runs: [[AssetPaintPoint]] = [[]]
+            for candidate in stroke.points {
+                let dx = candidate.x - point.x
+                let dz = candidate.z - point.z
+                let outsideEraser = sqrt(dx * dx + dz * dz) > eraserRadius + stroke.width * 0.32
+                if outsideEraser {
+                    runs[runs.count - 1].append(candidate)
+                } else if !runs[runs.count - 1].isEmpty {
+                    runs.append([])
+                }
+            }
+
+            let remainingRuns = runs.filter { !$0.isEmpty }
+            for (index, points) in remainingRuns.enumerated() {
+                result.append(
+                    AssetPaintStroke(
+                        id: index == 0 ? stroke.id : UUID(),
+                        context: stroke.context,
+                        studioID: stroke.studioID,
+                        material: stroke.material,
+                        width: stroke.width,
+                        points: points
+                    )
+                )
+            }
+        }
+        paintStrokes = result
+    }
+
+    @discardableResult
+    func beginTerrainStroke(at point: AssetPaintPoint) -> UUID {
+        beginInteractiveEdit()
+        let stroke = AssetTerrainStroke(
+            id: UUID(),
+            context: context,
+            studioID: context == .studio ? selectedStudioID : nil,
+            tool: terrainTool,
+            radius: terrainRadius,
+            strength: terrainStrength,
+            shape: terrainShape,
+            material: terrainMaterial,
+            points: [point]
+        )
+        terrainStrokes.append(stroke)
+        return stroke.id
+    }
+
+    /// 形を選ぶだけで実用的な半径・高さへ切り替える。
+    func selectTerrainShape(_ shape: AssetTerrainShape) {
+        terrainShape = shape
+        terrainTool = .raise
+        terrainRadius = shape.radius
+        terrainStrength = shape.strength
+    }
+
+    func appendTerrainPoint(_ point: AssetPaintPoint, to strokeID: UUID) {
+        guard let index = terrainStrokes.firstIndex(where: { $0.id == strokeID }) else { return }
+        terrainStrokes[index].points.append(point)
+    }
+
+    func clearVisibleTerrain() {
+        endInteractiveEdit()
+        let before = terrainStrokes.count
+        terrainStrokes.removeAll { stroke in
+            stroke.context == context
+                && (context != .studio || stroke.studioID == selectedStudioID)
+        }
+        guard terrainStrokes.count != before else { return }
+        commitCurrentState()
+    }
+
+    /// すでに作った山を描き直さず、表面素材だけを一括変更する。
+    func recolorVisibleTerrain(to material: AssetTerrainMaterial) {
+        endInteractiveEdit()
+        var changed = false
+        for index in terrainStrokes.indices {
+            let stroke = terrainStrokes[index]
+            guard stroke.context == context,
+                  context != .studio || stroke.studioID == selectedStudioID,
+                  stroke.tool == .raise,
+                  stroke.material != material
+            else { continue }
+            terrainStrokes[index].material = material
+            changed = true
+        }
+        guard changed else { return }
+        terrainMaterial = material
+        commitCurrentState()
+    }
+
+    func beginInteractiveEdit() {
+        if interactionStart == nil { interactionStart = currentSnapshot }
+    }
+
+    func endInteractiveEdit() {
+        guard let interactionStart else { return }
+        self.interactionStart = nil
+        guard interactionStart != currentSnapshot else { return }
+        commitCurrentState()
+    }
+
+    func undo() {
+        endInteractiveEdit()
+        guard canUndo else { return }
+        historyIndex -= 1
+        restore(history[historyIndex])
+        repairSelection()
+        save()
+    }
+
+    func redo() {
+        endInteractiveEdit()
+        guard canRedo else { return }
+        historyIndex += 1
+        restore(history[historyIndex])
+        repairSelection()
+        save()
+    }
+
+    func save() {
+        do {
+            try AssetPlacementPersistence.save(
+                placements,
+                paintStrokes: paintStrokes,
+                terrainStrokes: terrainStrokes,
+                studios: studios,
+                activeStudioID: activeStudioID
+            )
+            lastSaveSucceeded = true
+            NotificationCenter.default.post(name: .assetStudioWorldDidChange, object: nil)
+        } catch {
+            lastSaveSucceeded = false
+        }
+    }
+
+    func exportJSONString() -> String {
+        AssetPlacementPersistence.encodedString(
+            placements,
+            paintStrokes: paintStrokes,
+            terrainStrokes: terrainStrokes,
+            studios: studios,
+            activeStudioID: activeStudioID
+        )
+    }
+
+    private var currentSnapshot: AssetStudioSnapshot {
+        AssetStudioSnapshot(
+            placements: placements,
+            paintStrokes: paintStrokes,
+            terrainStrokes: terrainStrokes
+        )
+    }
+
+    private func restore(_ snapshot: AssetStudioSnapshot) {
+        placements = snapshot.placements
+        paintStrokes = snapshot.paintStrokes
+        terrainStrokes = snapshot.terrainStrokes
+    }
+
+    private func commitCurrentState() {
+        if historyIndex + 1 < history.count {
+            history.removeSubrange((historyIndex + 1)..<history.count)
+        }
+        let snapshot = currentSnapshot
+        if history.last != snapshot {
+            history.append(snapshot)
+            if history.count > 80 { history.removeFirst(history.count - 80) }
+            historyIndex = history.count - 1
+        }
+        save()
+    }
+
+    private func repairSelection() {
+        let visibleIDs = visibleSelectableIDs
+        selectedIDs.formIntersection(visibleIDs)
+        let visiblePlacementIDs = Set(visiblePlacements.map(\.id))
+        if let selectedID, visiblePlacementIDs.contains(selectedID) {
+            selectedIDs.insert(selectedID)
+        } else {
+            selectedID = visiblePlacements.first(where: { selectedIDs.contains($0.id) })?.id
+        }
+        if selectedIDs.isEmpty, let fallback = visiblePlacements.first?.id
+            ?? visiblePaintStrokes.first?.id
+            ?? visibleTerrainStrokes.first?.id {
+            selectedID = fallback
+            selectedIDs = [fallback]
+            if !visiblePlacementIDs.contains(fallback) { selectedID = nil }
+        }
+    }
+}
+
+/// 保存済み配置をゲーム本編のSceneKitノードへ取り込む。
+enum AssetPlacementRuntime {
+    static let placementSurfaceCategory = 1 << 12
+
+    /// ゲーム全体が表示する、現在の3Dスタジオ世界。
+    /// 空のスタジオは旧来の島へフォールバックできるようnilを返す。
+    static func makeActiveStudioWorldNode(bundle: Bundle = .main) -> SCNNode? {
+        guard let contents = AssetPlacementPersistence.activeStudioContents(),
+              !contents.placements.isEmpty
+                || !contents.paintStrokes.isEmpty
+                || !contents.terrainStrokes.isEmpty
+        else { return nil }
+        return makeAssetNode(resourceName: contents.studio.assetID, bundle: bundle)
+    }
+
+    static func makeAssetNode(resourceName: String, bundle: Bundle = .main) -> SCNNode? {
+        makeAssetNode(resourceName: resourceName, bundle: bundle, resolvingStudioIDs: [])
+    }
+
+    private static func makeAssetNode(
+        resourceName: String,
+        bundle: Bundle,
+        resolvingStudioIDs: Set<UUID>
+    ) -> SCNNode? {
+        if let studioID = SavedAssetStudio.id(fromAssetID: resourceName) {
+            guard !resolvingStudioIDs.contains(studioID),
+                  let contents = AssetPlacementPersistence.contents(forStudioID: studioID)
+            else { return nil }
+
+            var nextResolvingIDs = resolvingStudioIDs
+            nextResolvingIDs.insert(studioID)
+            let container = SCNNode()
+            container.name = "saved-studio:\(studioID.uuidString)"
+
+            // 各子モデルの相対座標・回転・高さ・縮尺を一切変えず、一つの親へ束ねる。
+            for placement in contents.placements {
+                guard let child = makeAssetNode(
+                    resourceName: placement.assetID,
+                    bundle: bundle,
+                    resolvingStudioIDs: nextResolvingIDs
+                ) else { continue }
+                child.name = "saved-studio-component:\(placement.id.uuidString)"
+                placement.transform.apply(to: child)
+                container.addChildNode(child)
+            }
+            for stroke in contents.paintStrokes {
+                container.addChildNode(makePaintNode(for: stroke))
+            }
+            if let terrain = makeTerrainNode(for: contents.terrainStrokes) {
+                container.addChildNode(terrain)
+            }
+            return container
+        }
+
+        guard let url = bundle.url(forResource: resourceName, withExtension: "usdz") else {
+            return nil
+        }
+
+        let node: SCNNode
+        if let reference = SCNReferenceNode(url: url) {
+            reference.load()
+            node = reference
+        } else {
+            guard let scene = try? SCNScene(url: url, options: nil) else { return nil }
+            let container = SCNNode()
+            for child in scene.rootNode.childNodes {
+                container.addChildNode(child.clone())
+            }
+            node = container
+        }
+
+        if Asset3DCatalog.providesPlacementSurface(for: resourceName) {
+            let shape = SCNPhysicsShape(
+                node: node,
+                options: [
+                    // USDZは上面・側面が別の開いたメッシュなので、凹型形状では下面を拾う場合がある。
+                    // 全体を閉じた凸包へ変換し、上からの接地レイが必ず支持面へ当たるようにする。
+                    .type: SCNPhysicsShape.ShapeType.convexHull,
+                    .keepAsCompound: false,
+                ]
+            )
+            let body = SCNPhysicsBody(type: .static, shape: shape)
+            body.categoryBitMask = placementSurfaceCategory
+            body.collisionBitMask = 0
+            body.contactTestBitMask = 0
+            node.physicsBody = body
+        }
+        return node
+    }
+
+    private final class TerrainHeightField: NSObject {
+        let minimumX: Float
+        let minimumZ: Float
+        let stepX: Float
+        let stepZ: Float
+        let columns: Int
+        let rows: Int
+        let heights: [Float]
+
+        init(
+            minimumX: Float,
+            minimumZ: Float,
+            stepX: Float,
+            stepZ: Float,
+            columns: Int,
+            rows: Int,
+            heights: [Float]
+        ) {
+            self.minimumX = minimumX
+            self.minimumZ = minimumZ
+            self.stepX = stepX
+            self.stepZ = stepZ
+            self.columns = columns
+            self.rows = rows
+            self.heights = heights
+        }
+
+        func height(atX x: Float, z: Float) -> Float? {
+            let gridX = (x - minimumX) / max(stepX, 0.0001)
+            let gridZ = (z - minimumZ) / max(stepZ, 0.0001)
+            guard gridX >= 0, gridZ >= 0,
+                  gridX <= Float(columns - 1), gridZ <= Float(rows - 1)
+            else { return nil }
+
+            let left = min(max(Int(floor(gridX)), 0), columns - 1)
+            let top = min(max(Int(floor(gridZ)), 0), rows - 1)
+            let right = min(left + 1, columns - 1)
+            let bottom = min(top + 1, rows - 1)
+            let fractionX = gridX - Float(left)
+            let fractionZ = gridZ - Float(top)
+            let topHeight = heights[top * columns + left]
+                + (heights[top * columns + right] - heights[top * columns + left]) * fractionX
+            let bottomHeight = heights[bottom * columns + left]
+                + (heights[bottom * columns + right] - heights[bottom * columns + left]) * fractionX
+            return topHeight + (bottomHeight - topHeight) * fractionZ
+        }
+    }
+
+    private final class TerrainSceneNode: SCNNode {
+        var heightField: TerrainHeightField?
+
+        override init() {
+            super.init()
+        }
+
+        required init?(coder: NSCoder) {
+            super.init(coder: coder)
+        }
+    }
+
+    /// 複数のブラシ履歴を一枚の連続メッシュへ変換する。
+    /// 同じ場所を重ねると峰が高くなり、長く引くと尾根になる。
+    static func makeTerrainNode(for strokes: [AssetTerrainStroke]) -> SCNNode? {
+        let validStrokes = strokes.filter { !$0.points.isEmpty && $0.radius > 0.02 }
+        let allPoints = validStrokes.flatMap(\.points)
+        guard !allPoints.isEmpty else { return nil }
+
+        let largestRadius = validStrokes.map(\.radius).max() ?? 0.8
+        let padding = largestRadius * 1.06
+        let minimumX = (allPoints.map(\.x).min() ?? 0) - padding
+        let maximumX = (allPoints.map(\.x).max() ?? 0) + padding
+        let minimumZ = (allPoints.map(\.z).min() ?? 0) - padding
+        let maximumZ = (allPoints.map(\.z).max() ?? 0) + padding
+        let width = max(maximumX - minimumX, 0.2)
+        let depth = max(maximumZ - minimumZ, 0.2)
+
+        // 約11cm間隔を基本にしつつ、広大な世界でも端末の頂点数を制御する。
+        let columns = min(max(Int(ceil(width / 0.11)) + 1, 7), 137)
+        let rows = min(max(Int(ceil(depth / 0.11)) + 1, 7), 137)
+        let stepX = width / Float(columns - 1)
+        let stepZ = depth / Float(rows - 1)
+        let vertexCount = columns * rows
+        let averageBaseY = allPoints.map(\.y).reduce(0, +) / Float(allPoints.count)
+        var baseHeights = Array(repeating: averageBaseY, count: vertexCount)
+        var nearestBaseDistances = Array(repeating: Float.greatestFiniteMagnitude, count: vertexCount)
+
+        func affectedRange(
+            coordinate: Float,
+            minimum: Float,
+            step: Float,
+            radius: Float,
+            count: Int
+        ) -> ClosedRange<Int> {
+            let lower = max(0, Int(floor((coordinate - radius - minimum) / step)))
+            let upper = min(count - 1, Int(ceil((coordinate + radius - minimum) / step)))
+            return lower...max(lower, upper)
+        }
+
+        // 曲面の土台上でも接地するよう、各頂点の基準高を最寄りの入力点から求める。
+        for stroke in validStrokes {
+            let reach = stroke.radius * 1.5
+            for point in stroke.points {
+                let columnRange = affectedRange(
+                    coordinate: point.x,
+                    minimum: minimumX,
+                    step: stepX,
+                    radius: reach,
+                    count: columns
+                )
+                let rowRange = affectedRange(
+                    coordinate: point.z,
+                    minimum: minimumZ,
+                    step: stepZ,
+                    radius: reach,
+                    count: rows
+                )
+                for row in rowRange {
+                    let z = minimumZ + Float(row) * stepZ
+                    for column in columnRange {
+                        let x = minimumX + Float(column) * stepX
+                        let distanceSquared = pow(x - point.x, 2) + pow(z - point.z, 2)
+                        let index = row * columns + column
+                        if distanceSquared < nearestBaseDistances[index] {
+                            nearestBaseDistances[index] = distanceSquared
+                            baseHeights[index] = point.y
+                        }
+                    }
+                }
+            }
+        }
+
+        var heights = baseHeights
+        // 各頂点が最後に受けた「盛る」ブラシの素材を保持。
+        // v5までの地形はグレー固定にせず、芝生へ移行する。
+        var surfaceMaterials = Array(repeating: AssetTerrainMaterial.grass, count: vertexCount)
+        for stroke in validStrokes {
+            var influence = Array(repeating: Float.zero, count: vertexCount)
+            let radius = max(stroke.radius, 0.03)
+            for point in stroke.points {
+                let columnRange = affectedRange(
+                    coordinate: point.x,
+                    minimum: minimumX,
+                    step: stepX,
+                    radius: radius,
+                    count: columns
+                )
+                let rowRange = affectedRange(
+                    coordinate: point.z,
+                    minimum: minimumZ,
+                    step: stepZ,
+                    radius: radius,
+                    count: rows
+                )
+                for row in rowRange {
+                    let z = minimumZ + Float(row) * stepZ
+                    for column in columnRange {
+                        let x = minimumX + Float(column) * stepX
+                        let normalizedDistance = sqrt(pow(x - point.x, 2) + pow(z - point.z, 2)) / radius
+                        guard normalizedDistance < 1 else { continue }
+                        let remaining = 1 - normalizedDistance
+                        let smoothFalloff = remaining * remaining * (3 - 2 * remaining)
+                        let value: Float
+                        switch stroke.shape ?? .hill {
+                        case .hill:
+                            value = smoothFalloff
+                        case .mountain:
+                            // すそ野は滑らかで、山頂だけをしっかり立てる。
+                            value = pow(remaining, 1.32)
+                        case .plateau:
+                            // 中心45%を平らに、外周を段丘の斜面にする。
+                            if normalizedDistance <= 0.45 {
+                                value = 1
+                            } else {
+                                let edge = max(0, (1 - normalizedDistance) / 0.55)
+                                value = edge * edge * (3 - 2 * edge)
+                            }
+                        case .ridge:
+                            // 細い横断面でドラッグ軌跡を繋ぐと、一筆で尾根になる。
+                            value = pow(smoothFalloff, 0.72)
+                        }
+                        let index = row * columns + column
+                        influence[index] = max(influence[index], value)
+                    }
+                }
+            }
+
+            switch stroke.tool {
+            case .raise:
+                for index in heights.indices where influence[index] > 0 {
+                    heights[index] = min(
+                        baseHeights[index] + 24,
+                        heights[index] + stroke.strength * influence[index]
+                    )
+                    if influence[index] > 0.025 {
+                        surfaceMaterials[index] = stroke.material ?? .grass
+                    }
+                }
+            case .lower:
+                for index in heights.indices where influence[index] > 0 {
+                    heights[index] = max(
+                        baseHeights[index],
+                        heights[index] - stroke.strength * influence[index]
+                    )
+                }
+            case .smooth:
+                for _ in 0..<2 {
+                    let source = heights
+                    for row in 1..<(rows - 1) {
+                        for column in 1..<(columns - 1) {
+                            let index = row * columns + column
+                            guard influence[index] > 0 else { continue }
+                            var total: Float = 0
+                            for neighborRow in (row - 1)...(row + 1) {
+                                for neighborColumn in (column - 1)...(column + 1) {
+                                    total += source[neighborRow * columns + neighborColumn]
+                                }
+                            }
+                            let average = total / 9
+                            let amount = min(0.92, stroke.strength * 1.8) * influence[index]
+                            heights[index] = max(
+                                baseHeights[index],
+                                source[index] + (average - source[index]) * amount
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        var vertices: [SCNVector3] = []
+        var normals: [SCNVector3] = []
+        var colors: [UIColor] = []
+        vertices.reserveCapacity(vertexCount)
+        normals.reserveCapacity(vertexCount)
+        colors.reserveCapacity(vertexCount)
+
+        for row in 0..<rows {
+            for column in 0..<columns {
+                let index = row * columns + column
+                let left = heights[row * columns + max(column - 1, 0)]
+                let right = heights[row * columns + min(column + 1, columns - 1)]
+                let near = heights[max(row - 1, 0) * columns + column]
+                let far = heights[min(row + 1, rows - 1) * columns + column]
+                let rawNormal = SCNVector3(
+                    -(right - left) / max(stepX * 2, 0.0001),
+                    1,
+                    -(far - near) / max(stepZ * 2, 0.0001)
+                )
+                let normalLength = max(
+                    sqrt(
+                        rawNormal.x * rawNormal.x
+                            + rawNormal.y * rawNormal.y
+                            + rawNormal.z * rawNormal.z
+                    ),
+                    0.0001
+                )
+                let normal = SCNVector3(
+                    rawNormal.x / normalLength,
+                    rawNormal.y / normalLength,
+                    rawNormal.z / normalLength
+                )
+                let elevation = heights[index] - baseHeights[index]
+                let steepness = 1 - normal.y
+                let selectedMaterial = surfaceMaterials[index]
+                let baseColor: UIColor
+                switch selectedMaterial {
+                case .grass:
+                    // 急斜面も緑を残し、ユーザーが選んだ素材を優先する。
+                    if elevation > 3.2 {
+                        baseColor = UIColor(rgb: 0xA0BB75)
+                    } else if steepness > 0.30 {
+                        baseColor = UIColor(rgb: 0x4F8253)
+                    } else {
+                        baseColor = selectedMaterial.color
+                    }
+                case .earth:
+                    baseColor = steepness > 0.28
+                        ? UIColor(rgb: 0x754A35)
+                        : selectedMaterial.color
+                case .sand:
+                    baseColor = elevation > 2.6
+                        ? UIColor(rgb: 0xCDBF98)
+                        : selectedMaterial.color
+                case .rock:
+                    baseColor = elevation > 2.8
+                        ? UIColor(rgb: 0xA8A895)
+                        : selectedMaterial.color
+                case .snow:
+                    baseColor = steepness > 0.32
+                        ? UIColor(rgb: 0xB8C2B9)
+                        : selectedMaterial.color
+                }
+                let x = minimumX + Float(column) * stepX
+                let z = minimumZ + Float(row) * stepZ
+                let tone = 0.96 + sin(x * 3.71 + z * 2.43) * 0.035
+                vertices.append(SCNVector3(x, heights[index] + 0.004, z))
+                normals.append(normal)
+                colors.append(baseColor.scaled(CGFloat(tone)))
+            }
+        }
+
+        var indices: [Int32] = []
+        indices.reserveCapacity((rows - 1) * (columns - 1) * 6)
+        for row in 0..<(rows - 1) {
+            for column in 0..<(columns - 1) {
+                let nearLeftIndex = row * columns + column
+                let nearRightIndex = nearLeftIndex + 1
+                let farLeftIndex = (row + 1) * columns + column
+                let farRightIndex = farLeftIndex + 1
+                // ブラシの影響がない高さ0の四角形は作らない。
+                // これで山の外周だけが土台へ溶け込み、長方形の板が見えない。
+                let hasRelief = [nearLeftIndex, nearRightIndex, farLeftIndex, farRightIndex]
+                    .contains { heights[$0] - baseHeights[$0] > 0.001 }
+                guard hasRelief else { continue }
+                let nearLeft = Int32(nearLeftIndex)
+                let nearRight = Int32(nearRightIndex)
+                let farLeft = Int32(farLeftIndex)
+                let farRight = Int32(farRightIndex)
+                indices.append(contentsOf: [nearLeft, farLeft, nearRight, nearRight, farLeft, farRight])
+            }
+        }
+
+        let geometry = SCNGeometry(
+            sources: [
+                SCNGeometrySource(vertices: vertices),
+                SCNGeometrySource(normals: normals),
+                paintColorSource(colors),
+            ],
+            elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles)]
+        )
+        geometry.firstMaterial = VoyageSceneKit.litMaterial(
+            .white,
+            roughness: 0.94,
+            doubleSided: true,
+            fogged: false
+        )
+
+        let node = TerrainSceneNode()
+        node.geometry = geometry
+        node.name = "asset-studio-terrain"
+        node.castsShadow = true
+        node.renderingOrder = 12
+        node.heightField = TerrainHeightField(
+            minimumX: minimumX,
+            minimumZ: minimumZ,
+            stepX: stepX,
+            stepZ: stepZ,
+            columns: columns,
+            rows: rows,
+            heights: heights
+        )
+        let shape = SCNPhysicsShape(
+            geometry: geometry,
+            options: [.type: SCNPhysicsShape.ShapeType.concavePolyhedron]
+        )
+        let body = SCNPhysicsBody(type: .static, shape: shape)
+        body.categoryBitMask = placementSurfaceCategory
+        body.collisionBitMask = 0
+        body.contactTestBitMask = 0
+        node.physicsBody = body
+        return node
+    }
+
+    static func terrainSurfaceHeight(on node: SCNNode, atLocalX x: Float, z: Float) -> Float? {
+        (node as? TerrainSceneNode)?.heightField?.height(atX: x, z: z)
+    }
+
+    static func makePaintNode(for stroke: AssetPaintStroke) -> SCNNode {
+        let container = SCNNode()
+        container.name = "asset-studio-paint:\(stroke.id.uuidString)"
+        guard let firstPoint = stroke.points.first else { return container }
+
+        let material = paintMaterial(for: stroke.material)
+        let halfWidth = max(stroke.width * 0.5, 0.025)
+        // 島に元からある苔パッチと同程度だけ持ち上げ、ちらつきを防ぎつつ地面へ密着させる。
+        let surfaceOffset: Float = 0.016
+        let seed = paintSeed(for: stroke.id)
+
+        if stroke.points.count > 1 {
+            var vertices: [SCNVector3] = []
+            var normals: [SCNVector3] = []
+            var colors: [UIColor] = []
+            var textureCoordinates: [CGPoint] = []
+            var indices: [Int32] = []
+
+            for index in stroke.points.indices {
+                let previous = stroke.points[max(index - 1, 0)]
+                let next = stroke.points[min(index + 1, stroke.points.count - 1)]
+                let tangentX = next.x - previous.x
+                let tangentZ = next.z - previous.z
+                let tangentLength = max(sqrt(tangentX * tangentX + tangentZ * tangentZ), 0.0001)
+                // 完全に平行な帯ではなく、島の海岸線と同じ程度のごく小さな揺らぎを輪郭へ入れる。
+                let phase = Float(index) * 1.73 + seed
+                let leftWidth = halfWidth * (1 + sin(phase) * 0.052)
+                let rightWidth = halfWidth * (1 + cos(phase * 0.83 + 1.7) * 0.046)
+                let sideUnitX = -tangentZ / tangentLength
+                let sideUnitZ = tangentX / tangentLength
+                let point = stroke.points[index]
+                let surfaceNormal = paintSurfaceNormal(at: index, points: stroke.points)
+
+                vertices.append(SCNVector3(
+                    point.x + sideUnitX * leftWidth,
+                    point.y + surfaceOffset,
+                    point.z + sideUnitZ * leftWidth
+                ))
+                vertices.append(SCNVector3(
+                    point.x - sideUnitX * rightWidth,
+                    point.y + surfaceOffset,
+                    point.z - sideUnitZ * rightWidth
+                ))
+                normals.append(contentsOf: [surfaceNormal, surfaceNormal])
+
+                // 島本体と同じ頂点色方式。緩やかな明暗差で面の密度を出し、単色の板に見せない。
+                let tone = 0.97 + sin(Float(index) * 1.19 + seed * 0.61) * 0.045
+                colors.append(stroke.material.color.scaled(CGFloat(tone * 0.985)))
+                colors.append(stroke.material.color.scaled(CGFloat(tone * 1.015)))
+                let progress = CGFloat(index) / CGFloat(max(stroke.points.count - 1, 1))
+                textureCoordinates.append(CGPoint(x: 0, y: progress))
+                textureCoordinates.append(CGPoint(x: 1, y: progress))
+
+                if index < stroke.points.count - 1 {
+                    let base = Int32(index * 2)
+                    indices.append(contentsOf: [base, base + 2, base + 1, base + 1, base + 2, base + 3])
+                }
+            }
+
+            let geometry = SCNGeometry(
+                sources: [
+                    SCNGeometrySource(vertices: vertices),
+                    SCNGeometrySource(normals: normals),
+                    paintColorSource(colors),
+                    SCNGeometrySource(textureCoordinates: textureCoordinates),
+                ],
+                elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles)]
+            )
+            geometry.firstMaterial = material
+            let ribbon = SCNNode(geometry: geometry)
+            ribbon.renderingOrder = 60
+            container.addChildNode(ribbon)
+        }
+
+        let capPoints = stroke.points.count == 1
+            ? [(firstPoint, 0)]
+            : [(firstPoint, 0), (stroke.points.last ?? firstPoint, stroke.points.count - 1)]
+        for (point, index) in capPoints {
+            let capNode = makePaintCap(
+                point: point,
+                pointIndex: index,
+                points: stroke.points,
+                radius: halfWidth,
+                surfaceOffset: surfaceOffset + 0.0005,
+                seed: seed,
+                paint: stroke.material,
+                material: material
+            )
+            capNode.renderingOrder = 61
+            container.addChildNode(capNode)
+        }
+        return container
+    }
+
+    private static func paintMaterial(for paint: AssetPaintMaterial) -> SCNMaterial {
+        // 島本体と同じPBR・フラットシェーディング。発光は影を薄めるため使わない。
+        let material = VoyageSceneKit.litMaterial(
+            .white,
+            roughness: 0.96,
+            doubleSided: true,
+            fogged: false
+        )
+        return material
+    }
+
+    private static func makePaintCap(
+        point: AssetPaintPoint,
+        pointIndex: Int,
+        points: [AssetPaintPoint],
+        radius: Float,
+        surfaceOffset: Float,
+        seed: Float,
+        paint: AssetPaintMaterial,
+        material: SCNMaterial
+    ) -> SCNNode {
+        let segments = 12
+        let normal = paintSurfaceNormal(at: pointIndex, points: points)
+        var vertices = [SCNVector3(point.x, point.y + surfaceOffset, point.z)]
+        var normals = [normal]
+        var colors = [paint.color.scaled(1.025)]
+        var indices: [Int32] = []
+
+        for segment in 0..<segments {
+            let angle = Float(segment) / Float(segments) * 2 * .pi
+            let wobble = 1 + sin(Float(segment) * 2.31 + seed) * 0.048
+            let dx = cos(angle) * radius * wobble
+            let dz = sin(angle) * radius * wobble
+            let safeNormalY = max(abs(normal.y), 0.18)
+            let dy = -(normal.x * dx + normal.z * dz) / safeNormalY
+            vertices.append(SCNVector3(point.x + dx, point.y + surfaceOffset + dy, point.z + dz))
+            normals.append(normal)
+            let tone = 0.94 + sin(Float(segment) * 1.41 + seed * 0.7) * 0.035
+            colors.append(paint.color.scaled(CGFloat(tone)))
+        }
+
+        for segment in 0..<segments {
+            // XZ平面で上向きになる頂点順。
+            let current = Int32(segment + 1)
+            let next = Int32((segment + 1) % segments + 1)
+            indices.append(contentsOf: [0, next, current])
+        }
+
+        let geometry = SCNGeometry(
+            sources: [
+                SCNGeometrySource(vertices: vertices),
+                SCNGeometrySource(normals: normals),
+                paintColorSource(colors),
+            ],
+            elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles)]
+        )
+        geometry.firstMaterial = material
+        return SCNNode(geometry: geometry)
+    }
+
+    private static func paintSurfaceNormal(
+        at index: Int,
+        points: [AssetPaintPoint]
+    ) -> SCNVector3 {
+        guard points.count > 1 else { return SCNVector3(0, 1, 0) }
+        let previous = points[max(index - 1, 0)]
+        let next = points[min(index + 1, points.count - 1)]
+        let tangent = SCNVector3(next.x - previous.x, next.y - previous.y, next.z - previous.z)
+        let horizontalLength = max(sqrt(tangent.x * tangent.x + tangent.z * tangent.z), 0.0001)
+        let side = SCNVector3(-tangent.z / horizontalLength, 0, tangent.x / horizontalLength)
+        let cross = SCNVector3(
+            side.y * tangent.z - side.z * tangent.y,
+            side.z * tangent.x - side.x * tangent.z,
+            side.x * tangent.y - side.y * tangent.x
+        )
+        let length = max(sqrt(cross.x * cross.x + cross.y * cross.y + cross.z * cross.z), 0.0001)
+        let direction: Float = cross.y < 0 ? -1 : 1
+        return SCNVector3(
+            cross.x / length * direction,
+            cross.y / length * direction,
+            cross.z / length * direction
+        )
+    }
+
+    private static func paintColorSource(_ colors: [UIColor]) -> SCNGeometrySource {
+        let values: [SIMD4<Float>] = colors.map { color in
+            var red: CGFloat = 0
+            var green: CGFloat = 0
+            var blue: CGFloat = 0
+            var alpha: CGFloat = 0
+            color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+            return SIMD4(Float(red), Float(green), Float(blue), Float(alpha))
+        }
+        let data = values.withUnsafeBytes { Data($0) }
+        return SCNGeometrySource(
+            data: data,
+            semantic: .color,
+            vectorCount: values.count,
+            usesFloatComponents: true,
+            componentsPerVector: 4,
+            bytesPerComponent: MemoryLayout<Float>.size,
+            dataOffset: 0,
+            dataStride: MemoryLayout<SIMD4<Float>>.stride
+        )
+    }
+
+    private static func paintSeed(for id: UUID) -> Float {
+        let stableValue = id.uuidString.utf8.reduce(UInt32(2_166_136_261)) { value, byte in
+            (value ^ UInt32(byte)) &* 16_777_619
+        }
+        return Float(stableValue % 10_000) * 0.001
+    }
+
+    static func attachSavedPlacements(
+        context: AssetPlacementContext,
+        to parent: SCNNode,
+        bundle: Bundle = .main
+    ) {
+        for placement in AssetPlacementPersistence.load() where placement.context == context {
+            // v3の手動「スタジオ配置」はアクティブ世界へ移行済み。
+            // 直接配置した木や小物だけを追加レイヤーとして復元する。
+            if context == .destinationIsland,
+               SavedAssetStudio.id(fromAssetID: placement.assetID) != nil {
+                continue
+            }
+            guard let node = makeAssetNode(resourceName: placement.assetID, bundle: bundle) else { continue }
+            node.name = "custom-asset-\(placement.id.uuidString)"
+            placement.transform.apply(to: node)
+            parent.addChildNode(node)
+        }
+        for stroke in AssetPlacementPersistence.loadPaintStrokes() where stroke.context == context {
+            parent.addChildNode(makePaintNode(for: stroke))
+        }
+        let terrainStrokes = AssetPlacementPersistence.loadTerrainStrokes().filter {
+            $0.context == context
+        }
+        if let terrain = makeTerrainNode(for: terrainStrokes) {
+            parent.addChildNode(terrain)
+        }
+    }
+}

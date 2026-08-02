@@ -1,19 +1,41 @@
 import SwiftUI
 import SwiftData
+import WidgetKit
 
 /// タイマーの状態。アプリ全体で同時に1つだけ。再起動しても続くようUserDefaultsに持つ。
 enum StudyTimer {
-    static let startKey = "landfall.timer.start"
-    static let itemKey = "landfall.timer.item"
+    static let defaults = KeelMiraWidgetStore.defaults
+    static let startKey = KeelMiraWidgetStore.Key.timerStart
+    static let itemKey = KeelMiraWidgetStore.Key.timerItem
     /// これを超える航海は「閉じ忘れ」の可能性が高いので、着岸時に確認する。
     static let longSessionMinutes = 8 * 60
 
     /// 項目の削除経路が増えても、孤立したタイマーを残さないための共通処理。
     static func clear(ifMatching itemID: String? = nil) {
-        let defaults = UserDefaults.standard
         if let itemID, defaults.string(forKey: itemKey) != itemID { return }
-        defaults.set(0, forKey: startKey)
-        defaults.set("", forKey: itemKey)
+        KeelMiraWidgetStore.clearTimer()
+        WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
+    }
+
+    /// 旧版の標準UserDefaultsに航海が残っている場合だけ、App Groupへ一度移す。
+    static func migrateLegacyTimerIfNeeded() {
+        guard defaults.double(forKey: startKey) <= 0 else { return }
+        let legacy = UserDefaults.standard
+        let legacyStart = legacy.double(forKey: startKey)
+        let legacyItem = legacy.string(forKey: itemKey) ?? ""
+        guard legacyStart > 0, !legacyItem.isEmpty else { return }
+        defaults.set(legacyStart, forKey: startKey)
+        defaults.set(legacyItem, forKey: itemKey)
+        for key in [
+            KeelMiraWidgetStore.Key.timerMode,
+            KeelMiraWidgetStore.Key.pomodoroStartElapsed,
+            KeelMiraWidgetStore.Key.breakSeconds,
+            KeelMiraWidgetStore.Key.breakStartedAt,
+            KeelMiraWidgetStore.Key.sound,
+        ] {
+            if let value = legacy.object(forKey: key) { defaults.set(value, forKey: key) }
+        }
+        defaults.synchronize()
     }
 }
 
@@ -22,15 +44,13 @@ struct RecordSessionSheet: View {
     let item: StudyItem
     /// 保存完了時に空白日数(おかえり判定用)を親へ返す。
     var onSaved: (Int?) -> Void
-    /// 「編集」選択時に親へ委譲(このシートを閉じてから開き直す)。
-    var onEdit: (StudyItem) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StudyDay.date, order: .reverse) private var days: [StudyDay]
 
-    @AppStorage(StudyTimer.startKey) private var timerStart: Double = 0
-    @AppStorage(StudyTimer.itemKey) private var timerItemID: String = ""
+    @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID: String = ""
 
     @State private var minutes = 0
     @State private var note = ""
@@ -104,7 +124,7 @@ struct RecordSessionSheet: View {
         }
     }
 
-    // MARK: - ヘッダー(タイル+名前+編集)
+    // MARK: - ヘッダー
 
     private var header: some View {
         HStack(spacing: 14) {
@@ -115,12 +135,6 @@ struct RecordSessionSheet: View {
                 .foregroundStyle(LFColor.ink)
                 .lineLimit(2)
             Spacer()
-            Button("Edit") {
-                dismiss()
-                onEdit(item)
-            }
-            .font(LFFont.label(15))
-            .foregroundStyle(LFColor.ink.opacity(0.6))
         }
     }
 
@@ -170,8 +184,13 @@ struct RecordSessionSheet: View {
                 .foregroundStyle(LFColor.ink.opacity(0.5))
         } else {
             Button {
-                timerStart = Date().timeIntervalSince1970
+                KeelMiraWidgetStore.start(
+                    itemID: item.uuid.uuidString,
+                    itemName: item.name
+                )
+                timerStart = StudyTimer.defaults.double(forKey: StudyTimer.startKey)
                 timerItemID = item.uuid.uuidString
+                WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
                 dismiss()
                 Haptics.tap(.medium)
                 // 出航の瞬間: 帆船が海へ漕ぎ出す。
@@ -287,6 +306,7 @@ struct RecordSessionSheet: View {
     }
 
     private func clearTimer() {
+        StudyTimer.clear(ifMatching: item.uuid.uuidString)
         timerStart = 0
         timerItemID = ""
     }

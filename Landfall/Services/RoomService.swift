@@ -9,7 +9,7 @@ struct HarborRoom: Identifiable, Equatable, Hashable {
     let id: String          // 6文字の招待コードがそのままID
     let name: String
     let memberIds: [String]
-    /// 港をひらいた人。ひとり1港の判定に使う(権限は与えない: 追い出し・改名は誰にも不可)。
+    /// 港をひらいた人。共同タイマーの船長も兼ねる。退港済みなら在港者の先頭へ引き継ぐ。
     var ownerUid: String? = nil
 
     /// プライベートの港の定員。少人数=並走感の設計。
@@ -23,6 +23,8 @@ struct SharedSession: Identifiable {
     let id = UUID()
     let day: Int
     let minutes: Int
+    /// 記録した時刻。古い共有データには無いため optional。
+    let date: Date?
     let note: String?
     let itemName: String?
     let styleToken: String
@@ -38,6 +40,12 @@ struct HarborMember: Identifiable, Hashable {
     var resolve: String = ""
     /// 航海のはじまり(yyyy-MM-dd)。古いクライアントが書いたカードには無いので空。
     var sinceDay: String = ""
+    /// みんなの海で使う船の部位ID。古いカードでは未設定。
+    var boatSail: String? = nil
+    var boatJib: String? = nil
+    var boatHull: String? = nil
+    var boatStripe: String? = nil
+    var boatFlag: String? = nil
 }
 
 @MainActor
@@ -64,7 +72,7 @@ final class RoomService: ObservableObject {
     private var displayName: String {
         if !PlayerProfile.name.isEmpty { return String(PlayerProfile.name.prefix(Limit.displayName)) }
         let name = Auth.auth().currentUser?.displayName?.trimmingCharacters(in: .whitespaces)
-        let resolved = (name?.isEmpty == false ? name! : String(localized: "Sailor"))
+        let resolved = (name?.isEmpty == false ? name! : LF.text("Sailor"))
         return String(resolved.prefix(Limit.displayName))
     }
 
@@ -97,6 +105,11 @@ final class RoomService: ObservableObject {
         } catch {
             // 取得に失敗しても既存表示を維持する(オフライン等)。
         }
+    }
+
+    func resetLocalState() {
+        rooms = []
+        errorMessage = nil
     }
 
     // MARK: - 作成・参加・退出
@@ -172,13 +185,20 @@ final class RoomService: ObservableObject {
     /// 港を出る。自分のプロフィール・軌跡を消してからメンバーを外れる。
     func leaveRoom(_ roomId: String) async {
         guard let uid else { return }
-        let memberRef = db.collection("rooms").document(roomId)
+        let roomRef = db.collection("rooms").document(roomId)
+        let memberRef = roomRef
             .collection("members").document(uid)
+        // 準備時の意図・到着後の思い出しも本人のUGC。メンバー権限を外す前に消す。
+        if let sessions = try? await roomRef.collection("crewSessions").getDocuments() {
+            for session in sessions.documents {
+                try? await session.reference.collection("plans").document(uid).delete()
+            }
+        }
         if let months = try? await memberRef.collection("months").getDocuments() {
             for doc in months.documents { try? await doc.reference.delete() }
         }
         try? await memberRef.delete()
-        try? await db.collection("rooms").document(roomId)
+        try? await roomRef
             .updateData(["memberIds": FieldValue.arrayRemove([uid])])
         await refreshRooms()
     }
@@ -288,7 +308,12 @@ final class RoomService: ObservableObject {
                 styleToken: data["styleToken"] as? String ?? TileStyle.midnight.rawValue,
                 symbolToken: data["symbolToken"] as? String ?? TileSymbol.phoenix.rawValue,
                 resolve: data["resolve"] as? String ?? "",
-                sinceDay: data["sinceDay"] as? String ?? ""
+                sinceDay: data["sinceDay"] as? String ?? "",
+                boatSail: data["boatSail"] as? String,
+                boatJib: data["boatJib"] as? String,
+                boatHull: data["boatHull"] as? String,
+                boatStripe: data["boatStripe"] as? String,
+                boatFlag: data["boatFlag"] as? String
             )
         }
         .sorted { $0.displayName < $1.displayName }
@@ -307,6 +332,7 @@ final class RoomService: ObservableObject {
             SharedSession(
                 day: raw["day"] as? Int ?? 0,
                 minutes: raw["minutes"] as? Int ?? 0,
+                date: (raw["date"] as? Timestamp)?.dateValue(),
                 note: (raw["note"] as? String).flatMap { $0.isEmpty ? nil : $0 },
                 itemName: raw["itemName"] as? String,
                 styleToken: raw["styleToken"] as? String ?? TileStyle.midnight.rawValue,
@@ -342,12 +368,12 @@ enum RoomError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .notSignedIn: String(localized: "Sign in to enter a harbor.")
-        case .roomNotFound: String(localized: "No harbor found for this code.")
-        case .codeUnavailable: String(localized: "Couldn't open a harbor just now. Please try again.")
-        case .roomFull: String(localized: "This harbor is full (up to 4 sailors).")
-        case .tooManyRooms: String(localized: "You can be in up to 3 harbors.")
-        case .alreadyOwnsRoom: String(localized: "You can open one harbor. Yours is already out there.")
+        case .notSignedIn: LF.text("Sign in to enter a harbor.")
+        case .roomNotFound: LF.text("No harbor found for this code.")
+        case .codeUnavailable: LF.text("Couldn't open a harbor just now. Please try again.")
+        case .roomFull: LF.text("This harbor is full (up to 4 sailors).")
+        case .tooManyRooms: LF.text("You can be in up to 3 harbors.")
+        case .alreadyOwnsRoom: LF.text("You can open one harbor. Yours is already out there.")
         }
     }
 }

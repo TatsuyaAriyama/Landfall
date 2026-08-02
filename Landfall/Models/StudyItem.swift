@@ -9,11 +9,11 @@ final class StudyItem {
     var name: String
     /// タイルの配色プリセット(TileStyle.rawValue)。
     var styleToken: String
-    /// タイルのシンボルプリセット(TileSymbol.rawValue)。写真があれば写真が優先。
+    /// タイルのシンボルプリセット(TileSymbol.rawValue)。
     var symbolToken: String
-    /// 教材の表紙写真など(縮小済みJPEG)。
+    /// 旧版で保存された表紙写真。互換性のため残すが、現在のUIでは使用しない。
     @Attribute(.externalStorage) var photoData: Data?
-    /// グリッド上の並び順(ドラッグで並べ替え)。
+    /// 設定画面で指定する並び順。
     var sortOrder: Int
     var createdAt: Date
     /// 端末間の競合解決(Last-Write-Wins)に使う最終更新時刻。既定値で軽量マイグレーション可。
@@ -66,8 +66,32 @@ final class StudySession {
     }
 }
 
+extension StudySession {
+    /// 記録一覧で共通して使う順序。項目の種類に関係なく、全件を開始時刻の新しい順にする。
+    /// 同時刻でも同期の到着順で表示が揺れないよう、更新時刻とUUIDまで比較する。
+    static func newestFirst(_ lhs: StudySession, _ rhs: StudySession) -> Bool {
+        if lhs.date != rhs.date { return lhs.date > rhs.date }
+        if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
+        return lhs.uuid.uuidString > rhs.uuid.uuidString
+    }
+}
+
 /// 「学んだ日」の刻印。セッション保存時に呼び、その日の StudyDay を確実に1件にする。
 enum StudyDayStore {
+    /// 航海誌は、記憶が新しいうちに残す。当日と前日だけを書き換え可能にする。
+    /// UIだけでなく保存層で制限し、共有カードや軌跡から過去分を変更できないようにする。
+    static func canEditComment(
+        for date: Date,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Bool {
+        let selected = calendar.startOfDay(for: date)
+        let today = calendar.startOfDay(for: now)
+        guard selected <= today else { return false }
+        let age = calendar.dateComponents([.day], from: selected, to: today).day ?? Int.max
+        return age == 0 || age == 1
+    }
+
     static func markDay(_ date: Date, context: ModelContext) {
         let dayStart = Calendar.current.startOfDay(for: date)
         var descriptor = FetchDescriptor<StudyDay>(
@@ -87,18 +111,27 @@ enum StudyDayStore {
         day(for: date, context: context)?.note
     }
 
-    /// その日のひとことを書き換える。
+    /// その日の航海の感想を書き換える。当日と前日だけ保存できる。
     /// StudyDay の存在そのものが「学んだ日」を意味するので、記録の無い日には作らない
-    /// (ひとことのために休んだ日を学んだ日に変えてしまわないため)。
-    static func setComment(_ text: String?, for date: Date, context: ModelContext) {
-        guard let day = day(for: date, context: context) else { return }
+    /// (感想のために休んだ日を学んだ日に変えてしまわないため)。
+    @discardableResult
+    static func setComment(
+        _ text: String?,
+        for date: Date,
+        context: ModelContext,
+        now: Date = Date()
+    ) -> Bool {
+        guard canEditComment(for: date, now: now) else { return false }
+        guard let day = day(for: date, context: context) else { return false }
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let value = (trimmed?.isEmpty ?? true) ? nil : String(trimmed!.prefix(120))
-        guard day.note != value else { return }
+        // 一言カードの120字から、日記として十分に書ける1000文字へ拡張する。
+        let value = (trimmed?.isEmpty ?? true) ? nil : String(trimmed!.prefix(1_000))
+        guard day.note != value else { return false }
         day.note = value
         day.updatedAt = Date()
         try? context.save()
         Task { @MainActor in SyncService.shared.push(day) }
+        return true
     }
 
     private static func day(for date: Date, context: ModelContext) -> StudyDay? {
@@ -112,9 +145,11 @@ enum StudyDayStore {
 
     /// 今日すでに「学んだ日」の刻印があるか。通知のスケジュールで使う。
     static func recordedToday(context: ModelContext) -> Bool {
-        let dayStart = Calendar.current.startOfDay(for: Date())
-        var descriptor = FetchDescriptor<StudyDay>(
-            predicate: #Predicate { $0.date == dayStart }
+        let calendar = Calendar.current
+        let dayStart = calendar.startOfDay(for: Date())
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else { return false }
+        var descriptor = FetchDescriptor<StudySession>(
+            predicate: #Predicate { $0.date >= dayStart && $0.date < dayEnd }
         )
         descriptor.fetchLimit = 1
         return !((try? context.fetch(descriptor)) ?? []).isEmpty
@@ -137,7 +172,12 @@ enum StudyDayStore {
         let dayDescriptor = FetchDescriptor<StudyDay>(
             predicate: #Predicate { $0.date == dayStart }
         )
-        for day in (try? context.fetch(dayDescriptor)) ?? [] {
+        let matchingDays = (try? context.fetch(dayDescriptor)) ?? []
+        // 航海記録を消しても、航海誌に残した言葉までは消さない。
+        guard matchingDays.allSatisfy({
+            $0.note?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true
+        }) else { return }
+        for day in matchingDays {
             context.delete(day)
         }
         Task { @MainActor in SyncService.shared.deleteDay(dayStart) }

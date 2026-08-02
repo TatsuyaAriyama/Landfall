@@ -65,7 +65,14 @@ enum PlayerProfile {
 
     /// 表示名。未設定なら「船乗り」。
     static var displayName: String {
-        name.isEmpty ? String(localized: "Sailor") : name
+        name.isEmpty ? LF.text("Sailor") : name
+    }
+
+    static func reset() {
+        let defaults = UserDefaults.standard
+        for key in [nameKey, styleKey, symbolKey, resolveKey, sinceDayKey] {
+            defaults.removeObject(forKey: key)
+        }
     }
 
     /// 港(プライベート/パブリック共通)のメンバードキュメントに書くプロフィール一式。
@@ -167,6 +174,7 @@ struct ProfileEditorSheet: View {
     @AppStorage(PlayerProfile.styleKey) private var styleToken = TileStyle.midnight.rawValue
     @AppStorage(PlayerProfile.symbolKey) private var symbolToken = TileSymbol.phoenix.rawValue
     @AppStorage(PlayerProfile.resolveKey) private var resolve = ""
+    @State private var working = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -183,7 +191,7 @@ struct ProfileEditorSheet: View {
                 // プレビュー: 入力がそのままカードになる。
                 PlayerCardView(
                     name: name.trimmingCharacters(in: .whitespaces).isEmpty
-                        ? String(localized: "Sailor") : name,
+                        ? LF.text("Sailor") : name,
                     styleToken: styleToken,
                     symbolToken: symbolToken,
                     resolve: resolve,
@@ -282,14 +290,18 @@ struct ProfileEditorSheet: View {
                     .padding(.top, 12)
 
                 Button {
-                    // 上限はここでのみ適用(打鍵中に書き戻すとIME変換が壊れるため)。
-                    if resolve.count > 60 { resolve = String(resolve.prefix(60)) }
-                    // ローカルは@AppStorageで保存済み。港(プライベート/パブリック)にも反映して閉じる。
-                    RoomService.shared.pushProfileToAllRooms()
-                    PublicHarborService.shared.pushProfile()
-                    Haptics.success()
-                    onSaved()
-                    dismiss()
+                    guard !working else { return }
+                    Task {
+                        working = true
+                        // 上限はここでのみ適用(打鍵中に書き戻すとIME変換が壊れるため)。
+                        if resolve.count > 60 { resolve = String(resolve.prefix(60)) }
+                        // プライベート側の既存処理は変えず、パブリック側は書込み完了を待つ。
+                        RoomService.shared.pushProfileToAllRooms()
+                        await PublicHarborService.shared.syncProfile()
+                        Haptics.success()
+                        onSaved()
+                        dismiss()
+                    }
                 } label: {
                     Text("Save this card")
                         .font(LFFont.copy(17))
@@ -300,6 +312,8 @@ struct ProfileEditorSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .disabled(working)
+                .opacity(working ? 0.45 : 1)
                 .padding(.top, 32)
                 }
                 .padding(LFMetrics.cardPadding)

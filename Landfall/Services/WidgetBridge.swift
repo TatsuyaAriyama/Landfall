@@ -2,10 +2,9 @@ import Foundation
 import SwiftData
 import WidgetKit
 
-/// 本体アプリからウィジェットへ、今月の「学んだ/休んだ」日数を App Group 経由で受け渡す。
-/// 前景復帰や記録保存のたびに呼び、ウィジェットを更新する。
+/// 本体からWidget Extensionへ、統計・作業項目・航海の静止画をまとめて渡す。
 enum WidgetBridge {
-    static let appGroup = "group.com.tatsuyaariyama.Landfall"
+    static let appGroup = KeelMiraWidgetStore.appGroup
 
     @MainActor
     static func refresh(context: ModelContext) {
@@ -15,13 +14,30 @@ enum WidgetBridge {
         guard let year = comps.year, let month = comps.month else { return }
 
         let entries = (try? context.fetch(FetchDescriptor<StudyDay>())) ?? []
+        let sessions = (try? context.fetch(FetchDescriptor<StudySession>())) ?? []
+        let items = ((try? context.fetch(FetchDescriptor<StudyItem>())) ?? [])
+            .sorted { $0.sortOrder < $1.sortOrder }
         let studied = MonthStats.studiedDaySet(year: year, month: month, entries: entries, calendar: calendar)
-        let daysInMonth = calendar.range(of: .day, in: .month, for: now)?.count ?? 30
+        let elapsedDays = calendar.component(.day, from: now)
+        let todayMinutes = sessions
+            .filter { calendar.isDateInToday($0.date) }
+            .reduce(0) { $0 + $1.minutes }
 
-        let store = UserDefaults(suiteName: appGroup)
-        store?.set(month, forKey: "w_month")
-        store?.set(studied.count, forKey: "w_studied")
-        store?.set(daysInMonth - studied.count, forKey: "w_rested")
-        WidgetCenter.shared.reloadAllTimelines()
+        let store = KeelMiraWidgetStore.defaults
+        store.set(month, forKey: "w_month")
+        store.set(studied.count, forKey: "w_studied")
+        // 月の未来日を「休んだ日」に数えない。
+        store.set(max(0, elapsedDays - studied.count), forKey: "w_rested")
+        store.set(todayMinutes, forKey: KeelMiraWidgetStore.Key.todayMinutes)
+        KeelMiraWidgetStore.workItems = items.prefix(4).map {
+            KeelMiraWidgetItem(
+                id: $0.uuid.uuidString,
+                name: $0.name,
+                styleToken: $0.styleToken,
+                symbolToken: $0.symbolToken
+            )
+        }
+        WidgetVoyageStillRenderer.refreshIfNeeded()
+        WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
     }
 }

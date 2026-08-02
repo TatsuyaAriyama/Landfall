@@ -1,182 +1,585 @@
-import WidgetKit
+import AppIntents
 import SwiftUI
+import UIKit
+import WidgetKit
 
-// MARK: - 色(ウィジェットは自己完結。アプリのLFColorは共有しない)
+// MARK: - Widget palette
+
 private extension Color {
     init(h: UInt) {
-        self.init(.sRGB, red: Double((h >> 16) & 0xFF) / 255, green: Double((h >> 8) & 0xFF) / 255, blue: Double(h & 0xFF) / 255, opacity: 1)
+        self.init(
+            .sRGB,
+            red: Double((h >> 16) & 0xFF) / 255,
+            green: Double((h >> 8) & 0xFF) / 255,
+            blue: Double(h & 0xFF) / 255,
+            opacity: 1
+        )
     }
+
+    static let wNight = Color(h: 0x123830)
     static let wTeal = Color(h: 0x184A40)
     static let wSand = Color(h: 0xEADEBD)
-    static let wSun = Color(h: 0xFFD84D)
+    static let wCoral = Color(h: 0xF0997B)
+    static let wOrange = Color(h: 0xF5822A)
+    static let wSun = Color(h: 0xF3C065)
     static let wSea = Color(h: 0x5DCAA5)
 }
 
-private let appGroup = "group.com.tatsuyaariyama.Landfall"
-
-// MARK: - データ
+// MARK: - Timeline
 
 struct LandfallEntry: TimelineEntry {
     let date: Date
     let month: Int
     let studied: Int
     let rested: Int
+    let todayMinutes: Int
+    let items: [KeelMiraWidgetItem]
+    let timer: KeelMiraWidgetTimer
 }
 
 struct Provider: TimelineProvider {
-    private var store: UserDefaults? { UserDefaults(suiteName: appGroup) }
+    private var store: UserDefaults { KeelMiraWidgetStore.defaults }
 
     func placeholder(in context: Context) -> LandfallEntry {
-        LandfallEntry(date: Date(), month: 7, studied: 8, rested: 20)
+        LandfallEntry(
+            date: Date(),
+            month: 7,
+            studied: 8,
+            rested: 12,
+            todayMinutes: 42,
+            items: [
+                KeelMiraWidgetItem(id: "preview-reading", name: "読書", styleToken: "midnight", symbolToken: "book"),
+                KeelMiraWidgetItem(id: "preview-writing", name: "執筆", styleToken: "coral", symbolToken: "pen"),
+                KeelMiraWidgetItem(id: "preview-study", name: "勉強", styleToken: "seaGreen", symbolToken: "compass"),
+            ],
+            timer: KeelMiraWidgetTimer(
+                startedAt: Date().addingTimeInterval(-25 * 60).timeIntervalSince1970,
+                itemID: "preview-reading",
+                itemName: "読書",
+                breakSeconds: 0,
+                breakStartedAt: 0
+            )
+        )
     }
+
     func getSnapshot(in context: Context, completion: @escaping (LandfallEntry) -> Void) {
-        completion(currentEntry())
+        if context.isPreview {
+            completion(placeholder(in: context))
+        } else {
+            completion(currentEntry())
+        }
     }
+
     func getTimeline(in context: Context, completion: @escaping (Timeline<LandfallEntry>) -> Void) {
-        let next = Calendar.current.date(byAdding: .hour, value: 3, to: Date()) ?? Date().addingTimeInterval(3 * 3600)
-        completion(Timeline(entries: [currentEntry()], policy: .after(next)))
+        let now = Date()
+        let next: Date
+        if KeelMiraWidgetStore.timer.isActive {
+            // 時計自体はText(.timer)をシステムが進める。タイムラインは状態の再照合だけ。
+            next = now.addingTimeInterval(30 * 60)
+        } else {
+            next = Calendar.current.nextDate(
+                after: now,
+                matching: DateComponents(hour: 0, minute: 0),
+                matchingPolicy: .nextTime
+            ) ?? now.addingTimeInterval(3 * 60 * 60)
+        }
+        completion(Timeline(entries: [currentEntry(at: now)], policy: .after(next)))
     }
-    private func currentEntry() -> LandfallEntry {
-        let s = store
-        let month = s?.object(forKey: "w_month") as? Int ?? Calendar.current.component(.month, from: Date())
-        return LandfallEntry(date: Date(), month: month,
-                             studied: s?.integer(forKey: "w_studied") ?? 0,
-                             rested: s?.integer(forKey: "w_rested") ?? 0)
+
+    private func currentEntry(at date: Date = Date()) -> LandfallEntry {
+        LandfallEntry(
+            date: date,
+            month: store.object(forKey: "w_month") as? Int
+                ?? Calendar.current.component(.month, from: date),
+            studied: store.integer(forKey: "w_studied"),
+            rested: store.integer(forKey: "w_rested"),
+            todayMinutes: store.integer(forKey: KeelMiraWidgetStore.Key.todayMinutes),
+            items: KeelMiraWidgetStore.workItems,
+            timer: KeelMiraWidgetStore.timer
+        )
     }
 }
 
-// MARK: - View
+// MARK: - Root view
 
 struct LandfallWidgetView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.widgetRenderingMode) private var renderingMode
     let entry: LandfallEntry
 
     private var isAccessory: Bool {
-        family == .accessoryCircular || family == .accessoryRectangular || family == .accessoryInline
+        family == .accessoryCircular
+            || family == .accessoryRectangular
+            || family == .accessoryInline
     }
 
     var body: some View {
         content
-            // ロック画面(accessory)はモノクロ/ヴィブラント描画なので固定色は効かない。
-            // 地は clear にし、ホーム画面(system)だけティール地にする。
             .containerBackground(for: .widget) {
-                isAccessory ? Color.clear : Color.wTeal
+                if isAccessory {
+                    Color.clear
+                } else {
+                    WidgetVoyageStill(renderingMode: renderingMode)
+                }
             }
+            .widgetURL(URL(string: "keelmira://home"))
     }
 
     @ViewBuilder
     private var content: some View {
         switch family {
-        case .accessoryCircular: circular
-        case .accessoryRectangular: rectangular
-        case .accessoryInline: inline
-        case .systemMedium: medium
-        default: small
+        case .accessoryCircular:
+            circular
+        case .accessoryRectangular:
+            rectangular
+        case .accessoryInline:
+            inline
+        case .systemMedium:
+            medium
+        default:
+            small
         }
     }
 
-    // MARK: - ロック画面(accessory)
-
-    /// 円形。学と休を対等に二段で。比率ゲージにはしない(学>休 の含意を作らない)。
-    private var circular: some View {
-        ZStack {
-            AccessoryWidgetBackground()
-            VStack(spacing: 0) {
-                accessoryCount("学", entry.studied)
-                accessoryCount("休", entry.rested)
-            }
-        }
-    }
-
-    private func accessoryCount(_ label: String, _ n: Int) -> some View {
-        HStack(spacing: 2) {
-            Text(label).font(.system(size: 11))
-            Text("\(n)").font(.system(size: 16, weight: .medium)).monospacedDigit()
-        }
-    }
-
-    /// 横長。月・学/休・やめた0。数字は同じ大きさで並べる。
-    private var rectangular: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("\(entry.month)月のあなた")
-                .font(.system(size: 12, weight: .medium))
-                .widgetAccentable()
-            HStack(spacing: 12) {
-                accessoryDays("学", entry.studied)
-                accessoryDays("休", entry.rested)
-            }
-            Text("やめた回数 0").font(.system(size: 11)).opacity(0.75)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func accessoryDays(_ label: String, _ n: Int) -> some View {
-        HStack(spacing: 2) {
-            Text(label).font(.system(size: 12))
-            Text("\(n)").font(.system(size: 18, weight: .medium)).monospacedDigit()
-            Text("日").font(.system(size: 11))
-        }
-    }
-
-    /// 一行(時計の隣)。督促ではなく静かな事実として。
-    private var inline: some View {
-        Label {
-            Text("学\(entry.studied) 休\(entry.rested)・やめた0")
-        } icon: {
-            Image(systemName: "sailboat")
-        }
-    }
+    // MARK: Home Screen
 
     private var small: some View {
+        Group {
+            if entry.timer.isActive {
+                activeSmall
+            } else {
+                idleSmall
+            }
+        }
+        .foregroundStyle(Color.wSand)
+    }
+
+    private var activeSmall: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("\(entry.month)月のあなた")
-                .font(.system(size: 13, weight: .medium)).foregroundStyle(Color.wSand.opacity(0.9))
-            Spacer(minLength: 0)
-            countRow(entry.studied, "学んだ", .wSun)
-            Spacer().frame(height: 8)
-            countRow(entry.rested, "休んだ", .wSea)
-            Spacer(minLength: 0)
-            Text("やめた回数 0").font(.system(size: 12, weight: .regular)).foregroundStyle(Color.wSand.opacity(0.7))
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(entry.timer.isResting ? Color.wSun : Color.wSea)
+                    .frame(width: 7, height: 7)
+                Text(entry.timer.isResting ? "停泊中" : "航海中")
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(1.1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Color.wSand.opacity(0.76))
+
+            Text(entry.timer.itemName.isEmpty ? "作業中" : entry.timer.itemName)
+                .font(.system(size: 15, weight: .semibold))
+                .lineLimit(1)
+                .padding(.top, 7)
+
+            timerText(fontSize: 29)
+                .padding(.top, 2)
+
+            Spacer(minLength: 5)
+
+            HStack(spacing: 8) {
+                Button(intent: ToggleKeelMiraBreakIntent()) {
+                    Image(systemName: entry.timer.isResting ? "play.fill" : "pause.fill")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .accessibilityLabel(entry.timer.isResting ? "航海を再開" : "休憩")
+
+                Button(intent: MakeKeelMiraLandfallIntent()) {
+                    Image(systemName: "flag.checkered")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .accessibilityLabel("着岸")
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .tint(Color.wSand)
+            .buttonStyle(WidgetActionButtonStyle())
+            .frame(height: 34)
+        }
+    }
+
+    private var idleSmall: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(verbatim: "KeelMira")
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(Color.wSand.opacity(0.72))
+
+            Spacer(minLength: 5)
+
+            Text("今日の航海")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.wSand.opacity(0.7))
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text("\(entry.todayMinutes)")
+                    .font(.system(size: 31, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                Text("分")
+                    .font(.system(size: 12, weight: .medium))
+            }
+
+            Spacer(minLength: 6)
+
+            if let item = preferredItem {
+                Button(intent: StartKeelMiraVoyageIntent(item: item)) {
+                    HStack(spacing: 6) {
+                        WidgetItemSymbol(token: item.symbolToken)
+                            .frame(width: 17, height: 17)
+                        Text(item.name)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Image(systemName: "wind")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .padding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, minHeight: 36)
+                }
+                .tint(Color.wSand)
+                .buttonStyle(WidgetActionButtonStyle())
+                .accessibilityLabel("\(item.name)で出航")
+            } else {
+                Text("アプリで作業項目を追加")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.wSand.opacity(0.72))
+            }
         }
     }
 
     private var medium: some View {
-        HStack(spacing: 22) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("\(entry.month)月のあなた")
-                    .font(.system(size: 14, weight: .medium)).foregroundStyle(Color.wSand.opacity(0.9))
-                countRow(entry.studied, "学んだ", .wSun)
-                countRow(entry.rested, "休んだ", .wSea)
-                Text("やめた回数 0").font(.system(size: 12)).foregroundStyle(Color.wSand.opacity(0.7))
+        Group {
+            if entry.timer.isActive {
+                activeMedium
+            } else {
+                idleMedium
             }
-            Spacer(minLength: 0)
-            Text("休んでも、\nあなたはここにいる。")
-                .font(.system(size: 15, weight: .medium)).foregroundStyle(Color.wSand)
-                .multilineTextAlignment(.trailing).fixedSize()
+        }
+        .foregroundStyle(Color.wSand)
+    }
+
+    private var activeMedium: some View {
+        HStack(spacing: 18) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 7) {
+                    Circle()
+                        .fill(entry.timer.isResting ? Color.wSun : Color.wSea)
+                        .frame(width: 8, height: 8)
+                    Text(entry.timer.isResting ? "停泊中" : "航海中")
+                        .font(.system(size: 11, weight: .semibold))
+                        .tracking(1.2)
+                }
+                .foregroundStyle(Color.wSand.opacity(0.75))
+
+                Text(entry.timer.itemName.isEmpty ? "作業中" : entry.timer.itemName)
+                    .font(.system(size: 17, weight: .semibold))
+                    .lineLimit(1)
+                    .padding(.top, 8)
+
+                timerText(fontSize: 36)
+                    .padding(.top, 1)
+
+                Text("時間だけが、静かに進む。")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Color.wSand.opacity(0.64))
+                    .padding(.top, 4)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(spacing: 8) {
+                Button(intent: ToggleKeelMiraBreakIntent()) {
+                    Label(
+                        entry.timer.isResting ? "再開" : "休憩",
+                        systemImage: entry.timer.isResting ? "play.fill" : "pause.fill"
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+
+                Button(intent: MakeKeelMiraLandfallIntent()) {
+                    Label("着岸", systemImage: "flag.checkered")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .tint(Color.wSand)
+            .buttonStyle(WidgetActionButtonStyle())
+            .frame(width: 94)
         }
     }
 
-    private func countRow(_ n: Int, _ label: String, _ color: Color) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text("\(n)").font(.system(size: 34, weight: .medium)).foregroundStyle(color).monospacedDigit()
-            Text("日").font(.system(size: 14, weight: .regular)).foregroundStyle(color)
-            Text(label).font(.system(size: 15, weight: .regular)).foregroundStyle(.white)
+    private var idleMedium: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(verbatim: "KeelMira")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(Color.wSand.opacity(0.72))
+                Spacer(minLength: 4)
+                Text("ウィジェットから出航")
+                    .font(.system(size: 19, weight: .semibold))
+                    .lineLimit(2)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("今日 \(entry.todayMinutes)")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("分")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .foregroundStyle(Color.wSand.opacity(0.68))
+                .padding(.top, 7)
+            }
+            .frame(width: 118, alignment: .leading)
+
+            if entry.items.isEmpty {
+                Text("アプリで作業項目を追加してください")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.wSand.opacity(0.72))
+                    .frame(maxWidth: .infinity)
+            } else {
+                LazyVGrid(
+                    columns: [GridItem(.flexible(), spacing: 7), GridItem(.flexible(), spacing: 7)],
+                    spacing: 7
+                ) {
+                    ForEach(entry.items.prefix(4)) { item in
+                        Button(intent: StartKeelMiraVoyageIntent(item: item)) {
+                            HStack(spacing: 6) {
+                                WidgetItemSymbol(token: item.symbolToken)
+                                    .frame(width: 16, height: 16)
+                                Text(item.name)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 9)
+                            .frame(maxWidth: .infinity, minHeight: 42)
+                        }
+                        .tint(Color.wSand)
+                        .buttonStyle(WidgetActionButtonStyle(accent: WidgetItemColor.color(item.styleToken)))
+                        .accessibilityLabel("\(item.name)で出航")
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func timerText(fontSize: CGFloat) -> some View {
+        if entry.timer.isResting {
+            Text(WidgetClock.text(entry.timer.elapsedSeconds(at: entry.date)))
+                .font(.system(size: fontSize, weight: .medium, design: .rounded))
+                .monospacedDigit()
+        } else {
+            Text(entry.timer.displayAnchor(at: entry.date), style: .timer)
+                .font(.system(size: fontSize, weight: .medium, design: .rounded))
+                .monospacedDigit()
+        }
+    }
+
+    private var preferredItem: KeelMiraWidgetItem? {
+        let last = KeelMiraWidgetStore.defaults.string(forKey: KeelMiraWidgetStore.Key.lastItemID)
+        return entry.items.first(where: { $0.id == last }) ?? entry.items.first
+    }
+
+    // MARK: Lock Screen
+
+    private var circular: some View {
+        ZStack {
+            AccessoryWidgetBackground()
+            if entry.timer.isActive {
+                VStack(spacing: 0) {
+                    Image(systemName: entry.timer.isResting ? "anchor.fill" : "sailboat.fill")
+                        .font(.system(size: 12, weight: .medium))
+                    Text(WidgetClock.compact(entry.timer.elapsedSeconds(at: entry.date)))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                }
+            } else {
+                VStack(spacing: 0) {
+                    Image(systemName: "sailboat.fill")
+                    Text("\(entry.todayMinutes)分")
+                        .font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit()
+                }
+            }
+        }
+        .widgetAccentable()
+    }
+
+    private var rectangular: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if entry.timer.isActive {
+                Text(entry.timer.isResting ? "停泊中" : "航海中")
+                    .font(.system(size: 11, weight: .semibold))
+                    .widgetAccentable()
+                Text(entry.timer.itemName)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                Text(WidgetClock.text(entry.timer.elapsedSeconds(at: entry.date)))
+                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+            } else {
+                Text("今日の航海")
+                    .font(.system(size: 11, weight: .semibold))
+                    .widgetAccentable()
+                Text("\(entry.todayMinutes)分")
+                    .font(.system(size: 20, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                Text("いつでも出航できます")
+                    .font(.system(size: 10, weight: .regular))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var inline: some View {
+        if entry.timer.isActive {
+            Label(
+                "\(entry.timer.itemName)・\(WidgetClock.text(entry.timer.elapsedSeconds(at: entry.date)))",
+                systemImage: entry.timer.isResting ? "anchor.fill" : "sailboat.fill"
+            )
+        } else {
+            Label("今日 \(entry.todayMinutes)分", systemImage: "sailboat")
         }
     }
 }
 
-// MARK: - Widget
+// MARK: - Background and components
+
+private struct WidgetVoyageStill: View {
+    let renderingMode: WidgetRenderingMode
+
+    var body: some View {
+        ZStack {
+            if renderingMode == .fullColor, let image = voyageImage {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                WidgetFallbackSea()
+            }
+
+            LinearGradient(
+                colors: [
+                    Color.wNight.opacity(0.12),
+                    Color.wNight.opacity(0.34),
+                    Color.black.opacity(0.66),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+    }
+
+    private var voyageImage: UIImage? {
+        guard let url = KeelMiraWidgetStore.voyageImageURL else { return nil }
+        return UIImage(contentsOfFile: url.path)
+    }
+}
+
+private struct WidgetFallbackSea: View {
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                LinearGradient(
+                    colors: [.wNight, Color(h: 0x1E5348)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                Circle()
+                    .fill(Color.wSand.opacity(0.78))
+                    .frame(width: 34, height: 34)
+                    .position(x: geometry.size.width * 0.76, y: geometry.size.height * 0.22)
+                Image(systemName: "sailboat.fill")
+                    .font(.system(size: min(geometry.size.width, geometry.size.height) * 0.28))
+                    .foregroundStyle(Color.wSand.opacity(0.56))
+                    .position(x: geometry.size.width * 0.67, y: geometry.size.height * 0.63)
+            }
+        }
+    }
+}
+
+private struct WidgetActionButtonStyle: ButtonStyle {
+    var accent: Color = Color.white.opacity(0.11)
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(accent, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(Color.wSand.opacity(0.18), lineWidth: 0.8)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+    }
+}
+
+private struct WidgetItemSymbol: View {
+    let token: String
+
+    var body: some View {
+        Image(systemName: systemName)
+            .resizable()
+            .scaledToFit()
+    }
+
+    private var systemName: String {
+        switch token {
+        case "anchor": "anchor"
+        case "wheel": "steeringwheel"
+        case "lighthouse": "light.beacon.max.fill"
+        case "island": "mountain.2.fill"
+        case "phoenix": "bird.fill"
+        case "book": "book.closed.fill"
+        case "pen": "pencil.line"
+        case "sailboat": "sailboat.fill"
+        case "attire": "flag.fill"
+        default: "location.north.fill"
+        }
+    }
+}
+
+private enum WidgetItemColor {
+    static func color(_ token: String) -> Color {
+        switch token {
+        case "coral": Color.wCoral.opacity(0.32)
+        case "seaGreen": Color.wSea.opacity(0.27)
+        case "sunYellow": Color.wSun.opacity(0.28)
+        case "violet": Color(h: 0x7067A8).opacity(0.32)
+        default: Color.white.opacity(0.11)
+        }
+    }
+}
+
+private enum WidgetClock {
+    static func text(_ seconds: Int) -> String {
+        let value = max(0, seconds)
+        let hours = value / 3_600
+        let minutes = (value % 3_600) / 60
+        let remainder = value % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
+            : String(format: "%02d:%02d", minutes, remainder)
+    }
+
+    static func compact(_ seconds: Int) -> String {
+        let value = max(0, seconds)
+        if value >= 3_600 { return String(format: "%d:%02d", value / 3_600, (value / 60) % 60) }
+        return String(format: "%d:%02d", value / 60, value % 60)
+    }
+}
+
+// MARK: - Configuration
 
 struct LandfallWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "LandfallWidget", provider: Provider()) { entry in
+        StaticConfiguration(kind: KeelMiraWidgetStore.widgetKind, provider: Provider()) { entry in
             LandfallWidgetView(entry: entry)
         }
-        .configurationDisplayName("Landfall")
-        .description("今月の学んだ日・休んだ日を同じ大きさで。")
+        .configurationDisplayName("KeelMira 航海タイマー")
+        .description("静止した航海の景色から、出航・休憩・着岸を操作できます。")
         .supportedFamilies([
-            .systemSmall, .systemMedium,
-            .accessoryCircular, .accessoryRectangular, .accessoryInline,
+            .systemSmall,
+            .systemMedium,
+            .accessoryCircular,
+            .accessoryRectangular,
+            .accessoryInline,
         ])
     }
 }

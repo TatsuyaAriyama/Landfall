@@ -11,7 +11,6 @@ struct DayLog {
         let name: String
         let styleToken: String
         let symbolToken: String
-        let photoData: Data?
         let minutes: Int
     }
 
@@ -53,17 +52,15 @@ struct DayLog {
                 byKey[key] = Entry(
                     id: existing.id, name: existing.name,
                     styleToken: existing.styleToken, symbolToken: existing.symbolToken,
-                    photoData: existing.photoData,
                     minutes: existing.minutes + session.minutes
                 )
             } else {
                 order.append(key)
                 byKey[key] = Entry(
                     id: key,
-                    name: item?.name ?? String(localized: "No item"),
+                    name: item?.name ?? LF.text("No item"),
                     styleToken: item?.styleToken ?? TileStyle.ink.rawValue,
                     symbolToken: item?.symbolToken ?? TileSymbol.compass.rawValue,
-                    photoData: item?.photoData,
                     minutes: session.minutes
                 )
             }
