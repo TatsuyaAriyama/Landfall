@@ -11,8 +11,8 @@ extension Notification.Name {
 enum HomeIslandMetrics {
     static let foundationResourceName = "home_island_foundation"
     static let surfaceY: Float = 0.62
-    static let buildableRadiusX: Float = 5.55
-    static let buildableRadiusZ: Float = 3.72
+    static let buildableRadiusX: Float = 11.10
+    static let buildableRadiusZ: Float = 7.44
     static let maximumPlacements = 120
 
     static func clampedPosition(
@@ -89,6 +89,13 @@ enum HomeIslandAssetCatalog {
 
     static func asset(id: String) -> HomeIslandAsset? {
         approved.first { $0.id == id }
+    }
+
+    static func footprintMargin(assetID: String, scale: Float) -> Float {
+        guard let asset = asset(id: assetID) else { return 0 }
+        return asset.footprintMargin
+            * max(scale, 0.05)
+            / max(asset.defaultScale, 0.05)
     }
 }
 
@@ -189,7 +196,11 @@ enum HomeIslandPersistence {
             .prefix(HomeIslandMetrics.maximumPlacements)
             .map { placement in
                 var copy = placement
-                let margin = HomeIslandAssetCatalog.asset(id: copy.assetID)?.footprintMargin ?? 0
+                copy.transform.scale = min(2, max(0.25, copy.transform.scale))
+                let margin = HomeIslandAssetCatalog.footprintMargin(
+                    assetID: copy.assetID,
+                    scale: copy.transform.scale
+                )
                 let position = HomeIslandMetrics.clampedPosition(
                     x: copy.transform.x,
                     z: copy.transform.z,
@@ -197,7 +208,6 @@ enum HomeIslandPersistence {
                 )
                 copy.transform.x = position.x
                 copy.transform.z = position.z
-                copy.transform.scale = min(2, max(0.25, copy.transform.scale))
                 return copy
             }
     }
@@ -247,11 +257,19 @@ enum HomeIslandPersistence {
 
 @MainActor
 final class HomeIslandStore: ObservableObject {
+    private struct EditState {
+        var placements: [HomeIslandPlacement]
+        var selectedID: UUID?
+    }
+
     @Published private(set) var placements: [HomeIslandPlacement]
     @Published private(set) var selectedID: UUID?
     @Published private(set) var lastSavedAt: Date?
     @Published private(set) var lastSaveSucceeded = true
     @Published private(set) var lastSaveError: String?
+
+    private var undoStack: [EditState] = []
+    private let maximumUndoDepth = 60
 
     let ownerKey: String
 
@@ -268,6 +286,7 @@ final class HomeIslandStore: ObservableObject {
     }
 
     var canAdd: Bool { placements.count < HomeIslandMetrics.maximumPlacements }
+    var canUndo: Bool { !undoStack.isEmpty }
 
     func select(_ id: UUID?) {
         selectedID = id.flatMap { candidate in
@@ -280,6 +299,7 @@ final class HomeIslandStore: ObservableObject {
         guard canAdd,
               let asset = HomeIslandAssetCatalog.asset(id: assetID)
         else { return nil }
+        let previous = editState
         let position = HomeIslandMetrics.clampedPosition(
             x: x,
             z: z,
@@ -297,7 +317,7 @@ final class HomeIslandStore: ObservableObject {
         )
         placements.append(placement)
         selectedID = placement.id
-        save()
+        finishEdit(from: previous)
         return placement.id
     }
 
@@ -305,7 +325,11 @@ final class HomeIslandStore: ObservableObject {
         guard let selectedID,
               let index = placements.firstIndex(where: { $0.id == selectedID })
         else { return }
-        let margin = HomeIslandAssetCatalog.asset(id: placements[index].assetID)?.footprintMargin ?? 0
+        let previous = editState
+        let margin = HomeIslandAssetCatalog.footprintMargin(
+            assetID: placements[index].assetID,
+            scale: placements[index].transform.scale
+        )
         let position = HomeIslandMetrics.clampedPosition(
             x: x,
             z: z,
@@ -313,15 +337,37 @@ final class HomeIslandStore: ObservableObject {
         )
         placements[index].transform.x = position.x
         placements[index].transform.z = position.z
-        save()
+        finishEdit(from: previous)
     }
 
     func rotateSelected(by radians: Float = .pi / 4) {
         guard let selectedID,
               let index = placements.firstIndex(where: { $0.id == selectedID })
         else { return }
+        let previous = editState
         placements[index].transform.yaw += radians
-        save()
+        finishEdit(from: previous)
+    }
+
+    func resizeSelected(by delta: Float) {
+        guard let selectedID,
+              let index = placements.firstIndex(where: { $0.id == selectedID })
+        else { return }
+        let previous = editState
+        let scale = min(2, max(0.25, placements[index].transform.scale + delta))
+        placements[index].transform.scale = scale
+        let margin = HomeIslandAssetCatalog.footprintMargin(
+            assetID: placements[index].assetID,
+            scale: scale
+        )
+        let position = HomeIslandMetrics.clampedPosition(
+            x: placements[index].transform.x,
+            z: placements[index].transform.z,
+            footprintMargin: margin
+        )
+        placements[index].transform.x = position.x
+        placements[index].transform.z = position.z
+        finishEdit(from: previous)
     }
 
     @discardableResult
@@ -329,9 +375,13 @@ final class HomeIslandStore: ObservableObject {
         guard canAdd,
               let selected = selectedPlacement
         else { return nil }
+        let previous = editState
         var copy = selected
         copy.id = UUID()
-        let margin = HomeIslandAssetCatalog.asset(id: selected.assetID)?.footprintMargin ?? 0
+        let margin = HomeIslandAssetCatalog.footprintMargin(
+            assetID: selected.assetID,
+            scale: selected.transform.scale
+        )
         let position = HomeIslandMetrics.clampedPosition(
             x: selected.transform.x + 0.62,
             z: selected.transform.z + 0.42,
@@ -342,14 +392,37 @@ final class HomeIslandStore: ObservableObject {
         copy.transform.yaw += .pi / 8
         placements.append(copy)
         selectedID = copy.id
-        save()
+        finishEdit(from: previous)
         return copy.id
     }
 
     func deleteSelected() {
         guard let selectedID else { return }
+        let previous = editState
         placements.removeAll { $0.id == selectedID }
         self.selectedID = nil
+        finishEdit(from: previous)
+    }
+
+    func undo() {
+        guard let previous = undoStack.popLast() else { return }
+        placements = previous.placements
+        selectedID = previous.selectedID.flatMap { restoredID in
+            placements.contains(where: { $0.id == restoredID }) ? restoredID : nil
+        }
+        save()
+    }
+
+    private var editState: EditState {
+        EditState(placements: placements, selectedID: selectedID)
+    }
+
+    private func finishEdit(from previous: EditState) {
+        guard placements != previous.placements || selectedID != previous.selectedID else { return }
+        undoStack.append(previous)
+        if undoStack.count > maximumUndoDepth {
+            undoStack.removeFirst(undoStack.count - maximumUndoDepth)
+        }
         save()
     }
 

@@ -43,10 +43,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private weak var cameraTarget: SCNNode?
         private weak var seaMaterial: SCNMaterial?
         private var selectedOutline: SCNNode?
-        private var azimuth: Float = -0.42
-        private var elevation: Float = 0.62
-        private var radius: Float = 15.4
-        private var previousPan = CGPoint.zero
+        private var azimuth: Float = 0.72
+        private var elevation: Float = 0.42
+        private var radius: Float = 30.8
+        private var initialAzimuth: Float = 0
+        private var initialElevation: Float = 0
+        private var initialRadius: Float = 0
+        private var initialCameraTarget = SCNVector3Zero
+        private var pinchAnchorWorldPoint: SCNVector3?
         private var renderedResetToken = 0
         private var startTime: TimeInterval?
 
@@ -67,12 +71,31 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
             pan.minimumNumberOfTouches = 1
             pan.maximumNumberOfTouches = 1
+            pan.allowedScrollTypesMask = [.continuous, .discrete]
             pan.delegate = self
             view.addGestureRecognizer(pan)
+
+            let twoFingerPan = UIPanGestureRecognizer(
+                target: self,
+                action: #selector(handleTwoFingerPan(_:))
+            )
+            twoFingerPan.minimumNumberOfTouches = 2
+            twoFingerPan.maximumNumberOfTouches = 2
+            twoFingerPan.delegate = self
+            view.addGestureRecognizer(twoFingerPan)
 
             let pinch = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
             pinch.delegate = self
             view.addGestureRecognizer(pinch)
+
+            let longPress = UILongPressGestureRecognizer(
+                target: self,
+                action: #selector(handleLongPress(_:))
+            )
+            longPress.minimumPressDuration = 0.42
+            longPress.allowableMovement = 12
+            longPress.delegate = self
+            view.addGestureRecognizer(longPress)
 
             let reset = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
             reset.numberOfTapsRequired = 2
@@ -144,8 +167,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 scene.rootNode.addChildNode(foundation)
             }
 
-            let foamGeometry = SCNTorus(ringRadius: 6.22, pipeRadius: 0.075)
-            foamGeometry.ringSegmentCount = 96
+            let foamGeometry = SCNTorus(ringRadius: 12.44, pipeRadius: 0.095)
+            foamGeometry.ringSegmentCount = 128
             foamGeometry.pipeSegmentCount = 7
             let foam = SCNMaterial()
             foam.lightingModel = .constant
@@ -207,7 +230,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             // view crops a wide island even though the camera is far enough away.
             cameraComponent.projectionDirection = .horizontal
             cameraComponent.zNear = 0.08
-            cameraComponent.zFar = 180
+            cameraComponent.zFar = 1_500
             cameraComponent.wantsHDR = true
             cameraComponent.exposureOffset = -0.04
             cameraComponent.contrast = 0.08
@@ -343,27 +366,111 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
             guard let view else { return }
+            view.becomeFirstResponder()
+            if recognizer.numberOfTouches == 0 {
+                handlePointerScroll(recognizer)
+                return
+            }
             let translation = recognizer.translation(in: view)
             switch recognizer.state {
             case .began:
-                previousPan = translation
+                initialAzimuth = azimuth
+                initialElevation = elevation
             case .changed:
-                let dx = Float(translation.x - previousPan.x)
-                let dy = Float(translation.y - previousPan.y)
-                previousPan = translation
-                azimuth -= dx * 0.0065
-                elevation = min(1.16, max(0.28, elevation + dy * 0.0048))
+                azimuth = initialAzimuth - Float(translation.x) * 0.0064
+                elevation = initialElevation + Float(translation.y) * 0.0052
+                updateCamera()
+            case .ended:
+                let velocity = recognizer.velocity(in: view)
+                azimuth -= Float(velocity.x) * 0.00010
+                elevation += Float(velocity.y) * 0.000075
+                updateCamera(animated: 0.18)
+            default:
+                break
+            }
+        }
+
+        @objc private func handleTwoFingerPan(_ recognizer: UIPanGestureRecognizer) {
+            guard let view, let target = cameraTarget else { return }
+            let translation = recognizer.translation(in: view)
+            switch recognizer.state {
+            case .began:
+                initialCameraTarget = target.position
+            case .changed:
+                let sensitivity = max(radius, 2) * 0.00125
+                let horizontal = Float(translation.x) * sensitivity
+                let vertical = Float(translation.y) * sensitivity
+                let right = SCNVector3(cos(azimuth), 0, -sin(azimuth))
+                let up = SCNVector3(
+                    -sin(azimuth) * sin(elevation),
+                    cos(elevation),
+                    -cos(azimuth) * sin(elevation)
+                )
+                target.position = SCNVector3(
+                    initialCameraTarget.x - right.x * horizontal + up.x * vertical,
+                    initialCameraTarget.y - right.y * horizontal + up.y * vertical,
+                    initialCameraTarget.z - right.z * horizontal + up.z * vertical
+                )
                 updateCamera()
             default:
-                previousPan = .zero
+                break
             }
         }
 
         @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
-            guard recognizer.state == .changed else { return }
-            radius = min(25, max(8.8, radius / Float(recognizer.scale)))
-            recognizer.scale = 1
-            updateCamera()
+            guard let view, let target = cameraTarget else { return }
+            switch recognizer.state {
+            case .began:
+                initialRadius = radius
+                initialCameraTarget = target.position
+                pinchAnchorWorldPoint = groundPoint(at: recognizer.location(in: view))
+            case .changed:
+                radius = initialRadius / pow(Float(recognizer.scale), 0.86)
+                if let anchor = pinchAnchorWorldPoint {
+                    let focusStrength = min(
+                        max(1 - radius / max(initialRadius, 0.001), 0),
+                        0.78
+                    )
+                    target.position = SCNVector3(
+                        initialCameraTarget.x + (anchor.x - initialCameraTarget.x) * focusStrength,
+                        initialCameraTarget.y + (anchor.y - initialCameraTarget.y) * focusStrength,
+                        initialCameraTarget.z + (anchor.z - initialCameraTarget.z) * focusStrength
+                    )
+                }
+                updateCamera()
+            case .ended, .cancelled, .failed:
+                pinchAnchorWorldPoint = nil
+                updateCamera(animated: 0.10)
+            default:
+                break
+            }
+        }
+
+        @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
+            guard recognizer.state == .began,
+                  let view,
+                  let point = groundPoint(at: recognizer.location(in: view)),
+                  let target = cameraTarget
+            else { return }
+            target.position = point
+            updateCamera(animated: 0.24)
+            Haptics.tap(.medium)
+        }
+
+        private func handlePointerScroll(_ recognizer: UIPanGestureRecognizer) {
+            guard let view else { return }
+            let translation = recognizer.translation(in: view)
+            switch recognizer.state {
+            case .began:
+                initialRadius = radius
+            case .changed:
+                radius = initialRadius * exp(Float(translation.y) * 0.006)
+                updateCamera()
+            case .ended, .cancelled, .failed:
+                updateCamera(animated: 0.10)
+            default:
+                break
+            }
         }
 
         @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
@@ -372,9 +479,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func resetCamera(animated: Bool) {
-            azimuth = -0.42
-            elevation = 0.62
-            radius = 15.4
+            azimuth = nearestEquivalentAzimuth(to: 0.72)
+            elevation = 0.42
+            radius = 30.8
+            cameraTarget?.position = SCNVector3(0, 0.34, 0)
             guard animated else {
                 updateCamera()
                 return
@@ -386,16 +494,45 @@ struct HomeIslandSceneView: UIViewRepresentable {
             SCNTransaction.commit()
         }
 
-        private func updateCamera() {
+        private func updateCamera(animated duration: TimeInterval = 0) {
+            constrainCamera()
             guard let camera, let target = cameraTarget?.position else { return }
+            camera.camera?.zNear = Double(max(0.012, radius * 0.002))
+            camera.camera?.zFar = Double(max(1_500, radius * 8))
+            if duration > 0 {
+                SCNTransaction.begin()
+                SCNTransaction.animationDuration = UIAccessibility.isReduceMotionEnabled ? 0 : duration
+                SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            }
             let horizontal = cos(elevation) * radius
             camera.position = SCNVector3(
                 target.x + cos(azimuth) * horizontal,
                 target.y + sin(elevation) * radius,
                 target.z + sin(azimuth) * horizontal
             )
-            camera.look(at: target)
+            camera.look(
+                at: target,
+                up: SCNVector3(0, 1, 0),
+                localFront: SCNVector3(0, 0, -1)
+            )
+            if duration > 0 { SCNTransaction.commit() }
             view?.setNeedsDisplay()
+        }
+
+        private func constrainCamera() {
+            if !azimuth.isFinite { azimuth = 0.72 }
+            elevation = min(max(elevation, 0.08), 1.28)
+            radius = min(max(radius, 1.4), 420)
+            guard let target = cameraTarget else { return }
+            target.position.x = min(max(target.position.x, -64), 64)
+            target.position.y = min(max(target.position.y, -12), 96)
+            target.position.z = min(max(target.position.z, -64), 64)
+        }
+
+        private func nearestEquivalentAzimuth(to target: Float) -> Float {
+            let fullTurn = Float.pi * 2
+            let turns = round((azimuth - target) / fullTurn)
+            return target + turns * fullTurn
         }
 
         func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {

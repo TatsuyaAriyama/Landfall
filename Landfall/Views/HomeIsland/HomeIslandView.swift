@@ -15,6 +15,7 @@ struct HomeIslandView: View {
     @StateObject private var store: HomeIslandStore
     @State private var placementAssetID: String?
     @State private var movingSelection = false
+    @State private var showingSizeControls = false
     @State private var cameraResetToken = 0
 
     private let assets = HomeIslandAssetCatalog.available()
@@ -40,10 +41,16 @@ struct HomeIslandView: View {
                     .padding(.top, 10)
                 Spacer(minLength: 84)
                 if store.selectedPlacement != nil, placementAssetID == nil {
-                    selectionActions
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 9)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    VStack(spacing: 7) {
+                        if showingSizeControls {
+                            sizeControls
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+                        selectionActions
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 9)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
                 assetShelf
             }
@@ -52,7 +59,13 @@ struct HomeIslandView: View {
         .animation(.easeOut(duration: 0.18), value: store.selectedID)
         .animation(.easeOut(duration: 0.18), value: placementAssetID)
         .onChange(of: placementAssetID) { _, value in
-            if value != nil { movingSelection = false }
+            if value != nil {
+                movingSelection = false
+                showingSizeControls = false
+            }
+        }
+        .onChange(of: store.selectedID) { _, value in
+            if value == nil { showingSizeControls = false }
         }
     }
 
@@ -98,6 +111,21 @@ struct HomeIslandView: View {
                     .accessibilityLabel(Text(store.lastSaveSucceeded ? "Saved" : "Could not save"))
 
                 Button {
+                    store.undo()
+                    movingSelection = false
+                    showingSizeControls = false
+                    Haptics.tap(.light)
+                } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white.opacity(store.canUndo ? 1 : 0.30))
+                        .frame(width: 36, height: 40)
+                }
+                .buttonStyle(LFPressableButtonStyle())
+                .disabled(!store.canUndo)
+                .accessibilityLabel(Text("Undo"))
+
+                Button {
                     cameraResetToken &+= 1
                     Haptics.tap(.light)
                 } label: {
@@ -129,7 +157,11 @@ struct HomeIslandView: View {
                 text: LF.format("Tap the sand to place %@", asset.title),
                 actionTitle: String(localized: "Done")
             ) {
+                let recentlyPlacedID = store.selectedID
                 self.placementAssetID = nil
+                DispatchQueue.main.async {
+                    store.select(recentlyPlacedID)
+                }
             }
         } else if movingSelection {
             hintPill(
@@ -140,7 +172,7 @@ struct HomeIslandView: View {
                 movingSelection = false
             }
         } else {
-            Text("Drag to look around · Pinch to zoom")
+            Text("One finger orbits, two fingers pan, and pinch zooms.")
                 .font(LFFont.label(11))
                 .foregroundStyle(.white.opacity(0.70))
                 .padding(.horizontal, 12)
@@ -173,22 +205,28 @@ struct HomeIslandView: View {
     }
 
     private var selectionActions: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 5) {
             actionButton("Move", symbol: "arrow.up.and.down.and.arrow.left.and.right") {
                 movingSelection = true
+                showingSizeControls = false
             }
             actionButton("Rotate", symbol: "rotate.right") {
                 store.rotateSelected()
             }
+            actionButton("Size", symbol: "arrow.up.left.and.arrow.down.right") {
+                showingSizeControls.toggle()
+            }
             actionButton("Duplicate", symbol: "plus.square.on.square") {
                 _ = store.duplicateSelected()
+                showingSizeControls = false
             }
             actionButton("Remove", symbol: "trash.fill", destructive: true) {
                 store.deleteSelected()
                 movingSelection = false
+                showingSizeControls = false
             }
         }
-        .padding(7)
+        .padding(6)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -218,6 +256,57 @@ struct HomeIslandView: View {
             .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(LFPressableButtonStyle())
+    }
+
+    @ViewBuilder
+    private var sizeControls: some View {
+        if let selected = store.selectedPlacement {
+            HStack(spacing: 12) {
+                Button {
+                    store.resizeSelected(by: -0.10)
+                    Haptics.tap(.light)
+                } label: {
+                    Image(systemName: "minus")
+                        .font(.system(size: 15, weight: .bold))
+                        .frame(width: 42, height: 38)
+                        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 11))
+                }
+                .buttonStyle(LFPressableButtonStyle())
+                .disabled(selected.transform.scale <= 0.25)
+                .accessibilityLabel(Text("Smaller"))
+
+                VStack(spacing: 1) {
+                    Text("Size")
+                        .font(LFFont.label(10))
+                        .foregroundStyle(.white.opacity(0.55))
+                    Text(verbatim: "\(Int((selected.transform.scale * 100).rounded()))%")
+                        .font(LFFont.copy(15))
+                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: .infinity)
+
+                Button {
+                    store.resizeSelected(by: 0.10)
+                    Haptics.tap(.light)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .bold))
+                        .frame(width: 42, height: 38)
+                        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 11))
+                }
+                .buttonStyle(LFPressableButtonStyle())
+                .disabled(selected.transform.scale >= 2)
+                .accessibilityLabel(Text("Larger"))
+            }
+            .foregroundStyle(.white)
+            .padding(6)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .stroke(.white.opacity(0.12), lineWidth: 1)
+            }
+        }
     }
 
     private var assetShelf: some View {

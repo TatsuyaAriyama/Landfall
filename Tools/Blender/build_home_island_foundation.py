@@ -26,6 +26,8 @@ RENDER_PATH = ROOT / "marketing/3d/home-island-foundation.png"
 RNG = random.Random(44103)
 SEGMENTS = 48
 TOP_HEIGHT = 0.62
+ISLAND_RADIUS_X = 13.10
+ISLAND_RADIUS_Y = 9.10
 
 
 def rgba(value: str, alpha: float = 1.0) -> tuple[float, float, float, float]:
@@ -95,7 +97,10 @@ def outline(angle: float, scale: float, layer: int = 0) -> tuple[float, float]:
     )
     layer_shift = math.sin(angle * 5.0 + layer * 0.91) * 0.018
     radius = scale * (1.0 + ripple + layer_shift)
-    return math.cos(angle) * 6.55 * radius, math.sin(angle) * 4.55 * radius
+    return (
+        math.cos(angle) * ISLAND_RADIUS_X * radius,
+        math.sin(angle) * ISLAND_RADIUS_Y * radius,
+    )
 
 
 def ring(index: int, scale: float, height: float) -> list[tuple[float, float, float]]:
@@ -133,8 +138,8 @@ def add_ring_band(
 top_ring = ring(0, 0.91, TOP_HEIGHT)
 top_groups: dict[str, tuple[list[tuple[float, float, float]], list[tuple[int, ...]]]] = {}
 top_rings = [
-    [(math.cos(math.tau * step / SEGMENTS) * 0.56,
-      math.sin(math.tau * step / SEGMENTS) * 0.38,
+    [(math.cos(math.tau * step / SEGMENTS) * 1.12,
+      math.sin(math.tau * step / SEGMENTS) * 0.76,
       TOP_HEIGHT) for step in range(SEGMENTS)],
     ring(30, 0.38, TOP_HEIGHT),
     ring(31, 0.66, TOP_HEIGHT),
@@ -188,11 +193,13 @@ def add_sand_patch(
 
 
 for patch in (
-    ("Pale_Sand_01", (-2.65, 1.25), (0.82, 0.48), "sand_light", 101),
-    ("Pale_Sand_02", (2.20, -1.25), (1.05, 0.58), "sand_light", 102),
-    ("Warm_Sand_01", (-1.25, -1.55), (0.76, 0.44), "sand_warm", 103),
-    ("Warm_Sand_02", (2.65, 1.22), (0.72, 0.42), "sand_warm", 104),
-    ("Warm_Sand_03", (0.15, 1.78), (0.54, 0.32), "sand_warm", 105),
+    ("Pale_Sand_01", (-5.30, 2.50), (1.34, 0.80), "sand_light", 101),
+    ("Pale_Sand_02", (4.40, -2.50), (1.68, 0.94), "sand_light", 102),
+    ("Pale_Sand_03", (-0.60, 4.65), (1.22, 0.72), "sand_light", 106),
+    ("Warm_Sand_01", (-2.50, -3.10), (1.24, 0.72), "sand_warm", 103),
+    ("Warm_Sand_02", (5.30, 2.44), (1.18, 0.70), "sand_warm", 104),
+    ("Warm_Sand_03", (0.30, 3.56), (0.92, 0.54), "sand_warm", 105),
+    ("Warm_Sand_04", (6.90, -0.10), (1.04, 0.62), "sand_warm", 107),
 ):
     add_sand_patch(*patch)
 
@@ -331,9 +338,9 @@ world.node_tree.nodes["Background"].inputs["Color"].default_value = rgba("#173F3
 world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.28
 
 for name, location, energy, size, color in (
-    ("PREVIEW_Key", (-7.2, -8.0, 10.0), 950, 6.0, "#FFE9BB"),
-    ("PREVIEW_Fill", (8.0, -3.0, 6.2), 560, 5.5, "#8AC6AE"),
-    ("PREVIEW_Rim", (2.0, 8.0, 8.0), 680, 4.5, "#D1E5CF"),
+    ("PREVIEW_Key", (-14.4, -16.0, 20.0), 1200, 11.0, "#FFE9BB"),
+    ("PREVIEW_Fill", (16.0, -6.0, 12.4), 720, 10.0, "#8AC6AE"),
+    ("PREVIEW_Rim", (4.0, 16.0, 16.0), 860, 9.0, "#D1E5CF"),
 ):
     bpy.ops.object.light_add(type="AREA", location=location)
     light = bpy.context.object
@@ -344,7 +351,7 @@ for name, location, energy, size, color in (
     light.data.color = rgba(color)[:3]
     look_at(light, (0, 0, 0.1))
 
-bpy.ops.object.camera_add(location=(10.8, -13.8, 9.0))
+bpy.ops.object.camera_add(location=(21.6, -27.6, 18.0))
 camera = bpy.context.object
 camera.name = "PREVIEW_Camera"
 camera.data.lens = 58
@@ -423,7 +430,7 @@ triangles = sum(
     for polygon in obj.data.polygons
 )
 print(f"ASSET={root.name} MESHES={len(export_objects)} TRIANGLES={triangles}")
-print(f"BUILDABLE_WIDTH=11.8 BUILDABLE_DEPTH=8.2 SURFACE_Y={TOP_HEIGHT}")
+print(f"BUILDABLE_WIDTH=23.6 BUILDABLE_DEPTH=16.4 SURFACE_Y={TOP_HEIGHT}")
 print(f"BLEND={BLEND_PATH}")
 print(f"USDZ={USDZ_PATH}")
 print(f"RENDER={RENDER_PATH}")
