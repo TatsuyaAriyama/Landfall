@@ -6,24 +6,25 @@ import UIKit
 /// 実機でも外付けキーボードを接続した場合は同じショートカットを利用できる。
 private final class AssetStudioInteractiveSceneView: SCNView {
     var keyCommandHandler: ((UIKeyCommand) -> Void)?
+    var continuousCameraHandler: ((Float, Float, TimeInterval) -> Void)?
+
+    private var heldMovementKeys: Set<UIKeyboardHIDUsage> = []
+    private var movementDisplayLink: CADisplayLink?
+    private var lastMovementTimestamp: CFTimeInterval?
 
     override var canBecomeFirstResponder: Bool { true }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil { becomeFirstResponder() }
+        if window != nil {
+            becomeFirstResponder()
+        } else {
+            stopContinuousMovement()
+        }
     }
 
     override var keyCommands: [UIKeyCommand]? {
         [
-            keyCommand(UIKeyCommand.inputUpArrow, title: "Move camera forward"),
-            keyCommand(UIKeyCommand.inputDownArrow, title: "Move camera backward"),
-            keyCommand(UIKeyCommand.inputLeftArrow, title: "Move camera left"),
-            keyCommand(UIKeyCommand.inputRightArrow, title: "Move camera right"),
-            keyCommand("w", title: "Move camera forward"),
-            keyCommand("s", title: "Move camera backward"),
-            keyCommand("a", title: "Move camera left"),
-            keyCommand("d", title: "Move camera right"),
             keyCommand("q", title: "Orbit camera left"),
             keyCommand("e", title: "Orbit camera right"),
             keyCommand("=", title: "Zoom in"),
@@ -48,6 +49,93 @@ private final class AssetStudioInteractiveSceneView: SCNView {
 
     @objc private func handleKeyCommand(_ command: UIKeyCommand) {
         keyCommandHandler?(command)
+    }
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        let movementKeys = Set(presses.compactMap { press -> UIKeyboardHIDUsage? in
+            guard let key = press.key,
+                  key.modifierFlags.intersection([.command, .control, .alternate]).isEmpty,
+                  isMovementKey(key.keyCode)
+            else { return nil }
+            return key.keyCode
+        })
+        guard !movementKeys.isEmpty else {
+            super.pressesBegan(presses, with: event)
+            return
+        }
+        heldMovementKeys.formUnion(movementKeys)
+        startContinuousMovementIfNeeded()
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        releaseMovementKeys(from: presses)
+        if presses.contains(where: { press in
+            guard let key = press.key else { return true }
+            return !isMovementKey(key.keyCode)
+                || !key.modifierFlags.intersection([.command, .control, .alternate]).isEmpty
+        }) {
+            super.pressesEnded(presses, with: event)
+        }
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        releaseMovementKeys(from: presses)
+        super.pressesCancelled(presses, with: event)
+    }
+
+    private func isMovementKey(_ key: UIKeyboardHIDUsage) -> Bool {
+        switch key {
+        case .keyboardW, .keyboardA, .keyboardS, .keyboardD,
+             .keyboardUpArrow, .keyboardDownArrow, .keyboardLeftArrow, .keyboardRightArrow:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func releaseMovementKeys(from presses: Set<UIPress>) {
+        for press in presses {
+            if let key = press.key?.keyCode { heldMovementKeys.remove(key) }
+        }
+        if heldMovementKeys.isEmpty { stopContinuousMovement() }
+    }
+
+    private func startContinuousMovementIfNeeded() {
+        guard movementDisplayLink == nil else { return }
+        lastMovementTimestamp = nil
+        let displayLink = CADisplayLink(target: self, selector: #selector(handleMovementFrame(_:)))
+        displayLink.add(to: .main, forMode: .common)
+        movementDisplayLink = displayLink
+    }
+
+    private func stopContinuousMovement() {
+        heldMovementKeys.removeAll()
+        movementDisplayLink?.invalidate()
+        movementDisplayLink = nil
+        lastMovementTimestamp = nil
+    }
+
+    @objc private func handleMovementFrame(_ displayLink: CADisplayLink) {
+        let previousTimestamp = lastMovementTimestamp ?? displayLink.timestamp
+        let deltaTime = min(max(displayLink.timestamp - previousTimestamp, 0), 0.05)
+        lastMovementTimestamp = displayLink.timestamp
+
+        let left = heldMovementKeys.contains(.keyboardA)
+            || heldMovementKeys.contains(.keyboardLeftArrow)
+        let right = heldMovementKeys.contains(.keyboardD)
+            || heldMovementKeys.contains(.keyboardRightArrow)
+        let forward = heldMovementKeys.contains(.keyboardW)
+            || heldMovementKeys.contains(.keyboardUpArrow)
+        let backward = heldMovementKeys.contains(.keyboardS)
+            || heldMovementKeys.contains(.keyboardDownArrow)
+        var forwardAmount: Float = (forward ? 1 : 0) - (backward ? 1 : 0)
+        var rightAmount: Float = (right ? 1 : 0) - (left ? 1 : 0)
+        let magnitude = sqrt(forwardAmount * forwardAmount + rightAmount * rightAmount)
+        if magnitude > 1 {
+            forwardAmount /= magnitude
+            rightAmount /= magnitude
+        }
+        continuousCameraHandler?(forwardAmount, rightAmount, deltaTime)
     }
 
     private func keyCommand(
@@ -173,6 +261,13 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             if let interactiveView = view as? AssetStudioInteractiveSceneView {
                 interactiveView.keyCommandHandler = { [weak self] command in
                     self?.handleKeyboardCommand(command)
+                }
+                interactiveView.continuousCameraHandler = { [weak self] forward, right, deltaTime in
+                    self?.moveCameraContinuously(
+                        forward: forward,
+                        right: right,
+                        deltaTime: Float(deltaTime)
+                    )
                 }
             }
 
@@ -2077,6 +2172,25 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             cameraTarget.x += (forwardVector.x * forward + rightVector.x * right) * step
             cameraTarget.z += (forwardVector.z * forward + rightVector.z * right) * step
             updateCamera(animated: 0.18)
+        }
+
+        private func moveCameraContinuously(
+            forward: Float,
+            right: Float,
+            deltaTime: Float
+        ) {
+            guard deltaTime > 0 else { return }
+            let speed = min(max(cameraDistance * 0.65, 5.0), 28.0)
+            let distance = speed * min(deltaTime, 0.05)
+            let forwardVector = SCNVector3(-sin(cameraAzimuth), 0, -cos(cameraAzimuth))
+            let rightVector = SCNVector3(cos(cameraAzimuth), 0, -sin(cameraAzimuth))
+            cameraTarget.x += (
+                forwardVector.x * forward + rightVector.x * right
+            ) * distance
+            cameraTarget.z += (
+                forwardVector.z * forward + rightVector.z * right
+            ) * distance
+            updateCamera()
         }
 
         private func zoomCamera(by factor: Float) {
