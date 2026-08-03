@@ -1166,6 +1166,7 @@ private struct KeelMiraHomeMark: View {
 
 enum VoyageMenuDestination: String, CaseIterable, Identifiable {
     case home
+    case island
     case harbor
     case logbook
     case style
@@ -1175,6 +1176,7 @@ enum VoyageMenuDestination: String, CaseIterable, Identifiable {
     var title: LocalizedStringKey {
         switch self {
         case .home: "Home"
+        case .island: "My Island"
         case .harbor: "Harbor"
         case .logbook: "Logbook"
         case .style: "Style"
@@ -1186,6 +1188,8 @@ enum VoyageMenuDestination: String, CaseIterable, Identifiable {
         switch self {
         case .home:
             TabSymbolIcon.image(.wheel).resizable().scaledToFit()
+        case .island:
+            TabSymbolIcon.image(.island).resizable().scaledToFit()
         case .harbor:
             TabSymbolIcon.image(.sailboat).resizable().scaledToFit()
         case .logbook:
@@ -1204,6 +1208,8 @@ private struct VoyageRouteContainer: View {
     var body: some View {
         ZStack(alignment: .topLeading) {
             switch route {
+            case .island:
+                HomeIslandEntryView()
             case .harbor:
                 HarborView()
             case .style:
@@ -1214,7 +1220,7 @@ private struct VoyageRouteContainer: View {
                 Color.clear
             }
 
-            if route != .logbook && route != .style {
+            if route != .logbook && route != .style && route != .island {
                 Button {
                     dismiss()
                 } label: {

@@ -32,6 +32,7 @@ struct Asset3DDescriptor: Identifiable, Hashable {
 enum Asset3DCatalog {
     private static let preferredOrder = [
         "island_base",
+        "home_island_foundation",
         "small_tree",
         "small_lake",
         "weathered_cottage",
@@ -66,6 +67,7 @@ enum Asset3DCatalog {
     static func displayName(for resourceName: String) -> String {
         switch resourceName {
         case "island_base": return String(localized: "Island Foundation")
+        case "home_island_foundation": return String(localized: "Home Island Foundation")
         case "small_tree": return String(localized: "Small Tree")
         case "small_lake": return String(localized: "Small Lake")
         case "weathered_cottage": return String(localized: "Weathered Cottage")

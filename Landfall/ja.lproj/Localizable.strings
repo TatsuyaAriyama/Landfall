@@ -85,6 +85,17 @@
 /* ホーム */
 "Today  %@ · %lld items" = "今日 %@・%lld項目";
 
+/* 自分の島 */
+"My Island" = "自分の島";
+"Home Island Foundation" = "個人拠点の土台";
+"Tap the sand to place %@" = "砂地をタップして%@を配置";
+"Tap the new place on the sand" = "砂地の移動先をタップ";
+"Drag to look around · Pinch to zoom" = "ドラッグで見渡す・ピンチで拡大縮小";
+"Place an asset" = "アセットを配置";
+"Choose one, then tap anywhere on your island" = "選んだあと、島の好きな場所をタップ";
+"Remove" = "削除";
+"Windswept Tree" = "風になびく木";
+
 /* 項目ページ */
 "History" = "これまでの記録";
 "No voyages yet. Set sail for the first time." = "まだ航海がない。最初の出航を。";

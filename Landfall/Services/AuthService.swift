@@ -25,6 +25,16 @@ final class AuthService: ObservableObject {
     var isSignedIn: Bool { user != nil }
     var canEnterApp: Bool { isSignedIn || isUsingLocalMode || isSimulatorPreviewing }
 
+    /// Stable owner scope for the player's personal island. Firebase accounts
+    /// never share local placement files; local and Simulator modes keep their
+    /// own device-only islands until cloud publishing is introduced.
+    var homeIslandOwnerID: String {
+        if let uid = user?.uid { return "firebase:\(uid)" }
+        if isUsingLocalMode { return "local-device" }
+        if isSimulatorPreviewing { return "simulator-preview" }
+        return "signed-out"
+    }
+
     var canPreviewWithoutSignIn: Bool {
         #if DEBUG && targetEnvironment(simulator)
         true
