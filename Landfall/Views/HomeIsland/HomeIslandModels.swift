@@ -58,14 +58,6 @@ enum HomeIslandAssetCatalog {
             unlockLevel: 2
         ),
         HomeIslandAsset(
-            id: "windswept_tree",
-            title: String(localized: "Windswept Tree"),
-            symbolName: "tree.fill",
-            defaultScale: 0.86,
-            footprintMargin: 0.56,
-            unlockLevel: 2
-        ),
-        HomeIslandAsset(
             id: "weathered_cottage",
             title: String(localized: "Weathered Cottage"),
             symbolName: "house.fill",

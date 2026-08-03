@@ -38,7 +38,6 @@ enum Asset3DCatalog {
         "small_lake",
         "weathered_cottage",
         "weathered_crate",
-        "windswept_tree",
         "landfall_boat",
         "navigator_main",
     ]
@@ -74,7 +73,6 @@ enum Asset3DCatalog {
         case "small_lake": return String(localized: "Small Lake")
         case "weathered_cottage": return String(localized: "Weathered Cottage")
         case "weathered_crate": return String(localized: "Weathered Crate")
-        case "windswept_tree": return "Windswept Tree"
         case "landfall_boat": return "Landfall Boat"
         case "navigator_main": return "Navigator"
         default:
