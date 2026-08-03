@@ -98,6 +98,13 @@
 "Smaller" = "小さく";
 "Larger" = "大きく";
 "Windswept Tree" = "風になびく木";
+"Weathered Crate" = "古びた木箱";
+"Level %lld · %lld objects" = "レベル%lld・%lld個のオブジェクト";
+"Level %lld" = "レベル%lld";
+"Unlocks at Level %lld" = "レベル%lldで開放";
+"%@ to Level %lld" = "レベル%2$lldまであと%1$@";
+"Tap the sand to place this asset" = "砂地をタップしてこのアセットを配置";
+"OK" = "OK";
 
 /* 項目ページ */
 "History" = "これまでの記録";

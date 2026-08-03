@@ -23,6 +23,7 @@ struct Asset3DDescriptor: Identifiable, Hashable {
         if lowercased.contains("island") { return "mountain.2.fill" }
         if lowercased.contains("tree") { return "tree.fill" }
         if lowercased.contains("cottage") || lowercased.contains("house") { return "house.fill" }
+        if lowercased.contains("crate") { return "shippingbox.fill" }
         if lowercased.contains("boat") { return "sailboat.fill" }
         if lowercased.contains("navigator") { return "figure.wave" }
         return "cube.transparent.fill"
@@ -36,6 +37,7 @@ enum Asset3DCatalog {
         "small_tree",
         "small_lake",
         "weathered_cottage",
+        "weathered_crate",
         "windswept_tree",
         "landfall_boat",
         "navigator_main",
@@ -71,6 +73,7 @@ enum Asset3DCatalog {
         case "small_tree": return String(localized: "Small Tree")
         case "small_lake": return String(localized: "Small Lake")
         case "weathered_cottage": return String(localized: "Weathered Cottage")
+        case "weathered_crate": return String(localized: "Weathered Crate")
         case "windswept_tree": return "Windswept Tree"
         case "landfall_boat": return "Landfall Boat"
         case "navigator_main": return "Navigator"

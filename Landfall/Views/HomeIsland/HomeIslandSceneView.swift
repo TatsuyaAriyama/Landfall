@@ -9,6 +9,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
     @ObservedObject var store: HomeIslandStore
     var placementAssetID: String?
     var movingSelection: Bool
+    var playerLevel: Int
     var cameraResetToken: Int
     var onMoveCompleted: () -> Void
 
@@ -311,7 +312,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
             if let assetID = owner.placementAssetID,
                let point = groundPoint(at: screenPoint),
                HomeIslandMetrics.contains(x: point.x, z: point.z) {
-                _ = owner.store.add(assetID: assetID, x: point.x, z: point.z)
+                _ = owner.store.add(
+                    assetID: assetID,
+                    x: point.x,
+                    z: point.z,
+                    playerLevel: owner.playerLevel
+                )
                 Haptics.tap(.light)
                 return
             }

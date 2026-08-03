@@ -41,6 +41,7 @@ struct HomeIslandAsset: Identifiable, Hashable {
     let symbolName: String
     let defaultScale: Float
     let footprintMargin: Float
+    let unlockLevel: Int
 }
 
 enum HomeIslandAssetCatalog {
@@ -49,32 +50,44 @@ enum HomeIslandAssetCatalog {
     /// terrain tools from leaking into the consumer placement experience.
     static let approved: [HomeIslandAsset] = [
         HomeIslandAsset(
-            id: "weathered_cottage",
-            title: String(localized: "Weathered Cottage"),
-            symbolName: "house.fill",
-            defaultScale: 0.78,
-            footprintMargin: 0.92
-        ),
-        HomeIslandAsset(
             id: "small_tree",
             title: String(localized: "Small Tree"),
             symbolName: "tree.fill",
             defaultScale: 0.92,
-            footprintMargin: 0.38
+            footprintMargin: 0.38,
+            unlockLevel: 2
         ),
         HomeIslandAsset(
             id: "windswept_tree",
             title: String(localized: "Windswept Tree"),
             symbolName: "tree.fill",
             defaultScale: 0.86,
-            footprintMargin: 0.56
+            footprintMargin: 0.56,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "weathered_cottage",
+            title: String(localized: "Weathered Cottage"),
+            symbolName: "house.fill",
+            defaultScale: 0.78,
+            footprintMargin: 0.92,
+            unlockLevel: 3
+        ),
+        HomeIslandAsset(
+            id: "weathered_crate",
+            title: String(localized: "Weathered Crate"),
+            symbolName: "shippingbox.fill",
+            defaultScale: 0.88,
+            footprintMargin: 0.46,
+            unlockLevel: 4
         ),
         HomeIslandAsset(
             id: "small_lake",
             title: String(localized: "Small Lake"),
             symbolName: "water.waves",
             defaultScale: 0.82,
-            footprintMargin: 0.88
+            footprintMargin: 0.88,
+            unlockLevel: 5
         ),
     ]
 
@@ -295,9 +308,10 @@ final class HomeIslandStore: ObservableObject {
     }
 
     @discardableResult
-    func add(assetID: String, x: Float, z: Float) -> UUID? {
+    func add(assetID: String, x: Float, z: Float, playerLevel: Int) -> UUID? {
         guard canAdd,
-              let asset = HomeIslandAssetCatalog.asset(id: assetID)
+              let asset = HomeIslandAssetCatalog.asset(id: assetID),
+              playerLevel >= asset.unlockLevel
         else { return nil }
         let previous = editState
         let position = HomeIslandMetrics.clampedPosition(
@@ -371,9 +385,11 @@ final class HomeIslandStore: ObservableObject {
     }
 
     @discardableResult
-    func duplicateSelected() -> UUID? {
+    func duplicateSelected(playerLevel: Int) -> UUID? {
         guard canAdd,
-              let selected = selectedPlacement
+              let selected = selectedPlacement,
+              let asset = HomeIslandAssetCatalog.asset(id: selected.assetID),
+              playerLevel >= asset.unlockLevel
         else { return nil }
         let previous = editState
         var copy = selected

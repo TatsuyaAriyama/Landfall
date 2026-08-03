@@ -1,11 +1,16 @@
 import SwiftUI
+import SwiftData
 
 /// Resolves the current local/Firebase owner before creating an owner-scoped store.
 struct HomeIslandEntryView: View {
     @EnvironmentObject private var auth: AuthService
+    @Query private var sessions: [StudySession]
 
     var body: some View {
-        HomeIslandView(ownerID: auth.homeIslandOwnerID)
+        HomeIslandView(
+            ownerID: auth.homeIslandOwnerID,
+            levelProgress: PlayerLevelProgress(sessions: sessions)
+        )
             .id(auth.homeIslandOwnerID)
     }
 }
@@ -16,11 +21,14 @@ struct HomeIslandView: View {
     @State private var placementAssetID: String?
     @State private var movingSelection = false
     @State private var showingSizeControls = false
+    @State private var lockedAssetID: String?
     @State private var cameraResetToken = 0
 
     private let assets = HomeIslandAssetCatalog.available()
+    private let levelProgress: PlayerLevelProgress
 
-    init(ownerID: String) {
+    init(ownerID: String, levelProgress: PlayerLevelProgress) {
+        self.levelProgress = levelProgress
         _store = StateObject(wrappedValue: HomeIslandStore(ownerID: ownerID))
     }
 
@@ -30,6 +38,7 @@ struct HomeIslandView: View {
                 store: store,
                 placementAssetID: placementAssetID,
                 movingSelection: movingSelection,
+                playerLevel: levelProgress.level,
                 cameraResetToken: cameraResetToken,
                 onMoveCompleted: { movingSelection = false }
             )
@@ -93,7 +102,13 @@ struct HomeIslandView: View {
                     Text("My Island")
                         .font(LFFont.copy(17))
                         .foregroundStyle(.white)
-                    Text(verbatim: LF.format("%lld objects", Int64(store.placements.count)))
+                    Text(
+                        verbatim: LF.format(
+                            "Level %lld · %lld objects",
+                            Int64(levelProgress.level),
+                            Int64(store.placements.count)
+                        )
+                    )
                         .font(LFFont.label(11))
                         .foregroundStyle(.white.opacity(0.56))
                 }
@@ -150,7 +165,16 @@ struct HomeIslandView: View {
 
     @ViewBuilder
     private var modeHint: some View {
-        if let placementAssetID,
+        if let lockedAssetID,
+           let asset = HomeIslandAssetCatalog.asset(id: lockedAssetID) {
+            hintPill(
+                symbol: "lock.fill",
+                text: LF.format("Unlocks at Level %lld", Int64(asset.unlockLevel)),
+                actionTitle: String(localized: "OK")
+            ) {
+                self.lockedAssetID = nil
+            }
+        } else if let placementAssetID,
            let asset = HomeIslandAssetCatalog.asset(id: placementAssetID) {
             hintPill(
                 symbol: "hand.tap.fill",
@@ -216,8 +240,12 @@ struct HomeIslandView: View {
             actionButton("Size", symbol: "arrow.up.left.and.arrow.down.right") {
                 showingSizeControls.toggle()
             }
-            actionButton("Duplicate", symbol: "plus.square.on.square") {
-                _ = store.duplicateSelected()
+            actionButton(
+                "Duplicate",
+                symbol: "plus.square.on.square",
+                disabled: !canDuplicateSelection
+            ) {
+                _ = store.duplicateSelected(playerLevel: levelProgress.level)
                 showingSizeControls = false
             }
             actionButton("Remove", symbol: "trash.fill", destructive: true) {
@@ -238,6 +266,7 @@ struct HomeIslandView: View {
         _ title: LocalizedStringKey,
         symbol: String,
         destructive: Bool = false,
+        disabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button {
@@ -252,10 +281,20 @@ struct HomeIslandView: View {
                     .lineLimit(1)
             }
             .foregroundStyle(destructive ? Color.red.opacity(0.9) : .white.opacity(0.88))
+            .opacity(disabled ? 0.34 : 1)
             .frame(maxWidth: .infinity, minHeight: 49)
             .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(LFPressableButtonStyle())
+        .disabled(disabled)
+    }
+
+    private var canDuplicateSelection: Bool {
+        guard store.canAdd,
+              let selected = store.selectedPlacement,
+              let asset = HomeIslandAssetCatalog.asset(id: selected.assetID)
+        else { return false }
+        return levelProgress.unlocks(requiredLevel: asset.unlockLevel)
     }
 
     @ViewBuilder
@@ -321,9 +360,20 @@ struct HomeIslandView: View {
                         .foregroundStyle(.white.opacity(0.52))
                 }
                 Spacer()
-                Text(verbatim: "\(store.placements.count) / \(HomeIslandMetrics.maximumPlacements)")
-                    .font(LFFont.label(10))
-                    .foregroundStyle(.white.opacity(0.46))
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(
+                        verbatim: LF.format(
+                            "%@ to Level %lld",
+                            LF.duration(minutes: levelProgress.minutesToNextLevel),
+                            Int64(levelProgress.level + 1)
+                        )
+                    )
+                    .font(LFFont.label(9))
+                    .foregroundStyle(.white.opacity(0.58))
+                    ProgressView(value: levelProgress.fractionToNextLevel)
+                        .tint(Color(uiColor: VoyageSceneKit.sand))
+                        .frame(width: 72)
+                }
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -348,26 +398,56 @@ struct HomeIslandView: View {
 
     private func assetButton(_ asset: HomeIslandAsset) -> some View {
         let selected = placementAssetID == asset.id
+        let unlocked = levelProgress.unlocks(requiredLevel: asset.unlockLevel)
         return Button {
-            placementAssetID = selected ? nil : asset.id
-            store.select(nil)
-            Haptics.tap(.light)
+            if unlocked {
+                lockedAssetID = nil
+                placementAssetID = selected ? nil : asset.id
+                store.select(nil)
+                Haptics.tap(.light)
+            } else {
+                placementAssetID = nil
+                movingSelection = false
+                lockedAssetID = asset.id
+                Haptics.tap(.medium)
+            }
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: asset.symbolName)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(selected ? Color(uiColor: VoyageSceneKit.sand) : .white.opacity(0.78))
-                    .frame(width: 32, height: 32)
-                    .background(.white.opacity(selected ? 0.13 : 0.07), in: RoundedRectangle(cornerRadius: 10))
-                Text(verbatim: asset.title)
-                    .font(LFFont.label(11))
-                    .foregroundStyle(.white.opacity(selected ? 1 : 0.74))
-                    .lineLimit(1)
+                ZStack(alignment: .bottomTrailing) {
+                    Image(systemName: asset.symbolName)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(
+                            unlocked
+                                ? (selected ? Color(uiColor: VoyageSceneKit.sand) : .white.opacity(0.78))
+                                : .white.opacity(0.30)
+                        )
+                        .frame(width: 32, height: 32)
+                        .background(.white.opacity(selected ? 0.13 : 0.07), in: RoundedRectangle(cornerRadius: 10))
+                    if !unlocked {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+                            .padding(3)
+                            .background(.black.opacity(0.72), in: Circle())
+                            .offset(x: 3, y: 3)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(verbatim: asset.title)
+                        .font(LFFont.label(11))
+                        .foregroundStyle(.white.opacity(unlocked ? (selected ? 1 : 0.74) : 0.38))
+                        .lineLimit(1)
+                    if !unlocked {
+                        Text(verbatim: LF.format("Level %lld", Int64(asset.unlockLevel)))
+                            .font(LFFont.label(9))
+                            .foregroundStyle(Color(uiColor: VoyageSceneKit.sand).opacity(0.72))
+                    }
+                }
             }
             .padding(.horizontal, 8)
             .frame(height: 48)
             .background(
-                selected ? Color(uiColor: VoyageSceneKit.ember).opacity(0.20) : .white.opacity(0.055),
+                selected ? Color(uiColor: VoyageSceneKit.ember).opacity(0.20) : .white.opacity(unlocked ? 0.055 : 0.025),
                 in: RoundedRectangle(cornerRadius: 13)
             )
             .overlay {
@@ -376,6 +456,11 @@ struct HomeIslandView: View {
             }
         }
         .buttonStyle(LFPressableButtonStyle())
-        .disabled(!store.canAdd)
+        .disabled(!store.canAdd && unlocked)
+        .accessibilityHint(
+            unlocked
+                ? Text("Tap the sand to place this asset")
+                : Text(verbatim: LF.format("Unlocks at Level %lld", Int64(asset.unlockLevel)))
+        )
     }
 }
