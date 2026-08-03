@@ -7,6 +7,7 @@ struct AssetPlacementStudioView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var auth: AuthService
     @StateObject private var store = AssetPlacementStore()
     @State private var activePanel: StudioPanel?
     @State private var panelOnLeading = false
@@ -33,6 +34,18 @@ struct AssetPlacementStudioView: View {
     }
 
     var body: some View {
+        Group {
+            if AccessPolicy.canUseAssetStudio(auth.user) {
+                studioContent
+            } else {
+                Color.clear
+                    .ignoresSafeArea()
+                    .onAppear { dismiss() }
+            }
+        }
+    }
+
+    private var studioContent: some View {
         ZStack {
             AssetPlacementSceneView(
                 store: store,

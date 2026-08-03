@@ -15,6 +15,17 @@ enum AccessPolicy {
         return email == developerEmail
     }
 
+    /// ゲーム世界そのものを編集できる3Dスタジオの利用可否。
+    /// 本番では認証済みの開発者アカウントだけに限定し、開発中はDebug Simulatorから
+    /// サインイン状態に依存せずUIテストできるようにする。
+    static func canUseAssetStudio(_ user: User? = Auth.auth().currentUser) -> Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        true
+        #else
+        isDeveloper(user)
+        #endif
+    }
+
     /// StoreKitの appAccountToken とFirebase UIDを紐付ける安定UUID。
     /// サーバーも同じ手順で再計算し、他アカウントの購入JWSの使い回しを防ぐ。
     static func appAccountToken(for uid: String) -> UUID {

@@ -197,40 +197,42 @@ struct SettingsView: View {
                         reachedIslandsSection
                     }
 
-                    sectionLabel("Creative tools")
-                        .padding(.top, 36)
-                        .padding(.bottom, 10)
+                    if AccessPolicy.canUseAssetStudio(auth.user) {
+                        sectionLabel("Creative tools")
+                            .padding(.top, 36)
+                            .padding(.bottom, 10)
 
-                    Button {
-                        showingAssetStudio = true
-                        Haptics.tap(.light)
-                    } label: {
-                        HStack(spacing: 13) {
-                            Image(systemName: "cube.transparent.fill")
-                                .font(.system(size: 19, weight: .semibold))
-                                .foregroundStyle(LFColor.harborSand)
-                                .frame(width: 40, height: 40)
-                                .background(LFColor.harborTeal, in: RoundedRectangle(cornerRadius: 12))
+                        Button {
+                            showingAssetStudio = true
+                            Haptics.tap(.light)
+                        } label: {
+                            HStack(spacing: 13) {
+                                Image(systemName: "cube.transparent.fill")
+                                    .font(.system(size: 19, weight: .semibold))
+                                    .foregroundStyle(LFColor.harborSand)
+                                    .frame(width: 40, height: 40)
+                                    .background(LFColor.harborTeal, in: RoundedRectangle(cornerRadius: 12))
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("3D Asset Studio")
-                                    .font(LFFont.copy(16))
-                                    .foregroundStyle(LFColor.ink)
-                                Text("Place and arrange USDZ models.")
-                                    .font(LFFont.label(13))
-                                    .foregroundStyle(LFColor.ink.opacity(0.52))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("3D Asset Studio")
+                                        .font(LFFont.copy(16))
+                                        .foregroundStyle(LFColor.ink)
+                                    Text("Place and arrange USDZ models.")
+                                        .font(LFFont.label(13))
+                                        .foregroundStyle(LFColor.ink.opacity(0.52))
+                                }
+
+                                Spacer(minLength: 8)
+
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(LFColor.ink.opacity(0.3))
                             }
-
-                            Spacer(minLength: 8)
-
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(LFColor.ink.opacity(0.3))
+                            .frame(minHeight: 52)
+                            .contentShape(Rectangle())
                         }
-                        .frame(minHeight: 52)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
 
                     sectionLabel("Account")
                         .padding(.top, 36)
@@ -267,7 +269,7 @@ struct SettingsView: View {
                 showingTutorial = false
             }
         }
-        .fullScreenCover(isPresented: $showingAssetStudio) {
+        .fullScreenCover(isPresented: assetStudioPresentation) {
             AssetPlacementStudioView(homeProgressRatio: homeProgressRatio)
         }
         .confirmationDialog(
@@ -304,6 +306,15 @@ struct SettingsView: View {
         destinations.first { $0.achievedAt == nil }?
             .progress(sessions: sessions)
             .ratio ?? 0
+    }
+
+    /// 表示ボタンとは別にプレゼンテーション自体も権限で閉じる。
+    /// 認証状態が変わった場合も、未許可のスタジオを開いたままにしない。
+    private var assetStudioPresentation: Binding<Bool> {
+        Binding(
+            get: { showingAssetStudio && AccessPolicy.canUseAssetStudio(auth.user) },
+            set: { showingAssetStudio = $0 }
+        )
     }
 
     // MARK: - 作業項目
