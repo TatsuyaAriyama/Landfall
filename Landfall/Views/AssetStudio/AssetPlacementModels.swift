@@ -631,6 +631,7 @@ final class AssetPlacementStore: ObservableObject {
             && terrainStrokes == nil
             && studios == nil
         var didMigrateLegacyStudio = false
+        var didRemoveUnavailableAssets = false
         var resolvedPlacements = placements ?? AssetPlacementPersistence.load()
         var resolvedPaintStrokes = paintStrokes ?? AssetPlacementPersistence.loadPaintStrokes()
         var resolvedTerrainStrokes = terrainStrokes ?? AssetPlacementPersistence.loadTerrainStrokes()
@@ -663,6 +664,20 @@ final class AssetPlacementStore: ObservableObject {
                 didMigrateLegacyStudio = true
             }
         }
+
+        // 削除済みのバンドルアセットを古い保存データから復活させない。
+        // 保存済みスタジオを参照する複合アセットだけは、有効なstudioIDなら維持する。
+        let availableAssetIDs = Set(catalog.map(\.id))
+        let existingSavedStudioIDs = Set(resolvedStudios.map(\.id))
+        let placementCountBeforeSanitizing = resolvedPlacements.count
+        resolvedPlacements.removeAll { placement in
+            if availableAssetIDs.contains(placement.assetID) { return false }
+            if let studioID = SavedAssetStudio.id(fromAssetID: placement.assetID) {
+                return !existingSavedStudioIDs.contains(studioID)
+            }
+            return true
+        }
+        didRemoveUnavailableAssets = resolvedPlacements.count != placementCountBeforeSanitizing
 
         // v3まではスタジオ全体を島に「配置」していた。旧参照があればそれを、
         // なければ内容を持つ最初のスタジオをゲーム世界として無損失で引き継ぐ。
@@ -720,7 +735,8 @@ final class AssetPlacementStore: ObservableObject {
         selectedIDs = initialSelection.map { [$0] } ?? []
 
         // 移行で発行したstudioIDを固定し、次回起動時にも複合アセット参照を維持する。
-        if loadedEntireDocumentFromPersistence && didMigrateLegacyStudio {
+        if loadedEntireDocumentFromPersistence
+            && (didMigrateLegacyStudio || didRemoveUnavailableAssets) {
             lastSavedAt = try? AssetPlacementPersistence.save(
                 resolvedPlacements,
                 paintStrokes: resolvedPaintStrokes,
