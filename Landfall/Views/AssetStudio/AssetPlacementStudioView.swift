@@ -6,6 +6,7 @@ struct AssetPlacementStudioView: View {
     var homeProgressRatio: Double = 0
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var store = AssetPlacementStore()
     @State private var activePanel: StudioPanel?
     @State private var panelOnLeading = false
@@ -122,9 +123,10 @@ struct AssetPlacementStudioView: View {
         .alert("Rename Studio", isPresented: $showingRenameStudioPrompt) {
             TextField("Studio name", text: $studioNameDraft)
             Button("Save") {
-                store.renameCurrentStudio(to: studioNameDraft)
-                showToast(String(localized: "Studio name saved"))
+                let renamed = store.renameCurrentStudio(to: studioNameDraft)
+                showToast(String(localized: renamed ? "Studio name saved" : "Could not save"))
             }
+            .disabled(studioNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             Button("Cancel", role: .cancel) {}
         }
         .onAppear {
@@ -176,6 +178,12 @@ struct AssetPlacementStudioView: View {
             store.endInteractiveEdit()
             store.save()
         }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active else { return }
+            // ホームへ戻る・ロック・バックグラウンド化の全経路で編集中の点列まで確定する。
+            store.endInteractiveEdit()
+            store.save()
+        }
     }
 
     private var topBar: some View {
@@ -208,7 +216,21 @@ struct AssetPlacementStudioView: View {
                     }
                 }
 
+                if store.context == .studio {
+                    Button {
+                        studioNameDraft = store.currentStudio?.name ?? ""
+                        showingRenameStudioPrompt = true
+                    } label: {
+                        Label("Rename Studio", systemImage: "pencil")
+                    }
+                }
+
                 Divider()
+
+                Button {} label: {
+                    Label(saveStatusText, systemImage: saveStatusSymbol)
+                }
+                .disabled(true)
 
                 Button {
                     studioNameDraft = String(
@@ -227,13 +249,19 @@ struct AssetPlacementStudioView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("3D Studio")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
-                        Text(
-                            store.context == .destinationIsland
-                                ? String(localized: "Island")
-                                : store.currentStudio?.name ?? String(localized: "Studio")
-                        )
-                            .font(.system(size: 10, weight: .medium, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.58))
+                        HStack(spacing: 4) {
+                            Text(
+                                store.context == .destinationIsland
+                                    ? String(localized: "Island")
+                                    : store.currentStudio?.name ?? String(localized: "Studio")
+                            )
+                            .lineLimit(1)
+                            Image(systemName: saveStatusSymbol)
+                                .font(.system(size: 7, weight: .bold))
+                                .foregroundStyle(saveStatusColor)
+                        }
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.58))
                     }
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .bold))
@@ -245,6 +273,7 @@ struct AssetPlacementStudioView: View {
                 .background(.black.opacity(0.54), in: Capsule())
                 .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 1))
             }
+            .accessibilityValue(saveStatusText)
 
             Spacer(minLength: 2)
 
@@ -343,6 +372,28 @@ struct AssetPlacementStudioView: View {
             }
             .accessibilityLabel("More actions")
         }
+    }
+
+    private var saveStatusSymbol: String {
+        if !store.lastSaveSucceeded { return "exclamationmark.triangle.fill" }
+        if store.hasUnsavedChanges { return "clock.fill" }
+        return "checkmark.circle.fill"
+    }
+
+    private var saveStatusColor: Color {
+        if !store.lastSaveSucceeded { return Color(uiColor: VoyageSceneKit.coral) }
+        if store.hasUnsavedChanges { return Color(uiColor: VoyageSceneKit.ember) }
+        return Color(uiColor: UIColor(rgb: 0x8DC8A3))
+    }
+
+    private var saveStatusText: String {
+        if !store.lastSaveSucceeded { return String(localized: "Save failed — retrying") }
+        if store.hasUnsavedChanges { return String(localized: "Saving…") }
+        guard let lastSavedAt = store.lastSavedAt else { return String(localized: "Saved") }
+        return String(
+            format: String(localized: "Saved at %@"),
+            lastSavedAt.formatted(date: .omitted, time: .shortened)
+        )
     }
 
     /// キャンバスから目を離さずに、現在モードと次の操作を確認する小さなガイド。

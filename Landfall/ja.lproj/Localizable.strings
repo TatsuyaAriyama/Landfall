@@ -663,6 +663,9 @@
 "Redo" = "やり直す";
 "More actions" = "その他の操作";
 "Could not save" = "保存できませんでした";
+"Saving…" = "保存中…";
+"Saved at %@" = "%@に保存済み";
+"Save failed — retrying" = "保存に失敗しました — 再試行中";
 "Copy placement JSON" = "配置JSONをコピー";
 "Placement JSON copied" = "配置JSONをコピーしました";
 "Move" = "移動";

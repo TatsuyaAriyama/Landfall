@@ -348,7 +348,9 @@ struct AssetTerrainStroke: Identifiable, Codable, Equatable {
 }
 
 private struct AssetPlacementDocument: Codable {
-    var version = 6
+    var version = 7
+    /// 最後に完全なJSONとして検証できた保存時刻。primary/recoveryの新しい方を選ぶためにも使う。
+    var savedAt: Date? = nil
     var placements: [AssetPlacement]
     var paintStrokes: [AssetPaintStroke]?
     var terrainStrokes: [AssetTerrainStroke]?
@@ -364,39 +366,82 @@ enum AssetPlacementPersistence {
             .appendingPathComponent("AssetPlacements.json", isDirectory: false)
     }
 
-    static func load() -> [AssetPlacement] {
-        guard let data = try? Data(contentsOf: fileURL),
+    /// primaryへの置換中にアプリが終了しても、同じ内容をここから復旧できる。
+    static var recoveryFileURL: URL {
+        fileURL.deletingLastPathComponent()
+            .appendingPathComponent("AssetPlacements.recovery.json", isDirectory: false)
+    }
+
+    private enum PersistenceError: Error {
+        case verificationFailed(URL)
+    }
+
+    private static func decodedDocument(at url: URL) -> (AssetPlacementDocument, Data)? {
+        guard let data = try? Data(contentsOf: url),
               let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
-        else { return [] }
+        else { return nil }
+        return (document, data)
+    }
+
+    /// 通常ファイルが欠損・破損していてもrecoveryから最新の完全保存を読み戻す。
+    private static func loadDocument() -> AssetPlacementDocument? {
+        let primary = decodedDocument(at: fileURL)
+        let recovery = decodedDocument(at: recoveryFileURL)
+
+        switch (primary, recovery) {
+        case let (.some(primary), .some(recovery)):
+            let primaryDate = primary.0.savedAt ?? .distantPast
+            let recoveryDate = recovery.0.savedAt ?? .distantPast
+            guard recoveryDate > primaryDate else { return primary.0 }
+            try? recovery.1.write(to: fileURL, options: .atomic)
+            return recovery.0
+        case let (.some(primary), .none):
+            return primary.0
+        case let (.none, .some(recovery)):
+            try? recovery.1.write(to: fileURL, options: .atomic)
+            return recovery.0
+        case (.none, .none):
+            return nil
+        }
+    }
+
+    private static func writeAndVerify(_ data: Data, to url: URL) throws {
+        try data.write(to: url, options: .atomic)
+        guard let persistedData = try? Data(contentsOf: url),
+              persistedData == data,
+              (try? JSONDecoder().decode(AssetPlacementDocument.self, from: persistedData)) != nil
+        else {
+            throw PersistenceError.verificationFailed(url)
+        }
+    }
+
+    static func load() -> [AssetPlacement] {
+        guard let document = loadDocument() else { return [] }
         return document.placements
     }
 
     static func loadPaintStrokes() -> [AssetPaintStroke] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
-        else { return [] }
+        guard let document = loadDocument() else { return [] }
         return document.paintStrokes ?? []
     }
 
     static func loadTerrainStrokes() -> [AssetTerrainStroke] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
-        else { return [] }
+        guard let document = loadDocument() else { return [] }
         return document.terrainStrokes ?? []
     }
 
     static func loadStudios() -> [SavedAssetStudio] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
-        else { return [] }
+        guard let document = loadDocument() else { return [] }
         return document.studios ?? []
     }
 
     static func loadActiveStudioID() -> UUID? {
-        guard let data = try? Data(contentsOf: fileURL),
-              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
-        else { return nil }
-        return document.activeStudioID
+        loadDocument()?.activeStudioID
+    }
+
+    static func loadSavedAt() -> Date? {
+        if let savedAt = loadDocument()?.savedAt { return savedAt }
+        return try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     }
 
     static func activeStudioContents(
@@ -406,9 +451,7 @@ enum AssetPlacementPersistence {
         paintStrokes: [AssetPaintStroke],
         terrainStrokes: [AssetTerrainStroke]
     )? {
-        guard let data = try? Data(contentsOf: fileURL),
-              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data)
-        else { return nil }
+        guard let document = loadDocument() else { return nil }
         let studios = document.studios ?? []
         let studioIDs = Set(studios.map(\.id))
         let formerlyPlacedStudioID = document.placements.reversed().compactMap { placement in
@@ -446,8 +489,7 @@ enum AssetPlacementPersistence {
         paintStrokes: [AssetPaintStroke],
         terrainStrokes: [AssetTerrainStroke]
     )? {
-        guard let data = try? Data(contentsOf: fileURL),
-              let document = try? JSONDecoder().decode(AssetPlacementDocument.self, from: data),
+        guard let document = loadDocument(),
               let studio = document.studios?.first(where: { $0.id == studioID })
         else { return nil }
         return (
@@ -464,11 +506,13 @@ enum AssetPlacementPersistence {
         terrainStrokes: [AssetTerrainStroke],
         studios: [SavedAssetStudio],
         activeStudioID: UUID?
-    ) throws {
+    ) throws -> Date {
+        let savedAt = Date()
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(
             AssetPlacementDocument(
+                savedAt: savedAt,
                 placements: placements,
                 paintStrokes: paintStrokes,
                 terrainStrokes: terrainStrokes,
@@ -480,7 +524,11 @@ enum AssetPlacementPersistence {
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try data.write(to: fileURL, options: .atomic)
+        // 先にrecovery、次にprimaryへ同一データを原子的に保存し、双方を読み戻して検証する。
+        // どちらか一方への置換中に終了しても、次回はsavedAtが新しい完全な方を採用する。
+        try writeAndVerify(data, to: recoveryFileURL)
+        try writeAndVerify(data, to: fileURL)
+        return savedAt
     }
 
     static func encodedString(
@@ -494,6 +542,7 @@ enum AssetPlacementPersistence {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         guard let data = try? encoder.encode(
             AssetPlacementDocument(
+                savedAt: Date(),
                 placements: placements,
                 paintStrokes: paintStrokes,
                 terrainStrokes: terrainStrokes,
@@ -536,6 +585,9 @@ final class AssetPlacementStore: ObservableObject {
     @Published var placementBrushAssetID: String?
     @Published var followsPlacementSurface = true
     @Published private(set) var lastSaveSucceeded = true
+    @Published private(set) var hasUnsavedChanges = false
+    @Published private(set) var lastSavedAt: Date?
+    @Published private(set) var lastSaveError: String?
     @Published private(set) var cameraRequest: AssetStudioCameraRequest?
     @Published private(set) var surfaceSnapRequestID: UUID?
     @Published private(set) var surfaceSnapClampsOnly = false
@@ -545,6 +597,7 @@ final class AssetPlacementStore: ObservableObject {
     private var history: [AssetStudioSnapshot]
     private var historyIndex = 0
     private var interactionStart: AssetStudioSnapshot?
+    private var autosaveTask: Task<Void, Never>?
 
     init(
         placements: [AssetPlacement]? = nil,
@@ -637,6 +690,9 @@ final class AssetPlacementStore: ObservableObject {
             paintStrokes: resolvedPaintStrokes,
             terrainStrokes: resolvedTerrainStrokes
         )]
+        lastSavedAt = loadedEntireDocumentFromPersistence
+            ? AssetPlacementPersistence.loadSavedAt()
+            : nil
         let initialSelection = resolvedPlacements.first {
             $0.context == .destinationIsland
                 && SavedAssetStudio.id(fromAssetID: $0.assetID) == nil
@@ -646,7 +702,7 @@ final class AssetPlacementStore: ObservableObject {
 
         // 移行で発行したstudioIDを固定し、次回起動時にも複合アセット参照を維持する。
         if loadedEntireDocumentFromPersistence && didMigrateLegacyStudio {
-            try? AssetPlacementPersistence.save(
+            lastSavedAt = try? AssetPlacementPersistence.save(
                 resolvedPlacements,
                 paintStrokes: resolvedPaintStrokes,
                 terrainStrokes: resolvedTerrainStrokes,
@@ -784,14 +840,22 @@ final class AssetPlacementStore: ObservableObject {
         return studio.id
     }
 
-    func renameCurrentStudio(to proposedName: String) {
+    @discardableResult
+    func renameCurrentStudio(to proposedName: String) -> Bool {
         guard let selectedStudioID,
               let index = studios.firstIndex(where: { $0.id == selectedStudioID })
-        else { return }
-        let trimmedName = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty else { return }
+        else { return false }
+        let trimmedName = String(
+            proposedName
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .prefix(40)
+        )
+        guard !trimmedName.isEmpty else { return false }
+        guard studios[index].name != trimmedName else { return true }
         studios[index].name = trimmedName
+        markDocumentChanged()
         save()
+        return lastSaveSucceeded
     }
 
     func saveCurrentStudio() {
@@ -900,6 +964,7 @@ final class AssetPlacementStore: ObservableObject {
             transform: initialTransform
         )
         placements.append(placement)
+        markDocumentChanged()
         selectedID = placement.id
         selectedIDs = [placement.id]
         followsPlacementSurface = true
@@ -958,6 +1023,7 @@ final class AssetPlacementStore: ObservableObject {
         if interactively { beginInteractiveEdit() } else { endInteractiveEdit() }
         mutation(&placements[index])
         placements[index].transform.scale = min(max(placements[index].transform.scale, 0.01), 20)
+        markDocumentChanged()
         if !interactively { commitCurrentState() }
     }
 
@@ -987,12 +1053,14 @@ final class AssetPlacementStore: ObservableObject {
             points: [point]
         )
         paintStrokes.append(stroke)
+        markDocumentChanged()
         return stroke.id
     }
 
     func appendPaintPoint(_ point: AssetPaintPoint, to strokeID: UUID) {
         guard let index = paintStrokes.firstIndex(where: { $0.id == strokeID }) else { return }
         paintStrokes[index].points.append(point)
+        markDocumentChanged()
     }
 
     func erasePaint(at point: AssetPaintPoint, radius: Float? = nil) {
@@ -1033,7 +1101,9 @@ final class AssetPlacementStore: ObservableObject {
                 )
             }
         }
+        guard result != paintStrokes else { return }
         paintStrokes = result
+        markDocumentChanged()
     }
 
     @discardableResult
@@ -1051,6 +1121,7 @@ final class AssetPlacementStore: ObservableObject {
             points: [point]
         )
         terrainStrokes.append(stroke)
+        markDocumentChanged()
         return stroke.id
     }
 
@@ -1065,6 +1136,7 @@ final class AssetPlacementStore: ObservableObject {
     func appendTerrainPoint(_ point: AssetPaintPoint, to strokeID: UUID) {
         guard let index = terrainStrokes.firstIndex(where: { $0.id == strokeID }) else { return }
         terrainStrokes[index].points.append(point)
+        markDocumentChanged()
     }
 
     func clearVisibleTerrain() {
@@ -1118,6 +1190,7 @@ final class AssetPlacementStore: ObservableObject {
         historyIndex -= 1
         restore(history[historyIndex])
         repairSelection()
+        markDocumentChanged()
         save()
     }
 
@@ -1127,12 +1200,19 @@ final class AssetPlacementStore: ObservableObject {
         historyIndex += 1
         restore(history[historyIndex])
         repairSelection()
+        markDocumentChanged()
         save()
     }
 
     func save() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        persistNow(scheduleRetryOnFailure: true)
+    }
+
+    private func persistNow(scheduleRetryOnFailure: Bool) {
         do {
-            try AssetPlacementPersistence.save(
+            let savedAt = try AssetPlacementPersistence.save(
                 placements,
                 paintStrokes: paintStrokes,
                 terrainStrokes: terrainStrokes,
@@ -1140,9 +1220,39 @@ final class AssetPlacementStore: ObservableObject {
                 activeStudioID: activeStudioID
             )
             lastSaveSucceeded = true
+            hasUnsavedChanges = false
+            lastSavedAt = savedAt
+            lastSaveError = nil
             NotificationCenter.default.post(name: .assetStudioWorldDidChange, object: nil)
         } catch {
             lastSaveSucceeded = false
+            hasUnsavedChanges = true
+            lastSaveError = error.localizedDescription
+            if scheduleRetryOnFailure {
+                scheduleAutosave(afterNanoseconds: 1_500_000_000)
+            }
+        }
+    }
+
+    /// 操作中でも最大約0.4秒分までしか未保存にしない、先頭エッジ型の自動保存。
+    /// ドラッグ終了を待たないため、長い地形ストロークの途中で中断されても復元できる。
+    private func markDocumentChanged() {
+        hasUnsavedChanges = true
+        scheduleAutosave()
+    }
+
+    private func scheduleAutosave(afterNanoseconds delay: UInt64 = 400_000_000) {
+        guard autosaveTask == nil else { return }
+        autosaveTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: delay)
+            } catch {
+                return
+            }
+            guard let self else { return }
+            self.autosaveTask = nil
+            guard self.hasUnsavedChanges else { return }
+            self.persistNow(scheduleRetryOnFailure: true)
         }
     }
 
@@ -1257,6 +1367,7 @@ final class AssetPlacementStore: ObservableObject {
             if history.count > 80 { history.removeFirst(history.count - 80) }
             historyIndex = history.count - 1
         }
+        markDocumentChanged()
         save()
     }
 
