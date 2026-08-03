@@ -19,6 +19,7 @@ struct Asset3DDescriptor: Identifiable, Hashable {
     var symbolName: String {
         let lowercased = id.lowercased()
         if SavedAssetStudio.id(fromAssetID: id) != nil { return "square.3.layers.3d.top.filled" }
+        if lowercased.contains("lake") || lowercased.contains("water") { return "water.waves" }
         if lowercased.contains("island") { return "mountain.2.fill" }
         if lowercased.contains("tree") { return "tree.fill" }
         if lowercased.contains("boat") { return "sailboat.fill" }
@@ -31,6 +32,7 @@ enum Asset3DCatalog {
     private static let preferredOrder = [
         "island_base",
         "small_tree",
+        "small_lake",
         "windswept_tree",
         "landfall_boat",
         "navigator_main",
@@ -41,6 +43,8 @@ enum Asset3DCatalog {
             (bundle.urls(forResourcesWithExtension: "usdz", subdirectory: nil) ?? [])
                 .map { $0.deletingPathExtension().lastPathComponent }
         )
+        // コード生成アセットもUSDZと同じIDで保存・複製できる。
+        names.insert("small_lake")
 
         // Xcode のリソース同期方式や Preview によって列挙できない場合も、既知素材は個別に拾う。
         for name in preferredOrder where bundle.url(forResource: name, withExtension: "usdz") != nil {
@@ -61,6 +65,7 @@ enum Asset3DCatalog {
         switch resourceName {
         case "island_base": return String(localized: "Island Foundation")
         case "small_tree": return String(localized: "Small Tree")
+        case "small_lake": return String(localized: "Small Lake")
         case "windswept_tree": return "Windswept Tree"
         case "landfall_boat": return "Landfall Boat"
         case "navigator_main": return "Navigator"
@@ -195,6 +200,8 @@ enum AssetPaintMaterial: String, CaseIterable, Codable, Identifiable {
     case sand
     case grass
     case path
+    case rock
+    case snow
 
     var id: String { rawValue }
 
@@ -205,6 +212,8 @@ enum AssetPaintMaterial: String, CaseIterable, Codable, Identifiable {
         case .sand: return VoyageSceneKit.beach
         case .grass: return UIColor(rgb: 0x58705A)
         case .path: return UIColor(rgb: 0x929276)
+        case .rock: return AssetTerrainMaterial.rock.color
+        case .snow: return AssetTerrainMaterial.snow.color
         }
     }
 }
@@ -213,6 +222,8 @@ enum AssetPaintTool: String, CaseIterable, Identifiable {
     case sand
     case grass
     case path
+    case rock
+    case snow
     case eraser
 
     var id: String { rawValue }
@@ -226,6 +237,8 @@ enum AssetPaintTool: String, CaseIterable, Identifiable {
         case .sand: return "circle.hexagongrid.fill"
         case .grass: return "leaf.fill"
         case .path: return "road.lanes"
+        case .rock: return "mountain.2.fill"
+        case .snow: return "snowflake"
         case .eraser: return "eraser.fill"
         }
     }
@@ -1133,6 +1146,24 @@ final class AssetPlacementStore: ObservableObject {
         terrainStrength = shape.strength
     }
 
+    /// ツール切替時に用途に合う安全な初期値へ移す。特に「削る」は一筆で
+    /// 大きく失わず、同じ場所を重ねて深さを決められる精密ステップにする。
+    func selectTerrainTool(_ tool: AssetTerrainTool) {
+        guard terrainTool != tool else { return }
+        terrainTool = tool
+        switch tool {
+        case .raise:
+            terrainRadius = max(terrainRadius, terrainShape.radius)
+            terrainStrength = terrainShape.strength
+        case .lower:
+            terrainRadius = min(terrainRadius, 0.72)
+            terrainStrength = 0.10
+        case .smooth:
+            terrainRadius = min(max(terrainRadius, 0.55), 1.4)
+            terrainStrength = 0.32
+        }
+    }
+
     func appendTerrainPoint(_ point: AssetPaintPoint, to strokeID: UUID) {
         guard let index = terrainStrokes.firstIndex(where: { $0.id == strokeID }) else { return }
         terrainStrokes[index].points.append(point)
@@ -1435,13 +1466,18 @@ enum AssetPlacementRuntime {
                 placement.transform.apply(to: child)
                 container.addChildNode(child)
             }
-            for stroke in contents.paintStrokes {
-                container.addChildNode(makePaintNode(for: stroke))
-            }
-            if let terrain = makeTerrainNode(for: contents.terrainStrokes) {
+            let terrain = makeTerrainNode(for: contents.terrainStrokes)
+            if let terrain {
                 container.addChildNode(terrain)
             }
+            for stroke in contents.paintStrokes {
+                container.addChildNode(makePaintNode(for: stroke, terrainNode: terrain))
+            }
             return container
+        }
+
+        if resourceName == "small_lake" {
+            return makeSmallLakeNode()
         }
 
         guard let url = bundle.url(forResource: resourceName, withExtension: "usdz") else {
@@ -1480,6 +1516,288 @@ enum AssetPlacementRuntime {
         return node
     }
 
+    /// 保存・複製・ゲーム反映ができるコード生成の小さな湖。
+    /// 岸、浅瀬、水面、波紋、岩、葦を別レイヤーにし、どの視点でも厚みが読める。
+    private static func makeSmallLakeNode() -> SCNNode {
+        let root = SCNNode()
+        root.name = "small-lake"
+
+        let basinGeometry = SCNCylinder(radius: 1, height: 0.10)
+        basinGeometry.radialSegmentCount = 64
+        basinGeometry.firstMaterial = VoyageSceneKit.litMaterial(
+            UIColor(rgb: 0x74715E),
+            roughness: 0.98,
+            doubleSided: true,
+            fogged: false
+        )
+        let basin = SCNNode(geometry: basinGeometry)
+        basin.name = "small-lake-basin"
+        basin.position.y = 0.05
+        basin.scale = SCNVector3(1.34, 1, 0.91)
+        basin.castsShadow = true
+        root.addChildNode(basin)
+
+        let shore = makeLakeShoreNode()
+        shore.position.y = 0.105
+        root.addChildNode(shore)
+
+        let water = makeLakeWaterNode()
+        water.position.y = 0.122
+        root.addChildNode(water)
+
+        let rockMaterial = VoyageSceneKit.litMaterial(
+            UIColor(rgb: 0x777A6D),
+            roughness: 0.92,
+            doubleSided: true,
+            fogged: false
+        )
+        for index in 0..<14 {
+            let angle = Float(index) / 14 * 2 * .pi + sin(Float(index) * 2.19) * 0.08
+            let boundary = lakeBoundaryScale(at: angle)
+            let radius = 1.13 + sin(Float(index) * 1.71) * 0.08
+            let sphere = SCNSphere(radius: CGFloat(0.085 + Float(index % 3) * 0.014))
+            sphere.segmentCount = 7
+            sphere.firstMaterial = rockMaterial
+            let rock = SCNNode(geometry: sphere)
+            rock.name = "small-lake-shore-rock"
+            rock.position = SCNVector3(
+                cos(angle) * radius * boundary * 1.10,
+                0.14 + Float(index % 2) * 0.012,
+                sin(angle) * radius * boundary * 0.76
+            )
+            rock.scale = SCNVector3(
+                1.0 + sin(Float(index) * 0.9) * 0.20,
+                0.58 + Float(index % 4) * 0.06,
+                0.82 + cos(Float(index) * 1.3) * 0.14
+            )
+            rock.eulerAngles.y = angle * 1.7
+            rock.castsShadow = true
+            root.addChildNode(rock)
+        }
+
+        for cluster in 0..<4 {
+            let angle = Float(cluster) * 1.47 + 0.46
+            let clusterNode = makeLakeReedCluster(index: cluster)
+            clusterNode.position = SCNVector3(
+                cos(angle) * 1.02 * lakeBoundaryScale(at: angle),
+                0.10,
+                sin(angle) * 0.70 * lakeBoundaryScale(at: angle)
+            )
+            clusterNode.eulerAngles.y = -angle
+            root.addChildNode(clusterNode)
+        }
+
+        // 半透明の波紋を時間差で広げ、静止画的な水面にならないようにする。
+        for index in 0..<3 {
+            let torus = SCNTorus(ringRadius: 0.68, pipeRadius: 0.008)
+            torus.ringSegmentCount = 64
+            torus.pipeSegmentCount = 5
+            let rippleColor = UIColor(rgb: 0xBCE8DC).withAlphaComponent(0.42)
+            let rippleMaterial = VoyageSceneKit.unlitMaterial(rippleColor)
+            rippleMaterial.blendMode = .add
+            rippleMaterial.writesToDepthBuffer = false
+            torus.firstMaterial = rippleMaterial
+            let ripple = SCNNode(geometry: torus)
+            ripple.name = "small-lake-ripple"
+            ripple.position = SCNVector3(
+                -0.32 + Float(index) * 0.28,
+                0.143 + Float(index) * 0.001,
+                -0.12 + Float(index % 2) * 0.22
+            )
+            ripple.opacity = 0
+            ripple.renderingOrder = 82 + index
+            let delay = SCNAction.wait(duration: Double(index) * 0.92)
+            let travel = SCNAction.customAction(duration: 3.0) { node, elapsed in
+                let progress = min(max(Float(elapsed / 3.0), 0), 1)
+                let scale = 0.36 + progress * 0.92
+                node.scale = SCNVector3(scale, 1, scale * 0.70)
+                node.opacity = CGFloat(sin(progress * .pi) * 0.34)
+            }
+            ripple.runAction(.repeatForever(.sequence([delay, travel])))
+            root.addChildNode(ripple)
+        }
+
+        return root
+    }
+
+    private static func makeLakeShoreNode() -> SCNNode {
+        let segments = 72
+        var vertices: [SCNVector3] = []
+        var normals: [SCNVector3] = []
+        var colors: [UIColor] = []
+        var indices: [Int32] = []
+        vertices.reserveCapacity((segments + 1) * 2)
+        normals.reserveCapacity((segments + 1) * 2)
+        colors.reserveCapacity((segments + 1) * 2)
+
+        for segment in 0...segments {
+            let angle = Float(segment) / Float(segments) * 2 * .pi
+            let boundary = lakeBoundaryScale(at: angle)
+            let inner = boundary * (0.91 + sin(angle * 5.2) * 0.012)
+            let outer = boundary * (1.16 + cos(angle * 4.1) * 0.024)
+            vertices.append(SCNVector3(cos(angle) * inner, 0.005, sin(angle) * inner * 0.69))
+            vertices.append(SCNVector3(cos(angle) * outer, sin(angle * 6.3) * 0.010, sin(angle) * outer * 0.72))
+            normals.append(contentsOf: [SCNVector3(0, 1, 0), SCNVector3(0, 1, 0)])
+            colors.append(UIColor(rgb: 0xB2A67C))
+            colors.append(UIColor(rgb: 0x7C8265).scaled(CGFloat(0.96 + sin(angle * 3.7) * 0.05)))
+            if segment < segments {
+                let base = Int32(segment * 2)
+                indices.append(contentsOf: [base, base + 2, base + 1, base + 1, base + 2, base + 3])
+            }
+        }
+
+        let geometry = SCNGeometry(
+            sources: [
+                SCNGeometrySource(vertices: vertices),
+                SCNGeometrySource(normals: normals),
+                paintColorSource(colors),
+            ],
+            elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles)]
+        )
+        geometry.firstMaterial = VoyageSceneKit.litMaterial(
+            .white,
+            roughness: 0.97,
+            doubleSided: true,
+            fogged: false
+        )
+        let node = SCNNode(geometry: geometry)
+        node.name = "small-lake-shore"
+        node.castsShadow = true
+        return node
+    }
+
+    private static func makeLakeWaterNode() -> SCNNode {
+        let segments = 72
+        let rings = 7
+        var vertices = [SCNVector3(0, 0, 0)]
+        var normals = [SCNVector3(0, 1, 0)]
+        var colors = [UIColor(rgb: 0x70C9BE).withAlphaComponent(0.90)]
+        var indices: [Int32] = []
+
+        for ring in 1...rings {
+            let radial = Float(ring) / Float(rings)
+            for segment in 0..<segments {
+                let angle = Float(segment) / Float(segments) * 2 * .pi
+                let boundary = lakeBoundaryScale(at: angle) * 0.90
+                let staticRipple = sin(angle * 5 + radial * 8.3) * 0.004 * radial
+                vertices.append(SCNVector3(
+                    cos(angle) * radial * boundary,
+                    staticRipple,
+                    sin(angle) * radial * boundary * 0.69
+                ))
+                normals.append(SCNVector3(0, 1, 0))
+                let edgeBlend = CGFloat(radial)
+                colors.append(
+                    blend(
+                        UIColor(rgb: 0x73CFC2).withAlphaComponent(0.90),
+                        UIColor(rgb: 0x296F6C).withAlphaComponent(0.84),
+                        amount: Float(edgeBlend * 0.52)
+                    )
+                )
+            }
+        }
+
+        for segment in 0..<segments {
+            let current = Int32(1 + segment)
+            let next = Int32(1 + (segment + 1) % segments)
+            indices.append(contentsOf: [0, next, current])
+        }
+        if rings > 1 {
+            for ring in 1..<rings {
+                let innerStart = 1 + (ring - 1) * segments
+                let outerStart = 1 + ring * segments
+                for segment in 0..<segments {
+                    let nextSegment = (segment + 1) % segments
+                    let inner = Int32(innerStart + segment)
+                    let innerNext = Int32(innerStart + nextSegment)
+                    let outer = Int32(outerStart + segment)
+                    let outerNext = Int32(outerStart + nextSegment)
+                    indices.append(contentsOf: [inner, outerNext, outer, inner, innerNext, outerNext])
+                }
+            }
+        }
+
+        let geometry = SCNGeometry(
+            sources: [
+                SCNGeometrySource(vertices: vertices),
+                SCNGeometrySource(normals: normals),
+                paintColorSource(colors),
+            ],
+            elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles)]
+        )
+        let material = SCNMaterial()
+        material.name = "small-lake-water-material"
+        material.lightingModel = .physicallyBased
+        material.diffuse.contents = UIColor(rgb: 0x4A9F98).withAlphaComponent(0.92)
+        material.roughness.contents = 0.20
+        material.metalness.contents = 0.03
+        material.emission.contents = UIColor(rgb: 0x1E5C59).withAlphaComponent(0.06)
+        material.isDoubleSided = true
+        material.blendMode = .alpha
+        material.transparencyMode = .dualLayer
+        material.fresnelExponent = 1.35
+        material.shaderModifiers = [
+            .geometry: """
+            #pragma body
+            float waveA = sin((_geometry.position.x * 7.0) + scn_frame.time * 1.35);
+            float waveB = cos((_geometry.position.z * 9.0) - scn_frame.time * 1.05);
+            _geometry.position.y += (waveA + waveB) * 0.0065;
+            """
+        ]
+        geometry.firstMaterial = material
+        let node = SCNNode(geometry: geometry)
+        node.name = "small-lake-water"
+        node.renderingOrder = 80
+        return node
+    }
+
+    private static func makeLakeReedCluster(index: Int) -> SCNNode {
+        let cluster = SCNNode()
+        cluster.name = "small-lake-reeds"
+        let stemMaterial = VoyageSceneKit.litMaterial(
+            UIColor(rgb: 0x456A4D),
+            roughness: 0.90,
+            doubleSided: true,
+            fogged: false
+        )
+        let headMaterial = VoyageSceneKit.litMaterial(
+            UIColor(rgb: 0x5B4634),
+            roughness: 0.96,
+            doubleSided: true,
+            fogged: false
+        )
+        for reedIndex in 0..<5 {
+            let height = 0.25 + Float((reedIndex + index) % 3) * 0.055
+            let stemGeometry = SCNCylinder(radius: 0.010, height: CGFloat(height))
+            stemGeometry.radialSegmentCount = 6
+            stemGeometry.firstMaterial = stemMaterial
+            let stem = SCNNode(geometry: stemGeometry)
+            stem.position = SCNVector3(
+                Float(reedIndex - 2) * 0.045,
+                height * 0.5,
+                sin(Float(reedIndex) * 2.3) * 0.035
+            )
+            stem.eulerAngles.z = Float(reedIndex - 2) * 0.018
+            stem.castsShadow = true
+            cluster.addChildNode(stem)
+
+            if reedIndex % 2 == 0 {
+                let headGeometry = SCNSphere(radius: 0.024)
+                headGeometry.segmentCount = 7
+                headGeometry.firstMaterial = headMaterial
+                let head = SCNNode(geometry: headGeometry)
+                head.position = SCNVector3(stem.position.x, height + 0.018, stem.position.z)
+                head.scale.y = 1.8
+                cluster.addChildNode(head)
+            }
+        }
+        return cluster
+    }
+
+    private static func lakeBoundaryScale(at angle: Float) -> Float {
+        1 + sin(angle * 3.1 + 0.4) * 0.055 + cos(angle * 5.3 - 0.7) * 0.034
+    }
+
     private final class TerrainHeightField: NSObject {
         let minimumX: Float
         let minimumZ: Float
@@ -1488,6 +1806,7 @@ enum AssetPlacementRuntime {
         let columns: Int
         let rows: Int
         let heights: [Float]
+        let coverage: [Float]
 
         init(
             minimumX: Float,
@@ -1496,7 +1815,8 @@ enum AssetPlacementRuntime {
             stepZ: Float,
             columns: Int,
             rows: Int,
-            heights: [Float]
+            heights: [Float],
+            coverage: [Float]
         ) {
             self.minimumX = minimumX
             self.minimumZ = minimumZ
@@ -1505,6 +1825,7 @@ enum AssetPlacementRuntime {
             self.columns = columns
             self.rows = rows
             self.heights = heights
+            self.coverage = coverage
         }
 
         func height(atX x: Float, z: Float) -> Float? {
@@ -1524,7 +1845,30 @@ enum AssetPlacementRuntime {
                 + (heights[top * columns + right] - heights[top * columns + left]) * fractionX
             let bottomHeight = heights[bottom * columns + left]
                 + (heights[bottom * columns + right] - heights[bottom * columns + left]) * fractionX
+            let topCoverage = coverage[top * columns + left]
+                + (coverage[top * columns + right] - coverage[top * columns + left]) * fractionX
+            let bottomCoverage = coverage[bottom * columns + left]
+                + (coverage[bottom * columns + right] - coverage[bottom * columns + left]) * fractionX
+            let sampledCoverage = topCoverage + (bottomCoverage - topCoverage) * fractionZ
+            guard sampledCoverage > 0.025 else { return nil }
             return topHeight + (bottomHeight - topHeight) * fractionZ
+        }
+
+        func normal(atX x: Float, z: Float) -> SCNVector3? {
+            guard let center = height(atX: x, z: z) else { return nil }
+            let sampleX = max(stepX, 0.025)
+            let sampleZ = max(stepZ, 0.025)
+            let left = height(atX: x - sampleX, z: z) ?? center
+            let right = height(atX: x + sampleX, z: z) ?? center
+            let near = height(atX: x, z: z - sampleZ) ?? center
+            let far = height(atX: x, z: z + sampleZ) ?? center
+            let raw = SCNVector3(
+                -(right - left) / max(sampleX * 2, 0.0001),
+                1,
+                -(far - near) / max(sampleZ * 2, 0.0001)
+            )
+            let length = max(sqrt(raw.x * raw.x + raw.y * raw.y + raw.z * raw.z), 0.0001)
+            return SCNVector3(raw.x / length, raw.y / length, raw.z / length)
         }
     }
 
@@ -1566,7 +1910,7 @@ enum AssetPlacementRuntime {
         // 小さなブラシは細かく、広域地形は端末で扱える頂点数に自動調整。
         // 従来の137固定上限で起きていた、広いマップの山頂や尾根の角張りを抑える。
         let smallestRadius = validStrokes.map(\.radius).min() ?? 0.8
-        let preferredStep = min(max(smallestRadius / 13, 0.075), 0.14)
+        let preferredStep = min(max(smallestRadius / 13, 0.045), 0.14)
         let columns = min(max(Int(ceil(width / preferredStep)) + 1, 7), 193)
         let rows = min(max(Int(ceil(depth / preferredStep)) + 1, 7), 193)
         let stepX = width / Float(columns - 1)
@@ -1622,6 +1966,9 @@ enum AssetPlacementRuntime {
         }
 
         var heights = baseHeights
+        // 「盛る」で作った高さだけを記録し、川岸の視覚補助と削れる山体を区別する。
+        // これにより平地で削る操作を重ねても、前の一筆が次の一筆で打ち消されない。
+        var raisedRelief = Array(repeating: Float.zero, count: vertexCount)
         // 各頂点が最後に受けた「盛る」ブラシの素材を保持。
         // v5までの地形はグレー固定にせず、芝生へ移行する。
         var surfaceMaterials = Array(repeating: AssetTerrainMaterial.grass, count: vertexCount)
@@ -1705,31 +2052,29 @@ enum AssetPlacementRuntime {
                         delta *= 1 + detail * 0.12 * min(influence[index] * 1.6, 1)
                         weatheringMask[index] = max(weatheringMask[index], influence[index] * 0.78)
                     }
+                    let previousHeight = heights[index]
                     heights[index] = min(
                         baseHeights[index] + 24,
                         heights[index] + max(delta, 0)
                     )
+                    raisedRelief[index] += max(heights[index] - previousHeight, 0)
                     if influence[index] > 0.025 {
                         surfaceMaterials[index] = stroke.material ?? .grass
                     }
                 }
             case .lower:
-                let hasCarvableRelief = heights.indices.contains { index in
-                    influence[index] > 0.02 && heights[index] - baseHeights[index] > 0.012
-                }
                 for index in heights.indices where influence[index] > 0 {
                     let row = index / columns
                     let column = index % columns
                     let x = minimumX + Float(column) * stepX
                     let z = minimumZ + Float(row) * stepZ
                     let detail = terrainDetail(atX: x, z: z, seed: detailSeed)
-                    if hasCarvableRelief {
+                    if raisedRelief[index] > 0.002 {
                         // 完全な円形ではなく、自然に枝分かれた谷・火口になる。
                         let delta = stroke.strength * influence[index] * (1 + detail * 0.08)
-                        heights[index] = max(
-                            baseHeights[index],
-                            heights[index] - max(delta, 0)
-                        )
+                        let removed = min(max(delta, 0), raisedRelief[index])
+                        heights[index] = max(baseHeights[index], heights[index] - removed)
+                        raisedRelief[index] = max(raisedRelief[index] - removed, 0)
                     } else {
                         // SceneKitの島土台自体に穴を開けられない場合も、平地への一筆で
                         // 両岸を生成し、元の地表を川床・谷底として見せる。
@@ -1897,7 +2242,10 @@ enum AssetPlacementRuntime {
             stepZ: stepZ,
             columns: columns,
             rows: rows,
-            heights: heights
+            heights: heights,
+            coverage: zip(heights, baseHeights).map { height, baseHeight in
+                min(max(abs(height - baseHeight) / 0.018, 0), 1)
+            }
         )
         let shape = SCNPhysicsShape(
             geometry: geometry,
@@ -1913,6 +2261,14 @@ enum AssetPlacementRuntime {
 
     static func terrainSurfaceHeight(on node: SCNNode, atLocalX x: Float, z: Float) -> Float? {
         (node as? TerrainSceneNode)?.heightField?.height(atX: x, z: z)
+    }
+
+    private static func terrainSurfaceNormal(
+        on node: SCNNode,
+        atLocalX x: Float,
+        z: Float
+    ) -> SCNVector3? {
+        (node as? TerrainSceneNode)?.heightField?.normal(atX: x, z: z)
     }
 
     private static func resampledTerrainPoints(
@@ -2023,10 +2379,25 @@ enum AssetPlacementRuntime {
         )
     }
 
-    static func makePaintNode(for stroke: AssetPaintStroke) -> SCNNode {
+    static func makePaintNode(
+        for stroke: AssetPaintStroke,
+        terrainNode: SCNNode? = nil
+    ) -> SCNNode {
         let container = SCNNode()
         container.name = "asset-studio-paint:\(stroke.id.uuidString)"
-        guard let firstPoint = stroke.points.first else { return container }
+        let projectedPoints = stroke.points.map { point in
+            AssetPaintPoint(
+                x: point.x,
+                y: paintSurfaceHeight(
+                    atX: point.x,
+                    z: point.z,
+                    fallback: point.y,
+                    terrainNode: terrainNode
+                ),
+                z: point.z
+            )
+        }
+        guard let firstPoint = projectedPoints.first else { return container }
 
         let material = paintMaterial(for: stroke.material)
         let halfWidth = max(stroke.width * 0.5, 0.025)
@@ -2034,16 +2405,16 @@ enum AssetPlacementRuntime {
         let surfaceOffset: Float = 0.016
         let seed = paintSeed(for: stroke.id)
 
-        if stroke.points.count > 1 {
+        if projectedPoints.count > 1 {
             var vertices: [SCNVector3] = []
             var normals: [SCNVector3] = []
             var colors: [UIColor] = []
             var textureCoordinates: [CGPoint] = []
             var indices: [Int32] = []
 
-            for index in stroke.points.indices {
-                let previous = stroke.points[max(index - 1, 0)]
-                let next = stroke.points[min(index + 1, stroke.points.count - 1)]
+            for index in projectedPoints.indices {
+                let previous = projectedPoints[max(index - 1, 0)]
+                let next = projectedPoints[min(index + 1, projectedPoints.count - 1)]
                 let tangentX = next.x - previous.x
                 let tangentZ = next.z - previous.z
                 let tangentLength = max(sqrt(tangentX * tangentX + tangentZ * tangentZ), 0.0001)
@@ -2053,30 +2424,55 @@ enum AssetPlacementRuntime {
                 let rightWidth = halfWidth * (1 + cos(phase * 0.83 + 1.7) * 0.046)
                 let sideUnitX = -tangentZ / tangentLength
                 let sideUnitZ = tangentX / tangentLength
-                let point = stroke.points[index]
-                let surfaceNormal = paintSurfaceNormal(at: index, points: stroke.points)
+                let point = projectedPoints[index]
+                let surfaceNormal = paintSurfaceNormal(
+                    at: index,
+                    points: projectedPoints,
+                    terrainNode: terrainNode
+                )
+                let leftX = point.x + sideUnitX * leftWidth
+                let leftZ = point.z + sideUnitZ * leftWidth
+                let rightX = point.x - sideUnitX * rightWidth
+                let rightZ = point.z - sideUnitZ * rightWidth
+                let safeNormalY = max(abs(surfaceNormal.y), 0.18)
+                let leftFallback = point.y
+                    - (surfaceNormal.x * sideUnitX * leftWidth
+                        + surfaceNormal.z * sideUnitZ * leftWidth) / safeNormalY
+                let rightFallback = point.y
+                    - (surfaceNormal.x * -sideUnitX * rightWidth
+                        + surfaceNormal.z * -sideUnitZ * rightWidth) / safeNormalY
 
                 vertices.append(SCNVector3(
-                    point.x + sideUnitX * leftWidth,
-                    point.y + surfaceOffset,
-                    point.z + sideUnitZ * leftWidth
+                    leftX,
+                    paintSurfaceHeight(
+                        atX: leftX,
+                        z: leftZ,
+                        fallback: leftFallback,
+                        terrainNode: terrainNode
+                    ) + surfaceOffset,
+                    leftZ
                 ))
                 vertices.append(SCNVector3(
-                    point.x - sideUnitX * rightWidth,
-                    point.y + surfaceOffset,
-                    point.z - sideUnitZ * rightWidth
+                    rightX,
+                    paintSurfaceHeight(
+                        atX: rightX,
+                        z: rightZ,
+                        fallback: rightFallback,
+                        terrainNode: terrainNode
+                    ) + surfaceOffset,
+                    rightZ
                 ))
                 normals.append(contentsOf: [surfaceNormal, surfaceNormal])
 
                 // 島本体と同じ頂点色方式。緩やかな明暗差で面の密度を出し、単色の板に見せない。
                 let tone = 0.97 + sin(Float(index) * 1.19 + seed * 0.61) * 0.045
-                colors.append(stroke.material.color.scaled(CGFloat(tone * 0.985)))
-                colors.append(stroke.material.color.scaled(CGFloat(tone * 1.015)))
-                let progress = CGFloat(index) / CGFloat(max(stroke.points.count - 1, 1))
+                colors.append(UIColor.white.scaled(CGFloat(tone * 0.985)))
+                colors.append(UIColor.white.scaled(CGFloat(tone * 1.015)))
+                let progress = CGFloat(index) / CGFloat(max(projectedPoints.count - 1, 1))
                 textureCoordinates.append(CGPoint(x: 0, y: progress))
                 textureCoordinates.append(CGPoint(x: 1, y: progress))
 
-                if index < stroke.points.count - 1 {
+                if index < projectedPoints.count - 1 {
                     let base = Int32(index * 2)
                     indices.append(contentsOf: [base, base + 2, base + 1, base + 1, base + 2, base + 3])
                 }
@@ -2097,19 +2493,20 @@ enum AssetPlacementRuntime {
             container.addChildNode(ribbon)
         }
 
-        let capPoints = stroke.points.count == 1
+        let capPoints = projectedPoints.count == 1
             ? [(firstPoint, 0)]
-            : [(firstPoint, 0), (stroke.points.last ?? firstPoint, stroke.points.count - 1)]
+            : [(firstPoint, 0), (projectedPoints.last ?? firstPoint, projectedPoints.count - 1)]
         for (point, index) in capPoints {
             let capNode = makePaintCap(
                 point: point,
                 pointIndex: index,
-                points: stroke.points,
+                points: projectedPoints,
                 radius: halfWidth,
                 surfaceOffset: surfaceOffset + 0.0005,
                 seed: seed,
                 paint: stroke.material,
-                material: material
+                material: material,
+                terrainNode: terrainNode
             )
             capNode.renderingOrder = 61
             container.addChildNode(capNode)
@@ -2118,13 +2515,15 @@ enum AssetPlacementRuntime {
     }
 
     private static func paintMaterial(for paint: AssetPaintMaterial) -> SCNMaterial {
-        // 島本体と同じPBR・フラットシェーディング。発光は影を薄めるため使わない。
+        // 頂点色は微細な明暗だけを担当させ、基調色はマテリアル側に置く。
+        // 急斜面でも黒潰れしない程度の弱い環境色を加え、素材色を判別しやすくする。
         let material = VoyageSceneKit.litMaterial(
-            .white,
+            paint.color,
             roughness: 0.96,
             doubleSided: true,
             fogged: false
         )
+        material.emission.contents = paint.color.scaled(0.26)
         return material
     }
 
@@ -2136,13 +2535,24 @@ enum AssetPlacementRuntime {
         surfaceOffset: Float,
         seed: Float,
         paint: AssetPaintMaterial,
-        material: SCNMaterial
+        material: SCNMaterial,
+        terrainNode: SCNNode?
     ) -> SCNNode {
         let segments = 12
-        let normal = paintSurfaceNormal(at: pointIndex, points: points)
-        var vertices = [SCNVector3(point.x, point.y + surfaceOffset, point.z)]
+        let normal = paintSurfaceNormal(
+            at: pointIndex,
+            points: points,
+            terrainNode: terrainNode
+        )
+        let centerY = paintSurfaceHeight(
+            atX: point.x,
+            z: point.z,
+            fallback: point.y,
+            terrainNode: terrainNode
+        )
+        var vertices = [SCNVector3(point.x, centerY + surfaceOffset, point.z)]
         var normals = [normal]
-        var colors = [paint.color.scaled(1.025)]
+        var colors = [UIColor.white.scaled(1.025)]
         var indices: [Int32] = []
 
         for segment in 0..<segments {
@@ -2152,10 +2562,18 @@ enum AssetPlacementRuntime {
             let dz = sin(angle) * radius * wobble
             let safeNormalY = max(abs(normal.y), 0.18)
             let dy = -(normal.x * dx + normal.z * dz) / safeNormalY
-            vertices.append(SCNVector3(point.x + dx, point.y + surfaceOffset + dy, point.z + dz))
+            let x = point.x + dx
+            let z = point.z + dz
+            let y = paintSurfaceHeight(
+                atX: x,
+                z: z,
+                fallback: point.y + dy,
+                terrainNode: terrainNode
+            )
+            vertices.append(SCNVector3(x, y + surfaceOffset, z))
             normals.append(normal)
             let tone = 0.94 + sin(Float(segment) * 1.41 + seed * 0.7) * 0.035
-            colors.append(paint.color.scaled(CGFloat(tone)))
+            colors.append(UIColor.white.scaled(CGFloat(tone)))
         }
 
         for segment in 0..<segments {
@@ -2177,10 +2595,32 @@ enum AssetPlacementRuntime {
         return SCNNode(geometry: geometry)
     }
 
+    private static func paintSurfaceHeight(
+        atX x: Float,
+        z: Float,
+        fallback: Float,
+        terrainNode: SCNNode?
+    ) -> Float {
+        guard let terrainNode,
+              let terrainHeight = terrainSurfaceHeight(on: terrainNode, atLocalX: x, z: z)
+        else { return fallback }
+        return terrainHeight
+    }
+
     private static func paintSurfaceNormal(
         at index: Int,
-        points: [AssetPaintPoint]
+        points: [AssetPaintPoint],
+        terrainNode: SCNNode?
     ) -> SCNVector3 {
+        let point = points[index]
+        if let terrainNode,
+           let sampledNormal = terrainSurfaceNormal(
+               on: terrainNode,
+               atLocalX: point.x,
+               z: point.z
+           ) {
+            return sampledNormal
+        }
         guard points.count > 1 else { return SCNVector3(0, 1, 0) }
         let previous = points[max(index - 1, 0)]
         let next = points[min(index + 1, points.count - 1)]
@@ -2247,14 +2687,15 @@ enum AssetPlacementRuntime {
             placement.transform.apply(to: node)
             parent.addChildNode(node)
         }
-        for stroke in AssetPlacementPersistence.loadPaintStrokes() where stroke.context == context {
-            parent.addChildNode(makePaintNode(for: stroke))
-        }
         let terrainStrokes = AssetPlacementPersistence.loadTerrainStrokes().filter {
             $0.context == context
         }
-        if let terrain = makeTerrainNode(for: terrainStrokes) {
+        let terrain = makeTerrainNode(for: terrainStrokes)
+        if let terrain {
             parent.addChildNode(terrain)
+        }
+        for stroke in AssetPlacementPersistence.loadPaintStrokes() where stroke.context == context {
+            parent.addChildNode(makePaintNode(for: stroke, terrainNode: terrain))
         }
     }
 }

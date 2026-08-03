@@ -841,7 +841,7 @@ struct AssetPlacementStudioView: View {
 
             ForEach(AssetTerrainTool.allCases) { tool in
                 Button {
-                    store.terrainTool = tool
+                    store.selectTerrainTool(tool)
                     Haptics.tap(.light)
                 } label: {
                     Image(systemName: tool.symbolName)
@@ -1163,7 +1163,7 @@ struct AssetPlacementStudioView: View {
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(Color(uiColor: VoyageSceneKit.ember))
 
-            Text("Use one finger to paint. Use two fingers to move the camera and pinch to zoom.")
+            Text("Paint material onto the existing surface without changing its shape. Use two fingers to move the camera.")
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.52))
                 .fixedSize(horizontal: false, vertical: true)
@@ -1305,7 +1305,7 @@ struct AssetPlacementStudioView: View {
                     get: { Double(store.terrainRadius) },
                     set: { store.terrainRadius = Float($0) }
                 ),
-                range: 0.35...3.6
+                range: 0.15...3.6
             )
             terrainSlider(
                 title: "Strength",
@@ -1313,8 +1313,42 @@ struct AssetPlacementStudioView: View {
                     get: { Double(store.terrainStrength) },
                     set: { store.terrainStrength = Float($0) }
                 ),
-                range: 0.20...3.5
+                range: terrainStrengthRange
             )
+
+            if store.terrainTool == .lower {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Carve a little with each pass. Trace the same place repeatedly to set the exact depth.")
+                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.52))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 6) {
+                        ForEach([0.05, 0.10, 0.20], id: \.self) { step in
+                            Button {
+                                store.terrainStrength = Float(step)
+                                Haptics.tap(.light)
+                            } label: {
+                                Text(String(format: "%.2f m", step))
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(
+                                        abs(Double(store.terrainStrength) - step) < 0.005
+                                            ? Color(uiColor: VoyageSceneKit.nightBG)
+                                            : .white.opacity(0.70)
+                                    )
+                                    .frame(maxWidth: .infinity, minHeight: 30)
+                                    .background(
+                                        abs(Double(store.terrainStrength) - step) < 0.005
+                                            ? Color(uiColor: VoyageSceneKit.ember)
+                                            : .white.opacity(0.06),
+                                        in: RoundedRectangle(cornerRadius: 9)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
 
             Button(role: .destructive) {
                 confirmingClearTerrain = true
@@ -1347,6 +1381,14 @@ struct AssetPlacementStudioView: View {
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.68))
                 .frame(width: 34, alignment: .trailing)
+        }
+    }
+
+    private var terrainStrengthRange: ClosedRange<Double> {
+        switch store.terrainTool {
+        case .lower: return 0.03...0.60
+        case .smooth: return 0.05...1.0
+        case .raise: return 0.20...3.5
         }
     }
 
@@ -1881,6 +1923,8 @@ struct AssetPlacementStudioView: View {
         case .sand: return "Sand"
         case .grass: return "Grass"
         case .path: return "Path"
+        case .rock: return "Bedrock"
+        case .snow: return "Snow"
         case .eraser: return "Eraser"
         }
     }
@@ -1988,6 +2032,8 @@ struct AssetPlacementStudioView: View {
         case .sand: return String(localized: "Sand")
         case .grass: return String(localized: "Grass")
         case .path: return String(localized: "Path")
+        case .rock: return String(localized: "Bedrock")
+        case .snow: return String(localized: "Snow")
         case .eraser: return String(localized: "Eraser")
         }
     }

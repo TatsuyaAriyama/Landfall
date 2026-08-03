@@ -688,12 +688,14 @@
 "Paint" = "ペン";
 "Grass" = "芝生";
 "Path" = "道";
+"Bedrock" = "岩盤";
 "Eraser" = "消しゴム";
 "Brush width" = "ペンの太さ";
 "Surface paint" = "地表ペイント";
 "Paint strokes" = "描画ストローク";
 "Drag on the surface to paint" = "地表をなぞって描く";
 "Use one finger to paint. Use two fingers to move the camera and pinch to zoom." = "1本指で描画、2本指でカメラ移動、ピンチでズームできます。";
+"Paint material onto the existing surface without changing its shape. Use two fingers to move the camera." = "地形の形を変えず、既存の表面へ素材を塗ります。2本指でカメラを移動できます。";
 "Terrain" = "地形";
 "Place" = "配置";
 "Terrain sculpt" = "地形スカルプト";
@@ -703,6 +705,7 @@
 "Terrain brush radius" = "地形ブラシの範囲";
 "Brush radius" = "ブラシ範囲";
 "Strength" = "強さ";
+"Carve a little with each pass. Trace the same place repeatedly to set the exact depth." = "一筆ごとに少しずつ削ります。同じ場所を重ねて、深さを精密に決められます。";
 "Terrain strokes" = "地形ストローク";
 "Clear terrain" = "地形をクリア";
 "Terrain cleared" = "地形をクリアしました";
@@ -715,6 +718,7 @@
 "Earth" = "土";
 "Rock" = "岩";
 "Snow" = "雪";
+"Small Lake" = "小さな湖";
 "QUICK SHAPES" = "クイック形状";
 "SURFACE MATERIAL" = "地表素材";
 "Choose a shape, then tap or drag on the terrain" = "形を選んで地形をタップ、またはなぞる";

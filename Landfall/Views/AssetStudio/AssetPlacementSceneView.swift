@@ -225,29 +225,11 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 placement.transform.apply(to: node)
             }
 
-            let visibleStrokes = owner.store.visiblePaintStrokes
-            let visibleStrokeIDs = Set(visibleStrokes.map(\.id))
             let refreshTime = ProcessInfo.processInfo.systemUptime
-            for (id, node) in paintNodes where !visibleStrokeIDs.contains(id) {
-                node.removeFromParentNode()
-                paintNodes[id] = nil
-                renderedPaintStrokes[id] = nil
-                selectionGeometryChanged = true
-            }
-            for stroke in visibleStrokes where renderedPaintStrokes[stroke.id] != stroke {
-                let isActiveStroke = stroke.id == activePaintStrokeID
-                if isActiveStroke, refreshTime - lastPaintGeometryRefresh < 1.0 / 30.0 {
-                    continue
-                }
-                paintNodes[stroke.id]?.removeFromParentNode()
-                let node = AssetPlacementRuntime.makePaintNode(for: stroke)
-                placementParent.addChildNode(node)
-                paintNodes[stroke.id] = node
-                renderedPaintStrokes[stroke.id] = stroke
-                selectionGeometryChanged = true
-                if isActiveStroke { lastPaintGeometryRefresh = refreshTime }
-            }
+            var paintSurfaceChanged = false
 
+            // 先に高さフィールドを更新し、その同じ面へ素材レイヤーを再投影する。
+            // この順序で山を削った後も色だけが空中へ残らない。
             let visibleTerrainStrokes = owner.store.visibleTerrainStrokes
             if renderedTerrainStrokes != visibleTerrainStrokes {
                 let shouldThrottle = activeTerrainStrokeID != nil
@@ -260,8 +242,42 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                     }
                     renderedTerrainStrokes = visibleTerrainStrokes
                     selectionGeometryChanged = true
+                    paintSurfaceChanged = true
                     lastTerrainGeometryRefresh = refreshTime
                 }
+            }
+
+            if paintSurfaceChanged {
+                for node in paintNodes.values {
+                    node.removeFromParentNode()
+                }
+                paintNodes.removeAll()
+                renderedPaintStrokes.removeAll()
+            }
+
+            let visibleStrokes = owner.store.visiblePaintStrokes
+            let visibleStrokeIDs = Set(visibleStrokes.map(\.id))
+            for (id, node) in paintNodes where !visibleStrokeIDs.contains(id) {
+                node.removeFromParentNode()
+                paintNodes[id] = nil
+                renderedPaintStrokes[id] = nil
+                selectionGeometryChanged = true
+            }
+            for stroke in visibleStrokes where renderedPaintStrokes[stroke.id] != stroke {
+                let isActiveStroke = stroke.id == activePaintStrokeID
+                if isActiveStroke, refreshTime - lastPaintGeometryRefresh < 1.0 / 30.0 {
+                    continue
+                }
+                paintNodes[stroke.id]?.removeFromParentNode()
+                let node = AssetPlacementRuntime.makePaintNode(
+                    for: stroke,
+                    terrainNode: terrainNode
+                )
+                placementParent.addChildNode(node)
+                paintNodes[stroke.id] = node
+                renderedPaintStrokes[stroke.id] = stroke
+                selectionGeometryChanged = true
+                if isActiveStroke { lastPaintGeometryRefresh = refreshTime }
             }
 
             if selectionGeometryChanged {
