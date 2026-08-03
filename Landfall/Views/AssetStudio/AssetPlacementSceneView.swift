@@ -2,6 +2,70 @@ import SceneKit
 import SwiftUI
 import UIKit
 
+/// iOS Simulatorのハードウェアキーボード入力を、3D編集キャンバスへ渡す。
+/// 実機でも外付けキーボードを接続した場合は同じショートカットを利用できる。
+private final class AssetStudioInteractiveSceneView: SCNView {
+    var keyCommandHandler: ((UIKeyCommand) -> Void)?
+
+    override var canBecomeFirstResponder: Bool { true }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil { becomeFirstResponder() }
+    }
+
+    override var keyCommands: [UIKeyCommand]? {
+        [
+            keyCommand(UIKeyCommand.inputUpArrow, title: "Move camera forward"),
+            keyCommand(UIKeyCommand.inputDownArrow, title: "Move camera backward"),
+            keyCommand(UIKeyCommand.inputLeftArrow, title: "Move camera left"),
+            keyCommand(UIKeyCommand.inputRightArrow, title: "Move camera right"),
+            keyCommand("w", title: "Move camera forward"),
+            keyCommand("s", title: "Move camera backward"),
+            keyCommand("a", title: "Move camera left"),
+            keyCommand("d", title: "Move camera right"),
+            keyCommand("q", title: "Orbit camera left"),
+            keyCommand("e", title: "Orbit camera right"),
+            keyCommand("=", title: "Zoom in"),
+            keyCommand("-", title: "Zoom out"),
+            keyCommand("0", title: "Show overview"),
+            keyCommand("f", title: "Focus selected"),
+            keyCommand("1", title: "Select mode"),
+            keyCommand("2", title: "Move mode"),
+            keyCommand("3", title: "Height mode"),
+            keyCommand("4", title: "Rotate mode"),
+            keyCommand("5", title: "Scale mode"),
+            keyCommand("6", title: "Camera mode"),
+            keyCommand("7", title: "Paint mode"),
+            keyCommand("8", title: "Terrain mode"),
+            keyCommand("z", modifiers: .command, title: "Undo"),
+            keyCommand("z", modifiers: [.command, .shift], title: "Redo"),
+            keyCommand("d", modifiers: .command, title: "Duplicate selected"),
+            keyCommand(UIKeyCommand.inputDelete, title: "Delete selected"),
+            keyCommand(UIKeyCommand.inputEscape, title: "Clear selection"),
+        ]
+    }
+
+    @objc private func handleKeyCommand(_ command: UIKeyCommand) {
+        keyCommandHandler?(command)
+    }
+
+    private func keyCommand(
+        _ input: String,
+        modifiers: UIKeyModifierFlags = [],
+        title: String
+    ) -> UIKeyCommand {
+        let command = UIKeyCommand(
+            input: input,
+            modifierFlags: modifiers,
+            action: #selector(handleKeyCommand(_:))
+        )
+        command.discoverabilityTitle = NSLocalizedString(title, comment: "3D studio keyboard shortcut")
+        command.wantsPriorityOverSystemBehavior = true
+        return command
+    }
+}
+
 /// SceneKit の編集キャンバス。SwiftUI側の Store とシーンノードを同期する。
 struct AssetPlacementSceneView: UIViewRepresentable {
     @ObservedObject var store: AssetPlacementStore
@@ -12,7 +76,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> SCNView {
-        let view = SCNView(frame: .zero)
+        let view = AssetStudioInteractiveSceneView(frame: .zero)
         context.coordinator.configure(view)
         context.coordinator.synchronize()
         return view
@@ -106,6 +170,11 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             view.allowsCameraControl = false
             view.isJitteringEnabled = true
             view.contentScaleFactor = UIScreen.main.scale
+            if let interactiveView = view as? AssetStudioInteractiveSceneView {
+                interactiveView.keyCommandHandler = { [weak self] command in
+                    self?.handleKeyboardCommand(command)
+                }
+            }
 
             let marquee = UIView(frame: .zero)
             marquee.isHidden = true
@@ -195,7 +264,10 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 }
             }
 
-            if selectionGeometryChanged { renderedSelectionIDs.removeAll() }
+            if selectionGeometryChanged {
+                clearSelectionIndicators()
+                renderedSelectionIDs.removeAll()
+            }
             refreshSelectionIfNeeded()
             processCameraRequestIfNeeded()
             processSurfaceSnapRequestIfNeeded()
@@ -274,8 +346,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             renderedContext = context
             renderedActiveStudioID = owner.store.activeStudioID
             renderedSelectionIDs.removeAll()
-            selectionIndicators.values.forEach { $0.removeFromParentNode() }
-            selectionIndicators.removeAll()
+            clearSelectionIndicators()
             placementNodes.removeAll()
             paintNodes.removeAll()
             renderedPaintStrokes.removeAll()
@@ -498,10 +569,20 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 || owner.store.manipulationMode == .place
                 ? Set<UUID>()
                 : owner.store.selectedIDs
-            guard renderedSelectionIDs != selectionIDs else { return }
+            let paintSelectionIDs = Set(owner.store.visiblePaintStrokes.map(\.id))
+            let terrainSelectionIDs = Set(owner.store.visibleTerrainStrokes.map(\.id))
+            let expectedIndicatorIDs = selectionIDs.filter {
+                placementNodes[$0] != nil
+                    || paintSelectionIDs.contains($0)
+                    || terrainSelectionIDs.contains($0)
+            }
+            // IDキャッシュだけでなく、実際にシーンへ残っている表示ノードも照合する。
+            // 一括削除と同時にジオメトリが無効化されても、古い選択マークを必ず消す。
+            guard renderedSelectionIDs != selectionIDs
+                    || Set(selectionIndicators.keys) != expectedIndicatorIDs
+            else { return }
             renderedSelectionIDs = selectionIDs
-            selectionIndicators.values.forEach { $0.removeFromParentNode() }
-            selectionIndicators.removeAll()
+            clearSelectionIndicators()
 
             for selectionID in selectionIDs {
                 let indicator: SCNNode
@@ -524,6 +605,11 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             }
         }
 
+        private func clearSelectionIndicators() {
+            selectionIndicators.values.forEach { $0.removeFromParentNode() }
+            selectionIndicators.removeAll()
+        }
+
         private func makeSelectionIndicator(for node: SCNNode) -> SCNNode {
             var (minimum, maximum) = node.boundingBox
             let hasUsableBounds = minimum.x.isFinite && minimum.y.isFinite && minimum.z.isFinite
@@ -544,7 +630,8 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             )
         }
 
-        /// ペンや地形の実際のブラシ範囲を点列で示し、巨大な直方体枠で世界を隠さない。
+        /// ペンや地形の実際のブラシ範囲を、連続した帯と輪郭で示す。
+        /// 点ごとの黄色い丸は、隣のストロークとの対応が分かりづらいため使わない。
         private func makeStrokeFootprintSelectionIndicator(
             points: [AssetPaintPoint],
             radius: Float
@@ -553,98 +640,159 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             indicator.name = "asset-studio-selection"
             guard !points.isEmpty else { return indicator }
 
-            let material = SCNMaterial()
-            material.lightingModel = .constant
-            material.diffuse.contents = UIColor(rgb: 0xFFD36A)
-            material.emission.contents = UIColor(rgb: 0xE7A83E)
-            material.readsFromDepthBuffer = false
-            material.writesToDepthBuffer = false
+            let selectionColor = UIColor(rgb: 0xFFD36A)
+            let outlineMaterial = SCNMaterial()
+            outlineMaterial.lightingModel = .constant
+            outlineMaterial.diffuse.contents = selectionColor
+            outlineMaterial.emission.contents = UIColor(rgb: 0xE7A83E)
+            outlineMaterial.readsFromDepthBuffer = false
+            outlineMaterial.writesToDepthBuffer = false
+
+            let fillMaterial = SCNMaterial()
+            fillMaterial.lightingModel = .constant
+            fillMaterial.diffuse.contents = selectionColor.withAlphaComponent(0.20)
+            fillMaterial.emission.contents = selectionColor.withAlphaComponent(0.08)
+            fillMaterial.isDoubleSided = true
+            fillMaterial.readsFromDepthBuffer = false
+            fillMaterial.writesToDepthBuffer = false
+            fillMaterial.blendMode = .alpha
 
             var sampledPoints: [AssetPaintPoint] = []
-            let stride = max(1, points.count / 16)
+            let stride = max(1, Int(ceil(Double(points.count) / 48.0)))
             for index in Swift.stride(from: 0, to: points.count, by: stride) {
                 sampledPoints.append(points[index])
             }
             if let last = points.last, sampledPoints.last != last { sampledPoints.append(last) }
 
-            if sampledPoints.count > 1 {
-                var vertices: [SCNVector3] = []
-                var indices: [Int32] = []
-                for index in 0..<(sampledPoints.count - 1) {
-                    let start = sampledPoints[index]
-                    let end = sampledPoints[index + 1]
-                    let vertexIndex = Int32(vertices.count)
-                    vertices.append(SCNVector3(start.x, start.y + 0.055, start.z))
-                    vertices.append(SCNVector3(end.x, end.y + 0.055, end.z))
-                    indices.append(contentsOf: [vertexIndex, vertexIndex + 1])
-                }
-                let pathGeometry = SCNGeometry(
-                    sources: [SCNGeometrySource(vertices: vertices)],
-                    elements: [SCNGeometryElement(indices: indices, primitiveType: .line)]
+            guard sampledPoints.count > 1 else {
+                let point = sampledPoints[0]
+                let disc = SCNCylinder(radius: CGFloat(radius), height: 0.008)
+                disc.radialSegmentCount = 48
+                disc.firstMaterial = fillMaterial
+                let discNode = SCNNode(geometry: disc)
+                discNode.position = SCNVector3(point.x, point.y + 0.06, point.z)
+                discNode.renderingOrder = 901
+                indicator.addChildNode(discNode)
+
+                let crossVertices = [
+                    SCNVector3(point.x - radius, point.y + 0.068, point.z),
+                    SCNVector3(point.x + radius, point.y + 0.068, point.z),
+                    SCNVector3(point.x, point.y + 0.068, point.z - radius),
+                    SCNVector3(point.x, point.y + 0.068, point.z + radius),
+                ]
+                let crossGeometry = SCNGeometry(
+                    sources: [SCNGeometrySource(vertices: crossVertices)],
+                    elements: [SCNGeometryElement(indices: [Int32(0), 1, 2, 3], primitiveType: .line)]
                 )
-                pathGeometry.firstMaterial = material
-                let pathNode = SCNNode(geometry: pathGeometry)
-                pathNode.renderingOrder = 902
-                indicator.addChildNode(pathNode)
+                crossGeometry.firstMaterial = outlineMaterial
+                let crossNode = SCNNode(geometry: crossGeometry)
+                crossNode.renderingOrder = 903
+                indicator.addChildNode(crossNode)
+                return indicator
             }
 
-            for point in sampledPoints {
-                let ringGeometry = SCNTorus(
-                    ringRadius: CGFloat(radius),
-                    pipeRadius: CGFloat(max(radius * 0.018, 0.009))
-                )
-                ringGeometry.ringSegmentCount = 40
-                ringGeometry.pipeSegmentCount = 5
-                ringGeometry.firstMaterial = material
-                let ringNode = SCNNode(geometry: ringGeometry)
-                ringNode.position = SCNVector3(point.x, point.y + 0.05, point.z)
-                ringNode.renderingOrder = 903
-                indicator.addChildNode(ringNode)
+            var vertices: [SCNVector3] = []
+            var centerVertices: [SCNVector3] = []
+            vertices.reserveCapacity(sampledPoints.count * 2)
+            centerVertices.reserveCapacity(sampledPoints.count)
+            for index in sampledPoints.indices {
+                let point = sampledPoints[index]
+                let previous = sampledPoints[max(index - 1, 0)]
+                let next = sampledPoints[min(index + 1, sampledPoints.count - 1)]
+                let tangentX = next.x - previous.x
+                let tangentZ = next.z - previous.z
+                let tangentLength = max(sqrt(tangentX * tangentX + tangentZ * tangentZ), 0.000_1)
+                let normalX = -tangentZ / tangentLength
+                let normalZ = tangentX / tangentLength
+                let y = point.y + 0.06
+                vertices.append(SCNVector3(point.x + normalX * radius, y, point.z + normalZ * radius))
+                vertices.append(SCNVector3(point.x - normalX * radius, y, point.z - normalZ * radius))
+                centerVertices.append(SCNVector3(point.x, y + 0.008, point.z))
             }
+
+            let fillIndices = vertices.indices.map(Int32.init)
+            let fillGeometry = SCNGeometry(
+                sources: [SCNGeometrySource(vertices: vertices)],
+                elements: [SCNGeometryElement(indices: fillIndices, primitiveType: .triangleStrip)]
+            )
+            fillGeometry.firstMaterial = fillMaterial
+            let fillNode = SCNNode(geometry: fillGeometry)
+            fillNode.renderingOrder = 901
+            indicator.addChildNode(fillNode)
+
+            var outlineIndices: [Int32] = []
+            for index in 0..<(sampledPoints.count - 1) {
+                let current = Int32(index * 2)
+                let next = Int32((index + 1) * 2)
+                outlineIndices.append(contentsOf: [current, next, current + 1, next + 1])
+            }
+            outlineIndices.append(contentsOf: [0, 1, Int32(vertices.count - 2), Int32(vertices.count - 1)])
+            let outlineGeometry = SCNGeometry(
+                sources: [SCNGeometrySource(vertices: vertices)],
+                elements: [SCNGeometryElement(indices: outlineIndices, primitiveType: .line)]
+            )
+            outlineGeometry.firstMaterial = outlineMaterial
+            let outlineNode = SCNNode(geometry: outlineGeometry)
+            outlineNode.renderingOrder = 903
+            indicator.addChildNode(outlineNode)
+
+            var centerIndices: [Int32] = []
+            for index in 0..<(centerVertices.count - 1) {
+                centerIndices.append(contentsOf: [Int32(index), Int32(index + 1)])
+            }
+            let centerGeometry = SCNGeometry(
+                sources: [SCNGeometrySource(vertices: centerVertices)],
+                elements: [SCNGeometryElement(indices: centerIndices, primitiveType: .line)]
+            )
+            centerGeometry.firstMaterial = outlineMaterial
+            let centerNode = SCNNode(geometry: centerGeometry)
+            centerNode.renderingOrder = 904
+            indicator.addChildNode(centerNode)
             return indicator
         }
 
         private func makeSelectionIndicator(minimum: SCNVector3, maximum: SCNVector3) -> SCNNode {
 
-            let width = max(CGFloat(maximum.x - minimum.x), 0.08)
-            let height = max(CGFloat(maximum.y - minimum.y), 0.08)
-            let length = max(CGFloat(maximum.z - minimum.z), 0.08)
-            let box = SCNBox(width: width * 1.04, height: height * 1.04, length: length * 1.04, chamferRadius: 0)
+            let padding = max(
+                max(maximum.x - minimum.x, maximum.y - minimum.y),
+                maximum.z - minimum.z
+            ) * 0.02
+            let minX = minimum.x - padding
+            let minY = minimum.y - padding
+            let minZ = minimum.z - padding
+            let maxX = maximum.x + padding
+            let maxY = maximum.y + padding
+            let maxZ = maximum.z + padding
+            let vertices = [
+                SCNVector3(minX, minY, minZ), SCNVector3(maxX, minY, minZ),
+                SCNVector3(maxX, minY, maxZ), SCNVector3(minX, minY, maxZ),
+                SCNVector3(minX, maxY, minZ), SCNVector3(maxX, maxY, minZ),
+                SCNVector3(maxX, maxY, maxZ), SCNVector3(minX, maxY, maxZ),
+            ]
+            let edgeIndices: [Int32] = [
+                0, 1, 1, 2, 2, 3, 3, 0,
+                4, 5, 5, 6, 6, 7, 7, 4,
+                0, 4, 1, 5, 2, 6, 3, 7,
+            ]
+            let geometry = SCNGeometry(
+                sources: [SCNGeometrySource(vertices: vertices)],
+                elements: [SCNGeometryElement(indices: edgeIndices, primitiveType: .line)]
+            )
             let material = SCNMaterial()
             material.lightingModel = .constant
             material.diffuse.contents = UIColor(rgb: 0xFFD36A)
             material.emission.contents = UIColor(rgb: 0xE7A83E)
-            material.fillMode = .lines
-            material.isDoubleSided = true
             material.readsFromDepthBuffer = false
             material.writesToDepthBuffer = false
-            box.firstMaterial = material
+            geometry.firstMaterial = material
 
             let indicator = SCNNode()
             indicator.name = "asset-studio-selection"
 
-            let boxNode = SCNNode(geometry: box)
-            boxNode.position = SCNVector3(
-                (minimum.x + maximum.x) * 0.5,
-                (minimum.y + maximum.y) * 0.5,
-                (minimum.z + maximum.z) * 0.5
-            )
+            let boxNode = SCNNode(geometry: geometry)
             boxNode.renderingOrder = 900
             indicator.addChildNode(boxNode)
 
-            let ringRadius = max(width, length) * 0.58
-            let ring = SCNTorus(ringRadius: ringRadius, pipeRadius: max(ringRadius * 0.012, 0.006))
-            ring.ringSegmentCount = 64
-            ring.pipeSegmentCount = 6
-            ring.firstMaterial = material
-            let ringNode = SCNNode(geometry: ring)
-            ringNode.position = SCNVector3(
-                (minimum.x + maximum.x) * 0.5,
-                minimum.y + 0.008,
-                (minimum.z + maximum.z) * 0.5
-            )
-            ringNode.renderingOrder = 901
-            indicator.addChildNode(ringNode)
             return indicator
         }
 
@@ -659,6 +807,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
             pan.minimumNumberOfTouches = 1
             pan.maximumNumberOfTouches = 1
+            pan.allowedScrollTypesMask = [.continuous, .discrete]
             pan.delegate = self
 
             let verticalPan = UIPanGestureRecognizer(target: self, action: #selector(handleVerticalPan(_:)))
@@ -674,16 +823,20 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             longPress.allowableMovement = 12
             longPress.delegate = self
 
+            let hover = UIHoverGestureRecognizer(target: self, action: #selector(handleHover(_:)))
+
             view.addGestureRecognizer(singleTap)
             view.addGestureRecognizer(doubleTap)
             view.addGestureRecognizer(pan)
             view.addGestureRecognizer(verticalPan)
             view.addGestureRecognizer(pinch)
             view.addGestureRecognizer(longPress)
+            view.addGestureRecognizer(hover)
         }
 
         @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let view = sceneView else { return }
+            view.becomeFirstResponder()
             if owner.store.manipulationMode == .paint,
                let point = paintingPoint(at: gesture.location(in: view), in: view) {
                 _ = owner.store.beginPaintStroke(at: point)
@@ -746,6 +899,15 @@ struct AssetPlacementSceneView: UIViewRepresentable {
 
         @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
             guard let view = sceneView else { return }
+            view.becomeFirstResponder()
+            if gesture.numberOfTouches == 0 {
+                handlePointerScroll(gesture, in: view)
+                return
+            }
+            if gesture.buttonMask.contains(.secondary) {
+                handlePointerOrbit(gesture, in: view)
+                return
+            }
             if owner.store.manipulationMode == .paint {
                 handlePaintPan(gesture, in: view)
                 return
@@ -774,6 +936,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                     || store.manipulationMode == .scale
                 panEditsSelection = isTransformMode
                     && store.selectedID != nil
+                    && !gesture.buttonMask.contains(.secondary)
                     && placementID(at: gesture.location(in: view), in: view) == store.selectedID
                 initialWorldDragPoint = nil
                 initialNodeWorldPosition = nil
@@ -898,6 +1061,148 @@ struct AssetPlacementSceneView: UIViewRepresentable {
                 panEditsSelection = false
                 initialWorldDragPoint = nil
                 initialNodeWorldPosition = nil
+            default:
+                break
+            }
+        }
+
+        /// Macのマウスホイールとトラックパッドスクロールは、
+        /// どのツール中でもキャンバスをズームする。
+        private func handlePointerScroll(_ gesture: UIPanGestureRecognizer, in view: SCNView) {
+            let translation = gesture.translation(in: view)
+            switch gesture.state {
+            case .began:
+                initialDistance = cameraDistance
+            case .changed:
+                cameraDistance = initialDistance * exp(Float(translation.y) * 0.006)
+                updateCamera()
+            case .ended, .cancelled, .failed:
+                updateCamera(animated: 0.10)
+            default:
+                break
+            }
+        }
+
+        /// 右ボタンドラッグは変形ツールより優先し、常にカメラ周回とする。
+        private func handlePointerOrbit(_ gesture: UIPanGestureRecognizer, in view: SCNView) {
+            let translation = gesture.translation(in: view)
+            switch gesture.state {
+            case .began:
+                initialAzimuth = cameraAzimuth
+                initialElevation = cameraElevation
+            case .changed:
+                cameraAzimuth = initialAzimuth - Float(translation.x) * 0.0064
+                cameraElevation = initialElevation + Float(translation.y) * 0.0052
+                updateCamera()
+            case .ended, .cancelled, .failed:
+                updateCamera(animated: 0.12)
+            default:
+                break
+            }
+        }
+
+        /// マウスで筆を下ろす前に、ペンと地形ブラシの実際の範囲を見せる。
+        @objc private func handleHover(_ gesture: UIHoverGestureRecognizer) {
+            guard let view = sceneView else { return }
+            guard gesture.state != .ended, gesture.state != .cancelled else {
+                hideBrushPreview()
+                return
+            }
+            let location = gesture.location(in: view)
+            switch owner.store.manipulationMode {
+            case .paint:
+                if let point = paintingPoint(at: location, in: view) {
+                    showBrushPreview(
+                        at: point,
+                        radius: max(owner.store.paintWidth * 0.5, 0.04),
+                        color: owner.store.paintTool.material?.color ?? UIColor(rgb: 0xFF746B)
+                    )
+                } else {
+                    hideBrushPreview()
+                }
+            case .terrain:
+                if let point = terrainPoint(at: location, in: view) {
+                    showBrushPreview(
+                        at: point,
+                        radius: owner.store.terrainRadius,
+                        color: terrainPreviewColor
+                    )
+                } else {
+                    hideBrushPreview()
+                }
+            default:
+                hideBrushPreview()
+            }
+        }
+
+        private func handleKeyboardCommand(_ command: UIKeyCommand) {
+            let input = command.input?.lowercased() ?? ""
+            let modifiers = command.modifierFlags
+
+            if modifiers.contains(.command), input == "z" {
+                if modifiers.contains(.shift) {
+                    owner.store.redo()
+                } else {
+                    owner.store.undo()
+                }
+                synchronize()
+                return
+            }
+            if modifiers.contains(.command), input == "d" {
+                owner.store.duplicateSelected()
+                synchronize()
+                return
+            }
+            if input == UIKeyCommand.inputDelete.lowercased() {
+                owner.store.deleteSelected()
+                synchronize()
+                return
+            }
+            if input == UIKeyCommand.inputEscape.lowercased() {
+                owner.store.select(nil)
+                refreshSelectionIfNeeded()
+                return
+            }
+
+            switch input {
+            case "w", UIKeyCommand.inputUpArrow.lowercased():
+                nudgeCamera(forward: 1, right: 0)
+            case "s", UIKeyCommand.inputDownArrow.lowercased():
+                nudgeCamera(forward: -1, right: 0)
+            case "a", UIKeyCommand.inputLeftArrow.lowercased():
+                nudgeCamera(forward: 0, right: -1)
+            case "d", UIKeyCommand.inputRightArrow.lowercased():
+                nudgeCamera(forward: 0, right: 1)
+            case "q":
+                cameraAzimuth -= 0.16
+                updateCamera(animated: 0.12)
+            case "e":
+                cameraAzimuth += 0.16
+                updateCamera(animated: 0.12)
+            case "=":
+                zoomCamera(by: 0.84)
+            case "-":
+                zoomCamera(by: 1.18)
+            case "0":
+                showOverview(animated: true)
+            case "f":
+                focusSelection(animated: true)
+            case "1":
+                owner.store.manipulationMode = .select
+            case "2":
+                owner.store.manipulationMode = .move
+            case "3":
+                owner.store.manipulationMode = .height
+            case "4":
+                owner.store.manipulationMode = .rotate
+            case "5":
+                owner.store.manipulationMode = .scale
+            case "6":
+                owner.store.manipulationMode = .camera
+            case "7":
+                owner.store.manipulationMode = .paint
+            case "8":
+                owner.store.manipulationMode = .terrain
             default:
                 break
             }

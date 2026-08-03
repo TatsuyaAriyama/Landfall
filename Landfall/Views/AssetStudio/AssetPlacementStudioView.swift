@@ -1337,6 +1337,33 @@ struct AssetPlacementStudioView: View {
                 cameraGestureHint(symbol: "hand.raised.fill", title: "Pan", detail: "2 fingers")
                 cameraGestureHint(symbol: "arrow.up.left.and.arrow.down.right", title: "Zoom", detail: "Pinch")
             }
+
+            #if targetEnvironment(simulator)
+            Divider()
+                .overlay(.white.opacity(0.08))
+
+            Label("MAC / SIMULATOR", systemImage: "keyboard")
+                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .tracking(1.0)
+                .foregroundStyle(Color(uiColor: VoyageSceneKit.ember))
+
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 2),
+                spacing: 6
+            ) {
+                macShortcut("WASD / Arrows", action: "Move view")
+                macShortcut("Q / E · Right-drag", action: "Orbit view")
+                macShortcut("Scroll · + / −", action: "Zoom view")
+                macShortcut("⌘Z · ⇧⌘Z", action: "Undo · Redo")
+                macShortcut("⌘D · Delete", action: "Duplicate · Delete")
+                macShortcut("1–8", action: "Switch tools")
+            }
+
+            Text("Hover previews the active brush before clicking.")
+                .font(.system(size: 8, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.42))
+                .fixedSize(horizontal: false, vertical: true)
+            #endif
         }
         .padding(11)
         .background(.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
@@ -1393,6 +1420,27 @@ struct AssetPlacementStudioView: View {
         .frame(maxWidth: .infinity, minHeight: 35)
         .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 9))
     }
+
+    #if targetEnvironment(simulator)
+    private func macShortcut(
+        _ keys: LocalizedStringKey,
+        action: LocalizedStringKey
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(keys)
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.78))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            Text(action)
+                .font(.system(size: 8, weight: .medium, design: .rounded))
+                .foregroundStyle(.white.opacity(0.40))
+        }
+        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+        .padding(.horizontal, 8)
+        .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 9))
+    }
+    #endif
 
     /// 複雑な世界でも、各編集レイヤーの量を一眼で把握できる。
     private var worldContentOverview: some View {
