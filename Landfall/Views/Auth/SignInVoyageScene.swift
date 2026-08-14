@@ -6,6 +6,7 @@ import UIKit
 /// ホームや港のシーンを変更せず、共有の船・航海士・島だけをログイン用に配置し直す。
 struct SignInVoyageSceneView: UIViewRepresentable {
     let timeOfDay: AftideHomeTimeOfDay
+    let date: Date
     let animate: Bool
 
     func makeCoordinator() -> Coordinator {
@@ -21,13 +22,14 @@ struct SignInVoyageSceneView: UIViewRepresentable {
         view.allowsCameraControl = false
         view.isUserInteractionEnabled = false
         view.preferredFramesPerSecond = 60
-        view.scene = SignInVoyageSceneFactory.makeScene(timeOfDay: timeOfDay)
+        view.scene = SignInVoyageSceneFactory.makeScene(timeOfDay: timeOfDay, date: date)
         view.pointOfView = view.scene?.rootNode.childNode(
             withName: "camera",
             recursively: false
         )
         view.delegate = context.coordinator
         context.coordinator.bind(view: view, timeOfDay: timeOfDay)
+        context.coordinator.setDate(date)
         context.coordinator.setAnimating(animate)
         return view
     }
@@ -35,13 +37,14 @@ struct SignInVoyageSceneView: UIViewRepresentable {
     func updateUIView(_ view: SCNView, context: Context) {
         if context.coordinator.timeOfDay != timeOfDay {
             view.backgroundColor = SignInVoyageSceneFactory.backgroundColor(for: timeOfDay)
-            view.scene = SignInVoyageSceneFactory.makeScene(timeOfDay: timeOfDay)
+            view.scene = SignInVoyageSceneFactory.makeScene(timeOfDay: timeOfDay, date: date)
             view.pointOfView = view.scene?.rootNode.childNode(
                 withName: "camera",
                 recursively: false
             )
             context.coordinator.bind(view: view, timeOfDay: timeOfDay)
         }
+        context.coordinator.setDate(date)
         context.coordinator.updateViewport(view.bounds.size)
         context.coordinator.setAnimating(animate)
     }
@@ -59,6 +62,7 @@ struct SignInVoyageSceneView: UIViewRepresentable {
 
         private weak var view: SCNView?
         private weak var camera: SCNNode?
+        private weak var moon: SCNNode?
         private weak var bob: SCNNode?
         private weak var wake: SCNNode?
         private var gulls: [SCNNode] = []
@@ -83,6 +87,10 @@ struct SignInVoyageSceneView: UIViewRepresentable {
             self.view = view
             self.timeOfDay = timeOfDay
             camera = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
+            moon = view.scene?.rootNode.childNode(
+                withName: LandfallMoonEffects.rootNodeName,
+                recursively: false
+            )
             bob = view.scene?.rootNode.childNode(withName: "boatBob", recursively: true)
             wake = view.scene?.rootNode.childNode(withName: "wake", recursively: true)
             gulls = view.scene?.rootNode
@@ -95,6 +103,10 @@ struct SignInVoyageSceneView: UIViewRepresentable {
             sailor.animate = true
             updateViewport(view.bounds.size)
             applyFrame(time: 0, delta: 0)
+        }
+
+        func setDate(_ date: Date) {
+            LandfallMoonEffects.update(moon, phase: .current(at: date))
         }
 
         func updateViewport(_ size: CGSize) {
@@ -202,11 +214,12 @@ private enum SignInVoyageSceneFactory {
         let moon: Bool
     }
 
-    static func makeScene(timeOfDay: AftideHomeTimeOfDay) -> SCNScene {
+    static func makeScene(timeOfDay: AftideHomeTimeOfDay, date: Date) -> SCNScene {
         let palette = palette(for: timeOfDay)
         let scene = VoyageSceneKit.makeVoyagingScene(
             showIsland: true,
-            timeOfDay: timeOfDay
+            timeOfDay: timeOfDay,
+            date: date
         )
         scene.background.contents = UIColor(rgb: palette.sky)
         scene.fogColor = UIColor(rgb: palette.fog)
@@ -214,7 +227,7 @@ private enum SignInVoyageSceneFactory {
         scene.fogEndDistance = 35
 
         restageStars(in: scene, count: palette.stars)
-        restageCelestial(in: scene, timeOfDay: timeOfDay, palette: palette)
+        restageCelestial(in: scene, timeOfDay: timeOfDay, date: date, palette: palette)
         recolorSea(in: scene, palette: palette)
         recolorLights(in: scene, palette: palette)
 
@@ -262,29 +275,40 @@ private enum SignInVoyageSceneFactory {
     private static func restageCelestial(
         in scene: SCNScene,
         timeOfDay: AftideHomeTimeOfDay,
+        date: Date,
         palette: Palette
     ) {
-        guard let node = scene.rootNode.childNodes.first(where: {
-            $0.geometry is SCNSphere && $0.name == nil
-        }), let sphere = node.geometry as? SCNSphere else { return }
-
         let positions: [AftideHomeTimeOfDay: SCNVector3] = [
             .morning: SCNVector3(-5.4, 2.1, -8.5),
             .day: SCNVector3(0.8, 6.1, -9.5),
             .evening: SCNVector3(5.8, 2, -8.5),
             .night: SCNVector3(5.6, 4.2, -8.5)
         ]
+        if palette.moon,
+           let moon = scene.rootNode.childNode(
+               withName: LandfallMoonEffects.rootNodeName,
+               recursively: false
+           ) {
+            moon.position = positions[timeOfDay] ?? SCNVector3(5.6, 4.2, -8.5)
+            moon.scale = SCNVector3(0.38, 0.38, 0.38)
+            LandfallMoonEffects.update(moon, phase: .current(at: date))
+            return
+        }
+
+        guard let node = scene.rootNode.childNode(
+            withName: "voyagingSun",
+            recursively: false
+        ), let sphere = node.geometry as? SCNSphere else { return }
+
         node.name = "signinCelestial"
         node.position = positions[timeOfDay] ?? SCNVector3(5.6, 4.2, -8.5)
-        node.scale = palette.moon
-            ? SCNVector3(0.38, 0.38, 0.38)
-            : SCNVector3(1, 1, 1)
-        sphere.radius = palette.moon ? 1.1 : 0.72
+        node.scale = SCNVector3(1, 1, 1)
+        sphere.radius = 0.72
         let material = sphere.firstMaterial ?? SCNMaterial()
         material.lightingModel = .constant
-        material.diffuse.contents = UIColor(rgb: palette.moon ? palette.sky : palette.reflection)
+        material.diffuse.contents = UIColor(rgb: palette.reflection)
         material.emission.contents = UIColor(rgb: palette.reflection)
-        material.emission.intensity = palette.moon ? 0.95 : 0.35
+        material.emission.intensity = 0.35
         sphere.firstMaterial = material
     }
 

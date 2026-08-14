@@ -9,6 +9,7 @@ import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import { defineSecret, defineString } from "firebase-functions/params";
 import * as functionsV1 from "firebase-functions/v1";
+import sharp from "sharp";
 import Stripe from "stripe";
 import { appleRootCertificates } from "./appleRootCertificates";
 
@@ -34,6 +35,49 @@ const APP_STORE_PRODUCT_IDS = new Set([
 const DEVELOPER_EMAIL = "ari.initx@gmail.com";
 const CHECKOUT_IDENTIFIER = "keelmira_web_seawinds";
 const PUBLIC_HARBORS = ["language", "certification", "student", "reading", "making"];
+const FEEDBACK_CATEGORIES = new Set(["idea", "issue", "design", "other"]);
+const PUBLIC_JOURNAL_BODY_LIMIT = 260;
+const PUBLIC_JOURNAL_INPUT_BYTES = 1_500_000;
+const PUBLIC_JOURNAL_STORED_BYTES = 700_000;
+const PUBLIC_JOURNAL_INPUT_PIXELS = 8_000_000;
+const PUBLIC_JOURNAL_PUBLISH_COOLDOWN_MS = 10_000;
+const PUBLIC_JOURNAL_PUBLISH_HOURLY_LIMIT = 12;
+const PUBLIC_JOURNAL_GRAPHEME_SEGMENTER = new Intl.Segmenter("und", {
+  granularity: "grapheme",
+});
+const PUBLIC_JOURNAL_STYLE_TOKENS = new Set([
+  "midnight",
+  "coral",
+  "ink",
+  "seaGreen",
+  "violet",
+  "sunYellow",
+  "harbor",
+  "sand",
+  "ember",
+  "rust",
+  "lavender",
+  "sunrise",
+]);
+const PUBLIC_JOURNAL_SYMBOL_TOKENS = new Set([
+  "anchor",
+  "compass",
+  "wheel",
+  "lighthouse",
+  "island",
+  "phoenix",
+  "book",
+  "pen",
+  "sailboat",
+  "attire",
+]);
+const PUBLIC_CONTENT_REPORT_REASONS = new Set([
+  "inappropriate",
+  "harassment",
+  "privacy",
+  "spam",
+  "profile",
+]);
 
 function stripeClient() {
   return new Stripe(stripeRestrictedKey.value(), {
@@ -61,6 +105,625 @@ function appAccountTokenFor(uid: string): string {
   const hex = bytes.toString("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+function requiredFeedbackString(
+  value: unknown,
+  field: string,
+  minimum: number,
+  maximum: number,
+): string {
+  if (typeof value !== "string") {
+    throw new HttpsError("invalid-argument", `${field} must be a string.`);
+  }
+  const trimmed = value.trim();
+  if (trimmed.length < minimum || trimmed.length > maximum) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${field} must be between ${minimum} and ${maximum} characters.`,
+    );
+  }
+  return trimmed;
+}
+
+function publicJournalDayId(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+function isUnicodeControl(character: string, preserveTextWhitespace: boolean): boolean {
+  const codePoint = character.codePointAt(0) ?? 0;
+  if (preserveTextWhitespace && (codePoint === 9 || codePoint === 10 || codePoint === 13)) {
+    return false;
+  }
+  const isC0OrC1 = codePoint <= 31 || (codePoint >= 127 && codePoint <= 159);
+  return isC0OrC1 || /[\p{Cf}\p{Cs}]/u.test(character);
+}
+
+function withoutUnicodeControls(value: string, preserveTextWhitespace: boolean): string {
+  return Array.from(value)
+    .filter((character) => !isUnicodeControl(character, preserveTextWhitespace))
+    .join("");
+}
+
+function publicJournalText(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new HttpsError("invalid-argument", "body must be a string.");
+  }
+  const normalized = withoutUnicodeControls(value.normalize("NFC"), true).trim();
+  const graphemeCount = Array.from(
+    PUBLIC_JOURNAL_GRAPHEME_SEGMENTER.segment(normalized),
+  ).length;
+  if (graphemeCount < 1 || graphemeCount > PUBLIC_JOURNAL_BODY_LIMIT) {
+    throw new HttpsError(
+      "invalid-argument",
+      `body must be between 1 and ${PUBLIC_JOURNAL_BODY_LIMIT} characters.`,
+    );
+  }
+  const compact = normalized.toLocaleLowerCase("ja").replace(/[\s._-]+/gu, "");
+  const prohibited = [
+    "killyourself",
+    "nigger",
+    "faggot",
+    "死ね",
+    "しね",
+    "殺す",
+    "ころす",
+    "自殺しろ",
+  ];
+  if (prohibited.some((phrase) => compact.includes(phrase))) {
+    throw new HttpsError("invalid-argument", "body cannot be published.");
+  }
+  return normalized;
+}
+
+function publicJournalMemberString(value: unknown, fallback: string, maximum: number): string {
+  if (typeof value !== "string") return fallback;
+  const trimmed = withoutUnicodeControls(value.normalize("NFC"), false).trim();
+  return trimmed.length > 0 ? Array.from(trimmed).slice(0, maximum).join("") : fallback;
+}
+
+function publicJournalToken(
+  value: unknown,
+  allowed: Set<string>,
+  fallback: string,
+): string {
+  if (typeof value !== "string") return fallback;
+  const token = withoutUnicodeControls(value.normalize("NFC"), false).trim();
+  return allowed.has(token) ? token : fallback;
+}
+
+function publicJournalSymbolToken(value: unknown): string {
+  if (typeof value === "string") {
+    switch (withoutUnicodeControls(value.normalize("NFC"), false).trim()) {
+      case "wave": return "anchor";
+      case "comet": return "compass";
+      case "sun": return "lighthouse";
+      default: break;
+    }
+  }
+  return publicJournalToken(value, PUBLIC_JOURNAL_SYMBOL_TOKENS, "phoenix");
+}
+
+function reportSnapshotString(value: unknown, maximum: number): string | null {
+  if (typeof value !== "string") return null;
+  return Array.from(value.normalize("NFC")).slice(0, maximum).join("");
+}
+
+function publicJournalRateLimitId(uid: string): string {
+  return createHash("sha256").update(`uid:${uid}`, "utf8").digest("hex");
+}
+
+async function enforcePublicJournalPublishRateLimit(
+  uid: string,
+  requestId: string,
+): Promise<void> {
+  const rateLimitRef = db.collection("publicJournalPublishRateLimits")
+    .doc(publicJournalRateLimitId(uid));
+  const now = Timestamp.now();
+
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(rateLimitRef);
+    const windowStartedAt = snapshot.get("windowStartedAt");
+    const lastAttemptAt = snapshot.get("lastAttemptAt");
+    const storedCount = snapshot.get("count");
+    const lastRequestId = snapshot.get("lastRequestId");
+    const storedSameRequestCount = snapshot.get("sameRequestCount");
+    const sameWindow =
+      windowStartedAt instanceof Timestamp &&
+      now.toMillis() - windowStartedAt.toMillis() < 60 * 60 * 1_000;
+    const nextCount = sameWindow && typeof storedCount === "number" ? storedCount + 1 : 1;
+    if (nextCount > PUBLIC_JOURNAL_PUBLISH_HOURLY_LIMIT) {
+      throw new HttpsError("resource-exhausted", "The hourly publishing limit has been reached.");
+    }
+
+    const sameRequest = lastRequestId === requestId;
+    const nextSameRequestCount = sameRequest && typeof storedSameRequestCount === "number"
+      ? storedSameRequestCount + 1
+      : 1;
+    if (
+      lastAttemptAt instanceof Timestamp &&
+      now.toMillis() - lastAttemptAt.toMillis() < PUBLIC_JOURNAL_PUBLISH_COOLDOWN_MS &&
+      (!sameRequest || nextSameRequestCount > 2)
+    ) {
+      throw new HttpsError("resource-exhausted", "Please wait before publishing again.");
+    }
+
+    transaction.set(rateLimitRef, {
+      count: nextCount,
+      windowStartedAt: sameWindow ? windowStartedAt : now,
+      lastAttemptAt: now,
+      lastRequestId: requestId,
+      sameRequestCount: nextSameRequestCount,
+      updatedAt: now,
+    });
+  });
+}
+
+async function preparePublicJournalPhoto(imageBase64: unknown): Promise<{
+  data: Buffer;
+  width: number;
+  height: number;
+}> {
+  if (
+    typeof imageBase64 !== "string" ||
+    imageBase64.length < 16 ||
+    imageBase64.length > Math.ceil(PUBLIC_JOURNAL_INPUT_BYTES * 4 / 3) + 8 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/u.test(imageBase64)
+  ) {
+    throw new HttpsError("invalid-argument", "A valid JPEG photo is required.");
+  }
+  const input = Buffer.from(imageBase64, "base64");
+  if (input.length < 16 || input.length > PUBLIC_JOURNAL_INPUT_BYTES) {
+    throw new HttpsError("invalid-argument", "The photo is too large.");
+  }
+
+  try {
+    const metadata = await sharp(input, {
+      animated: false,
+      failOn: "warning",
+      limitInputPixels: PUBLIC_JOURNAL_INPUT_PIXELS,
+    }).metadata();
+    if (metadata.format !== "jpeg" || (metadata.pages ?? 1) !== 1) {
+      throw new HttpsError("invalid-argument", "Only a single JPEG photo is supported.");
+    }
+
+    const attempts = [
+      { size: 1_600, quality: 80 },
+      { size: 1_200, quality: 65 },
+    ];
+    for (const attempt of attempts) {
+      const result = await sharp(input, {
+        animated: false,
+        failOn: "warning",
+        limitInputPixels: PUBLIC_JOURNAL_INPUT_PIXELS,
+      })
+        .rotate()
+        .resize({
+          width: attempt.size,
+          height: attempt.size,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        // withMetadata()を呼ばず、EXIF・GPS・元ファイル情報を公開画像へ持ち込まない。
+        .jpeg({ quality: attempt.quality, mozjpeg: true })
+        .toBuffer({ resolveWithObject: true });
+      if (
+        result.data.length <= PUBLIC_JOURNAL_STORED_BYTES &&
+        result.info.width > 0 &&
+        result.info.height > 0
+      ) {
+        return {
+          data: result.data,
+          width: result.info.width,
+          height: result.info.height,
+        };
+      }
+    }
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    console.warn("Public journal photo rejected during decode", error);
+    throw new HttpsError("invalid-argument", "The photo could not be prepared.");
+  }
+  throw new HttpsError("invalid-argument", "The photo is too large to publish.");
+}
+
+/**
+ * App Check済みのiOSアプリから改善案を受け取り、運営専用の非公開キューへ入れる。
+ * Firebaseログインは任意とし、ローカルモードの利用者からも受け付ける。
+ */
+export const submitFeedback = onCall(
+  { region: REGION, enforceAppCheck: true },
+  async (request) => {
+    const category = requiredFeedbackString(request.data?.category, "category", 1, 20);
+    if (!FEEDBACK_CATEGORIES.has(category)) {
+      throw new HttpsError("invalid-argument", "Unknown feedback category.");
+    }
+
+    const message = requiredFeedbackString(request.data?.message, "message", 10, 1_200);
+    const installationId = requiredFeedbackString(
+      request.data?.installationId,
+      "installationId",
+      36,
+      36,
+    ).toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(installationId)) {
+      throw new HttpsError("invalid-argument", "installationId must be a UUID.");
+    }
+
+    const appVersion = requiredFeedbackString(request.data?.appVersion, "appVersion", 1, 40);
+    const buildNumber = requiredFeedbackString(request.data?.buildNumber, "buildNumber", 1, 40);
+    const osVersion = requiredFeedbackString(request.data?.osVersion, "osVersion", 1, 80);
+    const locale = requiredFeedbackString(request.data?.locale, "locale", 1, 40);
+
+    // UIDがあればアカウント、なければインストール単位で連投を抑える。
+    // App Checkも強制するため、任意の外部クライアントからは到達できない。
+    const actor = request.auth?.uid ? `uid:${request.auth.uid}` : `install:${installationId}`;
+    const rateLimitId = createHash("sha256").update(actor).digest("hex");
+    const rateLimitRef = db.collection("feedbackRateLimits").doc(rateLimitId);
+    const feedbackRef = db.collection("feedback").doc();
+    const now = Timestamp.now();
+
+    await db.runTransaction(async (transaction) => {
+      const rateLimit = await transaction.get(rateLimitRef);
+      const lastSubmittedAt = rateLimit.get("lastSubmittedAt");
+      const windowStartedAt = rateLimit.get("windowStartedAt");
+      const storedCount = rateLimit.get("count");
+
+      if (
+        lastSubmittedAt instanceof Timestamp &&
+        now.toMillis() - lastSubmittedAt.toMillis() < 15_000
+      ) {
+        throw new HttpsError("resource-exhausted", "Please wait before sending another note.");
+      }
+
+      const sameWindow =
+        windowStartedAt instanceof Timestamp &&
+        now.toMillis() - windowStartedAt.toMillis() < 60 * 60 * 1_000;
+      const nextCount = sameWindow && typeof storedCount === "number" ? storedCount + 1 : 1;
+      if (nextCount > 5) {
+        throw new HttpsError("resource-exhausted", "The hourly feedback limit has been reached.");
+      }
+
+      transaction.set(rateLimitRef, {
+        count: nextCount,
+        lastSubmittedAt: now,
+        windowStartedAt: sameWindow ? windowStartedAt : now,
+      });
+      transaction.create(feedbackRef, {
+        category,
+        message,
+        status: "new",
+        source: "ios",
+        appId: request.app?.appId ?? null,
+        appVersion,
+        buildNumber,
+        osVersion,
+        locale,
+        createdAt: now,
+      });
+    });
+
+    return { feedbackId: feedbackRef.id };
+  },
+);
+
+/**
+ * 公開誌の「本日の一頁」を公開または更新する。
+ * 日付・著者表示・1日1文書の制約はクライアント値を信用せず、ここで確定する。
+ */
+export const publishPublicJournalEntry = onCall(
+  {
+    region: REGION,
+    enforceAppCheck: true,
+    memory: "1GiB",
+    timeoutSeconds: 60,
+    maxInstances: 20,
+  },
+  async (request) => {
+    const uid = requireUid(request.auth);
+    const requestId = requiredFeedbackString(
+      request.data?.requestId,
+      "requestId",
+      36,
+      36,
+    ).toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(requestId)) {
+      throw new HttpsError("invalid-argument", "requestId must be a UUID.");
+    }
+
+    const harborSlug = requiredFeedbackString(
+      request.data?.harborSlug,
+      "harborSlug",
+      1,
+      24,
+    );
+    if (!PUBLIC_HARBORS.includes(harborSlug)) {
+      throw new HttpsError("invalid-argument", "Unknown public harbor.");
+    }
+    const body = publicJournalText(request.data?.body);
+    const replaceExisting = request.data?.replaceExisting === true;
+    const intendedDayID = requiredFeedbackString(
+      request.data?.intendedDayID,
+      "intendedDayID",
+      10,
+      10,
+    );
+    const dayID = publicJournalDayId();
+    if (
+      !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/u.test(intendedDayID) ||
+      intendedDayID !== dayID
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "The publishing day changed. Refresh the page and try again.",
+        { reason: "day-changed" },
+      );
+    }
+    const memberRef = db.doc(`publicHarbors/${harborSlug}/members/${uid}`);
+    if (!(await memberRef.get()).exists) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Join this public harbor before publishing.",
+        { reason: "not-in-public-harbor" },
+      );
+    }
+
+    await enforcePublicJournalPublishRateLimit(uid, requestId);
+    const photo = await preparePublicJournalPhoto(request.data?.imageBase64);
+    const entryRef = db.collection("publicJournalEntries").doc(`${uid}_${dayID}`);
+    const now = Timestamp.now();
+    let response = { entryId: entryRef.id, dayID, revision: 1, created: true };
+
+    await db.runTransaction(async (transaction) => {
+      const [member, existing] = await Promise.all([
+        transaction.get(memberRef),
+        transaction.get(entryRef),
+      ]);
+      if (!member.exists) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Join this public harbor before publishing.",
+          { reason: "not-in-public-harbor" },
+        );
+      }
+
+      if (existing.exists && existing.get("requestId") === requestId) {
+        response = {
+          entryId: entryRef.id,
+          dayID,
+          revision: Number(existing.get("revision")) || 1,
+          created: false,
+        };
+        return;
+      }
+      if (existing.exists && !replaceExisting) {
+        throw new HttpsError(
+          "already-exists",
+          "A public journal page has already been published today.",
+        );
+      }
+      if (existing.exists && existing.get("authorUid") !== uid) {
+        throw new HttpsError("internal", "The public journal entry is inconsistent.");
+      }
+
+      const revision = existing.exists ? (Number(existing.get("revision")) || 1) + 1 : 1;
+      const displayName = publicJournalMemberString(
+        member.get("displayName"),
+        "Sailor",
+        60,
+      );
+      const styleToken = publicJournalToken(
+        member.get("styleToken"),
+        PUBLIC_JOURNAL_STYLE_TOKENS,
+        "midnight",
+      );
+      const symbolToken = publicJournalSymbolToken(member.get("symbolToken"));
+      transaction.set(entryRef, {
+        authorUid: uid,
+        dayID,
+        harborSlug,
+        displayName,
+        styleToken,
+        symbolToken,
+        body,
+        imageData: photo.data,
+        imageWidth: photo.width,
+        imageHeight: photo.height,
+        requestId,
+        revision,
+        createdAt: existing.get("createdAt") instanceof Timestamp
+          ? existing.get("createdAt")
+          : now,
+        updatedAt: now,
+      });
+      response = { entryId: entryRef.id, dayID, revision, created: !existing.exists };
+    });
+
+    return response;
+  },
+);
+
+/** 本人の公開誌ページを削除する。 */
+export const deletePublicJournalEntry = onCall(
+  { region: REGION, enforceAppCheck: true },
+  async (request) => {
+    const uid = requireUid(request.auth);
+    const entryId = requiredFeedbackString(request.data?.entryId, "entryId", 1, 256);
+    const entryRef = db.collection("publicJournalEntries").doc(entryId);
+    await db.runTransaction(async (transaction) => {
+      const entry = await transaction.get(entryRef);
+      if (!entry.exists) return;
+      if (entry.get("authorUid") !== uid) {
+        throw new HttpsError("permission-denied", "Only the author can delete this page.");
+      }
+      transaction.delete(entryRef);
+    });
+    return { deleted: true };
+  },
+);
+
+/** 公開誌または公開港プロフィールを、重複・連投を抑えて運営へ通報する。 */
+export const submitPublicContentReport = onCall(
+  { region: REGION, enforceAppCheck: true },
+  async (request) => {
+    const reporterUid = requireUid(request.auth);
+    const targetUid = requiredFeedbackString(request.data?.targetUid, "targetUid", 1, 128);
+    if (targetUid === reporterUid) {
+      throw new HttpsError("invalid-argument", "You cannot report yourself.");
+    }
+    const harborSlug = requiredFeedbackString(
+      request.data?.harborSlug,
+      "harborSlug",
+      1,
+      24,
+    );
+    if (!PUBLIC_HARBORS.includes(harborSlug)) {
+      throw new HttpsError("invalid-argument", "Unknown public harbor.");
+    }
+    const reason = requiredFeedbackString(request.data?.reason, "reason", 1, 24);
+    if (!PUBLIC_CONTENT_REPORT_REASONS.has(reason)) {
+      throw new HttpsError("invalid-argument", "Unknown report reason.");
+    }
+
+    const rawEntryId = request.data?.entryId;
+    const entryId = rawEntryId == null
+      ? null
+      : requiredFeedbackString(rawEntryId, "entryId", 1, 256);
+    let bodySnapshot: string | null = null;
+    let imageHash: string | null = null;
+    let imageDataSnapshot: Buffer | null = null;
+    let imageWidthSnapshot: number | null = null;
+    let imageHeightSnapshot: number | null = null;
+    let displayNameSnapshot: string | null = null;
+    let styleTokenSnapshot: string | null = null;
+    let symbolTokenSnapshot: string | null = null;
+    let entryRevision: number | null = null;
+    let profileSnapshot: Record<string, string | null> | null = null;
+    let contentVersion: string;
+    if (entryId) {
+      const entry = await db.collection("publicJournalEntries").doc(entryId).get();
+      if (
+        !entry.exists ||
+        entry.get("authorUid") !== targetUid ||
+        entry.get("harborSlug") !== harborSlug
+      ) {
+        throw new HttpsError("not-found", "This public journal page is no longer available.");
+      }
+      bodySnapshot = typeof entry.get("body") === "string"
+        ? String(entry.get("body"))
+        : null;
+      const storedImage = entry.get("imageData");
+      if (Buffer.isBuffer(storedImage) || storedImage instanceof Uint8Array) {
+        imageDataSnapshot = Buffer.from(storedImage);
+        imageHash = createHash("sha256").update(imageDataSnapshot).digest("hex");
+      }
+      const storedWidth = Number(entry.get("imageWidth"));
+      const storedHeight = Number(entry.get("imageHeight"));
+      imageWidthSnapshot = Number.isSafeInteger(storedWidth) && storedWidth > 0
+        ? storedWidth
+        : null;
+      imageHeightSnapshot = Number.isSafeInteger(storedHeight) && storedHeight > 0
+        ? storedHeight
+        : null;
+      displayNameSnapshot = reportSnapshotString(entry.get("displayName"), 60);
+      styleTokenSnapshot = reportSnapshotString(entry.get("styleToken"), 24);
+      symbolTokenSnapshot = reportSnapshotString(entry.get("symbolToken"), 24);
+      const storedRevision = Number(entry.get("revision"));
+      entryRevision = Number.isSafeInteger(storedRevision) && storedRevision > 0
+        ? storedRevision
+        : 1;
+      contentVersion = `revision:${entryRevision}`;
+    } else {
+      const member = await db.doc(`publicHarbors/${harborSlug}/members/${targetUid}`).get();
+      if (!member.exists) {
+        throw new HttpsError("not-found", "This public profile is no longer available.");
+      }
+      profileSnapshot = {
+        displayName: reportSnapshotString(member.get("displayName"), 60),
+        styleToken: reportSnapshotString(member.get("styleToken"), 24),
+        symbolToken: reportSnapshotString(member.get("symbolToken"), 24),
+        resolve: reportSnapshotString(member.get("resolve"), 80),
+        sinceDay: reportSnapshotString(member.get("sinceDay"), 10),
+        boatSail: reportSnapshotString(member.get("boatSail"), 24),
+        boatJib: reportSnapshotString(member.get("boatJib"), 24),
+        boatHull: reportSnapshotString(member.get("boatHull"), 24),
+        boatStripe: reportSnapshotString(member.get("boatStripe"), 24),
+        boatFlag: reportSnapshotString(member.get("boatFlag"), 24),
+      };
+      const profileHash = createHash("sha256")
+        .update(JSON.stringify(profileSnapshot), "utf8")
+        .digest("hex");
+      contentVersion = `snapshot:${profileHash}`;
+    }
+
+    const contentKey = entryId
+      ? `entry:${entryId}:${contentVersion}`
+      : `profile:${harborSlug}:${targetUid}:${contentVersion}`;
+    const reportId = createHash("sha256")
+      .update(`${reporterUid}|${contentKey}`, "utf8")
+      .digest("hex");
+    const dayID = publicJournalDayId();
+    const limitId = createHash("sha256")
+      .update(`${reporterUid}|${dayID}`, "utf8")
+      .digest("hex");
+    const reportRef = db.collection("publicContentReports").doc(reportId);
+    const limitRef = db.collection("publicContentReportLimits").doc(limitId);
+    const now = Timestamp.now();
+    let duplicate = false;
+
+    await db.runTransaction(async (transaction) => {
+      const [existing, limit] = await Promise.all([
+        transaction.get(reportRef),
+        transaction.get(limitRef),
+      ]);
+      if (existing.exists) {
+        duplicate = true;
+        return;
+      }
+      const count = Number(limit.get("count")) || 0;
+      if (count >= 20) {
+        throw new HttpsError("resource-exhausted", "The daily report limit has been reached.");
+      }
+      transaction.set(limitRef, {
+        reporterUid,
+        dayID,
+        count: count + 1,
+        updatedAt: now,
+      });
+      transaction.create(reportRef, {
+        reporterUid,
+        targetUid,
+        harborSlug,
+        entryId,
+        contentKind: entryId ? "publicJournalEntry" : "publicHarborProfile",
+        reason,
+        contentVersion,
+        entryRevision,
+        bodySnapshot,
+        imageHash,
+        imageDataSnapshot,
+        imageWidthSnapshot,
+        imageHeightSnapshot,
+        displayNameSnapshot,
+        styleTokenSnapshot,
+        symbolTokenSnapshot,
+        profileSnapshot,
+        status: "new",
+        appId: request.app?.appId ?? null,
+        createdAt: now,
+      });
+    });
+
+    return { reported: true, duplicate };
+  },
+);
 
 const productionTransactionVerifier = new SignedDataVerifier(
   appleRootCertificates,
@@ -433,23 +1096,39 @@ async function deleteDocuments(
   await writer.close();
 }
 
+async function deleteQueryDocumentsInPages(
+  query: FirebaseFirestore.Query,
+  pageSize = 200,
+): Promise<void> {
+  while (true) {
+    // select() with no fields retrieves document names only, avoiding large image payloads.
+    const page = await query.select().limit(pageSize).get();
+    if (page.empty) return;
+    await deleteDocuments(page.docs);
+  }
+}
+
 async function deleteSharedUserContent(uid: string): Promise<void> {
-  // 現在参加中のルームから、カード・月間記録・共同航海の準備を消して退室させる。
-  const rooms = await db.collection("rooms")
+  // v2のプライベート島。ホストのアカウントが消えた場合は、
+  // 他人の島へ譲渡せず島全体を消す。参加者なら本人のカードと
+  // presenceを消し、メンバー一覧から本人だけを外す。
+  const privateIslands = await db.collection("privateIslands")
     .where("memberIds", "array-contains", uid)
     .get();
-  for (const room of rooms.docs) {
-    const sessions = await room.ref.collection("crewSessions").get();
-    await Promise.all(
-      sessions.docs.map((session) =>
-        session.ref.collection("plans").doc(uid).delete().catch(() => undefined),
-      ),
-    );
-    await db.recursiveDelete(room.ref.collection("members").doc(uid));
-    await room.ref.update({ memberIds: FieldValue.arrayRemove(uid) });
+  for (const island of privateIslands.docs) {
+    if (island.get("hostUid") === uid) {
+      await db.recursiveDelete(island.ref);
+    } else {
+      await Promise.all([
+        db.recursiveDelete(island.ref.collection("members").doc(uid)),
+        island.ref.collection("presence").doc(uid).delete().catch(() => undefined),
+      ]);
+      await island.ref.update({ memberIds: FieldValue.arrayRemove(uid) });
+    }
   }
 
-  // 退室済みの過去ルームに残る発言も、アカウント削除時には消す。
+  // 退島済みの過去ルームに残る発言も、アカウント削除時には消す。
+  // collectionGroupは旧roomsと新privateIslandsの両方を拾う。
   const chat = await db.collectionGroup("chat").where("uid", "==", uid).get();
   await deleteDocuments(chat.docs);
 
@@ -463,9 +1142,79 @@ async function deleteSharedUserContent(uid: string): Promise<void> {
     );
   }
 
+  // 公開誌はトップレベルに置くため、ユーザーツリーとは別に本人の全頁を削除する。
+  // 画像本体を含む全文書をメモリに読まず、文書名だけを有界ページで消す。
+  await deleteQueryDocumentsInPages(
+    db.collection("publicJournalEntries").where("authorUid", "==", uid),
+  );
+
+  // 安全対応の通報証跡は保持するが、失効済みの連投制限は個人データとして残さない。
+  await deleteQueryDocumentsInPages(
+    db.collection("publicContentReportLimits").where("reporterUid", "==", uid),
+  );
+  await Promise.all([
+    db.collection("publicJournalPublishRateLimits")
+      .doc(publicJournalRateLimitId(uid))
+      .delete(),
+    db.collection("feedbackRateLimits")
+      .doc(createHash("sha256").update(`uid:${uid}`).digest("hex"))
+      .delete(),
+  ]);
+
   // users/{uid} 自体が無くても、全サブコレクションを再帰削除する。
   await db.recursiveDelete(db.doc(`users/${uid}`));
 }
+
+// One-time v1 -> v2 cutover. The old Private Harbor stored study records,
+// shared timers, quests and chat below `rooms/{code}`. The replacement uses a
+// separate `privateIslands` root and intentionally does not migrate that data.
+// Keeping this as a developer-only callable gives the operation an auditable,
+// exact target and lets recursiveDelete remove every nested subcollection.
+export const purgeLegacyPrivateRooms = onCall(
+  { region: REGION, enforceAppCheck: true, timeoutSeconds: 540, memory: "512MiB" },
+  async (request) => {
+    if (!isDeveloper(request.auth)) {
+      throw new HttpsError("permission-denied", "Developer access is required.");
+    }
+
+    let deletedRooms = 0;
+    while (true) {
+      const page = await db.collection("rooms").limit(50).get();
+      if (page.empty) break;
+      for (const room of page.docs) {
+        await db.recursiveDelete(room.ref);
+        deletedRooms += 1;
+      }
+    }
+    return { deletedRooms };
+  },
+);
+
+// Hosts can retire a v2 private island without leaving orphaned nested chat,
+// presence, member cards or snapshots. Membership is re-checked server-side;
+// knowing the six-character invite code is never sufficient for deletion.
+export const closePrivateIsland = onCall(
+  { region: REGION, enforceAppCheck: true, timeoutSeconds: 120, memory: "256MiB" },
+  async (request) => {
+    const uid = requireUid(request.auth);
+    const rawCode = typeof request.data?.code === "string" ? request.data.code : "";
+    const code = rawCode.trim().toUpperCase();
+    if (!/^[A-Z0-9]{6}$/.test(code)) {
+      throw new HttpsError("invalid-argument", "A valid invite code is required.");
+    }
+
+    const island = db.doc(`privateIslands/${code}`);
+    const snapshot = await island.get();
+    if (!snapshot.exists) {
+      throw new HttpsError("not-found", "The private island was not found.");
+    }
+    if (snapshot.get("hostUid") !== uid) {
+      throw new HttpsError("permission-denied", "Only the island host can close it.");
+    }
+    await db.recursiveDelete(island);
+    return { closed: true, code };
+  },
+);
 
 // Firebaseアカウント削除後に、課金・共有UGC・私的バックアップを管理SDKで
 // 再度片付ける。クライアント側削除が通信断で途中になっても、このトリガーが完遂する。

@@ -83,8 +83,8 @@ struct VoyagePassView: View {
         VStack(spacing: 0) {
             benefit(
                 symbol: "person.2.wave.2",
-                title: "Open a private harbor",
-                detail: "Create one harbor for up to 4 sailors. Invited sailors join free"
+                title: "Host a private island",
+                detail: "Create one island for up to 8 sailors. Invited sailors join free"
             )
             divider
             benefit(symbol: "sparkles", title: "Seasonal waters", detail: "Special seas that change through the year")

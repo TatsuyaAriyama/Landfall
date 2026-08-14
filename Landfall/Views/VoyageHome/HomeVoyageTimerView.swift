@@ -1,3 +1,4 @@
+import Combine
 import SwiftData
 import SwiftUI
 import WidgetKit
@@ -79,9 +80,54 @@ struct HomeManualRequest: Identifiable {
     let initialMinutes: Int
 }
 
+struct HomeQuickTimerRecord: Identifiable {
+    let id = UUID()
+    let minutes: Int
+}
+
 private struct HomeVoyageCompletion {
     let minutes: Int
     let note: String?
+}
+
+@MainActor
+private enum HomeVoyageRecorder {
+    static func record(
+        item: StudyItem,
+        snapshot: HomeTimerSnapshot,
+        note: String?,
+        context: ModelContext
+    ) throws -> HomeVoyageCompletion {
+        let minutes = snapshot.creditedMinutes()
+        let trimmed = String(
+            (note ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)
+        )
+        let savedNote = trimmed.isEmpty ? nil : trimmed
+        let date = Date()
+        let session = StudySession(
+            date: date,
+            minutes: minutes,
+            note: savedNote,
+            item: item
+        )
+
+        context.insert(session)
+        StudyDayStore.markDay(date, context: context)
+        do {
+            try context.save()
+        } catch {
+            context.delete(session)
+            throw error
+        }
+
+        SyncService.shared.push(session)
+        PublicHarborService.shared.publishCurrentMonth(context: context)
+        WidgetBridge.refresh(context: context)
+        let recorded = StudyDayStore.recordedToday(context: context)
+        Task { await NotificationService.reschedule(recordedToday: recorded) }
+
+        return HomeVoyageCompletion(minutes: minutes, note: savedNote)
+    }
 }
 
 /// Web版の「航海中」をホーム専用に移植したタイマー。
@@ -89,9 +135,34 @@ private struct HomeVoyageCompletion {
 struct HomeVoyageTimerView: View {
     let item: StudyItem
     let hasDestination: Bool
-    let onMinimize: () -> Void
     let onManual: (Int) -> Void
     let onReturnHome: () -> Void
+    let rendersScene: Bool
+    let externalWorldTapToken: Int
+    /// 初回航海だけ、通常のメモ欄を使いながら指定の文言を必須にする。
+    /// nil の通常航海では、従来どおり任意メモとして動作する。
+    let firstVoyageRequiredNote: String?
+    let onFirstVoyageRecorded: (() -> Void)?
+
+    init(
+        item: StudyItem,
+        hasDestination: Bool,
+        onManual: @escaping (Int) -> Void,
+        onReturnHome: @escaping () -> Void,
+        rendersScene: Bool = true,
+        externalWorldTapToken: Int = 0,
+        firstVoyageRequiredNote: String? = nil,
+        onFirstVoyageRecorded: (() -> Void)? = nil
+    ) {
+        self.item = item
+        self.hasDestination = hasDestination
+        self.onManual = onManual
+        self.onReturnHome = onReturnHome
+        self.rendersScene = rendersScene
+        self.externalWorldTapToken = externalWorldTapToken
+        self.firstVoyageRequiredNote = firstVoyageRequiredNote
+        self.onFirstVoyageRecorded = onFirstVoyageRecorded
+    }
 
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StudyDay.date, order: .reverse) private var days: [StudyDay]
@@ -102,7 +173,8 @@ struct HomeVoyageTimerView: View {
     @AppStorage(StudyTimer.pomodoroStartElapsedKey, store: StudyTimer.defaults) private var pomodoroStartElapsed: Double = 0
     @AppStorage(StudyTimer.breakSecondsKey, store: StudyTimer.defaults) private var breakSeconds: Double = 0
     @AppStorage(StudyTimer.breakStartedAtKey, store: StudyTimer.defaults) private var breakStartedAt: Double = 0
-    @AppStorage(StudyTimer.soundKey, store: StudyTimer.defaults) private var soundMode = "off"
+    @AppStorage(StudyTimer.soundKey, store: StudyTimer.defaults)
+    private var soundMode = HomeVoyageSound.initialTimerSound.rawValue
     @ObservedObject private var voyageAudio = HomeVoyageAudio.shared
 
     @State private var note = ""
@@ -111,7 +183,11 @@ struct HomeVoyageTimerView: View {
     @State private var saveError = false
     @State private var saving = false
     @State private var uiHidden = false
+    @State private var showingSoundPicker = false
+    @State private var clockNow = Date()
     @FocusState private var noteFocused: Bool
+
+    private let clockPulse = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var mode: HomeTimerMode {
         HomeTimerMode(rawValue: timerMode) ?? .free
@@ -127,40 +203,59 @@ struct HomeVoyageTimerView: View {
         )
     }
 
+    private var pomodoroPhase: HomePomodoroPhase? {
+        snapshot.phase(at: clockNow)
+    }
+
+    private var isVoyageResting: Bool {
+        snapshot.isResting || pomodoroPhase?.focusing == false
+    }
+
     private var timeOfDay: AftideHomeTimeOfDay {
-        // Web VoyagingWorld は作業への没入感を一定にするため、航海中だけ夜に固定。
-        // ホームの時刻連動パレットを流用すると、同じカメラでも海と水平線が別物に見える。
-        .night
+        // The timer now sails through the same continuous day cycle as Home.
+        // Its camera composition remains unchanged.
+        .current(at: clockNow)
     }
 
     private var palette: AftideHomePalette {
         .voyagingNight
     }
 
+    private var isFirstVoyage: Bool {
+        firstVoyageRequiredNote != nil
+    }
+
+    private var normalizedNote: String {
+        String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
+    }
+
+    private var requiredNoteSatisfied: Bool {
+        guard let firstVoyageRequiredNote else { return true }
+        return normalizedNote == firstVoyageRequiredNote
+    }
+
+    private var notePlaceholder: String {
+        firstVoyageRequiredNote ?? LF.text("What you worked on (optional)")
+    }
+
+    private var timerGlassInk: Color { LFColor.harborTeal }
+    private var timerClockInk: Color { Color(hex: 0xA74312) }
+
     var body: some View {
         ZStack {
-            VoyagingHomeSceneView(
-                showIsland: hasDestination,
-                timeOfDay: timeOfDay,
-                resting: snapshot.isResting,
-                elapsedSeconds: snapshot.elapsedSeconds(),
-                onTapWorld: {
-                    guard completion == nil else { return }
-                    noteFocused = false
-                    withAnimation(.easeInOut(duration: 0.28)) {
-                        uiHidden.toggle()
-                    }
-                    Haptics.tap(.light)
-                }
-            )
-            .ignoresSafeArea()
-            .accessibilityLabel(Text("360° voyage view"))
-            .accessibilityHint(Text("Drag to look around. Pinch to zoom. Double-tap to reset the view."))
-
-            Color.black
-                .opacity(timeOfDay == .morning || timeOfDay == .day ? 0.05 : 0.13)
+            if rendersScene {
+                VoyagingHomeSceneView(
+                    showIsland: hasDestination,
+                    timeOfDay: timeOfDay,
+                    date: clockNow,
+                    resting: isVoyageResting,
+                    elapsedSeconds: snapshot.elapsedSeconds(at: clockNow),
+                    onTapWorld: toggleWorldUI
+                )
                 .ignoresSafeArea()
-                .allowsHitTesting(false)
+                .accessibilityLabel(Text("360° voyage view"))
+                .accessibilityHint(Text("Drag to look around. Pinch to zoom. Double-tap to reset the view."))
+            }
 
             if let completion {
                 completionCard(completion)
@@ -170,12 +265,16 @@ struct HomeVoyageTimerView: View {
                     .transition(.opacity)
                     .opacity(uiHidden ? 0 : 1)
                     .allowsHitTesting(!uiHidden)
+                    .accessibilityHidden(uiHidden)
             }
         }
-        .background(Color(hex: palette.sky).ignoresSafeArea())
-        .preferredColorScheme(
-            timeOfDay == .evening || timeOfDay == .night ? .dark : .light
+        .background(
+            (rendersScene ? Color(hex: timeOfDay.palette.sky) : Color.clear)
+                .ignoresSafeArea()
         )
+        // Preserve the current timer controls/material appearance even when the
+        // shared world is displaying a bright morning or daytime sea.
+        .preferredColorScheme(.dark)
         .animation(.spring(response: 0.62, dampingFraction: 0.82), value: completion != nil)
         .confirmationDialog(
             "Discard this voyage?",
@@ -184,6 +283,7 @@ struct HomeVoyageTimerView: View {
         ) {
             Button("Discard voyage", role: .destructive) {
                 StudyTimer.clearAll()
+                HomeVoyageAudio.shared.stop()
                 onReturnHome()
                 Haptics.tap(.rigid)
             }
@@ -203,28 +303,44 @@ struct HomeVoyageTimerView: View {
             }
         }
         .onAppear {
-            HomeVoyageAudio.shared.play(soundMode)
+            let migratedSound = HomeVoyageSound.resolve(soundMode)
+            if migratedSound.rawValue != soundMode {
+                soundMode = migratedSound.rawValue
+            }
+            if isVoyageResting {
+                HomeVoyageAudio.shared.stop()
+            } else {
+                playVoyageAudio(migratedSound.rawValue)
+            }
         }
         .onChange(of: soundMode) { _, value in
-            HomeVoyageAudio.shared.play(value)
+            if isVoyageResting {
+                HomeVoyageAudio.shared.stop()
+            } else {
+                playVoyageAudio(value)
+            }
         }
+        .onReceive(clockPulse) { date in
+            clockNow = date
+        }
+        .onChange(of: externalWorldTapToken) { _, _ in
+            guard !rendersScene else { return }
+            toggleWorldUI()
+        }
+    }
+
+    private func toggleWorldUI() {
+        guard completion == nil else { return }
+        noteFocused = false
+        withAnimation(.easeInOut(duration: 0.28)) {
+            uiHidden.toggle()
+        }
+        Haptics.tap(.light)
     }
 
     private var voyageControls: some View {
         VStack(spacing: 0) {
             timerHeader
-            Text("Tap the sea for a full view · drag to look around")
-                .font(LFFont.label(10))
-                .tracking(0.35)
-                .foregroundStyle(palette.inkColor.opacity(0.58))
-                .padding(.horizontal, 12)
-                .frame(minHeight: 30)
-                .background(palette.glassColor.opacity(0.58), in: Capsule())
-                .overlay(
-                    Capsule().stroke(palette.inkColor.opacity(0.12), lineWidth: 1)
-                )
-                .padding(.top, 10)
-                .allowsHitTesting(false)
             Spacer(minLength: 18)
             recordingPanel
         }
@@ -234,183 +350,252 @@ struct HomeVoyageTimerView: View {
     }
 
     private var timerHeader: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 7) {
+        VStack(spacing: 0) {
+            HStack(spacing: 9) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(timerGlassInk.opacity(0.07))
                     ItemTileArt(item: item)
-                        .frame(width: 25, height: 25)
+                        .padding(5)
+                }
+                .frame(width: 36, height: 36)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(timerGlassInk.opacity(0.14), lineWidth: 1)
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(isVoyageResting ? LFColor.sunYellow : LFColor.returnOrange)
+                            .frame(width: 5, height: 5)
+                        Text(statusLabel)
+                            .font(LFFont.label(9))
+                            .tracking(1.1)
+                    }
+                    .foregroundStyle(timerGlassInk.opacity(0.66))
+
                     Text(item.name)
-                        .font(LFFont.label(13))
-                        .foregroundStyle(palette.inkColor.opacity(0.72))
+                        .font(LFFont.copy(13))
+                        .foregroundStyle(timerGlassInk)
                         .lineLimit(1)
                 }
 
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let current = snapshot
-                    let phase = current.phase(at: context.date)
-                    VStack(alignment: .leading, spacing: 5) {
-                        // ポモドーロを使っても、通常の合計時間は大きい時計のまま残す。
-                        Text(Self.clock(current.elapsedSeconds(at: context.date)))
-                            .font(LFFont.number(42))
-                            .monospacedDigit()
-                            .foregroundStyle(palette.inkColor)
-                            .contentTransition(.numericText())
+                Spacer(minLength: 8)
 
-                        if let phase {
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(phase.focusing ? LFColor.returnOrange : LFColor.seaGreen)
-                                    .frame(width: 5, height: 5)
-                                Text(phase.focusing ? "Focus" : "Pomodoro break")
-                                    .font(LFFont.label(10))
-                                    .tracking(0.5)
-                                Text(Self.clock(phase.secondsLeft))
-                                    .font(LFFont.number(13))
-                                    .monospacedDigit()
-                                    .contentTransition(.numericText())
-                            }
-                            .foregroundStyle(palette.inkColor.opacity(0.74))
-                            .padding(.horizontal, 9)
-                            .frame(height: 24)
-                            .background(palette.glassColor.opacity(0.62), in: Capsule())
-                            .overlay(
-                                Capsule().stroke(
-                                    palette.inkColor.opacity(0.14),
-                                    lineWidth: 1
-                                )
-                            )
-                            .accessibilityElement(children: .combine)
-                        }
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text("ELAPSED")
+                            .font(LFFont.label(7))
+                            .tracking(1.2)
+                            .foregroundStyle(timerGlassInk.opacity(0.48))
+                        Text(Self.clock(snapshot.elapsedSeconds(at: context.date)))
+                            .font(LFFont.copy(24))
+                            .monospacedDigit()
+                            .foregroundStyle(timerClockInk)
+                            .contentTransition(.numericText())
                     }
                 }
 
-                Text(statusLabel)
-                    .font(LFFont.label(11))
-                    .tracking(1.3)
-                    .foregroundStyle(LFColor.returnOrange)
-
-                HStack(spacing: 8) {
+                if !isFirstVoyage {
                     Button {
-                        toggleBreak()
+                        confirmingDiscard = true
+                        Haptics.tap(.rigid)
                     } label: {
-                        Text(snapshot.isResting ? "Resume voyage" : "Take a break")
-                            .font(LFFont.label(12))
-                            .foregroundStyle(
-                                snapshot.isResting ? LFColor.inkFixed : palette.inkColor
-                            )
-                            .padding(.horizontal, 13)
-                            .frame(height: 34)
-                            .background(
-                                snapshot.isResting
-                                    ? LFColor.sunYellow
-                                    : palette.glassColor.opacity(0.72),
-                                in: Capsule(style: .continuous)
-                            )
-                            .overlay {
-                                if !snapshot.isResting {
-                                    Capsule(style: .continuous)
-                                        .stroke(palette.inkColor.opacity(0.28), lineWidth: 1)
-                                }
-                            }
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(timerGlassInk)
+                            .frame(width: 32, height: 32)
+                            .background(timerGlassInk.opacity(0.07), in: Circle())
                     }
                     .buttonStyle(LFPressableButtonStyle())
+                    .accessibilityLabel(Text("Discard voyage"))
+                }
+            }
+            .padding(.horizontal, 11)
+            .padding(.top, 10)
 
-                    Button {
-                        if mode == .free {
-                            pomodoroStartElapsed = Double(snapshot.elapsedSeconds())
-                            timerMode = HomeTimerMode.pomodoro.rawValue
-                        } else {
-                            timerMode = HomeTimerMode.free.rawValue
-                            pomodoroStartElapsed = 0
+            Rectangle()
+                .fill(timerGlassInk.opacity(0.12))
+                .frame(height: 1)
+                .padding(.top, 8)
+
+            HStack(spacing: 6) {
+                commandButton(
+                    title: snapshot.isResting ? "Resume voyage" : "Take a break",
+                    detail: Text(snapshot.isResting ? "RESUME" : "BREAK"),
+                    systemImage: snapshot.isResting ? "play.fill" : "pause.fill",
+                    active: snapshot.isResting,
+                    action: toggleBreak
+                )
+
+                commandButton(
+                    title: "Pomodoro",
+                    detail: pomodoroDetail,
+                    systemImage: "timer",
+                    active: mode == .pomodoro,
+                    action: togglePomodoro
+                )
+
+                commandButton(
+                    title: "BGM",
+                    detail: Text(soundLabel),
+                    systemImage: voyageAudio.playbackFailed
+                        ? "exclamationmark.triangle.fill"
+                        : "music.note",
+                    active: showingSoundPicker || selectedSound != .off,
+                    action: {
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                            showingSoundPicker.toggle()
                         }
                         Haptics.tap(.light)
-                    } label: {
-                        Text(mode == .pomodoro ? "Pomodoro · On" : "Pomodoro")
-                            .font(LFFont.label(11))
-                            .foregroundStyle(
-                                mode == .pomodoro ? palette.glassColor : palette.inkColor.opacity(0.70)
-                            )
-                            .padding(.horizontal, 12)
-                            .frame(height: 32)
-                            .background(
-                                mode == .pomodoro
-                                    ? palette.inkColor
-                                    : palette.glassColor.opacity(0.66),
-                                in: Capsule(style: .continuous)
-                            )
-                            .overlay {
-                                if mode != .pomodoro {
-                                    Capsule(style: .continuous)
-                                        .stroke(palette.inkColor.opacity(0.18), lineWidth: 1)
-                                }
-                            }
                     }
-                    .buttonStyle(LFPressableButtonStyle())
-
-                    Button {
-                        cycleSound()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(
-                                systemName: soundMode == "off"
-                                    ? "speaker.slash"
-                                    : (voyageAudio.playbackFailed
-                                        ? "exclamationmark.triangle"
-                                        : "speaker.wave.2")
-                            )
-                                .font(.system(size: 10, weight: .regular))
-                            Text(soundLabel)
-                                .font(LFFont.label(10))
-                            if soundMode != "off" {
-                                Circle()
-                                    .fill(
-                                        voyageAudio.isPlaying
-                                            ? LFColor.seaGreen
-                                            : LFColor.returnOrange
-                                    )
-                                    .frame(width: 5, height: 5)
-                            }
-                        }
-                        .foregroundStyle(
-                            voyageAudio.playbackFailed
-                                ? LFColor.coral
-                                : palette.inkColor.opacity(0.70)
-                        )
-                        .padding(.horizontal, 10)
-                        .frame(height: 32)
-                        .background(
-                            palette.glassColor.opacity(0.66),
-                            in: Capsule(style: .continuous)
-                        )
-                        .overlay(
-                            Capsule(style: .continuous)
-                                .stroke(palette.inkColor.opacity(0.18), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(LFPressableButtonStyle())
-                    .accessibilityLabel(Text(soundAccessibilityLabel))
-                }
-                .padding(.top, 4)
+                )
+                .accessibilityLabel(Text(soundAccessibilityLabel))
             }
+            .padding(9)
 
-            Spacer(minLength: 4)
-
-            Button {
-                onMinimize()
-                Haptics.tap(.light)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(palette.inkColor)
-                    .frame(width: 40, height: 40)
-                    .background(palette.glassColor.opacity(0.78), in: Circle())
-                    .overlay(
-                        Circle().stroke(palette.inkColor.opacity(0.18), lineWidth: 1)
-                    )
+            if showingSoundPicker {
+                soundPicker
+                    .padding(.horizontal, 9)
+                    .padding(.bottom, 9)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .buttonStyle(LFPressableButtonStyle())
-            .accessibilityLabel(Text("Minimize"))
         }
+        .frame(maxWidth: 560)
+        .background(whiteGlassBackground(cornerRadius: 17, opacity: 0.80))
+        .overlay(
+            RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .stroke(timerGlassInk.opacity(0.18), lineWidth: 1)
+        )
+        .shadow(color: timerGlassInk.opacity(0.16), radius: 13, y: 6)
+    }
+
+    private func commandButton(
+        title: LocalizedStringKey,
+        detail: Text,
+        systemImage: String,
+        active: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 11, weight: .medium))
+                    Spacer(minLength: 2)
+                    if active {
+                        Circle()
+                            .fill(LFColor.returnOrange)
+                            .frame(width: 5, height: 5)
+                    }
+                }
+                Text(title)
+                    .font(LFFont.label(10))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.74)
+                detail
+                    .font(LFFont.label(7))
+                    .tracking(0.8)
+                    .lineLimit(1)
+                    .foregroundStyle(timerGlassInk.opacity(0.52))
+            }
+            .foregroundStyle(active ? timerGlassInk : timerGlassInk.opacity(0.74))
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 57)
+            .background(
+                active ? LFColor.returnOrange.opacity(0.10) : timerGlassInk.opacity(0.05),
+                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(
+                        active
+                            ? LFColor.returnOrange.opacity(0.52)
+                            : timerGlassInk.opacity(0.11),
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(LFPressableButtonStyle())
+    }
+
+    private var soundPicker: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("VOYAGE PLAYLIST")
+                    .font(LFFont.label(8))
+                    .tracking(1.4)
+                Spacer()
+                Text("SELECT TRACK")
+                    .font(LFFont.label(7))
+                    .tracking(1.2)
+                    .foregroundStyle(timerGlassInk.opacity(0.46))
+            }
+            .foregroundStyle(timerGlassInk.opacity(0.68))
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+
+            ForEach(HomeVoyageSound.allCases) { sound in
+                Button {
+                    selectSound(sound)
+                } label: {
+                    HStack(spacing: 12) {
+                        HomeVoyageSoundIcon(
+                            sound: sound,
+                            selected: sound == displayedSound
+                        )
+                        .frame(width: 24, height: 24)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(sound.title)
+                                .font(LFFont.copy(12))
+                            Text(sound.subtitle)
+                                .font(LFFont.label(9))
+                                .foregroundStyle(timerGlassInk.opacity(0.48))
+                        }
+
+                        Spacer(minLength: 8)
+
+                        if sound == displayedSound {
+                            Image(systemName: voyageAudio.isPlaying || sound == .off
+                                ? "checkmark.circle.fill"
+                                : "arrow.clockwise.circle")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(
+                                    voyageAudio.playbackFailed
+                                        ? LFColor.coral
+                                        : LFColor.returnOrange
+                                )
+                        }
+                    }
+                    .foregroundStyle(timerGlassInk)
+                    .padding(.horizontal, 12)
+                    .frame(height: 43)
+                    .background(
+                        sound == displayedSound
+                            ? timerGlassInk.opacity(0.07)
+                            : Color.clear
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if sound != HomeVoyageSound.allCases.last {
+                    Rectangle()
+                        .fill(timerGlassInk.opacity(0.09))
+                        .frame(height: 1)
+                        .padding(.leading, 48)
+                }
+            }
+        }
+        .background(Color.white.opacity(0.54), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(timerGlassInk.opacity(0.13), lineWidth: 1)
+        )
     }
 
     private var recordingPanel: some View {
@@ -418,11 +603,16 @@ struct HomeVoyageTimerView: View {
             HStack(spacing: 10) {
                 Image(systemName: "pencil.line")
                     .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(palette.inkColor.opacity(0.52))
+                    .foregroundStyle(timerGlassInk.opacity(0.62))
 
-                TextField("What you worked on (optional)", text: $note)
+                TextField(
+                    "",
+                    text: $note,
+                    prompt: Text(verbatim: notePlaceholder)
+                        .foregroundStyle(timerGlassInk.opacity(0.48))
+                )
                     .font(LFFont.label(14))
-                    .foregroundStyle(palette.inkColor)
+                    .foregroundStyle(timerGlassInk)
                     .tint(LFColor.returnOrange)
                     .focused($noteFocused)
                     .submitLabel(.done)
@@ -431,10 +621,22 @@ struct HomeVoyageTimerView: View {
                             note = String(value.prefix(120))
                         }
                     }
+                    .accessibilityLabel(Text("What you worked on (optional)"))
+                    .accessibilityHint(
+                        Text(
+                            verbatim: firstVoyageRequiredNote == nil
+                                ? ""
+                                : LF.text("Enter \"Tutorial\".")
+                        )
+                    )
             }
-            .padding(.horizontal, 14)
-            .frame(height: 48)
-            .background(palette.glassColor.opacity(0.58), in: RoundedRectangle(cornerRadius: 13))
+            .padding(.horizontal, 12)
+            .frame(height: 40)
+            .background(Color.white.opacity(0.66), in: RoundedRectangle(cornerRadius: 11))
+            .overlay(
+                RoundedRectangle(cornerRadius: 11)
+                    .stroke(timerGlassInk.opacity(0.12), lineWidth: 1)
+            )
 
             Button {
                 finishVoyage()
@@ -442,74 +644,107 @@ struct HomeVoyageTimerView: View {
                 HStack(spacing: 9) {
                     if saving {
                         ProgressView()
-                            .tint(palette.glassColor)
+                            .tint(.white)
                     }
                     Text("Log up to here")
                         .font(LFFont.copy(16))
                 }
-                .foregroundStyle(palette.glassColor)
+                .foregroundStyle(Color.white)
                 .frame(maxWidth: .infinity)
-                .frame(height: 54)
-                .background(palette.inkColor, in: RoundedRectangle(cornerRadius: 15))
+                .frame(height: 46)
+                .background(
+                    timerGlassInk.opacity(requiredNoteSatisfied ? 0.96 : 0.38),
+                    in: RoundedRectangle(cornerRadius: 12)
+                )
             }
             .buttonStyle(LFPressableButtonStyle())
-            .disabled(saving)
-            .padding(.top, 14)
+            .disabled(saving || !requiredNoteSatisfied)
+            .padding(.top, 9)
 
-            HStack {
-                Button {
-                    let minutes = snapshot.creditedMinutes(minimum: 0)
-                    StudyTimer.clearAll()
-                    onManual(minutes)
-                    Haptics.tap(.light)
-                } label: {
-                    Text("Enter work time")
-                        .font(LFFont.label(12))
-                        .foregroundStyle(palette.inkColor.opacity(0.68))
-                        .frame(minHeight: 44)
+            if !isFirstVoyage {
+                HStack {
+                    Button {
+                        let minutes = snapshot.creditedMinutes(minimum: 0)
+                        StudyTimer.clearAll()
+                        HomeVoyageAudio.shared.stop()
+                        onManual(minutes)
+                        Haptics.tap(.light)
+                    } label: {
+                        Text("Enter work time")
+                            .font(LFFont.label(12))
+                            .foregroundStyle(timerGlassInk.opacity(0.72))
+                            .frame(minHeight: 34)
+                    }
+                    .buttonStyle(.plain)
+
                 }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Button {
-                    confirmingDiscard = true
-                } label: {
-                    Text("Discard voyage")
-                        .font(LFFont.label(12))
-                        .foregroundStyle(LFColor.coral)
-                        .frame(minHeight: 44)
-                }
-                .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 16)
-        .padding(.bottom, 8)
+        .padding(.horizontal, 14)
+        .padding(.top, 11)
+        .padding(.bottom, 5)
         .frame(maxWidth: 460)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22))
+        .background(whiteGlassBackground(cornerRadius: 18, opacity: 0.82))
         .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(palette.inkColor.opacity(0.13), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(timerGlassInk.opacity(0.17), lineWidth: 1)
         )
+        .shadow(color: timerGlassInk.opacity(0.13), radius: 12, y: 5)
+    }
+
+    private func whiteGlassBackground(
+        cornerRadius: CGFloat,
+        opacity: Double
+    ) -> some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.white.opacity(opacity))
+        }
     }
 
     private var statusLabel: String {
-        if snapshot.isResting { return LF.text("At anchor") }
+        if snapshot.isResting { return LF.text("On break") }
+        if pomodoroPhase?.focusing == false { return LF.text("Pomodoro break") }
+        if pomodoroPhase?.focusing == true { return LF.text("Focus") }
         return LF.text("Voyaging")
     }
 
+    private var pomodoroDetail: Text {
+        guard let phase = pomodoroPhase else { return Text("OFF") }
+        let title = phase.focusing ? LF.text("Focus") : LF.text("Pomodoro break")
+        return Text("\(title) · \(Self.clock(phase.secondsLeft))")
+    }
+
+    private var selectedSound: HomeVoyageSound {
+        HomeVoyageSound.resolve(soundMode)
+    }
+
+    /// 選択値ではなく、プレイリストで実際に鳴っている曲を表示する。
+    /// 休憩中は再生が止まるため、再開予定の選択曲へ戻す。
+    private var displayedSound: HomeVoyageSound {
+        guard voyageAudio.isPlaying,
+              voyageAudio.currentSound != .off
+        else { return selectedSound }
+        return voyageAudio.currentSound
+    }
+
     private var soundLabel: String {
-        switch soundMode {
-        case "waves": LF.text("Waves")
-        case "piano": LF.text("Classical")
-        default: LF.text("Sound off")
+        switch displayedSound {
+        case .off: LF.text("Sound off")
+        case .waves: LF.text("Waves")
+        case .harborMinuet: LF.text("Harbor Minuet")
+        case .beaconRondo: LF.text("Beacon Rondo")
+        case .celestialNocturne: LF.text("Celestial Navigation Nocturne")
+        case .approachingEvolution: LF.text("Approaching Evolution")
+        case .harborAndante: LF.text("Harbor Andante")
         }
     }
 
     private var soundAccessibilityLabel: String {
         let state: String
-        if soundMode == "off" {
+        if displayedSound == .off {
             state = LF.text("Stopped")
         } else if voyageAudio.isPlaying {
             state = LF.text("Playing")
@@ -519,11 +754,28 @@ struct HomeVoyageTimerView: View {
         return LF.text("Sound") + ": " + soundLabel + ", " + state
     }
 
-    private func cycleSound() {
-        let next = soundMode == "off" ? "waves" : (soundMode == "waves" ? "piano" : "off")
-        soundMode = next
-        // AppStorageの変更通知待ちにせず、ユーザーのタップで直ちに再生を開始する。
-        HomeVoyageAudio.shared.play(next)
+    private func selectSound(_ sound: HomeVoyageSound) {
+        soundMode = sound.rawValue
+        // 永続値の通知を待たず、選択した音へ即座に切り替える。
+        if isVoyageResting {
+            HomeVoyageAudio.shared.stop()
+        } else {
+            playVoyageAudio(sound.rawValue)
+        }
+        withAnimation(.easeOut(duration: 0.20)) {
+            showingSoundPicker = false
+        }
+        Haptics.tap(.light)
+    }
+
+    private func togglePomodoro() {
+        if mode == .free {
+            pomodoroStartElapsed = Double(snapshot.elapsedSeconds())
+            timerMode = HomeTimerMode.pomodoro.rawValue
+        } else {
+            timerMode = HomeTimerMode.free.rawValue
+            pomodoroStartElapsed = 0
+        }
         Haptics.tap(.light)
     }
 
@@ -532,53 +784,77 @@ struct HomeVoyageTimerView: View {
         if breakStartedAt > 0 {
             breakSeconds += max(0, now - breakStartedAt)
             breakStartedAt = 0
+            if isVoyageResting {
+                HomeVoyageAudio.shared.stop()
+            } else {
+                playVoyageAudio(soundMode)
+            }
         } else {
             breakStartedAt = now
+            HomeVoyageAudio.shared.stop()
         }
         WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
         Haptics.tap(.medium)
     }
 
     private func finishVoyage() {
-        guard !saving, timerStart > 0, timerItemID == item.uuid.uuidString else { return }
+        guard !saving,
+              timerStart > 0,
+              timerItemID == item.uuid.uuidString,
+              requiredNoteSatisfied
+        else { return }
         saving = true
 
-        let minutes = snapshot.creditedMinutes()
-        let trimmed = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
-        let savedNote = trimmed.isEmpty ? nil : trimmed
-        let date = Date()
-        let blanks = MonthStats.blankDays(since: days.first?.date, to: date)
-        let session = StudySession(date: date, minutes: minutes, note: savedNote, item: item)
+        if isFirstVoyage {
+            do {
+                try TutorialFirstVoyageRecorder.record(
+                    note: normalizedNote,
+                    elapsedSeconds: snapshot.elapsedSeconds(at: clockNow),
+                    context: modelContext
+                )
+            } catch {
+                saving = false
+                saveError = true
+                return
+            }
 
-        modelContext.insert(session)
-        StudyDayStore.markDay(date, context: modelContext)
+            StudyTimer.clearAll()
+            HomeVoyageAudio.shared.stop()
+            saving = false
+            noteFocused = false
+            Haptics.success()
+            onFirstVoyageRecorded?()
+            return
+        }
+
+        let result: HomeVoyageCompletion
         do {
-            try modelContext.save()
+            result = try HomeVoyageRecorder.record(
+                item: item,
+                snapshot: snapshot,
+                note: note,
+                context: modelContext
+            )
         } catch {
-            modelContext.delete(session)
             saving = false
             saveError = true
             return
         }
 
-        SyncService.shared.push(session)
-        RoomService.shared.publishCurrentMonth(context: modelContext)
-        HarborChatService.shared.publishLog(
-            item: item,
-            minutes: minutes,
-            gapDays: blanks,
-            isToday: true
-        )
-        WidgetBridge.refresh(context: modelContext)
-        let recorded = StudyDayStore.recordedToday(context: modelContext)
-        Task { await NotificationService.reschedule(recordedToday: recorded) }
-
         StudyTimer.clearAll()
         HomeVoyageAudio.shared.stop()
         saving = false
         noteFocused = false
-        completion = HomeVoyageCompletion(minutes: minutes, note: savedNote)
+        completion = result
         Haptics.success()
+    }
+
+    private func playVoyageAudio(_ storedValue: String) {
+        if isFirstVoyage {
+            HomeVoyageAudio.shared.playLooping(storedValue)
+        } else {
+            HomeVoyageAudio.shared.play(storedValue)
+        }
     }
 
     private func completionCard(_ result: HomeVoyageCompletion) -> some View {
@@ -675,14 +951,23 @@ struct HomeVoyageTimerView: View {
 struct HomeVoyageTimerChip: View {
     let item: StudyItem
     let onOpen: () -> Void
+    let onRecorded: (Int) -> Void
 
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \StudyDay.date, order: .reverse) private var days: [StudyDay]
     @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID = ""
     @AppStorage(StudyTimer.modeKey, store: StudyTimer.defaults) private var timerMode = HomeTimerMode.free.rawValue
     @AppStorage(StudyTimer.pomodoroStartElapsedKey, store: StudyTimer.defaults) private var pomodoroStartElapsed: Double = 0
     @AppStorage(StudyTimer.breakSecondsKey, store: StudyTimer.defaults) private var breakSeconds: Double = 0
     @AppStorage(StudyTimer.breakStartedAtKey, store: StudyTimer.defaults) private var breakStartedAt: Double = 0
-    @AppStorage(StudyTimer.soundKey, store: StudyTimer.defaults) private var soundMode = "off"
-    @ObservedObject private var voyageAudio = HomeVoyageAudio.shared
+    @AppStorage(StudyTimer.soundKey, store: StudyTimer.defaults)
+    private var soundMode = HomeVoyageSound.initialTimerSound.rawValue
+    @State private var saving = false
+    @State private var saveError = false
+    @State private var clockNow = Date()
+
+    private let clockPulse = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var snapshot: HomeTimerSnapshot {
         HomeTimerSnapshot(
@@ -694,21 +979,30 @@ struct HomeVoyageTimerChip: View {
         )
     }
 
-    private var localizedSoundName: String {
-        switch soundMode {
-        case "waves": LF.text("Waves")
-        case "piano": LF.text("Classical")
-        default: LF.text("Sound off")
-        }
+    private var currentPhase: HomePomodoroPhase? {
+        snapshot.phase(at: clockNow)
+    }
+
+    private var isEffectivelyResting: Bool {
+        snapshot.isResting || currentPhase?.focusing == false
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 9) {
             Button(action: onOpen) {
-                HStack(spacing: 10) {
+                HStack(spacing: 11) {
                     ItemTileArt(item: item)
-                        .frame(width: 34, height: 34)
-                    VStack(alignment: .leading, spacing: 1) {
+                        .frame(width: 40, height: 40)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Group {
+                            if isEffectivelyResting {
+                                Text(chipStatusLabel)
+                            } else {
+                                Label(chipStatusLabel, systemImage: "record.circle")
+                            }
+                        }
+                        .font(LFFont.label(10))
+                        .foregroundStyle(LFColor.returnOrange)
                         Text(item.name)
                             .font(LFFont.label(12))
                             .lineLimit(1)
@@ -719,84 +1013,155 @@ struct HomeVoyageTimerChip: View {
                                 Text(HomeVoyageTimerView.clock(
                                     current.elapsedSeconds(at: context.date)
                                 ))
-                                .font(LFFont.number(18))
+                                .font(LFFont.copy(18))
                                 .monospacedDigit()
-
-                                if let phase {
-                                    Text(
-                                        "\(phase.focusing ? LF.text("Focus") : LF.text("Pomodoro break")) · \(HomeVoyageTimerView.clock(phase.secondsLeft))"
-                                    )
-                                    .font(LFFont.label(9))
-                                    .foregroundStyle(LFColor.harborSand.opacity(0.72))
-                                    .monospacedDigit()
-                                }
+                                .foregroundStyle(LFColor.returnOrange)
+                                if let phase { phaseLabel(phase) }
                             }
                         }
                     }
+                    Spacer(minLength: 6)
+                    Label("Details", systemImage: "chevron.right")
+                        .labelStyle(.titleAndIcon)
+                        .font(LFFont.label(11))
+                        .foregroundStyle(LFColor.harborSand.opacity(0.74))
                 }
                 .foregroundStyle(LFColor.harborSand)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityHint(Text("Open timer details and add a note"))
 
-            Button {
-                soundMode = soundMode == "off" ? "waves" : (soundMode == "waves" ? "piano" : "off")
-                HomeVoyageAudio.shared.play(soundMode)
-                Haptics.tap(.light)
-            } label: {
-                Image(
-                    systemName: soundMode == "off"
-                        ? "speaker.slash"
-                        : (voyageAudio.playbackFailed
-                            ? "exclamationmark.triangle"
-                            : "speaker.wave.2")
-                )
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(
-                        voyageAudio.playbackFailed ? LFColor.coral : LFColor.harborSand
+            HStack(spacing: 8) {
+                Button {
+                    toggleBreak()
+                } label: {
+                    Label(
+                        snapshot.isResting ? "Resume" : "Pause",
+                        systemImage: snapshot.isResting ? "play.fill" : "pause.fill"
                     )
-                    .frame(width: 34, height: 34)
-                    .background(LFColor.harborSand.opacity(0.12), in: Circle())
-            }
-            .buttonStyle(LFPressableButtonStyle())
-            .accessibilityLabel(
-                Text(verbatim: "\(LF.text("Sound")): \(localizedSoundName)")
-            )
-
-            Button {
-                let now = Date().timeIntervalSince1970
-                if breakStartedAt > 0 {
-                    breakSeconds += max(0, now - breakStartedAt)
-                    breakStartedAt = 0
-                } else {
-                    breakStartedAt = now
+                    .font(LFFont.label(12))
+                    .foregroundStyle(LFColor.harborSand)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(LFColor.harborSand.opacity(0.12), in: RoundedRectangle(cornerRadius: 13))
                 }
-                WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
-                Haptics.tap(.medium)
-            } label: {
-                Image(systemName: snapshot.isResting ? "play.fill" : "cup.and.saucer")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(snapshot.isResting ? LFColor.inkFixed : LFColor.harborSand)
-                    .frame(width: 36, height: 36)
-                    .background(
-                        snapshot.isResting ? LFColor.sunYellow : LFColor.harborSand.opacity(0.12),
-                        in: Circle()
-                    )
+                .buttonStyle(LFPressableButtonStyle())
+
+                Button {
+                    finishAndRecord()
+                } label: {
+                    HStack(spacing: 7) {
+                        if saving {
+                            ProgressView()
+                                .tint(LFColor.paper)
+                        } else {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        Text("End and record")
+                            .font(LFFont.copy(12))
+                    }
+                    .foregroundStyle(LFColor.paper)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(LFColor.returnOrange, in: RoundedRectangle(cornerRadius: 13))
+                }
+                .buttonStyle(LFPressableButtonStyle())
+                .disabled(saving)
             }
-            .buttonStyle(LFPressableButtonStyle())
-            .accessibilityLabel(Text(snapshot.isResting ? "Resume voyage" : "Take a break"))
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 8)
-        .padding(.vertical, 8)
-        .background(LFColor.harborTeal.opacity(0.96), in: Capsule())
-        .overlay(Capsule().stroke(LFColor.harborSand.opacity(0.24), lineWidth: 1))
+        .padding(11)
+        .background(
+            LFColor.harborTeal.opacity(0.97),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(LFColor.harborSand.opacity(0.24), lineWidth: 1)
+        )
         .shadow(color: Color.black.opacity(0.18), radius: 16, y: 8)
         .padding(.horizontal, 16)
-        .safeAreaPadding(.bottom, 10)
+        .padding(.bottom, 10)
         .accessibilityElement(children: .contain)
         .onAppear {
-            HomeVoyageAudio.shared.play(soundMode)
+            if isEffectivelyResting {
+                HomeVoyageAudio.shared.stop()
+            } else {
+                HomeVoyageAudio.shared.play(soundMode)
+            }
         }
+        .onReceive(clockPulse) { date in
+            clockNow = date
+        }
+        .alert("Could not save the voyage", isPresented: $saveError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Your timer is still running. Please try again.")
+        }
+    }
+
+    @ViewBuilder
+    private func phaseLabel(_ phase: HomePomodoroPhase) -> some View {
+        Text(
+            "\(phase.focusing ? LF.text("Focus") : LF.text("Pomodoro break")) · \(HomeVoyageTimerView.clock(phase.secondsLeft))"
+        )
+        .font(LFFont.label(9))
+        .foregroundStyle(LFColor.harborSand.opacity(0.72))
+        .monospacedDigit()
+    }
+
+    private var chipStatusLabel: LocalizedStringKey {
+        if snapshot.isResting { return "Timer paused" }
+        if currentPhase?.focusing == false { return "Pomodoro break" }
+        return "Timer running"
+    }
+
+    private func toggleBreak() {
+        let now = Date().timeIntervalSince1970
+        if breakStartedAt > 0 {
+            breakSeconds += max(0, now - breakStartedAt)
+            breakStartedAt = 0
+            if isEffectivelyResting {
+                HomeVoyageAudio.shared.stop()
+            } else {
+                HomeVoyageAudio.shared.play(soundMode)
+            }
+        } else {
+            breakStartedAt = now
+            HomeVoyageAudio.shared.stop()
+        }
+        WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
+        Haptics.tap(.medium)
+    }
+
+    private func finishAndRecord() {
+        guard !saving,
+              timerStart > 0,
+              timerItemID == item.uuid.uuidString
+        else { return }
+        saving = true
+
+        let result: HomeVoyageCompletion
+        do {
+            result = try HomeVoyageRecorder.record(
+                item: item,
+                snapshot: snapshot,
+                note: nil,
+                context: modelContext
+            )
+        } catch {
+            saving = false
+            saveError = true
+            return
+        }
+
+        StudyTimer.clearAll()
+        HomeVoyageAudio.shared.stop()
+        saving = false
+        Haptics.success()
+        onRecorded(result.minutes)
     }
 }
 
@@ -935,8 +1300,6 @@ struct HomeManualTimeSheet: View {
     private func save() {
         guard minutes > 0 else { return }
         let date = recordDate
-        let isToday = Calendar.current.isDateInToday(date)
-        let blanks = isToday ? MonthStats.blankDays(since: days.first?.date, to: date) : nil
         let trimmed = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
         let session = StudySession(
             date: date,
@@ -953,13 +1316,7 @@ struct HomeManualTimeSheet: View {
             return
         }
         SyncService.shared.push(session)
-        RoomService.shared.publishCurrentMonth(context: modelContext)
-        HarborChatService.shared.publishLog(
-            item: item,
-            minutes: minutes,
-            gapDays: blanks,
-            isToday: isToday
-        )
+        PublicHarborService.shared.publishCurrentMonth(context: modelContext)
         WidgetBridge.refresh(context: modelContext)
         let recorded = StudyDayStore.recordedToday(context: modelContext)
         Task { await NotificationService.reschedule(recordedToday: recorded) }

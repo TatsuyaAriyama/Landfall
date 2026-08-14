@@ -264,16 +264,11 @@ enum VoyageSceneKit {
 
     // MARK: - 空(月・星・水平線)
 
-    static func makeMoon(position: SCNVector3) -> SCNNode {
-        let sphere = SCNSphere(radius: 1.1)
-        sphere.segmentCount = 20
-        let m = SCNMaterial()
-        m.lightingModel = .constant
-        m.diffuse.contents = nightBG
-        m.emission.contents = sand
-        m.emission.intensity = 0.95   // Web emissiveIntensity 0.95
-        sphere.firstMaterial = m
-        let node = SCNNode(geometry: sphere)
+    static func makeMoon(
+        position: SCNVector3,
+        date: Date = .now
+    ) -> SCNNode {
+        let node = LandfallMoonEffects.makeNode(phase: .current(at: date))
         node.position = position
         return node
     }
@@ -1319,32 +1314,70 @@ enum VoyageSceneKit {
 
     /// 航跡。船尾から後ろへ、白い帯が尾に向かってフェードする(Web Wake のグラデ)。
     static func makeWake() -> SCNNode {
-        let size = CGSize(width: 64, height: 8)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        let image = renderer.image { ctx in
-            let colors = [
-                UIColor.white.withAlphaComponent(0).cgColor,
-                UIColor.white.withAlphaComponent(0.5).cgColor,
-                UIColor.white.withAlphaComponent(0.9).cgColor,
-            ] as CFArray
-            let locations: [CGFloat] = [0, 0.7, 1]
-            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: locations) {
-                ctx.cgContext.drawLinearGradient(
-                    gradient,
-                    start: .zero, end: CGPoint(x: size.width, y: 0), options: []
-                )
+        // 旧64x8 bitmapと同じ2.3x0.4の帯を、頂点alphaの補間だけで描く。
+        // tail=0 → 70%=0.5 → 船尾=0.9の勾配なので、見た目とnode opacity契約は不変。
+        let segmentCount = 12
+        var vertices: [SCNVector3] = []
+        var colors: [SIMD4<Float>] = []
+        var indices: [UInt32] = []
+        vertices.reserveCapacity((segmentCount + 1) * 2)
+        colors.reserveCapacity((segmentCount + 1) * 2)
+        indices.reserveCapacity(segmentCount * 6)
+
+        for column in 0...segmentCount {
+            let progress = Float(column) / Float(segmentCount)
+            let x = -1.15 + progress * 2.3
+            let alpha: Float
+            if progress <= 0.7 {
+                alpha = progress / 0.7 * 0.5
+            } else {
+                alpha = 0.5 + (progress - 0.7) / 0.3 * 0.4
             }
+            vertices.append(SCNVector3(x, 0, -0.2))
+            vertices.append(SCNVector3(x, 0, 0.2))
+            colors.append(SIMD4(1, 1, 1, alpha))
+            colors.append(SIMD4(1, 1, 1, alpha))
+
+            guard column < segmentCount else { continue }
+            let near = UInt32(column * 2)
+            let far = UInt32((column + 1) * 2)
+            indices += [near, near + 1, far, near + 1, far + 1, far]
         }
-        let plane = SCNPlane(width: 2.3, height: 0.4)
-        let m = SCNMaterial()
-        m.lightingModel = .constant
-        m.diffuse.contents = image
-        m.writesToDepthBuffer = false
-        m.isDoubleSided = true
-        plane.firstMaterial = m
-        let node = SCNNode(geometry: plane)
+
+        let colorData = colors.withUnsafeBytes { Data($0) }
+        let colorSource = SCNGeometrySource(
+            data: colorData,
+            semantic: .color,
+            vectorCount: colors.count,
+            usesFloatComponents: true,
+            componentsPerVector: 4,
+            bytesPerComponent: MemoryLayout<Float>.size,
+            dataOffset: 0,
+            dataStride: MemoryLayout<SIMD4<Float>>.stride
+        )
+        let element = indices.withUnsafeBufferPointer {
+            SCNGeometryElement(
+                data: Data(buffer: $0),
+                primitiveType: .triangles,
+                primitiveCount: indices.count / 3,
+                bytesPerIndex: MemoryLayout<UInt32>.size
+            )
+        }
+        let geometry = SCNGeometry(
+            sources: [SCNGeometrySource(vertices: vertices), colorSource],
+            elements: [element]
+        )
+        let material = SCNMaterial()
+        material.lightingModel = .constant
+        material.diffuse.contents = UIColor.white
+        material.blendMode = .alpha
+        material.writesToDepthBuffer = false
+        material.readsFromDepthBuffer = true
+        material.isDoubleSided = true
+        geometry.firstMaterial = material
+
+        let node = SCNNode(geometry: geometry)
         node.name = "wake"
-        node.eulerAngles.x = -.pi / 2
         node.position = SCNVector3(-2.15, 0.025, 0)
         node.opacity = 0.34
         return node
@@ -1355,51 +1388,93 @@ enum VoyageSceneKit {
     static let verdant = UIColor(rgb: 0x5DCAA5)   // 達成した島の緑
     static let isletRock = UIColor(rgb: 0x7A6B57) // 小岩
 
+    /// Blenderで制作した中継島の原型。読み込みは一度だけにし、各ステップで
+    /// USDZの解析を繰り返さない。各島ではジオメトリと素材を独立させる。
+    private static let stepIsletTemplate: SCNNode? = {
+        guard let url = Bundle.main.url(forResource: "voyage_step_islet", withExtension: "usdz"),
+              let scene = try? SCNScene(url: url, options: nil)
+        else { return nil }
+        let template = SCNNode()
+        template.name = "voyage_step_islet_template"
+        for child in scene.rootNode.childNodes {
+            template.addChildNode(child.clone())
+        }
+        return template
+    }()
+
+    /// USDZを島ごとの独立インスタンスにする。旧素材も読めるよう状態色は互換で残す。
+    private static func makeStepIsletAsset(index: Int, done: Bool) -> SCNNode? {
+        guard let asset = stepIsletTemplate?.clone() else { return nil }
+        asset.name = "step_islet_asset"
+        asset.scale = SCNVector3(0.86, 0.86, 0.86)
+        asset.eulerAngles.y = Float(index % 7) * 0.19 - 0.34
+
+        asset.enumerateChildNodes { node, _ in
+            guard let sourceGeometry = node.geometry,
+                  let geometry = sourceGeometry.copy() as? SCNGeometry
+            else { return }
+            node.geometry = geometry
+            geometry.materials = sourceGeometry.materials.map { sourceMaterial in
+                guard let material = sourceMaterial.copy() as? SCNMaterial else {
+                    return sourceMaterial
+                }
+                let identity = "\(material.name ?? "") \(node.name ?? "")"
+                let color: UIColor
+                switch identity {
+                case let name where name.contains("LF_StepGrass"):
+                    color = done ? verdant : UIColor(rgb: 0x607272)
+                case let name where name.contains("LF_StepMoss"):
+                    color = done ? UIColor(rgb: 0x83B986) : UIColor(rgb: 0x667D77)
+                case let name where name.contains("LF_StepSoil"):
+                    color = done ? UIColor(rgb: 0x405C48) : UIColor(rgb: 0x2D4547)
+                case let name where name.contains("LF_StepBeach"):
+                    color = beach
+                case let name where name.contains("LF_StepPath"):
+                    color = done ? sand : UIColor(rgb: 0xA79C80)
+                case let name where name.contains("LF_StepMarker"):
+                    color = done ? returnOrange : UIColor(rgb: 0x756E61)
+                default:
+                    return material
+                }
+                material.diffuse.contents = color
+                material.lightingModel = .physicallyBased
+                material.roughness.contents = 0.96
+                return material
+            }
+        }
+        return asset
+    }
+
     /// ステップ1つ=航路に浮かぶ「島」。目標地点なので存在感を持たせる(船と釣り合う大きさ)。
-    /// 未達=静かな砂の島、達成=緑が芽吹き、旗が立ち、浜に灯がともる。前後に散らして群島に。
+    /// 島本体はどの状態でも静かな砂州。達成時だけ小さな旗と灯を添える。
     /// `doneAt` を渡すと、達成した日付を島の上に小さなオレンジ文字で掲げる。
     static func makeStepIslet(index: Int, total: Int, done: Bool, doneAt: Date? = nil) -> SCNNode {
         let group = SCNNode()
         group.name = "step_\(index)"
+        let hillH: Float
+        if let islet = makeStepIsletAsset(index: index, done: done) {
+            group.addChildNode(islet)
+            hillH = 0.36
+        } else {
+            // リソース欠損時にも航路を失わない、最小限の低ポリ島。
+            let beachGeo = SCNCone(topRadius: 0.56, bottomRadius: 0.74, height: 0.09)
+            beachGeo.radialSegmentCount = 9
+            beachGeo.firstMaterial = litMaterial(beach, roughness: 0.95)
+            let beachNode = SCNNode(geometry: beachGeo)
+            beachNode.position = SCNVector3(0, 0.045, 0)
+            group.addChildNode(beachNode)
 
-        // 浜(水際の平たい円盤)
-        let beachGeo = SCNCone(topRadius: 0.56, bottomRadius: 0.74, height: 0.09)
-        beachGeo.radialSegmentCount = 9
-        beachGeo.firstMaterial = litMaterial(beach, roughness: 0.95)
-        let beachNode = SCNNode(geometry: beachGeo)
-        beachNode.position = SCNVector3(0, 0.045, 0)
-        group.addChildNode(beachNode)
-
-        // 丘(低ポリの山)。達成=芽吹いた緑で高く、未達=静かな砂で低め。
-        let hillH: Float = done ? 0.72 : 0.52
-        let hillGeo = SCNCone(topRadius: 0, bottomRadius: 0.46, height: CGFloat(hillH))
-        hillGeo.radialSegmentCount = 6
-        hillGeo.firstMaterial = litMaterial(done ? verdant : sand, roughness: 0.9)
-        let hillNode = SCNNode(geometry: hillGeo)
-        hillNode.position = SCNVector3(-0.05, 0.09 + hillH / 2, 0)
-        hillNode.eulerAngles.y = Float(index) * 1.7   // 島ごとに向きを変えて表情を出す
-        group.addChildNode(hillNode)
-
-        // 副丘(小さな二つ目の起伏)でシルエットに厚みを出す
-        let knollGeo = SCNCone(topRadius: 0, bottomRadius: 0.3, height: done ? 0.4 : 0.3)
-        knollGeo.radialSegmentCount = 6
-        knollGeo.firstMaterial = litMaterial(done ? verdant : sand, roughness: 0.9)
-        let knollNode = SCNNode(geometry: knollGeo)
-        knollNode.position = SCNVector3(0.34, 0.09 + (done ? 0.2 : 0.15), 0.12)
-        knollNode.eulerAngles.y = Float(index) * 0.9
-        group.addChildNode(knollNode)
-
-        // 小岩(シルエットに変化を与える)
-        let rockGeo = SCNSphere(radius: 0.17)
-        rockGeo.segmentCount = 6
-        rockGeo.firstMaterial = litMaterial(isletRock, roughness: 0.95)
-        let rockNode = SCNNode(geometry: rockGeo)
-        rockNode.position = SCNVector3(-0.42, 0.07, 0.18)
-        rockNode.scale = SCNVector3(1, 0.66, 1)
-        group.addChildNode(rockNode)
+            hillH = done ? 0.72 : 0.52
+            let hillGeo = SCNCone(topRadius: 0, bottomRadius: 0.46, height: CGFloat(hillH))
+            hillGeo.radialSegmentCount = 6
+            hillGeo.firstMaterial = litMaterial(done ? verdant : sand, roughness: 0.9)
+            let hillNode = SCNNode(geometry: hillGeo)
+            hillNode.position = SCNVector3(-0.05, 0.09 + hillH / 2, 0)
+            group.addChildNode(hillNode)
+        }
 
         if done {
-            // 制覇の証として、丘の頂に旗を立てる(旗竿+はためく三角旗)。
+            // 制覇の証として、丘の頂に小さなペナントを立てる。
             group.addChildNode(makeStepFlag(hillHeight: hillH))
 
             // 達成した島には、浜に温かい灯(たき火/ランタン)。HDRでやわらかくにじむ。
@@ -1420,43 +1495,50 @@ enum VoyageSceneKit {
 
             // いつ辿り着いたかを、島の上に小さなオレンジ文字で残す。
             if let doneAt {
-                group.addChildNode(makeDateLabel(text: LF.dayMonth(doneAt), y: hillH + 0.62))
+                group.addChildNode(makeDateLabel(text: LF.dayMonth(doneAt), y: hillH + 0.43))
             }
         }
 
-        // 前後に散らして群島感を出す(一直線に並べない)。
+        // 一つのステップにつき必ず一島。前後へ緩やかに散らして群島感を出す。
         let progress = Float(index + 1) / Float(total + 1)
         let x = xStart + pow(progress, routeApproachPower) * (xEnd - xStart)
-        let z: Float = 0.7 + Float(index % 2) * 0.7
+        let lane = Float(index % 3) - 1
+        // 編集パネルに隠れにくいようカメラ側へ寄せず、目的地と同じ水平線側へ置く。
+        let z: Float = -0.62 + lane * 0.58
         group.position = SCNVector3(x, 0, z)
         return group
     }
 
-    /// 制覇の旗。丘の頂に立てる旗竿と、風にはためく三角旗(帰帆色)。
+    /// 制覇の旗。丘の頂で主張しすぎない、小さな船旗(帰帆色)。
     private static func makeStepFlag(hillHeight: Float) -> SCNNode {
         let flag = SCNNode()
         flag.name = "step_flag"
         flag.position = SCNVector3(-0.05, 0.09 + hillHeight, 0)
 
-        let poleH: Float = 0.5
-        let poleGeo = SCNCylinder(radius: 0.015, height: CGFloat(poleH))
-        poleGeo.radialSegmentCount = 6
-        poleGeo.firstMaterial = litMaterial(wood, roughness: 0.8)
+        let poleH: Float = 0.31
+        let poleGeo = SCNCylinder(radius: 0.012, height: CGFloat(poleH))
+        poleGeo.radialSegmentCount = 8
+        poleGeo.firstMaterial = litMaterial(wood, roughness: 0.9, fogged: false)
         let pole = SCNNode(geometry: poleGeo)
         pole.position = SCNVector3(0, poleH / 2, 0)
         flag.addChildNode(pole)
 
-        // 三角旗。旗竿の上部から風下へなびく。
+        // 小さな船旗。燕尾の切り込みで、印象を軽くする。
         let path = UIBezierPath()
         path.move(to: CGPoint(x: 0, y: 0))
-        path.addLine(to: CGPoint(x: 0, y: 0.17))
-        path.addLine(to: CGPoint(x: 0.3, y: 0.085))
+        path.addLine(to: CGPoint(x: 0, y: 0.1))
+        path.addLine(to: CGPoint(x: 0.18, y: 0.1))
+        path.addLine(to: CGPoint(x: 0.14, y: 0.05))
+        path.addLine(to: CGPoint(x: 0.18, y: 0))
         path.close()
-        let clothGeo = SCNShape(path: path, extrusionDepth: 0.004)
-        clothGeo.firstMaterial = litMaterial(returnOrange, roughness: 0.9, doubleSided: true)
+        let clothGeo = SCNShape(path: path, extrusionDepth: 0.003)
+        clothGeo.firstMaterial = unlitMaterial(returnOrange)
         let cloth = SCNNode(geometry: clothGeo)
         cloth.name = "step_flag_cloth"
-        cloth.position = SCNVector3(0.012, poleH - 0.2, 0)
+        cloth.position = SCNVector3(0.01, poleH - 0.11, 0)
+        let billboard = SCNBillboardConstraint()
+        billboard.freeAxes = .Y
+        cloth.constraints = [billboard]
         flag.addChildNode(cloth)
         return flag
     }
@@ -1472,7 +1554,7 @@ enum VoyageSceneKit {
         let image = UIGraphicsImageRenderer(size: CGSize(width: w, height: h)).image { _ in
             (text as NSString).draw(at: CGPoint(x: pad, y: pad / 2), withAttributes: attrs)
         }
-        let worldH: CGFloat = 0.46
+        let worldH: CGFloat = 0.28
         let plane = SCNPlane(width: worldH * (w / h), height: worldH)
         let m = SCNMaterial()
         m.lightingModel = .constant
@@ -1723,7 +1805,8 @@ enum VoyageSceneKit {
     /// Webと同様、航海を始めた時刻ではなく現在の朝・昼・夕・夜を海へ反映する。
     static func makeVoyagingScene(
         showIsland: Bool,
-        timeOfDay: AftideHomeTimeOfDay = .night
+        timeOfDay: AftideHomeTimeOfDay = .night,
+        date: Date = .now
     ) -> SCNScene {
         let palette = timeOfDay == .night ? AftideHomePalette.voyagingNight : timeOfDay.palette
         let scene = SCNScene()
@@ -1735,8 +1818,10 @@ enum VoyageSceneKit {
             scene.rootNode.addChildNode(makeStars(count: palette.stars))
         }
 
-        scene.rootNode.addChildNode(makeVoyagingCelestial(timeOfDay: timeOfDay))
-        scene.rootNode.addChildNode(makeVoyagingSea(palette: palette))
+        scene.rootNode.addChildNode(makeVoyagingCelestial(timeOfDay: timeOfDay, date: date))
+        scene.rootNode.addChildNode(
+            HomeIslandOceanEffects.makeScene(layout: .timerVoyage).root
+        )
         // Web Horizon と同じ、z=-20の細い平面。円形の水平線は投影位置が変わり、
         // 同じカメラ定数でも世界全体が上下にずれて見えるため使わない。
         scene.rootNode.addChildNode(makeHorizon())
@@ -1773,6 +1858,7 @@ enum VoyageSceneKit {
             target: SCNVector3(0.8, 1.15, 0),
             fov: 38
         )
+        camera.camera?.exposureOffset = 0.32
         // タイマーの近景だけ、甲板・航海士・島の接地感を補う。
         // ブルームや被写界深度は輪郭をぼかすため使わず、控えめなAOと色調整に留める。
         camera.camera?.contrast = 0.06
@@ -1787,10 +1873,21 @@ enum VoyageSceneKit {
 
     /// 平面の頂点自体を上下させる三層の波。XY平面のlocal +Zが、ノード回転後のworld +Y。
     /// 外周は水平線へ自然につなぐため振幅を落とす。
+    private static let voyagingSeaClockOrigin = ProcessInfo.processInfo.systemUptime
+
+    /// SCNSceneごとの`scn_frame.time`へ、process内で共有する経過時間を足す。
+    /// 遷移Sceneからguided Sceneへ作り直しても波・反射の位相が巻き戻らない。
+    private static var voyagingSeaTimeOffset: Float {
+        let origin = voyagingSeaClockOrigin
+        return Float(ProcessInfo.processInfo.systemUptime - origin)
+    }
+
     private static let voyagingSeaGeometryShader = """
+    #pragma arguments
+    float uVoyageTimeOffset;
     #pragma body
     float2 p = _geometry.position.xy;
-    float t = scn_frame.time;
+    float t = scn_frame.time + uVoyageTimeOffset;
     float phaseA = p.x * 0.31 + p.y * 0.17 - t * 0.72;
     float phaseB = -p.x * 0.19 + p.y * 0.43 + t * 0.51;
     float phaseC = p.x * 0.91 + p.y * 0.67 - t * 1.16;
@@ -1819,10 +1916,11 @@ enum VoyageSceneKit {
     float3 uDeep;
     float3 uLight;
     float3 uFog;
+    float uVoyageTimeOffset;
     #pragma body
     float2 p = (_surface.diffuseTexcoord - float2(0.5)) * 60.0;
     float r = length(p) / 30.0;
-    float t = scn_frame.time;
+    float t = scn_frame.time + uVoyageTimeOffset;
 
     float phaseA = p.x * 0.31 + p.y * 0.17 - t * 0.72;
     float phaseB = -p.x * 0.19 + p.y * 0.43 + t * 0.51;
@@ -1904,6 +2002,10 @@ enum VoyageSceneKit {
         material.setValue(colorVector(palette.seaDeep), forKey: "uDeep")
         material.setValue(colorVector(palette.reflection), forKey: "uLight")
         material.setValue(colorVector(palette.fog), forKey: "uFog")
+        material.setValue(
+            NSNumber(value: voyagingSeaTimeOffset),
+            forKey: "uVoyageTimeOffset"
+        )
         plane.firstMaterial = material
         let surface = SCNNode(geometry: plane)
         surface.name = "voyagingSeaSurface"
@@ -1937,9 +2039,16 @@ enum VoyageSceneKit {
     }
 
     private static func makeVoyagingCelestial(
-        timeOfDay: AftideHomeTimeOfDay
+        timeOfDay: AftideHomeTimeOfDay,
+        date: Date
     ) -> SCNNode {
         let palette = timeOfDay == .night ? AftideHomePalette.voyagingNight : timeOfDay.palette
+        if timeOfDay == .night {
+            let moon = LandfallMoonEffects.makeNode(phase: .current(at: date))
+            moon.position = SCNVector3(5.1, 3.3, -5.5)
+            moon.scale = SCNVector3(0.4, 0.4, 0.4)
+            return moon
+        }
         let sphere = SCNSphere(radius: timeOfDay == .night ? 1.1 : 1.25)
         sphere.segmentCount = 24
         let material = unlitMaterial(UIColor(rgb: palette.reflection))
@@ -1947,6 +2056,7 @@ enum VoyageSceneKit {
         material.emission.intensity = timeOfDay == .night ? 0.9 : 0.62
         sphere.firstMaterial = material
         let node = SCNNode(geometry: sphere)
+        node.name = "voyagingSun"
         node.position = SCNVector3(
             timeOfDay == .morning ? -5.2 : (timeOfDay == .day ? 0.8 : 5.1),
             timeOfDay == .day ? 5.1 : (timeOfDay == .evening ? 1.25 : 3.3),
@@ -2208,86 +2318,6 @@ enum VoyageSceneKit {
 
 // MARK: - アニメータ(Web useFrame 相当)
 
-/// 船の揺れ・波紋・航跡・進行・カメラのゆらぎを毎フレーム駆動する。
-/// Web BoatModel/Ripples/Wake/VoyageSea の式と同値。
-final class VoyageAnimator: NSObject, SCNSceneRendererDelegate {
-    var targetX: Float = 0
-    /// カメラをゆらすか(カードのみ。手回し可の画面では触らない)。
-    var swayCamera = false
-    var animate = true
-
-    private var startTime: TimeInterval?
-    private weak var boundScene: SCNScene?
-    private weak var travel: SCNNode?
-    private weak var bob: SCNNode?
-    private weak var wake: SCNNode?
-    private weak var camera: SCNNode?
-    private var rippleNodes: [SCNNode] = []
-    private var lastTime: TimeInterval = 0
-    /// 甲板に乗せた航海士を動かす(装いタブと同じ動き)。
-    private let sailor = PhoenixAnimator()
-
-    private func bind(_ scene: SCNScene) {
-        boundScene = scene
-        let root = scene.rootNode
-        travel = root.childNode(withName: "travel", recursively: false)
-        bob = travel?.childNode(withName: "boatBob", recursively: false)
-        wake = travel?.childNode(withName: "wake", recursively: true)
-        camera = root.childNode(withName: "camera", recursively: false)
-        rippleNodes = (0..<3).compactMap { root.childNode(withName: "ripple\($0)", recursively: true) }
-    }
-
-    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
-        guard animate, let scene = renderer.scene else { return }
-        if boundScene !== scene { bind(scene) }
-        if startTime == nil { startTime = time; lastTime = time }
-        let t = Float(time - (startTime ?? time))
-        let dt = Float(min(max(time - lastTime, 0), 0.1))
-        lastTime = time
-
-        // 進行(ratio変化へ滑らかに寄せる。Web damp 1.1)
-        if let travel {
-            let x = travel.position.x
-            travel.position.x = x + (targetX - x) * min(1, 1.6 * dt)
-        }
-        // 錨泊の揺れ(Web BoatModel)
-        if let bob {
-            bob.position.y = sin(t * 0.8) * 0.06
-            bob.eulerAngles.z = sin(t * 0.6) * 0.03
-            bob.eulerAngles.x = sin(t * 0.5 + 1.2) * 0.015
-        }
-        // 旗のはためき(Web flagGroup rot.y = sin(t*5.2)*0.22)。再構築されうるので毎回探す。
-        if let flag = bob?.childNode(withName: "boatFlag", recursively: true) {
-            flag.eulerAngles.y = sin(t * 5.2) * 0.22
-        }
-        // 制覇した島の旗も、同じ風になびかせる(島ごとに位相をずらす)。
-        for (i, node) in scene.rootNode.childNodes.enumerated()
-        where node.name?.hasPrefix("step_") == true {
-            node.childNode(withName: "step_flag", recursively: false)?
-                .eulerAngles.y = sin(t * 4.6 + Float(i) * 0.8) * 0.2
-        }
-        // 甲板の航海士(呼吸・見渡し・ランタンの揺れ)。装いで選んだ仕草で立つ。
-        sailor.bindIfNeeded(scene)
-        sailor.pose = PhoenixPose.selected
-        sailor.step(t: t, dt: dt)
-        // 波紋(Web Ripples: 周期7秒・位相ずらし3枚)
-        for (i, node) in rippleNodes.enumerated() {
-            let phase = (t / 7 + Float(i) / 3).truncatingRemainder(dividingBy: 1)
-            let s = 0.8 + phase * 5.5
-            node.scale = SCNVector3(s, s, 1)
-            node.opacity = CGFloat(sin(min(phase * 3, 1) * .pi / 2) * (1 - phase) * 0.2)
-        }
-        // 航跡の明滅(Web Wake)
-        wake?.opacity = CGFloat(0.34 + sin(t * 1.4) * 0.07)
-        // カメラのごくわずかな揺れ(酔わない振幅。Web VoyageSea)。establishing 構図を基準に揺らす。
-        if swayCamera, let camera {
-            let b = VoyageSceneKit.cardCamPos
-            camera.position = SCNVector3(b.x + sin(t * 0.22) * 0.10, b.y + sin(t * 0.35 + 1.0) * 0.06, b.z)
-            camera.look(at: VoyageSceneKit.cardCamTarget)
-        }
-    }
-}
-
 /// Web VoyagingWorld の船・航跡・カモメを毎フレーム駆動する。
 final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
     var resting = false
@@ -2305,6 +2335,7 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
     private weak var bob: SCNNode?
     private weak var wake: SCNNode?
     private weak var approachingIsland: SCNNode?
+    private weak var seaMaterial: SCNMaterial?
     private var gulls: [SCNNode] = []
     private let sailor = PhoenixAnimator()
 
@@ -2318,6 +2349,9 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
         bob = scene.rootNode.childNode(withName: "boatBob", recursively: true)
         wake = scene.rootNode.childNode(withName: "wake", recursively: true)
         approachingIsland = scene.rootNode.childNode(withName: "approachingIsland", recursively: false)
+        seaMaterial = scene.rootNode
+            .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
+            .geometry?.firstMaterial
         gulls = scene.rootNode.childNode(withName: "gulls", recursively: false)?.childNodes ?? []
         placeApproachingIsland()
     }
@@ -2336,6 +2370,10 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
         let t = Float(time - (startTime ?? time))
         let dt = Float(min(max(time - lastTime, 0), 0.1))
         lastTime = time
+        seaMaterial?.setValue(
+            NSNumber(value: HomeIslandOceanEffects.currentTime),
+            forKey: "uTime"
+        )
         if !resting {
             elapsedSeconds += dt
             placeApproachingIsland()
@@ -2391,6 +2429,88 @@ func voyageStepsKey(_ steps: [VoyageStep]) -> String {
 /// 実ジェスチャと別経路を持たせることで、ズーム状態を自動検証できるようにもする。
 final class VoyagingSceneKitView: SCNView {
     var onAccessibilityZoom: ((Float) -> Void)?
+    var onKeyboardEscape: (() -> Void)?
+    var onKeyboardPrimaryAction: (() -> Void)?
+    var onKeyboardCycleAction: ((Bool) -> Void)?
+
+    /// iPadの外付けキーボードと「Designed for iPad」のMacで、
+    /// 港そのものをメニューと同じように移動・決定できるようにする。
+    /// タイマーやSwiftUIパネル表示中はfalseにし、前面UIへキー入力を譲る。
+    var capturesHarborKeyboard = false {
+        didSet {
+            guard capturesHarborKeyboard != oldValue else { return }
+            if capturesHarborKeyboard {
+                becomeFirstResponder()
+            } else {
+                resignFirstResponder()
+            }
+        }
+    }
+
+    override var canBecomeFirstResponder: Bool { capturesHarborKeyboard }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window != nil, capturesHarborKeyboard {
+            becomeFirstResponder()
+        }
+    }
+
+    override var keyCommands: [UIKeyCommand]? {
+        guard capturesHarborKeyboard else { return nil }
+        return [
+            UIKeyCommand(
+                input: UIKeyCommand.inputLeftArrow,
+                modifierFlags: [],
+                action: #selector(handleHarborKeyCommand(_:))
+            ),
+            UIKeyCommand(
+                input: UIKeyCommand.inputUpArrow,
+                modifierFlags: [],
+                action: #selector(handleHarborKeyCommand(_:))
+            ),
+            UIKeyCommand(
+                input: UIKeyCommand.inputRightArrow,
+                modifierFlags: [],
+                action: #selector(handleHarborKeyCommand(_:))
+            ),
+            UIKeyCommand(
+                input: UIKeyCommand.inputDownArrow,
+                modifierFlags: [],
+                action: #selector(handleHarborKeyCommand(_:))
+            ),
+            UIKeyCommand(
+                input: "\r",
+                modifierFlags: [],
+                action: #selector(handleHarborKeyCommand(_:))
+            ),
+            UIKeyCommand(
+                input: " ",
+                modifierFlags: [],
+                action: #selector(handleHarborKeyCommand(_:))
+            ),
+            UIKeyCommand(
+                input: UIKeyCommand.inputEscape,
+                modifierFlags: [],
+                action: #selector(handleHarborKeyCommand(_:))
+            )
+        ]
+    }
+
+    @objc private func handleHarborKeyCommand(_ command: UIKeyCommand) {
+        switch command.input {
+        case UIKeyCommand.inputLeftArrow, UIKeyCommand.inputUpArrow:
+            onKeyboardCycleAction?(true)
+        case UIKeyCommand.inputRightArrow, UIKeyCommand.inputDownArrow:
+            onKeyboardCycleAction?(false)
+        case "\r", " ":
+            onKeyboardPrimaryAction?()
+        case UIKeyCommand.inputEscape:
+            onKeyboardEscape?()
+        default:
+            break
+        }
+    }
 
     override func accessibilityIncrement() {
         onAccessibilityZoom?(0.78)
@@ -2402,15 +2522,25 @@ final class VoyagingSceneKitView: SCNView {
 }
 
 /// ログイン後に最初に見せる、Web VoyagingWorld と同じ航海中の世界。
+enum VoyagingHomeSceneRenderingMode: Equatable {
+    case interactive
+    /// 初回導入はカメラ操作を持たず、30fps / 2xに抑えて説明を優先する。
+    case guidedIntroduction
+}
+
 struct VoyagingHomeSceneView: UIViewRepresentable {
     var showIsland: Bool
     var timeOfDay: AftideHomeTimeOfDay = .night
+    var date: Date = .now
     var resting: Bool = false
     var elapsedSeconds: Int = 0
     var azimuthOffset: Float = 0
     var polarOffset: Float = 0
     var distanceScale: Float = 1
+    var renderingMode: VoyagingHomeSceneRenderingMode = .interactive
     var onTapWorld: () -> Void = {}
+
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onTapWorld: onTapWorld)
@@ -2418,16 +2548,20 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> VoyagingSceneKitView {
         let view = VoyagingSceneKitView()
+        let guidedIntroduction = renderingMode == .guidedIntroduction
         view.scene = VoyageSceneKit.makeVoyagingScene(
             showIsland: showIsland,
-            timeOfDay: timeOfDay
+            timeOfDay: timeOfDay,
+            date: date
         )
         view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
-        view.antialiasingMode = .multisampling4X
-        view.preferredFramesPerSecond = 60
-        view.contentScaleFactor = UIScreen.main.scale
+        view.antialiasingMode = guidedIntroduction ? .multisampling2X : .multisampling4X
+        view.preferredFramesPerSecond = guidedIntroduction ? 30 : 60
+        view.contentScaleFactor = guidedIntroduction
+            ? min(UIScreen.main.scale, 2)
+            : UIScreen.main.scale
         view.autoenablesDefaultLighting = false
-        view.isMultipleTouchEnabled = true
+        view.isMultipleTouchEnabled = !guidedIntroduction
         view.isAccessibilityElement = true
         view.accessibilityTraits.insert(.adjustable)
         view.accessibilityLabel = LF.text("360° voyage view")
@@ -2437,7 +2571,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         // Web OrbitControls と同じ、船を中心にした球面オービット。
         // カメラの上方向はworld +Yへ固定し、回転後のロールを発生させない。
         view.allowsCameraControl = false
-        let reduceMotion = UIAccessibility.isReduceMotionEnabled
+        let reduceMotion = accessibilityReduceMotion || UIAccessibility.isReduceMotionEnabled
         view.rendersContinuously = !reduceMotion
         view.isPlaying = !reduceMotion
         context.coordinator.reduceMotion = reduceMotion
@@ -2449,12 +2583,15 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             polarOffset: polarOffset,
             distanceScale: distanceScale
         )
-        context.coordinator.installGestures(on: view)
+        if !guidedIntroduction {
+            context.coordinator.installGestures(on: view)
+        }
         view.onAccessibilityZoom = { [weak coordinator = context.coordinator] factor in
             coordinator?.zoom(by: factor)
         }
         context.coordinator.showIsland = showIsland
         context.coordinator.timeOfDay = timeOfDay
+        context.coordinator.setDate(date)
         context.coordinator.animator.resting = resting
         context.coordinator.animator.setElapsedSeconds(elapsedSeconds)
         return view
@@ -2467,15 +2604,20 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             context.coordinator.timeOfDay = timeOfDay
             view.scene = VoyageSceneKit.makeVoyagingScene(
                 showIsland: showIsland,
-                timeOfDay: timeOfDay
+                timeOfDay: timeOfDay,
+                date: date
             )
             view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
             view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
             context.coordinator.bindCamera()
         }
+        context.coordinator.setDate(date)
         context.coordinator.onTapWorld = onTapWorld
         context.coordinator.animator.resting = resting
         context.coordinator.animator.setElapsedSeconds(elapsedSeconds)
+        context.coordinator.setReduceMotion(
+            accessibilityReduceMotion || UIAccessibility.isReduceMotionEnabled
+        )
         context.coordinator.setOrbit(
             azimuthOffset: azimuthOffset,
             polarOffset: polarOffset,
@@ -2487,6 +2629,9 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         coordinator.stopCameraLoop()
         view.delegate = nil
         view.isPlaying = false
+        view.rendersContinuously = false
+        view.onAccessibilityZoom = nil
+        view.scene = nil
     }
 
     final class Coordinator: NSObject, SCNSceneRendererDelegate, UIGestureRecognizerDelegate {
@@ -2497,6 +2642,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         var onTapWorld: () -> Void
         private weak var view: SCNView?
         private weak var camera: SCNNode?
+        private weak var moon: SCNNode?
 
         // Web VoyagingWorld:
         // camera [-5.6, 2.4, 8.6], target [0.8, 1.15, 0], fov 38
@@ -2550,6 +2696,22 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         func attach(to view: SCNView) {
             self.view = view
             bindCamera()
+            bindMoon()
+        }
+
+        /// 設定アプリやControl Centerから表示中にReduce Motionが変わった場合も、
+        /// SCNViewの描画loopとdelegateを同じframeで安全に切り替える。
+        func setReduceMotion(_ value: Bool) {
+            guard reduceMotion != value, let view else { return }
+            reduceMotion = value
+            view.rendersContinuously = !value
+            view.isPlaying = !value
+            view.delegate = value ? nil : self
+            if value {
+                azimuthDelta = 0
+                polarDelta = 0
+                view.setNeedsDisplay()
+            }
         }
 
         func installGestures(on view: SCNView) {
@@ -2587,6 +2749,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
 
         func bindCamera() {
             camera = view?.scene?.rootNode.childNode(withName: "camera", recursively: false)
+            bindMoon()
             if !orbitIsInitialized {
                 azimuth = initialAzimuth
                 polar = initialPolar
@@ -2595,6 +2758,18 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             }
             applyCamera()
             updateAccessibilityValue()
+        }
+
+        private func bindMoon() {
+            moon = view?.scene?.rootNode.childNode(
+                withName: LandfallMoonEffects.rootNodeName,
+                recursively: false
+            )
+        }
+
+        func setDate(_ date: Date) {
+            if moon == nil { bindMoon() }
+            LandfallMoonEffects.update(moon, phase: .current(at: date))
         }
 
         func setOrbit(azimuthOffset: Float, polarOffset: Float, distanceScale: Float) {
@@ -2759,128 +2934,6 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
     }
 }
 
-/// 目的地の3Dビュー。ratio で船が進み、steps で島に旗が立つ。
-struct VoyageSceneView: UIViewRepresentable {
-    var ratio: Double
-    var steps: [VoyageStep]
-    var animate: Bool = true
-    var allowsCameraControl: Bool = false
-    /// 没入(全画面)構図か。月が左上奥になり、星が増える(Web VoyageWorld)。
-    var immersive: Bool = false
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIView(context: Context) -> SCNView {
-        let view = SCNView()
-        view.scene = VoyageSceneKit.makeScene(ratio: ratio, steps: steps, immersive: immersive)
-        view.backgroundColor = VoyageSceneKit.nightBG
-        view.antialiasingMode = .multisampling4X
-        view.allowsCameraControl = allowsCameraControl
-        view.autoenablesDefaultLighting = false
-        let reduceMotion = UIAccessibility.isReduceMotionEnabled
-        view.rendersContinuously = animate && !reduceMotion
-        let animator = context.coordinator.animator
-        animator.animate = animate && !reduceMotion
-        animator.targetX = VoyageSceneKit.boatX(ratio)
-        animator.swayCamera = !allowsCameraControl
-        view.delegate = animator
-        context.coordinator.stepsKey = voyageStepsKey(steps)
-        return view
-    }
-
-    func updateUIView(_ view: SCNView, context: Context) {
-        let key = voyageStepsKey(steps)
-        if key != context.coordinator.stepsKey {
-            // 島の本数/達成状態が変わったらシーンを作り直す。
-            context.coordinator.stepsKey = key
-            view.scene = VoyageSceneKit.makeScene(ratio: ratio, steps: steps, immersive: immersive)
-        }
-        context.coordinator.animator.targetX = VoyageSceneKit.boatX(ratio)
-        view.allowsCameraControl = allowsCameraControl
-    }
-
-    final class Coordinator {
-        let animator = VoyageAnimator()
-        var stepsKey = ""
-    }
-}
-
-/// 装い: 海に浮かぶ自分の船(色をカスタム)。ドラッグで一周できる。
-struct BoatSceneView: UIViewRepresentable {
-    var parts: BoatParts
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIView(context: Context) -> SCNView {
-        let view = SCNView()
-        view.scene = VoyageSceneKit.makeBoatStudioScene(parts: parts)
-        view.backgroundColor = VoyageSceneKit.nightBG
-        view.antialiasingMode = .multisampling4X
-        view.allowsCameraControl = true
-        view.autoenablesDefaultLighting = false
-        let reduceMotion = UIAccessibility.isReduceMotionEnabled
-        view.rendersContinuously = !reduceMotion
-        context.coordinator.animator.animate = !reduceMotion
-        view.delegate = context.coordinator.animator
-        context.coordinator.key = key
-        view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
-        // 手回しは「船の中心」を軸に回す(Web BoatStudio OrbitControls target=[0,0.7,0])。
-        let cc = view.defaultCameraController
-        cc.interactionMode = .orbitTurntable
-        cc.target = SCNVector3(0, 0.7, 0)
-        cc.automaticTarget = false
-        cc.inertiaEnabled = true
-        // ゆっくり一周して船体まで見せる(Web BoatStudio の autoRotate 相当)。
-        if !reduceMotion,
-           let travel = view.scene?.rootNode.childNode(withName: "travel", recursively: false) {
-            // OrbitControls autoRotateSpeed=0.6 は約100秒で一周。
-            travel.runAction(.repeatForever(.rotateBy(x: 0, y: -2 * .pi, z: 0, duration: 100)), forKey: "turn")
-        }
-        return view
-    }
-
-    func updateUIView(_ view: SCNView, context: Context) {
-        // 色・ライン・旗が変わったら、船だけ作り直す(カメラの手回し視点は保たれる)。
-        guard key != context.coordinator.key else { return }
-        context.coordinator.key = key
-        guard let bob = view.scene?.rootNode.childNode(withName: "boatBob", recursively: true) else { return }
-        bob.childNode(withName: "boatModel", recursively: false)?.removeFromParentNode()
-        bob.addChildNode(VoyageSceneKit.makeBoatModel(parts))
-    }
-
-    private var key: String {
-        let stripe = parts.stripe?.hashValue ?? 0
-        return "\(parts.sail.hashValue)|\(parts.jib.hashValue)|\(parts.hull.hashValue)|\(stripe)|\(parts.flag)"
-    }
-
-    final class Coordinator {
-        let animator = VoyageAnimator()
-        var key = ""
-    }
-}
-
-/// 装い: 海に立つ自分の航海士(プレイヤー)。ドラッグで一周できる。
-struct NavigatorSceneView: UIViewRepresentable {
-    func makeUIView(context: Context) -> SCNView {
-        let view = SCNView()
-        view.scene = VoyageSceneKit.makeNavigatorScene()
-        view.backgroundColor = VoyageSceneKit.nightBG
-        view.antialiasingMode = .multisampling4X
-        view.allowsCameraControl = true
-        view.autoenablesDefaultLighting = false
-        view.rendersContinuously = !UIAccessibility.isReduceMotionEnabled
-        if !UIAccessibility.isReduceMotionEnabled,
-           let nav = view.scene?.rootNode.childNode(withName: "navigator", recursively: false) {
-            let up = SCNAction.moveBy(x: 0, y: 0.05, z: 0, duration: 2.2)
-            up.timingMode = .easeInEaseOut
-            nav.runAction(.repeatForever(.sequence([up, up.reversed()])), forKey: "bob")
-        }
-        return view
-    }
-
-    func updateUIView(_ view: SCNView, context: Context) {}
-}
-
 // MARK: - 没入エディタの世界(Web VoyageWorld 相当)
 
 enum VoyagePhase { case enter, idle, exit }
@@ -2922,6 +2975,7 @@ struct ImmersiveVoyageView: UIViewRepresentable {
         coord.targetX = VoyageSceneKit.boatX(ratio)
         coord.attach(view: view, reduceMotion: reduceMotion)
         coord.stepsKey = voyageStepsKey(steps)
+        coord.renderedStepCount = steps.count
         if let label = view.scene?.rootNode.childNode(withName: "islandLabel", recursively: false) {
             VoyageSceneKit.updateIslandLabel(label, text: islandName)
         }
@@ -2973,6 +3027,7 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
 
     var targetX: Float = 0
     var stepsKey = ""
+    var renderedStepCount = 0
     private weak var view: SCNView?
     private weak var scene: SCNScene?
     private weak var camera: SCNNode?
@@ -3162,13 +3217,20 @@ final class WorldCoordinator: NSObject, SCNSceneRendererDelegate {
 
     func rebuildBuoys(steps: [VoyageStep]) {
         guard let root = scene?.rootNode else { return }
+        let previousCount = renderedStepCount
+        renderedStepCount = steps.count
         root.childNodes.filter { $0.name?.hasPrefix("step_") == true }.forEach { $0.removeFromParentNode() }
         for (i, step) in steps.enumerated() {
-            root.addChildNode(
-                VoyageSceneKit.makeStepIslet(
-                    index: i, total: steps.count, done: step.done, doneAt: step.doneAt
-                )
+            let islet = VoyageSceneKit.makeStepIslet(
+                index: i, total: steps.count, done: step.done, doneAt: step.doneAt
             )
+            root.addChildNode(islet)
+            if i >= previousCount, steps.count > previousCount, !reduceMotion {
+                islet.scale = SCNVector3(0.02, 0.02, 0.02)
+                let emerge = SCNAction.scale(to: 1, duration: 0.42)
+                emerge.timingMode = .easeOut
+                islet.runAction(emerge, forKey: "step-islet-emerge")
+            }
         }
     }
 

@@ -71,23 +71,39 @@ final class PublicHarborService: ObservableObject {
 
     /// 退港: 自分の共有分(全記録+プロフィール)を消してから抜ける。
     /// 消せるのは本人だけ(ルールで強制)。
-    func leave(_ slug: String) async {
-        guard let uid else { return }
-        let ref = memberRef(slug: slug, uid: uid)
-        if let months = try? await ref.collection("months").getDocuments() {
-            for doc in months.documents { try? await doc.reference.delete() }
-        }
-        try? await ref.delete()
+    func leave(_ slug: String) async throws {
+        guard let uid else { throw RoomError.notSignedIn }
+        try await deleteMembership(slug: slug, uid: uid)
+
+        // While the request was in flight another account may have signed in. Do not mutate that
+        // account's local cache with the result of the previous account's deletion.
+        guard self.uid == uid else { return }
         joined.remove(slug)
         cacheJoined()
     }
 
     /// アカウント削除時: 全パブリック港から自分の痕跡を消す。
-    func leaveAll() async {
-        await refresh()
-        for slug in joined {
-            await leave(slug)
+    func leaveAll() async throws {
+        guard let uid else { throw RoomError.notSignedIn }
+        var deletedSlugs = Set<String>()
+        var firstError: Error?
+
+        // The device cache can be stale or empty after joining on the web. Deleting a missing
+        // Firestore document is harmless, so inspect every official harbor during account cleanup.
+        for harbor in PublicHarbor.all {
+            do {
+                try await deleteMembership(slug: harbor.slug, uid: uid)
+                deletedSlugs.insert(harbor.slug)
+            } catch {
+                if firstError == nil { firstError = error }
+            }
         }
+
+        if self.uid == uid, !deletedSlugs.isEmpty {
+            joined.subtract(deletedSlugs)
+            cacheJoined()
+        }
+        if let firstError { throw firstError }
     }
 
     /// プレイヤーカードの変更を参加中の全パブリック港へも反映する。
@@ -109,6 +125,17 @@ final class PublicHarborService: ObservableObject {
 
     private func cacheJoined() {
         UserDefaults.standard.set(Array(joined).sorted(), forKey: Self.joinedCacheKey)
+    }
+
+    /// Remove all nested records before deleting the member card. Every operation is awaited so a
+    /// failed network/rules write cannot be presented locally as a successful departure.
+    private func deleteMembership(slug: String, uid: String) async throws {
+        let ref = memberRef(slug: slug, uid: uid)
+        let months = try await ref.collection("months").getDocuments(source: .server)
+        for document in months.documents {
+            try await document.reference.delete()
+        }
+        try await ref.delete()
     }
 
     func resetLocalState() {

@@ -3,6 +3,7 @@ import CryptoKit
 import FirebaseAuth
 import FirebaseCore
 import GoogleSignIn
+import OSLog
 import SwiftUI
 
 /// Firebase Authentication のラッパー。Apple / Google サインインとサインアウト・アカウント削除を扱う。
@@ -10,6 +11,10 @@ import SwiftUI
 @MainActor
 final class AuthService: ObservableObject {
     static let shared = AuthService()
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.tatsuyaariyama.Landfall",
+        category: "Authentication"
+    )
 
     @Published private(set) var user: User?
     @Published private(set) var isSimulatorPreviewing = false
@@ -90,8 +95,19 @@ final class AuthService: ObservableObject {
     // MARK: - Google
 
     func signInWithGoogle() async {
+        guard !isWorking else { return }
         errorMessage = nil
         await Task.yield()
+        guard Self.authenticationStorageIsAvailable() else {
+            errorMessage = LF.text(
+                "Secure sign-in storage is unavailable. Install the latest signed build and try again."
+            )
+            return
+        }
+        guard configureGoogleSignIn() else {
+            errorMessage = LF.text("Sign-in is not configured for this build. Check the Firebase settings.")
+            return
+        }
         guard let rootViewController = Self.topViewController() else {
             errorMessage = LF.text("The sign-in screen could not be opened. Please try again.")
             return
@@ -111,6 +127,7 @@ final class AuthService: ObservableObject {
             await signIn(with: credential)
         } catch {
             if (error as NSError).code != GIDSignInError.canceled.rawValue {
+                Self.logSignInError(error, stage: "google-oauth")
                 errorMessage = Self.signInErrorMessage(for: error, provider: "Google")
             }
         }
@@ -124,6 +141,7 @@ final class AuthService: ObservableObject {
         do {
             try await Auth.auth().signIn(with: credential)
         } catch {
+            Self.logSignInError(error, stage: "firebase-credential")
             errorMessage = Self.signInErrorMessage(for: error)
         }
     }
@@ -172,6 +190,9 @@ final class AuthService: ObservableObject {
             try await user.reauthenticate(with: firebaseCredential)
             appleAuthorizationCode = result.authorizationCode
         } else if providerIDs.contains("google.com") {
+            guard configureGoogleSignIn() else {
+                throw AccountDeletionError.missingCredential
+            }
             guard let rootViewController = Self.topViewController() else {
                 throw AccountDeletionError.cannotPresentSignIn
             }
@@ -201,6 +222,19 @@ final class AuthService: ObservableObject {
     }
 
     // MARK: - Helpers
+
+    /// GoogleSignIn can infer this from Info.plist, but configuring it explicitly
+    /// keeps Simulator and signed device builds on the exact same OAuth client.
+    private func configureGoogleSignIn() -> Bool {
+        let firebaseClientID = FirebaseApp.app()?.options.clientID
+        let plistClientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String
+        guard let clientID = firebaseClientID ?? plistClientID,
+              !clientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: clientID)
+        return true
+    }
 
     private func setLocalMode(_ enabled: Bool) {
         isUsingLocalMode = enabled
@@ -271,6 +305,10 @@ final class AuthService: ObservableObject {
                 return LF.text("Check your internet connection and try again.")
             case .tooManyRequests:
                 return LF.text("Too many attempts were made. Please wait and try again.")
+            case .keychainError:
+                return LF.text(
+                    "Secure sign-in storage is unavailable. Install the latest signed build and try again."
+                )
             case .operationNotAllowed, .appNotAuthorized, .invalidAPIKey:
                 return LF.text("Sign-in is not configured for this build. Check the Firebase settings.")
             default:
@@ -279,6 +317,37 @@ final class AuthService: ObservableObject {
         }
 
         return LF.format("%@ sign-in failed. Please try again.", providerName)
+    }
+
+    /// Firebase Auth persists the user in Keychain. An unsigned Simulator app
+    /// can complete the Google browser flow but will then fail with -34018
+    /// because the application identifier entitlement is missing. Detect that
+    /// before opening the browser so the failure is actionable and repeatable.
+    private static func authenticationStorageIsAvailable() -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "\(Bundle.main.bundleIdentifier ?? "KeelMira").auth-preflight",
+            kSecAttrAccount as String: "keychain-access",
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnData as String: false
+        ]
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            logger.error("Authentication storage preflight failed status=\(status, privacy: .public)")
+            return false
+        }
+        return true
+    }
+
+    /// Authentication failures used to collapse into one generic sentence,
+    /// making Simulator-only configuration regressions impossible to diagnose.
+    /// Log only the stable domain/code/stage; never include credentials or the
+    /// provider's userInfo payload because it can contain sensitive tokens.
+    private static func logSignInError(_ error: Error, stage: String) {
+        let nsError = error as NSError
+        logger.error(
+            "Sign-in failed stage=\(stage, privacy: .public) domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(nsError.localizedDescription, privacy: .public)"
+        )
     }
 
     private static func randomNonceString(length: Int = 32) -> String {

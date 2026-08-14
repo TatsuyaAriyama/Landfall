@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// 配色プリセット。背景と前景の組みを固定し、デザイン言語から外れない。
-/// 前半6色は項目タイルとプレイヤーカードの共用、後半6色はプレイヤーカード専用
-/// (`itemCases` / `allCases` で出し分ける。Web の TILE_STYLES / PROFILE_STYLES と同じ並び)。
+/// 12色すべてを項目タイルとプレイヤーカードで共用する。
+/// Web の TILE_STYLES / PROFILE_STYLES と同じ並びに保つ。
 enum TileStyle: String, CaseIterable, Identifiable {
     case midnight
     case coral
@@ -19,8 +19,8 @@ enum TileStyle: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// 項目タイルで選べる配色。グリッドは一覧性が命なので、ここは意図的に増やさない。
-    static let itemCases: [TileStyle] = [.midnight, .coral, .ink, .seaGreen, .violet, .sunYellow]
+    /// 項目タイルで選べる配色。新しい色値は足さず、既存のブランド配色を全て開放する。
+    static let itemCases: [TileStyle] = allCases
 
     var accessibilityName: LocalizedStringKey {
         switch self {

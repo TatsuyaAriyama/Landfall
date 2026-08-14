@@ -5,6 +5,8 @@ import SwiftData
 /// 記録は月ごとに残り続け、消せるのは書いた本人だけ(退港=自分の共有分の削除)。
 struct PublicHarborView: View {
     let harbor: PublicHarbor
+    private let showsOceanBackground: Bool
+    private let onEmbeddedBack: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -18,14 +20,49 @@ struct PublicHarborView: View {
     @State private var editingProfile = false
     @State private var needsProfile = false
     @State private var joinError: String?
+    @State private var leaveError: String?
     @State private var loadError: String?
     /// 通報の確認対象(メンバー)。
     @State private var reporting: HarborMember?
     /// ブロックの確認対象(メンバー)。
     @State private var blocking: HarborMember?
+    /// Firestoreへの保存が完了したブロックだけをUndo対象として提示する。
+    @State private var recentlyBlocked: HarborMember?
+    @State private var blockError: String?
+    @State private var blockingMemberID: String?
+    /// 公開コンテンツ通報はCallableの完了後だけ結果を知らせる。
+    @State private var reportResult: String?
 
     private var isJoined: Bool { service.joined.contains(harbor.slug) }
     private var myUid: String? { auth.user?.uid }
+    private var hasJoinError: Binding<Bool> { optionalPresentation($joinError) }
+    private var hasLeaveError: Binding<Bool> { optionalPresentation($leaveError) }
+    private var hasBlockError: Binding<Bool> { optionalPresentation($blockError) }
+    private var hasRecentlyBlockedMember: Binding<Bool> { optionalPresentation($recentlyBlocked) }
+    private var hasReportResult: Binding<Bool> { optionalPresentation($reportResult) }
+    private var isReportingDialogPresented: Binding<Bool> { optionalPresentation($reporting) }
+    private var isBlockingDialogPresented: Binding<Bool> {
+        optionalPresentation($blocking)
+    }
+
+    init(
+        harbor: PublicHarbor,
+        showsOceanBackground: Bool = true,
+        onEmbeddedBack: (() -> Void)? = nil
+    ) {
+        self.harbor = harbor
+        self.showsOceanBackground = showsOceanBackground
+        self.onEmbeddedBack = onEmbeddedBack
+    }
+
+    private func optionalPresentation<Value>(_ value: Binding<Value?>) -> Binding<Bool> {
+        Binding(
+            get: { value.wrappedValue != nil },
+            set: { isPresented in
+                if !isPresented { value.wrappedValue = nil }
+            }
+        )
+    }
 
     /// ブロックした相手は一覧から外す。
     private var visibleMembers: [HarborMember] {
@@ -33,32 +70,47 @@ struct PublicHarborView: View {
     }
 
     var body: some View {
+        confirmationDialogs
+    }
+
+    private var baseContent: some View {
         ZStack {
-            HarborOceanBackground()
+            if showsOceanBackground {
+                HarborOceanBackground()
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     header
                     joinButton
-                        .padding(.top, 28)
+                        .padding(.top, showsOceanBackground ? 28 : 10)
                     if auth.isSignedIn {
                         membersSection
-                            .padding(.top, 32)
+                            .padding(.top, showsOceanBackground ? 32 : 14)
                     }
                 }
-                .padding(LFMetrics.cardPadding)
+                .padding(showsOceanBackground ? LFMetrics.cardPadding : 14)
+                .background(
+                    Color.white.opacity(showsOceanBackground ? 0 : 0.78),
+                    in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+                )
+                .padding(.horizontal, showsOceanBackground ? 0 : 12)
+                .padding(.top, showsOceanBackground ? 0 : 10)
             }
         }
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
-                    dismiss()
+                    if let onEmbeddedBack {
+                        onEmbeddedBack()
+                    } else {
+                        dismiss()
+                    }
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "chevron.left")
                         Text("Harbor")
                     }
-                    .padding(.leading, 32)
                     .font(LFFont.label(16))
                     .foregroundStyle(LFColor.ink)
                 }
@@ -73,25 +125,66 @@ struct PublicHarborView: View {
                 Task { await reload() }
             }
         }
+    }
+
+    private var alertsContent: some View {
+        baseContent
         .alert(
             "Couldn't join this harbor.",
-            isPresented: Binding(get: { joinError != nil }, set: { if !$0 { joinError = nil } })
+            isPresented: hasJoinError
         ) {
             Button("OK", role: .cancel) { joinError = nil }
         } message: {
             Text(verbatim: joinError ?? "")
         }
+        .alert(
+            "Couldn't leave this harbor.",
+            isPresented: hasLeaveError
+        ) {
+            Button("OK", role: .cancel) { leaveError = nil }
+        } message: {
+            Text(verbatim: leaveError ?? "")
+        }
+        .alert(
+            "Couldn't update blocked sailors.",
+            isPresented: hasBlockError
+        ) {
+            Button("OK", role: .cancel) { blockError = nil }
+        } message: {
+            Text(verbatim: blockError ?? "")
+        }
+        .alert(
+            "Sailor blocked",
+            isPresented: hasRecentlyBlockedMember,
+            presenting: recentlyBlocked
+        ) { member in
+            Button("Undo") {
+                recentlyBlocked = nil
+                undoBlock(member)
+            }
+            Button("OK", role: .cancel) { recentlyBlocked = nil }
+        } message: { _ in
+            Text("Their public logbook pages, harbor profile, and chat messages are now hidden.")
+        }
+        .alert(
+            "Harbor report",
+            isPresented: hasReportResult
+        ) {
+            Button("OK", role: .cancel) { reportResult = nil }
+        } message: {
+            Text(verbatim: reportResult ?? "")
+        }
+    }
+
+    private var confirmationDialogs: some View {
+        alertsContent
         .confirmationDialog(
             "Leave this harbor?",
             isPresented: $leaving,
             titleVisibility: .visible
         ) {
             Button("Leave this harbor", role: .destructive) {
-                Task {
-                    await service.leave(harbor.slug)
-                    Haptics.tap()
-                    await reload()
-                }
+                leaveHarbor()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -99,14 +192,25 @@ struct PublicHarborView: View {
         }
         .confirmationDialog(
             "Report this sailor?",
-            isPresented: Binding(get: { reporting != nil }, set: { if !$0 { reporting = nil } }),
+            isPresented: isReportingDialogPresented,
             titleVisibility: .visible,
             presenting: reporting
         ) { member in
             Button("Report", role: .destructive) {
-                chat.report(roomId: harbor.slug, message: nil, targetUid: member.id)
-                Haptics.tap()
                 reporting = nil
+                Task {
+                    do {
+                        try await PublicJournalService.shared.reportMember(
+                            member.id,
+                            harborSlug: harbor.slug
+                        )
+                        reportResult = LF.text("Report received. Thank you for helping keep the harbor safe.")
+                        Haptics.success()
+                    } catch {
+                        reportResult = error.localizedDescription
+                        Haptics.error()
+                    }
+                }
             }
             Button("Cancel", role: .cancel) { reporting = nil }
         } message: { _ in
@@ -114,18 +218,17 @@ struct PublicHarborView: View {
         }
         .confirmationDialog(
             "Block this sailor?",
-            isPresented: Binding(get: { blocking != nil }, set: { if !$0 { blocking = nil } }),
+            isPresented: isBlockingDialogPresented,
             titleVisibility: .visible,
             presenting: blocking
         ) { member in
             Button("Block", role: .destructive) {
-                chat.block(member.id)
-                Haptics.tap()
                 blocking = nil
+                block(member)
             }
             Button("Cancel", role: .cancel) { blocking = nil }
         } message: { _ in
-            Text("You won't see them anymore. They won't be told.")
+            Text("Their public logbook pages, harbor profile, and chat messages will be hidden. They won't be told.")
         }
     }
 
@@ -151,22 +254,28 @@ struct PublicHarborView: View {
     // MARK: - 見出し
 
     private var header: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: showsOceanBackground ? 16 : 10) {
             ZStack {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: showsOceanBackground ? 20 : 12, style: .continuous)
                     .fill(harbor.style.background)
                 TileSymbolView(symbol: harbor.symbol, fg: harbor.style.foreground, bg: harbor.style.background)
-                    .frame(width: 38, height: 38)
+                    .frame(
+                        width: showsOceanBackground ? 38 : 24,
+                        height: showsOceanBackground ? 38 : 24
+                    )
             }
-            .frame(width: 64, height: 64)
-            VStack(alignment: .leading, spacing: 6) {
+            .frame(
+                width: showsOceanBackground ? 64 : 42,
+                height: showsOceanBackground ? 64 : 42
+            )
+            VStack(alignment: .leading, spacing: showsOceanBackground ? 6 : 2) {
                 Text(harbor.title)
-                    .font(LFFont.copy(24))
+                    .font(LFFont.copy(showsOceanBackground ? 24 : 17))
                     .foregroundStyle(LFColor.ink)
                 Text(harbor.tagline)
-                    .font(LFFont.label(14))
+                    .font(LFFont.label(showsOceanBackground ? 14 : 11))
                     .foregroundStyle(LFColor.ink.opacity(0.6))
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(showsOceanBackground ? 3 : 1)
             }
             Spacer(minLength: 0)
         }
@@ -178,10 +287,11 @@ struct PublicHarborView: View {
     private var joinButton: some View {
         if !auth.isSignedIn {
             Text("Sign in to enter a harbor.")
-                .font(LFFont.copy(15))
+                .font(LFFont.copy(showsOceanBackground ? 15 : 12))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
         } else if isJoined {
             Button {
+                guard !working else { return }
                 leaving = true
             } label: {
                 Text("Leave this harbor")
@@ -189,6 +299,7 @@ struct PublicHarborView: View {
                     .foregroundStyle(LFColor.ink.opacity(0.45))
             }
             .buttonStyle(.plain)
+            .disabled(working)
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 Button {
@@ -214,7 +325,7 @@ struct PublicHarborView: View {
                         .font(LFFont.copy(17))
                         .foregroundStyle(LFColor.paper)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 56)
+                        .frame(minHeight: 56)
                         .background(LFColor.ink)
                         .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
                 }
@@ -237,7 +348,7 @@ struct PublicHarborView: View {
     @ViewBuilder
     private var membersSection: some View {
         Text("Sailors in harbor")
-            .font(LFFont.label(13))
+            .font(LFFont.label(showsOceanBackground ? 13 : 11))
             .tracking(1)
             .foregroundStyle(LFColor.ink.opacity(0.5))
 
@@ -307,11 +418,14 @@ struct PublicHarborView: View {
                 HStack(spacing: 14) {
                 // 全員同じ大きさ。序列を作らない。
                     PlayerAvatarArt(styleToken: member.styleToken, symbolToken: member.symbolToken)
-                        .frame(width: 38, height: 38)
+                        .frame(
+                            width: showsOceanBackground ? 38 : 30,
+                            height: showsOceanBackground ? 38 : 30
+                        )
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 8) {
                             Text(verbatim: member.displayName)
-                                .font(LFFont.copy(17))
+                                .font(LFFont.copy(showsOceanBackground ? 17 : 14))
                                 .foregroundStyle(LFColor.ink)
                                 .lineLimit(1)
                             if member.id == myUid {
@@ -322,7 +436,7 @@ struct PublicHarborView: View {
                         }
                         if !member.resolve.isEmpty {
                             Text(verbatim: member.resolve)
-                                .font(LFFont.label(12))
+                                .font(LFFont.label(showsOceanBackground ? 12 : 10))
                                 .foregroundStyle(LFColor.ink.opacity(0.45))
                                 .lineLimit(1)
                         }
@@ -355,9 +469,10 @@ struct PublicHarborView: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
+                .disabled(blockingMemberID != nil)
             }
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, showsOceanBackground ? 9 : 4)
         .contextMenu {
             if member.id != myUid {
                 Button {
@@ -370,6 +485,54 @@ struct PublicHarborView: View {
                 } label: {
                     Label("Block this sailor", systemImage: "hand.raised")
                 }
+                .disabled(blockingMemberID != nil)
+            }
+        }
+    }
+
+    private func leaveHarbor() {
+        guard !working else { return }
+        working = true
+        Task {
+            defer { working = false }
+            do {
+                try await service.leave(harbor.slug)
+                Haptics.success()
+                await reload()
+            } catch {
+                leaveError = error.localizedDescription
+                Haptics.error()
+            }
+        }
+    }
+
+    private func block(_ member: HarborMember) {
+        guard blockingMemberID == nil else { return }
+        blockingMemberID = member.id
+        Task {
+            defer { blockingMemberID = nil }
+            do {
+                try await chat.block(member.id)
+                recentlyBlocked = member
+                Haptics.success()
+            } catch {
+                blockError = error.localizedDescription
+                Haptics.error()
+            }
+        }
+    }
+
+    private func undoBlock(_ member: HarborMember) {
+        guard blockingMemberID == nil else { return }
+        blockingMemberID = member.id
+        Task {
+            defer { blockingMemberID = nil }
+            do {
+                try await chat.unblock(member.id)
+                Haptics.tap(.light)
+            } catch {
+                blockError = error.localizedDescription
+                Haptics.error()
             }
         }
     }
@@ -388,6 +551,7 @@ struct PublicMemberKey: Hashable {
 /// プライベート港の既存の軌跡画面とは分離し、そちらの仕様には影響させない。
 struct PublicMemberProfileView: View {
     let slug: String
+    private let showsOceanBackground: Bool
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var service = PublicHarborService.shared
@@ -400,8 +564,13 @@ struct PublicMemberProfileView: View {
     @State private var loaded = false
     @State private var loadError: String?
 
-    init(slug: String, initialMember: HarborMember) {
+    init(
+        slug: String,
+        initialMember: HarborMember,
+        showsOceanBackground: Bool = true
+    ) {
         self.slug = slug
+        self.showsOceanBackground = showsOceanBackground
         _member = State(initialValue: initialMember)
         let components = Calendar.current.dateComponents([.year, .month], from: Date())
         _year = State(initialValue: components.year ?? 2026)
@@ -433,7 +602,9 @@ struct PublicMemberProfileView: View {
 
     var body: some View {
         ZStack {
-            HarborOceanBackground()
+            if showsOceanBackground {
+                HarborOceanBackground()
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     memberHeader
@@ -446,11 +617,10 @@ struct PublicMemberProfileView: View {
                             .foregroundStyle(LFColor.ink.opacity(0.5))
                             .frame(maxWidth: .infinity)
                             .padding(.top, 40)
+                    } else if let loadError {
+                        retryMessage(loadError)
+                            .padding(.top, 20)
                     } else {
-                        if let loadError {
-                            retryMessage(loadError)
-                                .padding(.top, 20)
-                        }
                         dayGrid
                             .padding(.top, 8)
                         dayDetail

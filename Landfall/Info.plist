@@ -6,6 +6,12 @@
 	<string>KeelMira</string>
 	<key>GIDClientID</key>
 	<string>223711851616-02sei27e9o1igen8b80su7qgo5g1s1oq.apps.googleusercontent.com</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>KeelMira saves the island photos you take to your photo library.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

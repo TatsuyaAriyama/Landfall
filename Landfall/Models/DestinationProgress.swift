@@ -31,17 +31,18 @@ extension Destination {
         }
 
         // ステップ目標: 進捗 = 完了数 / 全数。全部完了で着岸。
-        if !steps.isEmpty {
-            let done = steps.filter { $0.doneAt != nil }.count
+        let boundedSteps = Array(steps.prefix(Self.maxSteps))
+        if !boundedSteps.isEmpty {
+            let done = boundedSteps.filter { $0.doneAt != nil }.count
             return DestinationProgress(
-                ratio: Double(done) / Double(steps.count),
+                ratio: Double(done) / Double(boundedSteps.count),
                 minutes: minutes,
                 remainingMinutes: nil,
                 remainingDays: nil,
                 remainingSeconds: nil,
                 stepsDone: done,
-                stepsTotal: steps.count,
-                reached: done == steps.count
+                stepsTotal: boundedSteps.count,
+                reached: done == boundedSteps.count
             )
         }
 
@@ -117,13 +118,13 @@ extension Destination {
     /// カードに出す一言用: 次の未達ステップ名(ステップ目標のとき)。ラベル整形はビュー側で
     /// SwiftUI Text(環境ロケール準拠)で行い、アプリ内言語切替に追従させる。
     var nextStepName: String? {
-        steps.first(where: { $0.doneAt == nil })?.name
+        steps.prefix(Self.maxSteps).first(where: { $0.doneAt == nil })?.name
     }
 
     /// 直近に辿り着いた小島(達成日が最も新しいステップ)。ホームのカードに
     /// 「いつその小さな目標を達成したか」を小さく添えるために使う。
     var latestDoneStep: DestinationStep? {
-        steps.filter { $0.doneAt != nil }
+        steps.prefix(Self.maxSteps).filter { $0.doneAt != nil }
             .max { ($0.doneAt ?? .distantPast) < ($1.doneAt ?? .distantPast) }
     }
 }

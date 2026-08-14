@@ -56,6 +56,8 @@ struct Provider: TimelineProvider {
                 startedAt: Date().addingTimeInterval(-25 * 60).timeIntervalSince1970,
                 itemID: "preview-reading",
                 itemName: "読書",
+                timerMode: "free",
+                pomodoroStartElapsed: 0,
                 breakSeconds: 0,
                 breakStartedAt: 0
             )
@@ -160,7 +162,7 @@ struct LandfallWidgetView: View {
                 Circle()
                     .fill(entry.timer.isResting ? Color.wSun : Color.wSea)
                     .frame(width: 7, height: 7)
-                Text(entry.timer.isResting ? "停泊中" : "航海中")
+                Text(entry.timer.isResting ? "休憩中" : "航海中")
                     .font(.system(size: 10, weight: .semibold))
                     .tracking(1.1)
                 Spacer(minLength: 0)
@@ -263,7 +265,7 @@ struct LandfallWidgetView: View {
                     Circle()
                         .fill(entry.timer.isResting ? Color.wSun : Color.wSea)
                         .frame(width: 8, height: 8)
-                    Text(entry.timer.isResting ? "停泊中" : "航海中")
+                    Text(entry.timer.isResting ? "休憩中" : "航海中")
                         .font(.system(size: 11, weight: .semibold))
                         .tracking(1.2)
                 }
@@ -384,7 +386,7 @@ struct LandfallWidgetView: View {
             AccessoryWidgetBackground()
             if entry.timer.isActive {
                 VStack(spacing: 0) {
-                    Image(systemName: entry.timer.isResting ? "anchor.fill" : "sailboat.fill")
+                    Image(systemName: entry.timer.isResting ? "pause.circle.fill" : "sailboat.fill")
                         .font(.system(size: 12, weight: .medium))
                     Text(WidgetClock.compact(entry.timer.elapsedSeconds(at: entry.date)))
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
@@ -405,7 +407,7 @@ struct LandfallWidgetView: View {
     private var rectangular: some View {
         VStack(alignment: .leading, spacing: 3) {
             if entry.timer.isActive {
-                Text(entry.timer.isResting ? "停泊中" : "航海中")
+                Text(entry.timer.isResting ? "休憩中" : "航海中")
                     .font(.system(size: 11, weight: .semibold))
                     .widgetAccentable()
                 Text(entry.timer.itemName)
@@ -432,7 +434,7 @@ struct LandfallWidgetView: View {
         if entry.timer.isActive {
             Label(
                 "\(entry.timer.itemName)・\(WidgetClock.text(entry.timer.elapsedSeconds(at: entry.date)))",
-                systemImage: entry.timer.isResting ? "anchor.fill" : "sailboat.fill"
+                systemImage: entry.timer.isResting ? "pause.circle.fill" : "sailboat.fill"
             )
         } else {
             Label("今日 \(entry.todayMinutes)分", systemImage: "sailboat")

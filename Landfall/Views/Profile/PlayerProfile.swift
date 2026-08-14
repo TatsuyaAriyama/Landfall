@@ -9,6 +9,9 @@ enum PlayerProfile {
     static let symbolKey = "player.symbol"
     static let resolveKey = "player.resolve"
     static let sinceDayKey = "player.sinceDay"
+    /// モバイルの島HUD・共有カード・港で省略されにくい表示名上限。
+    /// SwiftのCharacter単位なので、結合文字や絵文字もプレイヤーが見る1文字として数える。
+    static let nameCharacterLimit = 12
 
     /// 使い始めた日(yyyy-MM-dd)の書式。days の docID と同じ規約(端末ローカルの暦)。
     static let sinceDayFormatter: DateFormatter = {
@@ -21,8 +24,12 @@ enum PlayerProfile {
     }()
 
     static var name: String {
-        UserDefaults.standard.string(forKey: nameKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        normalizedName(UserDefaults.standard.string(forKey: nameKey) ?? "")
+    }
+
+    static func normalizedName(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(trimmed.prefix(nameCharacterLimit))
     }
 
     static var styleToken: String {
@@ -68,6 +75,11 @@ enum PlayerProfile {
         name.isEmpty ? LF.text("Sailor") : name
     }
 
+    /// 島は「プレイヤー名＋の島」で統一し、未設定の旧ユーザーは「船乗りの島」と表示する。
+    static var islandName: String {
+        LF.format("%@'s Island", displayName)
+    }
+
     static func reset() {
         let defaults = UserDefaults.standard
         for key in [nameKey, styleKey, symbolKey, resolveKey, sinceDayKey] {
@@ -79,7 +91,7 @@ enum PlayerProfile {
     /// 長さはFirestoreルールの上限に合わせて切り詰める。
     static func harborProfileData() -> [String: Any] {
         var data: [String: Any] = [
-            "displayName": String(displayName.prefix(60)),
+            "displayName": String(displayName.prefix(nameCharacterLimit)),
             "styleToken": styleToken,
             "symbolToken": symbolToken,
             "resolve": String(resolve.prefix(80)),
@@ -170,7 +182,7 @@ struct ProfileEditorSheet: View {
     var onSaved: () -> Void = {}
 
     @Environment(\.dismiss) private var dismiss
-    @AppStorage(PlayerProfile.nameKey) private var name = ""
+    @State private var name = PlayerProfile.name
     @AppStorage(PlayerProfile.styleKey) private var styleToken = TileStyle.midnight.rawValue
     @AppStorage(PlayerProfile.symbolKey) private var symbolToken = TileSymbol.phoenix.rawValue
     @AppStorage(PlayerProfile.resolveKey) private var resolve = ""
@@ -190,8 +202,7 @@ struct ProfileEditorSheet: View {
                 VStack(alignment: .leading, spacing: 0) {
                 // プレビュー: 入力がそのままカードになる。
                 PlayerCardView(
-                    name: name.trimmingCharacters(in: .whitespaces).isEmpty
-                        ? LF.text("Sailor") : name,
+                    name: previewName,
                     styleToken: styleToken,
                     symbolToken: symbolToken,
                     resolve: resolve,
@@ -199,7 +210,25 @@ struct ProfileEditorSheet: View {
                 )
                 .padding(.top, 20)
 
-                sectionLabel("Player name")
+                HStack {
+                    sectionLabel("Player name")
+                    Spacer()
+                    Text(verbatim: "\(trimmedNameCount)/\(PlayerProfile.nameCharacterLimit)")
+                        .font(LFFont.label(11))
+                        .foregroundStyle(
+                            trimmedNameCount > PlayerProfile.nameCharacterLimit
+                                ? LFColor.returnOrange : LFColor.ink.opacity(0.42)
+                        )
+                        .accessibilityLabel(
+                            Text(
+                                verbatim: LF.format(
+                                    "%lld of %lld characters",
+                                    Int64(trimmedNameCount),
+                                    Int64(PlayerProfile.nameCharacterLimit)
+                                )
+                            )
+                        )
+                }
                     .padding(.top, 32)
                 TextField("Player name", text: $name)
                     .font(LFFont.label(16))
@@ -212,6 +241,7 @@ struct ProfileEditorSheet: View {
                             .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
                     )
                     .padding(.top, 12)
+                    .autocorrectionDisabled()
 
                 sectionLabel("Color")
                     .padding(.top, 28)
@@ -294,9 +324,11 @@ struct ProfileEditorSheet: View {
                     Task {
                         working = true
                         // 上限はここでのみ適用(打鍵中に書き戻すとIME変換が壊れるため)。
+                        name = PlayerProfile.normalizedName(name)
+                        UserDefaults.standard.set(name, forKey: PlayerProfile.nameKey)
                         if resolve.count > 60 { resolve = String(resolve.prefix(60)) }
-                        // プライベート側の既存処理は変えず、パブリック側は書込み完了を待つ。
-                        RoomService.shared.pushProfileToAllRooms()
+                        // 新プライベート島とパブリックのカードだけを更新する。
+                        await PrivateIslandService.shared.publishProfileToJoinedIslands()
                         await PublicHarborService.shared.syncProfile()
                         Haptics.success()
                         onSaved()
@@ -327,6 +359,15 @@ struct ProfileEditorSheet: View {
             .font(LFFont.label(13))
             .tracking(1)
             .foregroundStyle(LFColor.ink.opacity(0.5))
+    }
+
+    private var trimmedNameCount: Int {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).count
+    }
+
+    private var previewName: String {
+        let normalized = PlayerProfile.normalizedName(name)
+        return normalized.isEmpty ? LF.text("Sailor") : normalized
     }
 }
 

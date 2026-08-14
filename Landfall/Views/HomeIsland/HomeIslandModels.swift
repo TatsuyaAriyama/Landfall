@@ -11,9 +11,60 @@ extension Notification.Name {
 enum HomeIslandMetrics {
     static let foundationResourceName = "home_island_foundation"
     static let surfaceY: Float = 0.62
-    static let buildableRadiusX: Float = 11.10
-    static let buildableRadiusZ: Float = 7.44
+    // Placement remains slightly inset; walking uses the authored irregular
+    // shoreline below and can approach every safe section of the sand lip.
+    static let buildableRadiusX: Float = 12.42
+    static let buildableRadiusZ: Float = 8.55
     static let maximumPlacements = 120
+    static let arrivalJettyScale: Float = 0.72
+    static let arrivalJettyYaw: Float = .pi
+    // The reserved corridor includes both the permanent jetty and the
+    // player's moored boat, so newly placed props cannot overlap the berth.
+    static let arrivalJettyReservedHalfWidth: Float = 2.15
+    static let arrivalJettyReservedNearZ: Float = 7.10
+    static let arrivalJettyReservedFarZ: Float = 11.20
+    // Permanently place the notice board on the positive-X side of the jetty,
+    // just inside the authored shoreline. This keeps the moored boat's
+    // negative-X berth clear while making both fixtures read as one entrance.
+    static let fixedNoticeBoardPosition = (x: Float(1.82), z: Float(8.45))
+    // The imported board faces SceneKit local -Z; rotate it toward the
+    // sea/arrival camera so the notices, rather than the rear legs, are shown.
+    static let fixedNoticeBoardYaw: Float = .pi
+    static let fixedNoticeBoardScale: Float = 0.78
+    static let fixedNoticeBoardObstacleRadius: Float = 0.63
+    static let fixedNoticeBoardPlacementRadius: Float = 0.68
+
+    private static let foundationRadiusX: Float = 13.10
+    private static let foundationRadiusZ: Float = 9.10
+    private static let sandApronScale: Float = 0.955
+
+    /// Matches `outline(..., layer: 1)` from the deterministic Blender source.
+    /// Keeping rendering and collision on this one boundary prevents a visible
+    /// strip that looks walkable but rejects the player.
+    static func sandEdgePoint(angle: Float) -> (x: Float, z: Float) {
+        let ripple = sin(angle * 3 + 0.45) * 0.045
+            + sin(angle * 7 - 0.82) * 0.026
+            + sin(angle * 11 + 1.3) * 0.012
+        let layerShift = sin(angle * 5 + 0.91) * 0.018
+        let scale = sandApronScale * (1 + ripple + layerShift)
+        return (
+            cos(angle) * foundationRadiusX * scale,
+            // USDZ imports Blender's horizontal Y axis as negative SceneKit Z.
+            -sin(angle) * foundationRadiusZ * scale
+        )
+    }
+
+    static var arrivalJettyPosition: (x: Float, z: Float) {
+        sandEdgePoint(angle: -.pi / 2)
+    }
+
+    static func containsWalkableSand(x: Float, z: Float, margin: Float) -> Bool {
+        let angle = atan2(-z / foundationRadiusZ, x / foundationRadiusX)
+        let edge = sandEdgePoint(angle: angle)
+        let edgeDistance = sqrt(edge.x * edge.x + edge.z * edge.z)
+        let distance = sqrt(x * x + z * z)
+        return distance <= max(0, edgeDistance - margin)
+    }
 
     static func clampedPosition(
         x: Float,
@@ -33,6 +84,38 @@ enum HomeIslandMetrics {
         (x * x) / (buildableRadiusX * buildableRadiusX)
             + (z * z) / (buildableRadiusZ * buildableRadiusZ) <= 1
     }
+
+    /// A jetty is authored along local Z: positive Z is the low shore ramp and
+    /// negative Z reaches into the water.  The returned yaw therefore points
+    /// local -Z along the shoreline's outward normal.
+    static func jettyCoastPlacement(
+        nearX x: Float,
+        z: Float,
+        requireCoastalInput: Bool
+    ) -> (x: Float, z: Float, yaw: Float)? {
+        let inputDistance = sqrt(x * x + z * z)
+        guard inputDistance > 0.5 else { return nil }
+
+        let angle = atan2(-z / foundationRadiusZ, x / foundationRadiusX)
+        let edge = sandEdgePoint(angle: angle)
+        let edgeDistance = sqrt(edge.x * edge.x + edge.z * edge.z)
+        guard edgeDistance > 0.001 else { return nil }
+
+        if requireCoastalInput {
+            // Let players tap the visible lip or just beyond it in the water,
+            // while rejecting ordinary inland sand.
+            let insetFromEdge = edgeDistance - inputDistance
+            guard insetFromEdge >= -0.72, insetFromEdge <= 1.55 else { return nil }
+        }
+
+        let outwardX = edge.x / edgeDistance
+        let outwardZ = edge.z / edgeDistance
+        return (
+            edge.x,
+            edge.z,
+            atan2(-outwardX, -outwardZ)
+        )
+    }
 }
 
 struct HomeIslandAsset: Identifiable, Hashable {
@@ -44,7 +127,66 @@ struct HomeIslandAsset: Identifiable, Hashable {
     let unlockLevel: Int
 }
 
+/// アセット側が要求するキャラモーション。寝具を追加するときも接触ソケットと
+/// モーションをカタログへ登録するだけで判別できる。
+enum HomeIslandContactMotion: String, Codable, Hashable, Sendable {
+    case sit
+    case lie
+}
+
+/// A stable, reservable contact point inside one placed Home Island asset.
+/// Multiplayer can address a slot with `(placementID, id)` and synchronize
+/// occupants without allowing two players to claim the same transform.
+struct HomeIslandContactSlotDefinition: Identifiable, Hashable, Sendable {
+    let id: String
+    let motion: HomeIslandContactMotion
+    let seatNodeName: String
+    let approachNodeName: String
+}
+
+/// Network-safe identity for one seat on one placed asset.
+struct HomeIslandSeatAddress: Codable, Hashable, Sendable {
+    let placementID: UUID
+    let slotID: String
+}
+
 enum HomeIslandAssetCatalog {
+    private static let driftwoodBenchSeatSlots = [
+        HomeIslandContactSlotDefinition(
+            id: "left",
+            motion: .sit,
+            seatNodeName: "SeatSocket_Left",
+            approachNodeName: "SeatApproach_Left"
+        ),
+        HomeIslandContactSlotDefinition(
+            id: "right",
+            motion: .sit,
+            seatNodeName: "SeatSocket_Right",
+            approachNodeName: "SeatApproach_Right"
+        ),
+    ]
+
+    static func contactSlots(for assetID: String) -> [HomeIslandContactSlotDefinition] {
+        assetID == "driftwood_bench" ? driftwoodBenchSeatSlots : []
+    }
+
+    static func seatSlots(for assetID: String) -> [HomeIslandContactSlotDefinition] {
+        contactSlots(for: assetID).filter { $0.motion == .sit }
+    }
+
+    static func seatingCapacity(for assetID: String) -> Int {
+        seatSlots(for: assetID).count
+    }
+
+    /// Assets whose operator-approved calibration replaces every previously
+    /// saved instance as well as becoming the default for new placements.
+    /// Add an asset ID here when its final simulator percentage is approved.
+    private static let calibratedScaleAssetIDs: Set<String> = [
+        "small_tree",
+        "small_stump",
+        "small_rock"
+    ]
+
     /// Only these operator-approved assets can enter player-authored islands.
     /// Keeping this allowlist independent from 3D Studio prevents developer or
     /// terrain tools from leaking into the consumer placement experience.
@@ -53,9 +195,33 @@ enum HomeIslandAssetCatalog {
             id: "small_tree",
             title: String(localized: "Small Tree"),
             symbolName: "tree.fill",
-            defaultScale: 0.92,
+            defaultScale: 1.32,
             footprintMargin: 0.38,
+            unlockLevel: 1
+        ),
+        HomeIslandAsset(
+            id: "small_stump",
+            title: String(localized: "Small Stump"),
+            symbolName: "tree.fill",
+            defaultScale: 0.76,
+            footprintMargin: 0.60,
+            unlockLevel: 1
+        ),
+        HomeIslandAsset(
+            id: "small_lighthouse",
+            title: String(localized: "Small Lighthouse"),
+            symbolName: "light.beacon.max.fill",
+            defaultScale: 0.72,
+            footprintMargin: 0.68,
             unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "small_rock",
+            title: String(localized: "Small Rock"),
+            symbolName: "mountain.2.fill",
+            defaultScale: 0.70,
+            footprintMargin: 0.55,
+            unlockLevel: 1
         ),
         HomeIslandAsset(
             id: "weathered_cottage",
@@ -81,6 +247,182 @@ enum HomeIslandAssetCatalog {
             footprintMargin: 0.88,
             unlockLevel: 5
         ),
+        HomeIslandAsset(
+            id: "weathered_lighthouse",
+            title: String(localized: "Stone Lighthouse"),
+            symbolName: "light.beacon.max.fill",
+            defaultScale: 0.68,
+            footprintMargin: 0.82,
+            unlockLevel: 6
+        ),
+        HomeIslandAsset(
+            id: "campfire_circle",
+            title: String(localized: "Campfire Circle"),
+            symbolName: "flame.fill",
+            defaultScale: 0.72,
+            footprintMargin: 1.62,
+            unlockLevel: 1
+        ),
+        HomeIslandAsset(
+            id: "stone_well",
+            title: String(localized: "Stone Well"),
+            symbolName: "drop.fill",
+            defaultScale: 0.76,
+            footprintMargin: 1.14,
+            unlockLevel: 9
+        ),
+        HomeIslandAsset(
+            id: "voyage_flagpole",
+            title: String(localized: "Voyage Flagpole"),
+            symbolName: "flag.fill",
+            defaultScale: 0.72,
+            footprintMargin: 1.10,
+            unlockLevel: 10
+        ),
+        HomeIslandAsset(
+            id: "cliff_lookout",
+            title: String(localized: "Cliff Lookout"),
+            symbolName: "binoculars.fill",
+            defaultScale: 0.72,
+            footprintMargin: 1.90,
+            unlockLevel: 11
+        ),
+        HomeIslandAsset(
+            id: "mossy_ruins",
+            title: String(localized: "Mossy Ruins"),
+            symbolName: "building.columns.fill",
+            defaultScale: 0.70,
+            footprintMargin: 1.62,
+            unlockLevel: 12
+        ),
+        HomeIslandAsset(
+            id: "stone_path_straight",
+            title: String(localized: "Stone Path — Straight"),
+            symbolName: "square.grid.3x3.fill",
+            defaultScale: 0.78,
+            footprintMargin: 1.50,
+            unlockLevel: 13
+        ),
+        HomeIslandAsset(
+            id: "stone_path_curve",
+            title: String(localized: "Stone Path — Curve"),
+            symbolName: "square.grid.3x3.fill",
+            defaultScale: 0.78,
+            footprintMargin: 1.62,
+            unlockLevel: 13
+        ),
+        HomeIslandAsset(
+            id: "stone_path_fork",
+            title: String(localized: "Stone Path — Fork"),
+            symbolName: "square.grid.3x3.fill",
+            defaultScale: 0.78,
+            footprintMargin: 1.60,
+            unlockLevel: 13
+        ),
+        HomeIslandAsset(
+            id: "coastal_rocks",
+            title: String(localized: "Coastal Rocks"),
+            symbolName: "mountain.2.fill",
+            defaultScale: 0.72,
+            footprintMargin: 1.90,
+            unlockLevel: 14
+        ),
+        HomeIslandAsset(
+            id: "navigator_tent",
+            title: String(localized: "Navigator's Tent"),
+            symbolName: "tent.fill",
+            defaultScale: 0.62,
+            footprintMargin: 1.98,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "wooden_desk",
+            title: String(localized: "Wooden Desk"),
+            symbolName: "table.furniture.fill",
+            defaultScale: 0.82,
+            footprintMargin: 1.08,
+            unlockLevel: 4
+        ),
+        HomeIslandAsset(
+            id: "wooden_chair",
+            title: String(localized: "Wooden Chair"),
+            symbolName: "chair.fill",
+            defaultScale: 0.82,
+            footprintMargin: 0.70,
+            unlockLevel: 3
+        ),
+        HomeIslandAsset(
+            id: "harbor_lantern_post",
+            title: String(localized: "Harbor Lantern Post"),
+            symbolName: "lightbulb.fill",
+            defaultScale: 0.76,
+            footprintMargin: 0.68,
+            unlockLevel: 6
+        ),
+        HomeIslandAsset(
+            id: "driftwood_bench",
+            title: String(localized: "Driftwood Bench"),
+            symbolName: "chair.fill",
+            defaultScale: 0.62,
+            footprintMargin: 1.08,
+            unlockLevel: 5
+        ),
+        HomeIslandAsset(
+            id: "weathered_anchor",
+            title: String(localized: "Weathered Anchor"),
+            symbolName: "anchor",
+            defaultScale: 0.76,
+            footprintMargin: 0.86,
+            unlockLevel: 7
+        ),
+        HomeIslandAsset(
+            id: "net_drying_rack",
+            title: String(localized: "Net Drying Rack"),
+            symbolName: "grid",
+            defaultScale: 0.74,
+            footprintMargin: 1.18,
+            unlockLevel: 8
+        ),
+        HomeIslandAsset(
+            id: "navigator_hammock",
+            title: String(localized: "Navigator's Hammock"),
+            symbolName: "bed.double.fill",
+            defaultScale: 0.72,
+            footprintMargin: 1.45,
+            unlockLevel: 9
+        ),
+        HomeIslandAsset(
+            id: "voyage_signal_bell",
+            title: String(localized: "Voyage Signal Bell"),
+            symbolName: "bell.fill",
+            defaultScale: 0.76,
+            footprintMargin: 0.72,
+            unlockLevel: 10
+        ),
+        HomeIslandAsset(
+            id: "supply_barrels",
+            title: String(localized: "Supply Barrels"),
+            symbolName: "cylinder.split.1x2",
+            defaultScale: 0.80,
+            footprintMargin: 0.92,
+            unlockLevel: 8
+        ),
+        HomeIslandAsset(
+            id: "compass_rose_inlay",
+            title: String(localized: "Compass Rose Inlay"),
+            symbolName: "location.north.circle.fill",
+            defaultScale: 0.78,
+            footprintMargin: 1.18,
+            unlockLevel: 12
+        ),
+        HomeIslandAsset(
+            id: "dune_grass_patch",
+            title: String(localized: "Dune Grass Patch"),
+            symbolName: "leaf.fill",
+            defaultScale: 0.82,
+            footprintMargin: 0.78,
+            unlockLevel: 2
+        ),
     ]
 
     static var approvedIDs: Set<String> { Set(approved.map(\.id)) }
@@ -96,11 +438,120 @@ enum HomeIslandAssetCatalog {
         approved.first { $0.id == id }
     }
 
+    static func persistedScale(assetID: String, storedScale: Float) -> Float {
+        guard calibratedScaleAssetIDs.contains(assetID),
+              let asset = asset(id: assetID)
+        else { return storedScale }
+        return asset.defaultScale
+    }
+
+    /// Most props are intentionally scarce. Natural ground details can be
+    /// repeated more freely so players can shape a convincing island edge.
+    static func placementLimit(for assetID: String) -> Int {
+        switch assetID {
+        case "small_stump", "small_rock", "small_tree":
+            10
+        default:
+            3
+        }
+    }
+
+    /// Simulator builds expose the complete catalog so island interactions and
+    /// placement can be tested without seeding many hours of study history.
+    static func isUnlocked(_ asset: HomeIslandAsset, playerLevel: Int) -> Bool {
+        #if targetEnvironment(simulator)
+        true
+        #else
+        playerLevel >= asset.unlockLevel
+        #endif
+    }
+
     static func footprintMargin(assetID: String, scale: Float) -> Float {
         guard let asset = asset(id: assetID) else { return 0 }
         return asset.footprintMargin
             * max(scale, 0.05)
             / max(asset.defaultScale, 0.05)
+    }
+
+    static func placementTransform(
+        assetID: String,
+        x: Float,
+        z: Float,
+        yaw: Float,
+        scale: Float,
+        requireValidCoastPoint: Bool
+    ) -> HomeIslandTransform? {
+        if assetID == "wooden_jetty" {
+            guard let coast = HomeIslandMetrics.jettyCoastPlacement(
+                nearX: x,
+                z: z,
+                requireCoastalInput: requireValidCoastPoint
+            ) else { return nil }
+            return HomeIslandTransform(
+                x: coast.x,
+                z: coast.z,
+                yaw: coast.yaw,
+                scale: scale
+            )
+        }
+
+        let margin = footprintMargin(assetID: assetID, scale: scale)
+        let position = HomeIslandMetrics.clampedPosition(
+            x: x,
+            z: z,
+            footprintMargin: margin
+        )
+        return HomeIslandTransform(
+            x: position.x,
+            z: position.z,
+            yaw: yaw,
+            scale: scale
+        )
+    }
+
+    /// Ground decorations are traversable; solid scenery becomes a walking
+    /// obstacle.  Keeping this next to the placement allowlist means newly
+    /// approved assets default to the safe (blocking) behaviour.
+    static func blocksWalking(assetID: String) -> Bool {
+        switch assetID {
+        case "wooden_jetty",
+             "stone_path_straight",
+             "stone_path_curve",
+             "stone_path_fork",
+             "compass_rose_inlay",
+             "dune_grass_patch":
+            false
+        default:
+            true
+        }
+    }
+
+    /// A compact gameplay collision profile. Paths remain deliberately
+    /// traversable and may sit beneath furniture or scenery; jetties only need
+    /// separation from other jetties because their landward end touches sand.
+    static func placementCollisionRadius(assetID: String, scale: Float) -> Float {
+        max(0.24, footprintMargin(assetID: assetID, scale: scale) * 0.68)
+    }
+
+    static func participatesInPlacementCollision(assetID: String) -> Bool {
+        switch assetID {
+        case "stone_path_straight", "stone_path_curve", "stone_path_fork",
+             "compass_rose_inlay", "dune_grass_patch":
+            false
+        default:
+            true
+        }
+    }
+
+    static func interactionRadius(assetID: String, scale: Float) -> Float? {
+        switch assetID {
+        case "weathered_cottage", "navigator_tent":
+            max(2.15, footprintMargin(assetID: assetID, scale: scale) + 1.25)
+        case "campfire_circle":
+            max(2.0, footprintMargin(assetID: assetID, scale: scale) + 0.85)
+        default:
+            nil
+        }
     }
 }
 
@@ -195,26 +646,57 @@ enum HomeIslandPersistence {
         }
     }
 
-    private static func sanitized(_ placements: [HomeIslandPlacement]) -> [HomeIslandPlacement] {
-        placements
-            .filter { HomeIslandAssetCatalog.approvedIDs.contains($0.assetID) }
-            .prefix(HomeIslandMetrics.maximumPlacements)
-            .map { placement in
-                var copy = placement
-                copy.transform.scale = min(2, max(0.25, copy.transform.scale))
-                let margin = HomeIslandAssetCatalog.footprintMargin(
-                    assetID: copy.assetID,
-                    scale: copy.transform.scale
-                )
-                let position = HomeIslandMetrics.clampedPosition(
-                    x: copy.transform.x,
-                    z: copy.transform.z,
-                    footprintMargin: margin
-                )
-                copy.transform.x = position.x
-                copy.transform.z = position.z
-                return copy
+    /// The same defensive boundary is used for local documents and untrusted
+    /// multiplayer snapshots. Keeping it file-private lets the in-memory
+    /// visitor store reuse the exact persistence validation without exposing a
+    /// general-purpose editor API to the rest of the app.
+    fileprivate static func sanitized(_ placements: [HomeIslandPlacement]) -> [HomeIslandPlacement] {
+        var counts: [String: Int] = [:]
+        var seenIDs: Set<UUID> = []
+        var result: [HomeIslandPlacement] = []
+        result.reserveCapacity(min(placements.count, HomeIslandMetrics.maximumPlacements))
+
+        for placement in placements {
+            guard result.count < HomeIslandMetrics.maximumPlacements,
+                  HomeIslandAssetCatalog.approvedIDs.contains(placement.assetID),
+                  seenIDs.insert(placement.id).inserted,
+                  placement.transform.x.isFinite,
+                  placement.transform.z.isFinite,
+                  placement.transform.yaw.isFinite,
+                  placement.transform.scale.isFinite,
+                  abs(placement.transform.x) <= 10_000,
+                  abs(placement.transform.z) <= 10_000
+            else { continue }
+
+            let count = counts[placement.assetID, default: 0]
+            guard count < HomeIslandAssetCatalog.placementLimit(for: placement.assetID) else {
+                continue
             }
+
+            var copy = placement
+            copy.transform.scale = HomeIslandAssetCatalog.persistedScale(
+                assetID: copy.assetID,
+                storedScale: min(2, max(0.25, copy.transform.scale))
+            )
+            copy.transform.yaw = atan2(sin(copy.transform.yaw), cos(copy.transform.yaw))
+            guard let transform = HomeIslandAssetCatalog.placementTransform(
+                assetID: copy.assetID,
+                x: copy.transform.x,
+                z: copy.transform.z,
+                yaw: copy.transform.yaw,
+                scale: copy.transform.scale,
+                requireValidCoastPoint: false
+            ) else { continue }
+            guard transform.x.isFinite,
+                  transform.z.isFinite,
+                  transform.yaw.isFinite,
+                  transform.scale.isFinite
+            else { continue }
+            copy.transform = transform
+            result.append(copy)
+            counts[copy.assetID] = count + 1
+        }
+        return result
     }
 
     static func load(ownerKey: String) -> HomeIslandSnapshot {
@@ -274,15 +756,79 @@ final class HomeIslandStore: ObservableObject {
     @Published private(set) var lastSaveError: String?
 
     private var undoStack: [EditState] = []
+    private var redoStack: [EditState] = []
     private let maximumUndoDepth = 60
+    private var snapshotSchemaVersion = 1
 
     let ownerKey: String
+    /// Read-only stores are used for islands owned by another player. This is
+    /// intentionally enforced in the model as well as in the UI so a future
+    /// visitor screen cannot mutate or persist the host's layout accidentally.
+    let isReadOnly: Bool
 
-    init(ownerID: String) {
-        ownerKey = HomeIslandPersistence.ownerKey(for: ownerID)
-        let snapshot = HomeIslandPersistence.load(ownerKey: ownerKey)
+    /// Creates either the existing locally persisted editor store or an
+    /// in-memory store backed by a supplied multiplayer snapshot.
+    ///
+    /// A read-only store with no supplied snapshot starts empty and never loads
+    /// another player's local persistence path. Existing `init(ownerID:)` call
+    /// sites retain their original loading and saving behavior through the
+    /// default arguments.
+    init(
+        ownerID: String,
+        snapshot suppliedSnapshot: HomeIslandSnapshot? = nil,
+        readOnly: Bool = false
+    ) {
+        let localOwnerKey = HomeIslandPersistence.ownerKey(for: ownerID)
+        isReadOnly = readOnly
+        ownerKey = readOnly ? (suppliedSnapshot?.ownerKey ?? localOwnerKey) : localOwnerKey
+
+        let snapshot: HomeIslandSnapshot
+        if let suppliedSnapshot {
+            snapshot = HomeIslandSnapshot(
+                schemaVersion: suppliedSnapshot.schemaVersion,
+                ownerKey: suppliedSnapshot.ownerKey,
+                updatedAt: suppliedSnapshot.updatedAt,
+                placements: HomeIslandPersistence.sanitized(suppliedSnapshot.placements)
+            )
+        } else if readOnly {
+            snapshot = HomeIslandSnapshot(
+                ownerKey: ownerKey,
+                updatedAt: .distantPast,
+                placements: []
+            )
+        } else {
+            snapshot = HomeIslandPersistence.load(ownerKey: ownerKey)
+        }
+        snapshotSchemaVersion = snapshot.schemaVersion
         placements = snapshot.placements
         lastSavedAt = snapshot.updatedAt == .distantPast ? nil : snapshot.updatedAt
+    }
+
+    /// Convenience for callers that already decoded only the placement array.
+    convenience init(
+        ownerID: String,
+        placements: [HomeIslandPlacement],
+        readOnly: Bool
+    ) {
+        let ownerKey = HomeIslandPersistence.ownerKey(for: ownerID)
+        self.init(
+            ownerID: ownerID,
+            snapshot: HomeIslandSnapshot(
+                ownerKey: ownerKey,
+                updatedAt: .distantPast,
+                placements: placements
+            ),
+            readOnly: readOnly
+        )
+    }
+
+    var snapshot: HomeIslandSnapshot {
+        HomeIslandSnapshot(
+            schemaVersion: snapshotSchemaVersion,
+            ownerKey: ownerKey,
+            updatedAt: lastSavedAt ?? .distantPast,
+            placements: placements
+        )
     }
 
     var selectedPlacement: HomeIslandPlacement? {
@@ -290,10 +836,23 @@ final class HomeIslandStore: ObservableObject {
         return placements.first { $0.id == selectedID }
     }
 
-    var canAdd: Bool { placements.count < HomeIslandMetrics.maximumPlacements }
-    var canUndo: Bool { !undoStack.isEmpty }
+    var canAdd: Bool {
+        !isReadOnly && placements.count < HomeIslandMetrics.maximumPlacements
+    }
+    var canUndo: Bool { !isReadOnly && !undoStack.isEmpty }
+    var canRedo: Bool { !isReadOnly && !redoStack.isEmpty }
+
+    func placementCount(assetID: String) -> Int {
+        placements.lazy.filter { $0.assetID == assetID }.count
+    }
+
+    func canAdd(assetID: String) -> Bool {
+        canAdd
+            && placementCount(assetID: assetID) < HomeIslandAssetCatalog.placementLimit(for: assetID)
+    }
 
     func select(_ id: UUID?) {
+        guard !isReadOnly else { return }
         selectedID = id.flatMap { candidate in
             placements.contains(where: { $0.id == candidate }) ? candidate : nil
         }
@@ -301,25 +860,25 @@ final class HomeIslandStore: ObservableObject {
 
     @discardableResult
     func add(assetID: String, x: Float, z: Float, playerLevel: Int) -> UUID? {
-        guard canAdd,
+        guard !isReadOnly,
+              canAdd(assetID: assetID),
               let asset = HomeIslandAssetCatalog.asset(id: assetID),
-              playerLevel >= asset.unlockLevel
+              HomeIslandAssetCatalog.isUnlocked(asset, playerLevel: playerLevel)
         else { return nil }
         let previous = editState
-        let position = HomeIslandMetrics.clampedPosition(
+        guard let transform = validTransform(
+            assetID: assetID,
             x: x,
             z: z,
-            footprintMargin: asset.footprintMargin
-        )
+            yaw: Float(placements.count % 8) * (.pi / 4),
+            scale: asset.defaultScale,
+            excluding: nil,
+            requireValidCoastPoint: true
+        ) else { return nil }
         let placement = HomeIslandPlacement(
             id: UUID(),
             assetID: assetID,
-            transform: HomeIslandTransform(
-                x: position.x,
-                z: position.z,
-                yaw: Float(placements.count % 8) * (.pi / 4),
-                scale: asset.defaultScale
-            )
+            transform: transform
         )
         placements.append(placement)
         selectedID = placement.id
@@ -327,77 +886,100 @@ final class HomeIslandStore: ObservableObject {
         return placement.id
     }
 
-    func moveSelected(x: Float, z: Float) {
-        guard let selectedID,
+    @discardableResult
+    func moveSelected(x: Float, z: Float) -> Bool {
+        guard !isReadOnly,
+              let selectedID,
               let index = placements.firstIndex(where: { $0.id == selectedID })
-        else { return }
+        else { return false }
         let previous = editState
-        let margin = HomeIslandAssetCatalog.footprintMargin(
+        guard let transform = validTransform(
             assetID: placements[index].assetID,
-            scale: placements[index].transform.scale
-        )
-        let position = HomeIslandMetrics.clampedPosition(
             x: x,
             z: z,
-            footprintMargin: margin
-        )
-        placements[index].transform.x = position.x
-        placements[index].transform.z = position.z
+            yaw: placements[index].transform.yaw,
+            scale: placements[index].transform.scale,
+            excluding: selectedID,
+            requireValidCoastPoint: true
+        ) else { return false }
+        placements[index].transform = transform
         finishEdit(from: previous)
+        return true
     }
 
     func rotateSelected(by radians: Float = .pi / 4) {
-        guard let selectedID,
+        guard !isReadOnly,
+              let selectedID,
               let index = placements.firstIndex(where: { $0.id == selectedID })
         else { return }
+        guard placements[index].assetID != "wooden_jetty" else { return }
         let previous = editState
         placements[index].transform.yaw += radians
         finishEdit(from: previous)
     }
 
-    func resizeSelected(by delta: Float) {
-        guard let selectedID,
+    @discardableResult
+    func resizeSelected(by delta: Float) -> Bool {
+        guard !isReadOnly,
+              let selectedID,
               let index = placements.firstIndex(where: { $0.id == selectedID })
-        else { return }
+        else { return false }
         let previous = editState
         let scale = min(2, max(0.25, placements[index].transform.scale + delta))
-        placements[index].transform.scale = scale
-        let margin = HomeIslandAssetCatalog.footprintMargin(
+        guard let transform = validTransform(
             assetID: placements[index].assetID,
-            scale: scale
-        )
-        let position = HomeIslandMetrics.clampedPosition(
             x: placements[index].transform.x,
             z: placements[index].transform.z,
-            footprintMargin: margin
-        )
-        placements[index].transform.x = position.x
-        placements[index].transform.z = position.z
+            yaw: placements[index].transform.yaw,
+            scale: scale,
+            excluding: selectedID,
+            requireValidCoastPoint: false
+        ) else { return false }
+        placements[index].transform = transform
         finishEdit(from: previous)
+        return true
     }
 
     @discardableResult
     func duplicateSelected(playerLevel: Int) -> UUID? {
-        guard canAdd,
+        guard !isReadOnly,
               let selected = selectedPlacement,
+              canAdd(assetID: selected.assetID),
               let asset = HomeIslandAssetCatalog.asset(id: selected.assetID),
-              playerLevel >= asset.unlockLevel
+              HomeIslandAssetCatalog.isUnlocked(asset, playerLevel: playerLevel)
         else { return nil }
         let previous = editState
         var copy = selected
         copy.id = UUID()
-        let margin = HomeIslandAssetCatalog.footprintMargin(
-            assetID: selected.assetID,
-            scale: selected.transform.scale
+        let directions: [(Float, Float)] = [
+            (1, 0), (0.7, 0.7), (0, 1), (-0.7, 0.7),
+            (-1, 0), (-0.7, -0.7), (0, -1), (0.7, -0.7),
+        ]
+        let baseSpacing = max(
+            0.9,
+            HomeIslandAssetCatalog.placementCollisionRadius(
+                assetID: selected.assetID,
+                scale: selected.transform.scale
+            ) * 1.75
         )
-        let position = HomeIslandMetrics.clampedPosition(
-            x: selected.transform.x + 0.62,
-            z: selected.transform.z + 0.42,
-            footprintMargin: margin
-        )
-        copy.transform.x = position.x
-        copy.transform.z = position.z
-        copy.transform.yaw += .pi / 8
+        var transform: HomeIslandTransform?
+        for ring in 1...3 where transform == nil {
+            let spacing = baseSpacing * Float(ring)
+            for direction in directions {
+                transform = validTransform(
+                    assetID: selected.assetID,
+                    x: selected.transform.x + direction.0 * spacing,
+                    z: selected.transform.z + direction.1 * spacing,
+                    yaw: selected.transform.yaw + .pi / 8,
+                    scale: selected.transform.scale,
+                    excluding: nil,
+                    requireValidCoastPoint: false
+                )
+                if transform != nil { break }
+            }
+        }
+        guard let transform else { return nil }
+        copy.transform = transform
         placements.append(copy)
         selectedID = copy.id
         finishEdit(from: previous)
@@ -405,7 +987,7 @@ final class HomeIslandStore: ObservableObject {
     }
 
     func deleteSelected() {
-        guard let selectedID else { return }
+        guard !isReadOnly, let selectedID else { return }
         let previous = editState
         placements.removeAll { $0.id == selectedID }
         self.selectedID = nil
@@ -413,7 +995,8 @@ final class HomeIslandStore: ObservableObject {
     }
 
     func undo() {
-        guard let previous = undoStack.popLast() else { return }
+        guard !isReadOnly, let previous = undoStack.popLast() else { return }
+        append(&redoStack, state: editState)
         placements = previous.placements
         selectedID = previous.selectedID.flatMap { restoredID in
             placements.contains(where: { $0.id == restoredID }) ? restoredID : nil
@@ -421,20 +1004,151 @@ final class HomeIslandStore: ObservableObject {
         save()
     }
 
+    func redo() {
+        guard !isReadOnly, let next = redoStack.popLast() else { return }
+        append(&undoStack, state: editState)
+        placements = next.placements
+        selectedID = next.selectedID.flatMap { restoredID in
+            placements.contains(where: { $0.id == restoredID }) ? restoredID : nil
+        }
+        save()
+    }
+
+    func validTransform(
+        assetID: String,
+        x: Float,
+        z: Float,
+        yaw: Float,
+        scale: Float,
+        excluding excludedID: UUID?,
+        requireValidCoastPoint: Bool
+    ) -> HomeIslandTransform? {
+        guard x.isFinite, z.isFinite, yaw.isFinite, scale.isFinite,
+              let transform = HomeIslandAssetCatalog.placementTransform(
+                assetID: assetID,
+                x: x,
+                z: z,
+                yaw: yaw,
+                scale: scale,
+                requireValidCoastPoint: requireValidCoastPoint
+              ),
+              isValidPlacement(assetID: assetID, transform: transform, excluding: excludedID)
+        else { return nil }
+        return transform
+    }
+
     private var editState: EditState {
         EditState(placements: placements, selectedID: selectedID)
     }
 
     private func finishEdit(from previous: EditState) {
-        guard placements != previous.placements || selectedID != previous.selectedID else { return }
-        undoStack.append(previous)
-        if undoStack.count > maximumUndoDepth {
-            undoStack.removeFirst(undoStack.count - maximumUndoDepth)
+        guard !isReadOnly else {
+            // Defense in depth for future editor operations: even if a new
+            // mutator forgets its early read-only guard, its in-memory change
+            // is rolled back before it can leak into visitor state.
+            placements = previous.placements
+            selectedID = previous.selectedID
+            return
         }
+        guard placements != previous.placements || selectedID != previous.selectedID else { return }
+        append(&undoStack, state: previous)
+        redoStack.removeAll(keepingCapacity: true)
         save()
     }
 
+    private func append(_ stack: inout [EditState], state: EditState) {
+        stack.append(state)
+        if stack.count > maximumUndoDepth {
+            stack.removeFirst(stack.count - maximumUndoDepth)
+        }
+    }
+
+    private func isValidPlacement(
+        assetID: String,
+        transform: HomeIslandTransform,
+        excluding excludedID: UUID?
+    ) -> Bool {
+        let candidateRadius = HomeIslandAssetCatalog.placementCollisionRadius(
+            assetID: assetID,
+            scale: transform.scale
+        )
+
+        // Preserve a clear path from the permanent arrival jetty into the island.
+        // Ground paths remain allowed because they are deliberately traversable.
+        if HomeIslandAssetCatalog.blocksWalking(assetID: assetID),
+           transform.z >= 2.85 - candidateRadius,
+           transform.z <= 8.10 + candidateRadius,
+           abs(transform.x) <= 0.78 + candidateRadius {
+            return false
+        }
+
+        guard HomeIslandAssetCatalog.participatesInPlacementCollision(assetID: assetID)
+        else { return true }
+
+        // The fixed arrival jetty is a system node rather than a saved placement,
+        // so reserve its complete visible footprint explicitly. This prevents new
+        // props and player jetties from covering the berth or its walkable ramp.
+        if abs(transform.x) <= HomeIslandMetrics.arrivalJettyReservedHalfWidth + candidateRadius,
+           transform.z >= HomeIslandMetrics.arrivalJettyReservedNearZ - candidateRadius,
+           transform.z <= HomeIslandMetrics.arrivalJettyReservedFarZ + candidateRadius {
+            return false
+        }
+
+        // The notice board is a permanent public fixture beside the fixed jetty.
+        // Keep player-built assets from covering it even though it is not saved.
+        let noticeDX = transform.x - HomeIslandMetrics.fixedNoticeBoardPosition.x
+        let noticeDZ = transform.z - HomeIslandMetrics.fixedNoticeBoardPosition.z
+        let noticeMinimumDistance = candidateRadius
+            + HomeIslandMetrics.fixedNoticeBoardPlacementRadius
+        if noticeDX * noticeDX + noticeDZ * noticeDZ
+            < noticeMinimumDistance * noticeMinimumDistance {
+            return false
+        }
+
+        return placements.allSatisfy { existing in
+            guard existing.id != excludedID,
+                  HomeIslandAssetCatalog.participatesInPlacementCollision(
+                    assetID: existing.assetID
+                  )
+            else { return true }
+
+            if assetID == "wooden_jetty" || existing.assetID == "wooden_jetty" {
+                guard assetID == "wooden_jetty", existing.assetID == "wooden_jetty"
+                else { return true }
+            }
+
+            let existingRadius = HomeIslandAssetCatalog.placementCollisionRadius(
+                assetID: existing.assetID,
+                scale: existing.transform.scale
+            )
+            let dx = transform.x - existing.transform.x
+            let dz = transform.z - existing.transform.z
+            let minimumDistance = (candidateRadius + existingRadius) * 0.92
+            return dx * dx + dz * dz >= minimumDistance * minimumDistance
+        }
+    }
+
+    /// Applies a live host snapshot to an in-memory visitor store. Writable
+    /// stores reject this operation so network updates can never overwrite a
+    /// player's locally authored island.
+    @discardableResult
+    func replaceRemoteSnapshot(_ snapshot: HomeIslandSnapshot) -> Bool {
+        guard isReadOnly else { return false }
+        placements = HomeIslandPersistence.sanitized(snapshot.placements)
+        selectedID = selectedID.flatMap { selectedID in
+            placements.contains(where: { $0.id == selectedID }) ? selectedID : nil
+        }
+        undoStack.removeAll(keepingCapacity: true)
+        redoStack.removeAll(keepingCapacity: true)
+        snapshotSchemaVersion = snapshot.schemaVersion
+        lastSavedAt = snapshot.updatedAt == .distantPast ? nil : snapshot.updatedAt
+        lastSaveSucceeded = true
+        lastSaveError = nil
+        return true
+    }
+
     func save() {
+        guard !isReadOnly else { return }
         do {
             lastSavedAt = try HomeIslandPersistence.save(
                 ownerKey: ownerKey,

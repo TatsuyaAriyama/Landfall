@@ -93,28 +93,41 @@ struct HarborOceanBackground: View {
 /// 順位・ランキング・ストリークは作らない。休んだ日も学んだ日と同格に見える。
 struct HarborView: View {
     @EnvironmentObject private var auth: AuthService
-    @StateObject private var service = RoomService.shared
+    @StateObject private var privateIslandService = PrivateIslandService.shared
     @StateObject private var voyagePass = VoyagePassStore.shared
     @Environment(\.modelContext) private var modelContext
 
-    @State private var creating = false
-    @State private var joining = false
-    @State private var showingVoyagePass = false
-    @State private var editingProfile = false
-    @State private var membersByRoom: [String: [HarborMember]] = [:]
     /// 初回ロードが済むまでは空状態CTAを出さない(在港者に「空です」を一瞬見せないため)。
     @State private var hasLoaded = false
-    /// 退港の確認対象(タップ即実行しない)。
-    @State private var leavingRoom: HarborRoom?
-    /// 入港証を出す対象の港。
-    @State private var invitingRoom: HarborRoom?
-    /// 招待リンクから受け取ったコード(参加シートに引き渡す)。
     @StateObject private var router = DeepLinkRouter.shared
-    @State private var incomingCode: String?
+    @State private var joiningInviteCode: String?
+    @State private var privateIslandError: String?
+    @State private var privateIslandPendingClose: PrivateIslandRoom?
     /// パブリックの港(公式5港)。
     @StateObject private var publicService = PublicHarborService.shared
     @State private var navPath = NavigationPath()
     @State private var now = Date()
+    @State private var showingPublicJournal = false
+    @State private var showingVoyagePass = false
+    private let showsOceanBackground: Bool
+    private let onPublicHarborSelected: ((PublicHarbor) -> Void)?
+    private let onRoomSelected: ((HarborRoom) -> Void)?
+    private let onMemberTraceSelected: ((MemberTraceKey) -> Void)?
+    private let onPrivateIslandSelected: ((PrivateIslandRoom) -> Void)?
+
+    init(
+        showsOceanBackground: Bool = true,
+        onPublicHarborSelected: ((PublicHarbor) -> Void)? = nil,
+        onRoomSelected: ((HarborRoom) -> Void)? = nil,
+        onMemberTraceSelected: ((MemberTraceKey) -> Void)? = nil,
+        onPrivateIslandSelected: ((PrivateIslandRoom) -> Void)? = nil
+    ) {
+        self.showsOceanBackground = showsOceanBackground
+        self.onPublicHarborSelected = onPublicHarborSelected
+        self.onRoomSelected = onRoomSelected
+        self.onMemberTraceSelected = onMemberTraceSelected
+        self.onPrivateIslandSelected = onPrivateIslandSelected
+    }
 
     private let minuteClock = Timer.publish(
         every: 60,
@@ -127,226 +140,337 @@ struct HarborView: View {
         AftideHomeTimeOfDay.current(at: now)
     }
 
-    // 自分のプレイヤーカード(ローカル先行)。編集の保存で更新される。
-    @AppStorage(PlayerProfile.nameKey) private var playerName = ""
-    @AppStorage(PlayerProfile.styleKey) private var playerStyle = TileStyle.midnight.rawValue
-    @AppStorage(PlayerProfile.symbolKey) private var playerSymbol = TileSymbol.phoenix.rawValue
-    @AppStorage(PlayerProfile.resolveKey) private var playerResolve = ""
-
     var body: some View {
         NavigationStack(path: $navPath) {
             ZStack {
-                HarborOceanBackground(timeOfDay: timeOfDay)
+                if showsOceanBackground {
+                    HarborOceanBackground(timeOfDay: timeOfDay)
+                }
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                    CardKicker(text: "Harbor", color: LFColor.ink.opacity(0.55))
-                        .padding(.top, 8)
-
-                    // 自分のプレイヤーカード。サインイン不要(ローカル先行)。タップで編集。
-                    Button {
-                        editingProfile = true
-                    } label: {
-                        ownPlayerCard
+                        // Invite-only actions are the first thing sailors see;
+                        // public lists no longer bury the host/join routes.
+                        privateSection
+                        publicSection
                     }
-                    .buttonStyle(.plain)
-                    .padding(.top, 20)
-
-                    // ---- パブリック(公式の5港。個人は並ばず、潮だけが見える) ----
-                    Text("Public")
-                        .font(LFFont.label(13))
-                        .tracking(1)
-                        .foregroundStyle(LFColor.ink.opacity(0.5))
-                        .padding(.top, 32)
-
-                        VStack(spacing: 0) {
-                            ForEach(PublicHarbor.all) { harbor in
-                                if harbor.slug != PublicHarbor.all.first?.slug {
-                                    Rectangle()
-                                        .fill(LFColor.ink.opacity(0.08))
-                                        .frame(height: 1)
-                                }
-                                publicRow(harbor)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                        .background(timeOfDay.palette.glassColor.opacity(0.42))
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .padding(.top, 6)
-
-                    // ---- プライベート(招待コードの小さな港・最大4人) ----
-                    Text("Private")
-                        .font(LFFont.label(13))
-                        .tracking(1)
-                        .foregroundStyle(LFColor.ink.opacity(0.5))
-                        .padding(.top, 36)
-
-                    if !auth.isSignedIn {
-                        Text("Sign in to enter a harbor.")
-                            .font(LFFont.copy(16))
-                            .foregroundStyle(LFColor.ink.opacity(0.5))
-                            .padding(.top, 28)
-                    } else if !hasLoaded {
-                        ProgressView()
-                            .tint(LFColor.ink)
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 60)
-                    } else if service.rooms.isEmpty {
-                        emptyState
-                    } else {
-                        ForEach(service.rooms) { room in
-                            roomSection(room)
-                                .padding(.top, 28)
-                        }
-                        actionRow
-                            .padding(.top, 36)
-                    }
-                    }
-                    .padding(LFMetrics.cardPadding)
+                    .padding(showsOceanBackground ? LFMetrics.cardPadding : 16)
                 }
                 .background(Color.clear)
             }
             .navigationDestination(for: MemberTraceKey.self) { key in
-                MemberTraceView(roomId: key.roomId, member: key.member)
+                MemberTraceView(
+                    roomId: key.roomId,
+                    member: key.member,
+                    showsOceanBackground: showsOceanBackground
+                )
             }
             .navigationDestination(for: PublicHarbor.self) { harbor in
-                PublicHarborView(harbor: harbor)
+                PublicHarborView(
+                    harbor: harbor,
+                    showsOceanBackground: showsOceanBackground
+                )
             }
             .navigationDestination(for: PublicMemberKey.self) { key in
-                PublicMemberProfileView(slug: key.slug, initialMember: key.member)
-            }
-            .navigationDestination(for: HarborRoom.self) { room in
-                HarborChatView(room: room)
+                PublicMemberProfileView(
+                    slug: key.slug,
+                    initialMember: key.member,
+                    showsOceanBackground: showsOceanBackground
+                )
             }
         }
         .tint(timeOfDay.palette.inkColor)
         .preferredColorScheme(
             timeOfDay == .evening || timeOfDay == .night ? .dark : .light
         )
-        .task { await reload() }
+        .task {
+            privateIslandService.listenToJoinedIslands()
+            await reload()
+        }
         .refreshable { await reload() }
         .onReceive(minuteClock) { now = $0 }
-        .sheet(isPresented: $creating) {
-            RoomCreateSheet { await reload() }
+        .fullScreenCover(isPresented: $showingPublicJournal) {
+            PublicJournalView()
         }
-        .sheet(isPresented: $joining) {
-            RoomJoinSheet(prefilledCode: incomingCode) { await reload() }
-        }
-        .sheet(isPresented: $showingVoyagePass) {
+        .fullScreenCover(isPresented: $showingVoyagePass) {
             VoyagePassView()
         }
-        .sheet(item: $invitingRoom) { room in
-            InvitePassSheet(roomName: room.name, code: room.id)
-        }
-        // 入港証のリンクから開かれたら、コードを入れた状態で参加シートを出す。
+        // 招待リンクから開かれたら、新しいPrivate Islandへ参加してそのまま訪問する。
         .onChange(of: router.pendingJoinCode) { _, code in
             guard let code else { return }
-            incomingCode = code
-            router.pendingJoinCode = nil
-            joining = true
+            joinPrivateIslandInvite(code)
         }
         .onAppear {
             if let code = router.pendingJoinCode {
-                incomingCode = code
-                router.pendingJoinCode = nil
-                joining = true
+                joinPrivateIslandInvite(code)
             }
         }
-        .sheet(isPresented: $editingProfile) {
-            ProfileEditorSheet { Task { await reload() } }
+        .onDisappear {
+            privateIslandService.stopJoinedIslandsListener()
+        }
+        .alert(
+            "Couldn't open this private island.",
+            isPresented: Binding(
+                get: { privateIslandError != nil },
+                set: { if !$0 { privateIslandError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { privateIslandError = nil }
+        } message: {
+            Text(verbatim: privateIslandError ?? "")
         }
         .confirmationDialog(
-            "Leave this harbor?",
-            isPresented: Binding(get: { leavingRoom != nil }, set: { if !$0 { leavingRoom = nil } }),
-            titleVisibility: .visible,
-            presenting: leavingRoom
-        ) { room in
-            Button("Leave this harbor", role: .destructive) {
+            "Close this private island?",
+            isPresented: Binding(
+                get: { privateIslandPendingClose != nil },
+                set: { if !$0 { privateIslandPendingClose = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Close island permanently", role: .destructive) {
+                guard let room = privateIslandPendingClose else { return }
+                privateIslandPendingClose = nil
                 Task {
-                    await service.leaveRoom(room.id)
-                    Haptics.tap()
-                    await reload()
+                    do {
+                        try await privateIslandService.closeIsland(room.code)
+                        Haptics.success()
+                    } catch {
+                        privateIslandError = error.localizedDescription
+                        Haptics.error()
+                    }
                 }
             }
-            Button("Cancel", role: .cancel) { leavingRoom = nil }
-        } message: { _ in
-            Text("You'll stop sharing here and won't see this harbor's members. You can rejoin with the code.")
+            Button("Cancel", role: .cancel) { privateIslandPendingClose = nil }
+        } message: {
+            Text("The invite code, chat, members, and shared island snapshot will be deleted.")
         }
     }
 
     private func reload() async {
-        await service.refreshRooms()
-        // Webで参加してiOSを初めて開いた場合も対象港を取りこぼさないよう、
-        // 参加状態をサーバーから確定してから当月を公開する。
-        await publicService.refresh()
+        async let privateRefresh: Void = privateIslandService.refreshIslands()
+        async let publicRefresh: Void = publicService.refresh()
+        _ = await (privateRefresh, publicRefresh)
         // Web版と同じ規則でサービス開始日を確定し、既存のカードにも補完する。
         PlayerProfile.rememberVoyageStart(
             context: modelContext,
             accountCreatedAt: auth.user?.metadata.creationDate
         )
-        service.pushProfileToAllRooms()
         await publicService.syncProfile()
-        for room in service.rooms {
-            membersByRoom[room.id] = await service.members(of: room.id)
-        }
-        // 港に入っている間は、開くたびに自分の当月を公開し直す(取りこぼし防止)。
-        service.publishCurrentMonth(context: modelContext)
         hasLoaded = true
+    }
+
+    private func selectPrivateIsland(_ room: PrivateIslandRoom) {
+        Haptics.tap(.medium)
+        onPrivateIslandSelected?(room)
+    }
+
+    private func joinPrivateIslandInvite(_ rawCode: String) {
+        let code = PrivateIslandService.normalizedCode(rawCode)
+        guard code.count == 6, joiningInviteCode != code else {
+            router.pendingJoinCode = nil
+            return
+        }
+        joiningInviteCode = code
+        router.pendingJoinCode = nil
+
+        Task {
+            defer { joiningInviteCode = nil }
+            do {
+                let room = try await privateIslandService.joinIsland(code: code)
+                Haptics.success()
+                selectPrivateIsland(room)
+            } catch {
+                privateIslandError = error.localizedDescription
+                Haptics.error()
+            }
+        }
+    }
+
+    // MARK: - Private island entry
+
+    @ViewBuilder
+    private var privateSection: some View {
+        Text("Private")
+            .font(LFFont.label(13))
+            .tracking(1)
+            .foregroundStyle(LFColor.ink.opacity(0.5))
+            .padding(.top, 8)
+
+        if !auth.isSignedIn {
+            Text("Sign in to enter a harbor.")
+                .font(LFFont.copy(16))
+                .foregroundStyle(LFColor.ink.opacity(0.66))
+                .padding(showsOceanBackground ? 18 : 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white.opacity(showsOceanBackground ? 0 : 0.68))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .padding(.top, 10)
+        } else {
+            PrivateIslandLobbyView(
+                rooms: privateIslandService.islands,
+                currentUserID: privateIslandService.currentUserID ?? auth.user?.uid ?? "",
+                isLoading: !hasLoaded,
+                canHost: voyagePass.isActive,
+                isHostAccessLoading: voyagePass.isLoading,
+                onOpenVoyagePass: {
+                    showingVoyagePass = true
+                },
+                onCreate: { name in
+                    let ownerKey = HomeIslandPersistence.ownerKey(
+                        for: auth.homeIslandOwnerID
+                    )
+                    let code = try await privateIslandService.createIsland(
+                        name: name,
+                        initialSnapshot: HomeIslandPersistence.load(ownerKey: ownerKey)
+                    )
+                    if let room = privateIslandService.islands.first(where: { $0.code == code }) {
+                        return room
+                    }
+                    return try await privateIslandService.joinIsland(code: code)
+                },
+                onJoin: { code in
+                    try await privateIslandService.joinIsland(code: code)
+                },
+                onVisit: { room in
+                    selectPrivateIsland(room)
+                },
+                onLeave: { room in
+                    Task {
+                        do {
+                            try await privateIslandService.leaveIsland(room.code)
+                            Haptics.tap(.light)
+                        } catch {
+                            privateIslandError = error.localizedDescription
+                            Haptics.error()
+                        }
+                    }
+                },
+                onCloseOwned: { room in
+                    privateIslandPendingClose = room
+                }
+            )
+            .padding(.horizontal, showsOceanBackground ? -LFMetrics.cardPadding : -16)
+            .padding(.top, 6)
+        }
+    }
+
+    private var publicSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Public")
+                .font(LFFont.label(13))
+                .tracking(1)
+                .foregroundStyle(LFColor.ink.opacity(0.5))
+                .padding(.top, showsOceanBackground ? 36 : 22)
+
+            VStack(spacing: 0) {
+                ForEach(PublicHarbor.all) { harbor in
+                    if harbor.slug != PublicHarbor.all.first?.slug {
+                        Rectangle()
+                            .fill(LFColor.ink.opacity(0.08))
+                            .frame(height: 1)
+                    }
+                    publicRow(harbor)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 4)
+            .background(
+                showsOceanBackground
+                    ? timeOfDay.palette.glassColor.opacity(0.42)
+                    : Color.white.opacity(0.74)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(.top, 6)
+        }
     }
 
     // MARK: - パブリックの港ひとつぶん
 
-    private var ownPlayerCard: some View {
-        let style = TileStyle.from(playerStyle)
-        let name = playerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return HStack(spacing: 16) {
-            PlayerAvatarArt(styleToken: playerStyle, symbolToken: playerSymbol)
-                .frame(width: 56, height: 56)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: name.isEmpty ? LF.text("Sailor") : name)
-                    .font(LFFont.copy(20))
-                    .foregroundStyle(style.foreground)
-                    .lineLimit(1)
-                if !playerResolve.isEmpty {
-                    Text(verbatim: playerResolve)
-                        .font(LFFont.copy(14))
-                        .foregroundStyle(style.foreground.opacity(0.8))
-                        .lineLimit(2)
-                }
-                if let start = PlayerProfile.sinceDayFormatter.date(from: PlayerProfile.sinceDay) {
-                    Text("Sailing since \(LF.fullDate(start))")
-                        .font(LFFont.label(12))
-                        .foregroundStyle(style.foreground.opacity(0.6))
-                        .lineLimit(1)
-                }
+    private var publicJournalDoor: some View {
+        HStack(spacing: 16) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(LFColor.deepRust)
+                Image(systemName: "book.pages")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(Color(hex: 0xFCFAF5))
             }
-            Spacer(minLength: 8)
-            Text("Edit")
-                .font(LFFont.label(13))
-                .foregroundStyle(style.foreground.opacity(0.6))
+            .frame(width: 54, height: 54)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Text("PUBLIC LOGBOOK")
+                        .font(LFFont.label(10))
+                        .tracking(1.4)
+                        .foregroundStyle(LFColor.deepRust)
+                    Rectangle()
+                        .fill(LFColor.inkFixed.opacity(0.12))
+                        .frame(height: 1)
+                }
+                Text("Today's page")
+                    .font(LFFont.copy(19))
+                    .foregroundStyle(LFColor.inkFixed)
+                Text("One photo a day, paired with a few words.")
+                    .font(LFFont.label(12))
+                    .foregroundStyle(LFColor.inkFixed.opacity(0.68))
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 2)
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 14, weight: .regular))
+                .foregroundStyle(LFColor.inkFixed.opacity(0.58))
         }
-        .padding(20)
-        .background(style.background)
+        .padding(18)
+        .background(Color(hex: 0xFCFAF5))
         .clipShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous)
+                .stroke(LFColor.returnOrange.opacity(0.8), lineWidth: 1)
+        }
         .contentShape(RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(Text("Opens public pages and today's editor"))
     }
 
+    @ViewBuilder
     private func publicRow(_ harbor: PublicHarbor) -> some View {
-        NavigationLink(value: harbor) {
-            HStack(spacing: 14) {
+        if let onPublicHarborSelected {
+            Button {
+                onPublicHarborSelected(harbor)
+            } label: {
+                publicRowLabel(harbor)
+            }
+            .buttonStyle(.plain)
+        } else {
+            NavigationLink(value: harbor) {
+                publicRowLabel(harbor)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func publicRowLabel(_ harbor: PublicHarbor) -> some View {
+            HStack(spacing: showsOceanBackground ? 14 : 11) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: showsOceanBackground ? 14 : 12, style: .continuous)
                         .fill(harbor.style.background)
                     TileSymbolView(symbol: harbor.symbol, fg: harbor.style.foreground, bg: harbor.style.background)
-                        .frame(width: 29, height: 29)
+                        .frame(
+                            width: showsOceanBackground ? 29 : 25,
+                            height: showsOceanBackground ? 29 : 25
+                        )
                 }
-                .frame(width: 48, height: 48)
+                .frame(
+                    width: showsOceanBackground ? 48 : 42,
+                    height: showsOceanBackground ? 48 : 42
+                )
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 8) {
                         Text(harbor.title)
-                            .font(LFFont.copy(17))
+                            .font(LFFont.copy(showsOceanBackground ? 17 : 16))
                             .foregroundStyle(LFColor.ink)
                             .lineLimit(1)
                         if publicService.joined.contains(harbor.slug) {
@@ -361,7 +485,7 @@ struct HarborView: View {
                         }
                     }
                     Text(harbor.tagline)
-                        .font(LFFont.label(12))
+                        .font(LFFont.label(showsOceanBackground ? 12 : 11))
                         .foregroundStyle(LFColor.ink.opacity(0.45))
                         .lineLimit(1)
                 }
@@ -370,218 +494,9 @@ struct HarborView: View {
                     .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(LFColor.ink.opacity(0.25))
             }
-            .padding(.vertical, 12)
-        }
-        .buttonStyle(.plain)
+            .padding(.vertical, showsOceanBackground ? 12 : 7)
     }
 
-    // MARK: - 空の状態
-
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Share your study records with friends and see theirs.")
-                .font(LFFont.copy(16))
-                .foregroundStyle(LFColor.ink.opacity(0.6))
-                .fixedSize(horizontal: false, vertical: true)
-            actionRow
-        }
-        .padding(.top, 28)
-    }
-
-    private var actionRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                Button {
-                    if voyagePass.isActive {
-                        creating = true
-                    } else {
-                        showingVoyagePass = true
-                    }
-                } label: {
-                    HStack(spacing: 7) {
-                        Text("Open a harbor")
-                        if !voyagePass.isActive {
-                            Image(systemName: "lock.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                    }
-                    .font(LFFont.copy(15))
-                    .foregroundStyle(LFColor.paper)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .background(LFColor.ink)
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    // 手で開くときは、以前リンクから受け取ったコードを持ち越さない。
-                    incomingCode = nil
-                    joining = true
-                } label: {
-                    Text("Enter with a code")
-                        .font(LFFont.copy(15))
-                        .foregroundStyle(LFColor.ink)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .stroke(LFColor.ink, lineWidth: 1.5)
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-
-            if !voyagePass.isActive {
-                Text("A Voyage Pass opens a private harbor. Anyone can join free with its code.")
-                    .font(LFFont.label(11))
-                    .foregroundStyle(LFColor.ink.opacity(0.48))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    // MARK: - 港ひとつぶん
-
-    private func roomSection(_ room: HarborRoom) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .lastTextBaseline) {
-                Text(verbatim: room.name)
-                    .font(LFFont.copy(22))
-                    .foregroundStyle(LFColor.ink)
-                Spacer()
-                if isOwner(room) {
-                    if voyagePass.isActive {
-                        // 招待コードは「港を開いた航海証所持者」にだけ見せる。
-                        Button {
-                            Haptics.tap()
-                            invitingRoom = room
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(verbatim: room.id)
-                                    .font(LFFont.label(15))
-                                    .tracking(2)
-                                    .monospacedDigit()
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 13, weight: .medium))
-                            }
-                            .foregroundStyle(LFColor.returnOrange)
-                            .frame(minHeight: 44)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(Text("Invite code \(room.id)"))
-                        .accessibilityHint(Text("Share"))
-                    } else {
-                        Button {
-                            showingVoyagePass = true
-                        } label: {
-                            Label("Renew to invite", systemImage: "lock.fill")
-                                .font(LFFont.label(12))
-                                .foregroundStyle(LFColor.returnOrange)
-                                .frame(minHeight: 44)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            // 最大4人の並走ルームへ直接入る。歩ける港はiOSでは使わない。
-            NavigationLink(value: room) {
-                HStack(spacing: 10) {
-                    Image(systemName: "sailboat")
-                        .font(.system(size: 15, weight: .regular))
-                        .foregroundStyle(LFColor.ink.opacity(0.6))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Sail together")
-                            .font(LFFont.copy(16))
-                            .foregroundStyle(LFColor.ink)
-                        Text(
-                            verbatim: "\(room.memberIds.count)/\(HarborRoom.maxMembers) "
-                                + LF.text("sailors · shared timer and chat")
-                        )
-                            .font(LFFont.label(11))
-                            .foregroundStyle(LFColor.ink.opacity(0.46))
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(LFColor.ink.opacity(0.25))
-                }
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            VStack(spacing: 0) {
-                let members = membersByRoom[room.id] ?? []
-                ForEach(members) { member in
-                    if member.id != members.first?.id {
-                        Rectangle()
-                            .fill(LFColor.ink.opacity(0.08))
-                            .frame(height: 1)
-                    }
-                    memberRow(roomId: room.id, member: member)
-                }
-            }
-
-            Button {
-                leavingRoom = room
-            } label: {
-                Text("Leave this harbor")
-                    .font(LFFont.label(14))
-                    .foregroundStyle(LFColor.ink.opacity(0.45))
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func isOwner(_ room: HarborRoom) -> Bool {
-        guard let uid = auth.user?.uid else { return false }
-        if let ownerUid = room.ownerUid, room.memberIds.contains(ownerUid) {
-            return ownerUid == uid
-        }
-        return room.memberIds.first == uid
-    }
-
-    private func memberRow(roomId: String, member: HarborMember) -> some View {
-        NavigationLink(value: MemberTraceKey(roomId: roomId, member: member)) {
-            HStack(spacing: 14) {
-                // プレイヤーアイコン: 全員同じ大きさ。序列を作らない。
-                PlayerAvatarArt(styleToken: member.styleToken, symbolToken: member.symbolToken)
-                    .frame(width: 38, height: 38)
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 8) {
-                        Text(verbatim: member.displayName)
-                            .font(LFFont.copy(17))
-                            .foregroundStyle(LFColor.ink)
-                            .lineLimit(1)
-                        if member.id == auth.user?.uid {
-                            Text("You")
-                                .font(LFFont.label(12))
-                                .foregroundStyle(LFColor.ink.opacity(0.4))
-                        }
-                    }
-                    if !member.resolve.isEmpty {
-                        Text(verbatim: member.resolve)
-                            .font(LFFont.label(12))
-                            .foregroundStyle(LFColor.ink.opacity(0.45))
-                            .lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(LFColor.ink.opacity(0.25))
-            }
-            .padding(.vertical, 12)
-        }
-        .buttonStyle(.plain)
-    }
 }
 
 /// ナビゲーション用キー。
@@ -599,6 +514,8 @@ struct MemberTraceView: View {
     let member: HarborMember
     /// "rooms"(プライベート) / "publicHarbors"(パブリック)。読む場所だけが違う。
     var root: String = "rooms"
+    var showsOceanBackground = true
+    var onEmbeddedBack: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var days: Set<Int>?
@@ -611,7 +528,9 @@ struct MemberTraceView: View {
 
     var body: some View {
         ZStack {
-            HarborOceanBackground()
+            if showsOceanBackground {
+                HarborOceanBackground()
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     // 相手のプレイヤーカード(名前・アイコン・決意)。
@@ -667,7 +586,11 @@ struct MemberTraceView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
-                    dismiss()
+                    if let onEmbeddedBack {
+                        onEmbeddedBack()
+                    } else {
+                        dismiss()
+                    }
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "chevron.left")
@@ -810,178 +733,5 @@ struct MemberTraceView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: alignment == .center ? .center : (alignment == .trailing ? .trailing : .leading))
-    }
-}
-
-// MARK: - 作成・参加シート
-
-struct RoomCreateSheet: View {
-    var onDone: () async -> Void
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    @State private var name = ""
-    @State private var code: String?
-    @State private var working = false
-    @State private var errorText: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Text("Open a harbor")
-                .font(LFFont.copy(20))
-                .foregroundStyle(LFColor.ink)
-
-            if let code {
-                // 作成完了: コードを見せる。
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Share this code to invite others.")
-                        .font(LFFont.label(14))
-                        .foregroundStyle(LFColor.ink.opacity(0.5))
-                    HStack {
-                        Text(verbatim: code)
-                            .font(LFFont.number(34))
-                            .tracking(6)
-                            .foregroundStyle(LFColor.ink)
-                        Spacer()
-                        ShareLink(item: code) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 20, weight: .medium))
-                                .foregroundStyle(LFColor.returnOrange)
-                        }
-                    }
-                }
-                Button {
-                    dismiss()
-                } label: {
-                    Text("Close")
-                        .font(LFFont.copy(17))
-                        .foregroundStyle(LFColor.paper)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(LFColor.ink)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            } else {
-                TextField("Harbor name", text: $name)
-                    .font(LFFont.label(16))
-                    .foregroundStyle(LFColor.ink)
-                    .tint(LFColor.ink)
-                    .padding(.horizontal, 18)
-                    .frame(height: 52)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
-                    )
-
-                if let errorText {
-                    Text(verbatim: errorText)
-                        .font(LFFont.label(13))
-                        .foregroundStyle(LFColor.deepRust)
-                }
-
-                Button {
-                    Task {
-                        working = true
-                        defer { working = false }
-                        do {
-                            code = try await RoomService.shared.createRoom(
-                                named: name.trimmingCharacters(in: .whitespaces),
-                                context: modelContext
-                            )
-                            Haptics.success()
-                            await onDone()
-                        } catch {
-                            errorText = error.localizedDescription
-                        }
-                    }
-                } label: {
-                    Text("Open")
-                        .font(LFFont.copy(17))
-                        .foregroundStyle(LFColor.paper)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(name.trimmingCharacters(in: .whitespaces).isEmpty ? LFColor.ink.opacity(0.3) : LFColor.ink)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || working)
-            }
-            Spacer()
-        }
-        .padding(LFMetrics.cardPadding)
-        .background(LFColor.paper)
-        .presentationDetents([.medium])
-    }
-}
-
-struct RoomJoinSheet: View {
-    /// 入港証のリンクから来たときに入れておくコード。手入力の手間を省く。
-    var prefilledCode: String? = nil
-    var onDone: () async -> Void
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
-    @State private var code = ""
-    @State private var working = false
-    @State private var errorText: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Text("Enter with a code")
-                .font(LFFont.copy(20))
-                .foregroundStyle(LFColor.ink)
-
-            TextField("Code (6 letters)", text: $code)
-                .font(LFFont.number(22))
-                .tracking(4)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-                .foregroundStyle(LFColor.ink)
-                .tint(LFColor.ink)
-                .padding(.horizontal, 18)
-                .frame(height: 56)
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
-                )
-
-            if let errorText {
-                Text(verbatim: errorText)
-                    .font(LFFont.label(13))
-                    .foregroundStyle(LFColor.deepRust)
-            }
-
-            Button {
-                Task {
-                    working = true
-                    defer { working = false }
-                    do {
-                        try await RoomService.shared.joinRoom(code: code, context: modelContext)
-                        Haptics.success()
-                        await onDone()
-                        dismiss()
-                    } catch {
-                        errorText = error.localizedDescription
-                    }
-                }
-            } label: {
-                Text("Enter")
-                    .font(LFFont.copy(17))
-                    .foregroundStyle(LFColor.paper)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(code.trimmingCharacters(in: .whitespaces).isEmpty ? LFColor.ink.opacity(0.3) : LFColor.ink)
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .disabled(code.trimmingCharacters(in: .whitespaces).isEmpty || working)
-
-            Spacer()
-        }
-        .padding(LFMetrics.cardPadding)
-        .background(LFColor.paper)
-        .presentationDetents([.medium])
-        .onAppear {
-            if let prefilledCode, code.isEmpty { code = prefilledCode }
-        }
     }
 }

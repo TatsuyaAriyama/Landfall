@@ -67,7 +67,14 @@ final class SyncService {
         // 目標は排他。Webで作られた旧目標も、iOSから保存して消さない。
         let steps = dest.steps.isEmpty
             ? nil
-            : dest.steps.map { DestinationStepDTO(id: $0.id, name: $0.name, doneAt: $0.doneAt) }
+            : dest.steps.prefix(Destination.maxSteps).map {
+                DestinationStepDTO(
+                    id: $0.id,
+                    name: $0.name,
+                    scheduledAt: $0.scheduledAt,
+                    doneAt: $0.doneAt
+                )
+            }
         let dto = DestinationWriteDTO(
             name: dest.name,
             itemUUID: dest.itemUUID,
@@ -232,8 +239,13 @@ final class SyncService {
             case .added, .modified:
                 guard let dto = try? change.document.data(as: DestinationDTO.self) else { continue }
                 let remoteAt = dto.updatedAt ?? .distantPast
-                let steps = (dto.steps ?? []).map {
-                    DestinationStep(id: $0.id, name: $0.name, doneAt: $0.doneAt)
+                let steps = (dto.steps ?? []).prefix(Destination.maxSteps).map {
+                    DestinationStep(
+                        id: $0.id,
+                        name: $0.name,
+                        scheduledAt: $0.scheduledAt,
+                        doneAt: $0.doneAt
+                    )
                 }
                 if let existing = fetchDestination(id, context) {
                     if remoteAt > existing.updatedAt {
@@ -355,10 +367,11 @@ private struct DayDTO: Codable {
     var updatedAt: Date?
 }
 
-/// ステップ1件(Firestore の steps 配列要素 = map)。doneAt は Timestamp に自動変換。
+/// ステップ1件(Firestore の steps 配列要素 = map)。日時は Timestamp に自動変換。
 private struct DestinationStepDTO: Codable {
     var id: String
     var name: String
+    var scheduledAt: Date?
     var doneAt: Date?
 }
 

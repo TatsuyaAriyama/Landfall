@@ -310,30 +310,37 @@ private enum ChatSafety {
         blocked = Set(snap.documents.map(\.documentID))
     }
 
-    func block(_ targetUid: String) {
+    func block(_ targetUid: String) async throws {
         #if DEBUG
         if Self.previewEnabled {
-            guard targetUid != "preview-self" else { return }
+            guard targetUid != "preview-self", !targetUid.isEmpty else {
+                throw HarborBlockError.invalidTarget
+            }
             blocked.insert(targetUid)
             return
         }
         #endif
-        guard let uid, targetUid != uid else { return }
-        db.collection("users").document(uid).collection("blocks")
+        guard let uid else { throw RoomError.notSignedIn }
+        guard targetUid != uid, !targetUid.isEmpty else { throw HarborBlockError.invalidTarget }
+        try await db.collection("users").document(uid).collection("blocks")
             .document(targetUid).setData(["createdAt": FieldValue.serverTimestamp()])
+        guard self.uid == uid else { return }
         blocked.insert(targetUid)
     }
 
-    func unblock(_ targetUid: String) {
+    func unblock(_ targetUid: String) async throws {
         #if DEBUG
         if Self.previewEnabled {
+            guard !targetUid.isEmpty else { throw HarborBlockError.invalidTarget }
             blocked.remove(targetUid)
             return
         }
         #endif
-        guard let uid else { return }
-        db.collection("users").document(uid).collection("blocks")
+        guard let uid else { throw RoomError.notSignedIn }
+        guard !targetUid.isEmpty else { throw HarborBlockError.invalidTarget }
+        try await db.collection("users").document(uid).collection("blocks")
             .document(targetUid).delete()
+        guard self.uid == uid else { return }
         blocked.remove(targetUid)
     }
 
@@ -361,4 +368,12 @@ private enum ChatSafety {
         )
     }
     #endif
+}
+
+private enum HarborBlockError: LocalizedError {
+    case invalidTarget
+
+    var errorDescription: String? {
+        LF.text("This sailor's block setting could not be changed.")
+    }
 }

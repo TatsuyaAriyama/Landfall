@@ -12,4 +12,9 @@ enum Haptics {
     static func success() {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
+
+    /// 送信失敗など、操作をやり直せるエラー。
+    static func error() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
 }

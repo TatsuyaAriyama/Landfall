@@ -9,7 +9,10 @@ enum WidgetVoyageStillRenderer {
 
     static func refreshIfNeeded(force: Bool = false) {
         guard let outputURL = KeelMiraWidgetStore.voyageImageURL else { return }
-        let appearanceKey = BoatCustomization.selectedSailID + ":" + PhoenixPose.selected.rawValue
+        let phaseBucket = Int(LandfallLunarPhase.current().cycle * 64)
+        let appearanceKey = BoatCustomization.selectedSailID
+            + ":" + PhoenixPose.selected.rawValue
+            + ":moon-\(phaseBucket)"
         let previousKey = KeelMiraWidgetStore.defaults.string(forKey: renderKey)
         guard force || previousKey != appearanceKey || !FileManager.default.fileExists(atPath: outputURL.path) else {
             return

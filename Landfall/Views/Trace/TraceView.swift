@@ -865,7 +865,7 @@ struct TraceView: View {
         modelContext.delete(session)
         StudyDayStore.unmarkDayIfEmpty(date, context: modelContext)
         try? modelContext.save()
-        RoomService.shared.publishCurrentMonth(context: modelContext)
+        PublicHarborService.shared.publishCurrentMonth(context: modelContext)
         WidgetBridge.refresh(context: modelContext)
         if calendar.isDate(date, inSameDayAs: selectedDay) {
             loadDayNote()

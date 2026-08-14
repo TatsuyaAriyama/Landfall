@@ -89,11 +89,25 @@ private func poseBase(_ p: PhoenixPose) -> PoseBase {
     case .rest:
         return PoseBase(armRx: -0.8, armRz: -0.3, armLx: -0.86, armLz: 0.32, lean: 0.07, wind: 0.75, headX: 0.32, scan: 0.05, scanSpeed: 0.22, turn: 0, sway: 0.6, breathAmp: 1.75, breathSpeed: 0.58, glow: 2, sit: 0)
     case .sit:
-        return PoseBase(armRx: 0.62, armRz: 0.3, armLx: 0.62, armLz: -0.3, lean: -0.12, wind: 0.7, headX: -0.05, scan: 0.13, scanSpeed: 0.18, turn: 0, sway: 0.45, breathAmp: 1.6, breathSpeed: 0.6, glow: 1.8, sit: 1)
+        return PoseBase(armRx: 0.62, armRz: 0.3, armLx: 0.62, armLz: -0.3, lean: -0.04, wind: 0.7, headX: -0.05, scan: 0.13, scanSpeed: 0.18, turn: 0, sway: 0.45, breathAmp: 0.75, breathSpeed: 0.6, glow: 1.8, sit: 1)
     }
 }
 
 enum PhoenixNavigator {
+    /// アセットの接触面とキャラの関節姿勢を結ぶ共通リグ。
+    /// 横になる等の姿勢は、同じ型のプリセットを追加して再利用する。
+    struct ContactPoseRig {
+        let rootToSurface: Float
+        let primaryLegPitch: Float
+        let secondaryLegPitch: Float
+    }
+
+    static let seatedRig = ContactPoseRig(
+        rootToSurface: 0.135,
+        primaryLegPitch: -1.05,
+        secondaryLegPitch: 1.05
+    )
+
     // 配色(Web PhoenixModel と同値)
     static let coral = UIColor(rgb: 0xF0997B)
     static let rust = UIColor(rgb: 0x7A3B22)
@@ -255,31 +269,38 @@ enum PhoenixNavigator {
         contact.position.y = 0.015
         root.addChildNode(contact)
 
-        // 脚(股関節ピボット)。足首は裾内、丸いブーツのつま先が前へ覗く。
+        // 脚(股関節 + 膝ピボット)。立位の輪郭は従来のまま、座位では
+        // 上腿を前へ、膝下を下へ向けられる二関節構造にする。
         for s: Float in [1, -1] {
             let leg = SCNNode()
             leg.name = s == 1 ? "legR" : "legL"
             leg.position = SCNVector3(s * 0.088, 0.42, 0)
+
+            let knee = SCNNode()
+            knee.name = s == 1 ? "kneeR" : "kneeL"
+            knee.position = SCNVector3(0, -0.18, 0.02)
+
             let ankle = SCNNode(geometry: cyl(top: 0.042, bottom: 0.048, h: 0.18, mat: rustDeepMat))
-            ankle.position = SCNVector3(0, -0.22, 0.02)
-            leg.addChildNode(ankle)
+            ankle.position = SCNVector3(0, -0.04, 0)
+            knee.addChildNode(ankle)
             let cuff = SCNNode(geometry: cyl(top: 0.062, bottom: 0.07, h: 0.06, mat: rustMat))
-            cuff.position = SCNVector3(0, -0.305, 0.03)
-            leg.addChildNode(cuff)
+            cuff.position = SCNVector3(0, -0.125, 0.01)
+            knee.addChildNode(cuff)
             let boot = SCNNode(geometry: sphere(0.075, seg: 14, mat: rustDeepMat))
-            boot.position = SCNVector3(0, -0.368, 0.09)
+            boot.position = SCNVector3(0, -0.188, 0.07)
             boot.scale = SCNVector3(0.95, 0.68, 1.55)
-            leg.addChildNode(boot)
+            knee.addChildNode(boot)
             let soleGeometry = SCNBox(width: 0.115, height: 0.026, length: 0.2, chamferRadius: 0.006)
             soleGeometry.firstMaterial = rustMat
             let sole = SCNNode(geometry: soleGeometry)
-            sole.position = SCNVector3(0, -0.404, 0.088)
-            leg.addChildNode(sole)
+            sole.position = SCNVector3(0, -0.224, 0.068)
+            knee.addChildNode(sole)
             let heelGeometry = SCNBox(width: 0.1, height: 0.03, length: 0.055, chamferRadius: 0.005)
             heelGeometry.firstMaterial = rustDeepMat
             let heel = SCNNode(geometry: heelGeometry)
-            heel.position = SCNVector3(0, -0.418, 0.012)
-            leg.addChildNode(heel)
+            heel.position = SCNVector3(0, -0.238, -0.008)
+            knee.addChildNode(heel)
+            leg.addChildNode(knee)
             contact.addChildNode(leg)
         }
 
@@ -291,9 +312,8 @@ enum PhoenixNavigator {
         let skirt = SCNNode()
         skirt.name = "skirt"
         skirt.addChildNode(SCNNode(geometry: lathe(coatProfile, segments: 22, material: coralMat)))
-        let hem = SCNNode(geometry: lathe(coatProfile, segments: 22, material: rustMat))
-        hem.position = SCNVector3(0, -0.02, 0)
-        hem.scale = SCNVector3(0.97, 0.35, 0.97)
+        let hem = SCNNode(geometry: lathe(hemProfile, segments: 22, material: rustMat))
+        hem.name = "skirtHem"
         skirt.addChildNode(hem)
         core.addChildNode(skirt)
 
@@ -554,6 +574,11 @@ enum PhoenixNavigator {
         (0.235, 0.3), (0.225, 0.36), (0.205, 0.44), (0.185, 0.52), (0.165, 0.62),
         (0.148, 0.7), (0.135, 0.78), (0.118, 0.86), (0.105, 0.92),
     ]
+    /// コート下端に沿う本来の裾帯。以前はコート全体の複製を縦に潰していたため、
+    /// 座位で座面より下へ別の袍が突き抜けていた。
+    private static let hemProfile: [(r: Float, y: Float)] = [
+        (0.238, 0.296), (0.235, 0.315), (0.229, 0.345), (0.222, 0.375),
+    ]
     private static let mantleProfile: [(r: Float, y: Float)] = [
         (0.2, 0), (0.185, 0.05), (0.16, 0.11), (0.128, 0.155), (0.1, 0.175),
     ]
@@ -588,6 +613,8 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private var startTime: TimeInterval?
     private var lastTime: TimeInterval = 0
     private weak var boundScene: SCNScene?
+    private weak var boundNavigator: SCNNode?
+    private var usesExplicitNavigatorBinding = false
     private weak var contact: SCNNode?
     private weak var core: SCNNode?
     private weak var skirt: SCNNode?
@@ -596,6 +623,8 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private weak var armL: SCNNode?
     private weak var legR: SCNNode?
     private weak var legL: SCNNode?
+    private weak var kneeR: SCNNode?
+    private weak var kneeL: SCNNode?
     private weak var lantern: SCNNode?
     private weak var cape: SCNNode?
     private weak var glowMat: SCNMaterial?
@@ -611,26 +640,72 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private var glow: Float = 1.5, sit: Float = 0
     private var breathPhase: Float = 0, scanPhase: Float = 0
 
-    private func bind(_ scene: SCNScene) {
+    private func bindComponents(
+        to navigator: SCNNode,
+        scene: SCNScene?,
+        includesSceneRipples: Bool
+    ) {
         boundScene = scene
-        guard let nav = scene.rootNode.childNode(withName: "navigator", recursively: true) else { return }
-        contact = nav.childNode(withName: "contact", recursively: true)
-        core = nav.childNode(withName: "core", recursively: true)
-        skirt = nav.childNode(withName: "skirt", recursively: true)
-        head = nav.childNode(withName: "head", recursively: true)
-        armR = nav.childNode(withName: "armR", recursively: true)
-        armL = nav.childNode(withName: "armL", recursively: true)
-        legR = nav.childNode(withName: "legR", recursively: true)
-        legL = nav.childNode(withName: "legL", recursively: true)
-        lantern = nav.childNode(withName: "lantern", recursively: true)
-        cape = nav.childNode(withName: "cape", recursively: true)
-        glowMat = nav.childNode(withName: "lanternGlow", recursively: true)?.geometry?.firstMaterial
-        rippleNodes = (0..<3).compactMap { scene.rootNode.childNode(withName: "ripple\($0)", recursively: true) }
+        boundNavigator = navigator
+        contact = navigator.childNode(withName: "contact", recursively: true)
+        core = navigator.childNode(withName: "core", recursively: true)
+        skirt = navigator.childNode(withName: "skirt", recursively: true)
+        head = navigator.childNode(withName: "head", recursively: true)
+        armR = navigator.childNode(withName: "armR", recursively: true)
+        armL = navigator.childNode(withName: "armL", recursively: true)
+        legR = navigator.childNode(withName: "legR", recursively: true)
+        legL = navigator.childNode(withName: "legL", recursively: true)
+        kneeR = navigator.childNode(withName: "kneeR", recursively: true)
+        kneeL = navigator.childNode(withName: "kneeL", recursively: true)
+        lantern = navigator.childNode(withName: "lantern", recursively: true)
+        cape = navigator.childNode(withName: "cape", recursively: true)
+        glowMat = navigator.childNode(
+            withName: "lanternGlow",
+            recursively: true
+        )?.geometry?.firstMaterial
+        if includesSceneRipples, let scene {
+            rippleNodes = (0..<3).compactMap {
+                scene.rootNode.childNode(withName: "ripple\($0)", recursively: true)
+            }
+        } else {
+            rippleNodes = []
+        }
+    }
+
+    private func bind(_ scene: SCNScene) {
+        usesExplicitNavigatorBinding = false
+        guard let navigator = scene.rootNode.childNode(
+            withName: "navigator",
+            recursively: true
+        ) else { return }
+        bindComponents(to: navigator, scene: scene, includesSceneRipples: true)
+    }
+
+    /// Binds this animator to one navigator instance instead of the first node
+    /// named `navigator` in a scene. Multiplayer scenes contain several copies
+    /// of the model, so every visitor must own a separately bound animator.
+    func bind(to navigator: SCNNode, in scene: SCNScene? = nil) {
+        usesExplicitNavigatorBinding = true
+        bindComponents(
+            to: navigator,
+            scene: scene,
+            includesSceneRipples: false
+        )
     }
 
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
         guard animate, let scene = renderer.scene else { return }
-        if boundScene !== scene || core == nil { bind(scene) }
+        if usesExplicitNavigatorBinding {
+            if core == nil, let boundNavigator {
+                bindComponents(
+                    to: boundNavigator,
+                    scene: boundScene,
+                    includesSceneRipples: false
+                )
+            }
+        } else if boundScene !== scene || core == nil {
+            bind(scene)
+        }
         if startTime == nil { startTime = time; lastTime = time }
         let t = Float(time - (startTime ?? time))
         let dt = Float(min(max(time - lastTime, 0), 0.1))
@@ -685,13 +760,17 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
 
         // 体: 待機は呼吸、歩行は歩調の弾み
         if let core {
-            core.position.y = (walking ? abs(cos(t * stride)) * 0.035 : sin(breathPhase) * 0.018 * breathAmp) - drop
+            let standingBreath = sin(breathPhase) * 0.018 * breathAmp * (1 - sit)
+            core.position.y = (walking ? abs(cos(t * stride)) * 0.035 : standingBreath) - drop
             core.eulerAngles.x = lean + sin(breathPhase + 0.9) * 0.01 * breathAmp
             core.eulerAngles.y = sin(scanPhase - 0.55) * turn
             core.eulerAngles.z = walking ? step * 0.03 : 0
         }
         if let skirt {
-            skirt.scale = SCNVector3(1 + 0.3 * sit, 1 - 0.22 * sit, 1 + 0.3 * sit)
+            // 衣装は立位・座位で同じ形を保つ。座位専用の拡縮や透明化は行わず、
+            // 身体の関節だけで姿勢を作る。
+            skirt.position = SCNVector3Zero
+            skirt.scale = SCNVector3(1, 1, 1)
         }
         // 首: ポーズごとの上下と見渡し。
         if let head {
@@ -699,9 +778,11 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
             head.eulerAngles.x = headX
             head.eulerAngles.z = sin(breathPhase + 2.1) * 0.02 * breathAmp
         }
-        // 脚: 歩行は交互に振り、座るときは股関節ごと下げて前へ倒す。
+        // 脚: 歩行は股関節で交互に振る。座位は上腿だけを前へ倒し、膝で
+        // 同じ角度を打ち消して膝下とブーツを自然に下へ垂らす。
         let legSwing: Float = walking ? 0.55 : 0
-        let legSit = -1.24 * sit
+        let legSit = PhoenixNavigator.seatedRig.primaryLegPitch * sit
+        let kneeSit = PhoenixNavigator.seatedRig.secondaryLegPitch * sit
         if let legR {
             legR.position.y = 0.42 - drop
             legR.eulerAngles.x = damp(legR.eulerAngles.x, step * legSwing + legSit, 10, dt)
@@ -709,6 +790,12 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         if let legL {
             legL.position.y = 0.42 - drop
             legL.eulerAngles.x = damp(legL.eulerAngles.x, -step * legSwing + legSit, 10, dt)
+        }
+        if let kneeR {
+            kneeR.eulerAngles.x = damp(kneeR.eulerAngles.x, kneeSit, 10, dt)
+        }
+        if let kneeL {
+            kneeL.eulerAngles.x = damp(kneeL.eulerAngles.x, kneeSit, 10, dt)
         }
 
         // 腕: 基本角 + ポーズごとの振動
@@ -732,46 +819,9 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
 
     /// 外部シーン(目的地の船上など)から使うときの束ね直し。
     func bindIfNeeded(_ scene: SCNScene) {
-        if boundScene !== scene || core == nil { bind(scene) }
-    }
-}
-
-// MARK: - SwiftUI ラッパ
-
-/// 装い: 夜の海に立つ航海士。ドラッグで一周・ピンチで寄れる。ポーズを切り替えられる。
-struct PhoenixNavigatorView: UIViewRepresentable {
-    var pose: PhoenixPose
-
-    func makeCoordinator() -> PhoenixAnimator { PhoenixAnimator() }
-
-    func makeUIView(context: Context) -> SCNView {
-        let view = SCNView()
-        view.scene = PhoenixNavigator.makeScene()
-        view.backgroundColor = VoyageSceneKit.nightBG
-        view.antialiasingMode = .multisampling4X
-        view.allowsCameraControl = true
-        view.autoenablesDefaultLighting = false
-        let reduceMotion = UIAccessibility.isReduceMotionEnabled
-        view.rendersContinuously = !reduceMotion
-        let animator = context.coordinator
-        animator.animate = !reduceMotion
-        animator.pose = pose
-        view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
-        view.delegate = animator
-        // 360度見渡しは「航海士の胴の中心」を軸に回す。
-        // target を設定しないと海の円盤を含む重心で回ってしまう。
-        let cc = view.defaultCameraController
-        cc.interactionMode = .orbitTurntable
-        cc.target = SCNVector3(0, 0.62, 0)
-        cc.automaticTarget = false
-        cc.inertiaEnabled = true
-        cc.minimumVerticalAngle = -4
-        cc.maximumVerticalAngle = 80
-        return view
-    }
-
-    func updateUIView(_ view: SCNView, context: Context) {
-        context.coordinator.pose = pose
+        if usesExplicitNavigatorBinding || boundScene !== scene || core == nil {
+            bind(scene)
+        }
     }
 }
 

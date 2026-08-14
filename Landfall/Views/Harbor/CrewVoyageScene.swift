@@ -238,14 +238,10 @@ private struct CrewVoyageSceneRepresentable: UIViewRepresentable {
             island.scale = SCNVector3(1.35, 1.35, 1.35)
             scene.rootNode.addChildNode(island)
 
-            let moonGeometry = SCNSphere(radius: 0.62)
-            moonGeometry.segmentCount = 24
-            let moonMaterial = SCNMaterial()
-            moonMaterial.lightingModel = .constant
-            moonMaterial.diffuse.contents = UIColor(rgb: 0xD8EBDD)
-            moonMaterial.emission.contents = UIColor(rgb: 0x9DBAB0)
-            moonGeometry.firstMaterial = moonMaterial
-            let moon = SCNNode(geometry: moonGeometry)
+            let moon = LandfallMoonEffects.makeNode(
+                phase: .current(),
+                radius: 0.62
+            )
             moon.position = SCNVector3(-7.8, 7.1, -23)
             scene.rootNode.addChildNode(moon)
 

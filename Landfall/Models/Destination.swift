@@ -7,11 +7,18 @@ import SwiftData
 struct DestinationStep: Codable, Identifiable, Hashable {
     var id: String
     var name: String
+    var scheduledAt: Date?
     var doneAt: Date?
 
-    init(id: String = UUID().uuidString, name: String, doneAt: Date? = nil) {
+    init(
+        id: String = UUID().uuidString,
+        name: String,
+        scheduledAt: Date? = nil,
+        doneAt: Date? = nil
+    ) {
         self.id = id
         self.name = name
+        self.scheduledAt = scheduledAt
         self.doneAt = doneAt
     }
 }
@@ -64,12 +71,12 @@ final class Destination {
         self.targetMinutes = targetMinutes
         self.manual = manual
         self.manualDone = manualDone
-        self.steps = steps
+        self.steps = Array(steps.prefix(Self.maxSteps))
         self.updatedAt = Date()
     }
 
     /// ステップの上限。分解しすぎて航路が埋まらない程度に抑える(Web と同じ)。
-    static let maxSteps = 20
+    static let maxSteps = 3
 
     /// Web版 `destinationDeadline` と同じ締切解釈。
     func deadline(calendar: Calendar = .current) -> Date? {

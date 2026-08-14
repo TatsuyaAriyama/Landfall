@@ -55,35 +55,57 @@ struct LFBackHeader: View {
     }
 }
 
-/// 設定シート。作業項目とアプリ全体の設定をまとめて扱う。
+/// アプリ全体の設定をまとめて扱うシート。
 struct SettingsView: View {
+    private let onReplayPrologue: (() -> Void)?
+    private let onClose: (() -> Void)?
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var auth: AuthService
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
     @AppStorage(AppTheme.storageKey) private var appTheme = AppTheme.system.rawValue
-    @Query(sort: \StudyItem.sortOrder) private var items: [StudyItem]
+    // These preferences are edited from Home's dedicated music item. Settings
+    // still reads them to restore audio after replaying the opening story.
+    @AppStorage(HomeBackgroundMusic.enabledKey) private var homeMusicEnabled = false
+    @AppStorage(HomeWaveAmbience.enabledKey) private var homeWavesEnabled = true
     @Query private var sessions: [StudySession]
     @Query private var destinations: [Destination]
     @State private var current: AppIconOption = .harbor
-    @State private var addingItem = false
-    @State private var editingItem: StudyItem?
     /// 削除しようとしている到達済みの島(確認ダイアログ用)。
     @State private var pendingDeleteIsland: Destination?
     @State private var confirmingDeleteAccount = false
     @State private var deletingAccount = false
+    @State private var showingPrologue = false
+    @State private var prologuePresentationID = UUID()
+    @State private var prologueIsLaunching = false
     @State private var showingTutorial = false
+    @State private var showingHelp = false
     @State private var showingVoyagePass = false
     @State private var showingAssetStudio = false
+    @State private var showingFeedback = false
     @StateObject private var voyagePass = VoyagePassStore.shared
     @AppStorage(NotificationService.enabledKey) private var notifyEnabled = false
+    @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    @AppStorage(StudyTimer.soundKey, store: StudyTimer.defaults)
+    private var timerSoundMode = HomeVoyageSound.initialTimerSound.rawValue
+    @AppStorage(StudyTimer.breakStartedAtKey, store: StudyTimer.defaults) private var timerBreakStartedAt: Double = 0
     @State private var notifyTime = Calendar.current.date(
         from: DateComponents(hour: NotificationService.hour, minute: NotificationService.minute)
     ) ?? Date()
 
+    init(
+        onReplayPrologue: (() -> Void)? = nil,
+        onClose: (() -> Void)? = nil
+    ) {
+        self.onReplayPrologue = onReplayPrologue
+        self.onClose = onClose
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            LFBackHeader(title: "Settings") { dismiss() }
+            LFBackHeader(title: "Settings") { closeSettings() }
                 .padding(.horizontal, LFMetrics.cardPadding)
                 .padding(.vertical, 6)
 
@@ -99,16 +121,11 @@ struct SettingsView: View {
 
                     voyagePassCard
 
-                    sectionLabel("Work items")
-                        .padding(.top, 36)
-                        .padding(.bottom, 8)
+                    sectionLabel("Feedback")
+                        .padding(.top, 28)
+                        .padding(.bottom, 10)
 
-                    Text("Manage names, colors, symbols, and order here.")
-                        .font(LFFont.copy(13))
-                        .foregroundStyle(LFColor.ink.opacity(0.6))
-                        .padding(.bottom, 12)
-
-                    workItemsSection
+                    feedbackButton
 
                     sectionLabel("Language")
                         .padding(.top, 36)
@@ -138,6 +155,37 @@ struct SettingsView: View {
                     sectionLabel("Guide")
                         .padding(.top, 36)
                         .padding(.bottom, 10)
+
+                    Button {
+                        showingHelp = true
+                        Haptics.tap(.light)
+                    } label: {
+                        HStack(spacing: 13) {
+                            Image(systemName: "questionmark.circle.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(LFColor.harborSand)
+                                .frame(width: 40, height: 40)
+                                .background(LFColor.harborTeal, in: RoundedRectangle(cornerRadius: 12))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Help")
+                                    .font(LFFont.copy(16))
+                                    .foregroundStyle(LFColor.ink)
+                                Text("See how to use the main features.")
+                                    .font(LFFont.label(13))
+                                    .foregroundStyle(LFColor.ink.opacity(0.52))
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(LFColor.ink.opacity(0.3))
+                        }
+                        .frame(minHeight: 52)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
 
                     Button {
                         showingTutorial = true
@@ -170,6 +218,38 @@ struct SettingsView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .padding(.top, 8)
+
+                    Button {
+                        presentPrologue()
+                    } label: {
+                        HStack(spacing: 13) {
+                            Image(systemName: "book.closed.fill")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(LFColor.harborSand)
+                                .frame(width: 40, height: 40)
+                                .background(LFColor.harborTeal, in: RoundedRectangle(cornerRadius: 12))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Opening story")
+                                    .font(LFFont.copy(16))
+                                    .foregroundStyle(LFColor.ink)
+                                Text("Watch the Forgotten Sea again.")
+                                    .font(LFFont.label(13))
+                                    .foregroundStyle(LFColor.ink.opacity(0.52))
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(LFColor.ink.opacity(0.3))
+                        }
+                        .frame(minHeight: 52)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 8)
 
                     // 代替アイコン非対応の文脈では、押しても無反応な節を出さない。
                     if AppIconStore.isSupported {
@@ -253,21 +333,63 @@ struct SettingsView: View {
             if ProcessInfo.processInfo.environment["LANDFALL_ASSET_STUDIO"] == "1" {
                 DispatchQueue.main.async { showingAssetStudio = true }
             }
+            if ProcessInfo.processInfo.environment["LANDFALL_SETTINGS_PROLOGUE"] == "1" {
+                DispatchQueue.main.async { presentPrologue() }
+            }
             #endif
         }
-        .sheet(isPresented: $addingItem) {
-            ItemEditorSheet(existing: nil)
-        }
-        .sheet(item: $editingItem) { item in
-            ItemEditorSheet(existing: item)
+        .onChange(of: scenePhase) { _, phase in
+            guard prologueIsLaunching else { return }
+            if phase == .active {
+                HomeVoyageAudio.shared.play(
+                    HomeVoyageSound.initialTimerSound.rawValue
+                )
+            } else {
+                HomeVoyageAudio.shared.stop()
+            }
         }
         .sheet(isPresented: $showingVoyagePass) {
             VoyagePassView()
+        }
+        .sheet(isPresented: $showingFeedback) {
+            FeedbackView()
+        }
+        .sheet(isPresented: $showingHelp) {
+            HelpView()
         }
         .fullScreenCover(isPresented: $showingTutorial) {
             OnboardingView(secondaryActionTitle: "Close") {
                 showingTutorial = false
             }
+        }
+        .fullScreenCover(isPresented: $showingPrologue, onDismiss: resumeHomeAudio) {
+            GeometryReader { geometry in
+                ZStack {
+                    Color(hex: 0x061615)
+                    if prologueIsLaunching {
+                        PrologueVoyageLaunchSceneView {
+                            prologueIsLaunching = false
+                            showingPrologue = false
+                        }
+                        .transition(.opacity)
+                    } else {
+                        ForgottenSeaPrologueView {
+                            HomeVoyageAudio.shared.play(
+                                HomeVoyageSound.initialTimerSound.rawValue
+                            )
+                            withAnimation(.easeInOut(duration: 0.48)) {
+                                prologueIsLaunching = true
+                            }
+                        }
+                        .id(prologuePresentationID)
+                        .transition(.opacity)
+                    }
+                }
+                .padding(.top, geometry.safeAreaInsets.top)
+                .padding(.bottom, geometry.safeAreaInsets.bottom)
+                .ignoresSafeArea()
+            }
+            .interactiveDismissDisabled()
         }
         .fullScreenCover(isPresented: assetStudioPresentation) {
             AssetPlacementStudioView(homeProgressRatio: homeProgressRatio)
@@ -317,7 +439,71 @@ struct SettingsView: View {
         )
     }
 
-    // MARK: - 作業項目
+    /// ホーム音響から序章の専用BGMへ静かに引き継ぐ。
+    private func presentPrologue() {
+        HomeBackgroundMusic.shared.stop()
+        HomeWaveAmbience.shared.stop()
+        HomeVoyageAudio.shared.stop()
+        Haptics.tap(.light)
+        if let onReplayPrologue {
+            onReplayPrologue()
+        } else {
+            prologuePresentationID = UUID()
+            prologueIsLaunching = false
+            showingPrologue = true
+        }
+    }
+
+    /// 序章を閉じた後、計測中でなければ利用者の音響設定を復元する。
+    private func resumeHomeAudio() {
+        HomeVoyageAudio.shared.stop()
+        guard scenePhase == .active else { return }
+        if timerStart > 0 {
+            if timerBreakStartedAt <= 0 {
+                HomeVoyageAudio.shared.play(timerSoundMode)
+            }
+            return
+        }
+        if homeMusicEnabled { HomeBackgroundMusic.shared.play() }
+        if homeWavesEnabled { HomeWaveAmbience.shared.play() }
+    }
+
+    // MARK: - Feedback
+
+    private var feedbackButton: some View {
+        Button {
+            showingFeedback = true
+            Haptics.tap(.light)
+        } label: {
+            HStack(spacing: 13) {
+                Image(systemName: "bubble.left.and.text.bubble.right.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(LFColor.harborSand)
+                    .frame(width: 40, height: 40)
+                    .background(LFColor.harborTeal, in: RoundedRectangle(cornerRadius: 12))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Send an improvement idea")
+                        .font(LFFont.copy(16))
+                        .foregroundStyle(LFColor.ink)
+                    Text("Your note goes privately to the operations crew.")
+                        .font(LFFont.label(13))
+                        .foregroundStyle(LFColor.ink.opacity(0.52))
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LFColor.ink.opacity(0.3))
+            }
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Voyage Pass
 
     private var voyagePassCard: some View {
         Button {
@@ -372,114 +558,6 @@ struct SettingsView: View {
             .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
         .buttonStyle(LFPressableButtonStyle())
-    }
-
-    private var workItemsSection: some View {
-        VStack(spacing: 0) {
-            if items.isEmpty {
-                Text("No work items yet.")
-                    .font(LFFont.copy(15))
-                    .foregroundStyle(LFColor.ink.opacity(0.5))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 12)
-            } else {
-                ForEach(Array(items.enumerated()), id: \.element.persistentModelID) { index, item in
-                    if index > 0 {
-                        Rectangle()
-                            .fill(LFColor.ink.opacity(0.08))
-                            .frame(height: 1)
-                    }
-
-                    HStack(spacing: 12) {
-                        Button {
-                            editingItem = item
-                        } label: {
-                            HStack(spacing: 12) {
-                                ItemTileArt(item: item)
-                                    .frame(width: 44, height: 44)
-
-                                Text(verbatim: item.name)
-                                    .font(LFFont.copy(16))
-                                    .foregroundStyle(LFColor.ink)
-                                    .lineLimit(2)
-
-                                Spacer(minLength: 8)
-
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(LFColor.ink.opacity(0.32))
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-
-                        VStack(spacing: 0) {
-                            reorderButton(
-                                systemName: "chevron.up",
-                                label: "Move up",
-                                disabled: index == items.startIndex
-                            ) {
-                                moveItem(at: index, by: -1)
-                            }
-                            reorderButton(
-                                systemName: "chevron.down",
-                                label: "Move down",
-                                disabled: index == items.index(before: items.endIndex)
-                            ) {
-                                moveItem(at: index, by: 1)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 10)
-                }
-            }
-
-            Button {
-                addingItem = true
-            } label: {
-                Label("Add work item", systemImage: "plus")
-                    .font(LFFont.copy(16))
-                    .foregroundStyle(LFColor.ink)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(minHeight: 48)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func reorderButton(
-        systemName: String,
-        label: LocalizedStringKey,
-        disabled: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(LFColor.ink.opacity(disabled ? 0.16 : 0.52))
-                .frame(width: 36, height: 28)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(disabled)
-        .accessibilityLabel(Text(label))
-    }
-
-    private func moveItem(at index: Int, by offset: Int) {
-        let destination = index + offset
-        guard items.indices.contains(index), items.indices.contains(destination) else { return }
-
-        var reordered = Array(items)
-        let moved = reordered.remove(at: index)
-        reordered.insert(moved, at: destination)
-        for (sortOrder, item) in reordered.enumerated() {
-            item.sortOrder = sortOrder
-        }
-        try? modelContext.save()
-        for item in reordered {
-            SyncService.shared.push(item)
-        }
-        Haptics.tap(.rigid)
     }
 
     // MARK: - 到達した島
@@ -616,7 +694,7 @@ struct SettingsView: View {
 
                 Button {
                     auth.stopLocalMode()
-                    dismiss()
+                    closeSettings()
                 } label: {
                     Text("Sign in to sync and use harbors")
                         .font(LFFont.copy(16))
@@ -653,12 +731,11 @@ struct SettingsView: View {
         defer { deletingAccount = false }
         do {
             try await auth.deleteAccount {
-                await RoomService.shared.leaveAllRooms()
-                await PublicHarborService.shared.leaveAll()
+                try await PublicHarborService.shared.leaveAll()
                 try await SyncService.shared.deleteAllRemoteData()
                 await LocalAccountData.clearAfterSignOut(context: modelContext)
             }
-            dismiss()
+            closeSettings()
         } catch {
             auth.errorMessage = LF.text("Deleting your account failed. Please try signing in again and retry.")
         }
@@ -669,7 +746,15 @@ struct SettingsView: View {
         await LocalAccountData.clearAfterSignOut(context: modelContext)
         auth.signOut()
         deletingAccount = false
-        dismiss()
+        closeSettings()
+    }
+
+    private func closeSettings() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
     }
 
     private func sectionLabel(_ text: LocalizedStringKey) -> some View {

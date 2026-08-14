@@ -170,8 +170,8 @@ struct SessionEditSheet: View {
         // その日の記録が全て消えたら「学んだ日」も外す。
         StudyDayStore.unmarkDayIfEmpty(date, context: modelContext)
         try? modelContext.save()
-        // 学んだ日が変わった可能性があるので、港の軌跡も更新する。
-        RoomService.shared.publishCurrentMonth(context: modelContext)
+        // 学んだ日が変わった可能性があるので、公開している軌跡も更新する。
+        PublicHarborService.shared.publishCurrentMonth(context: modelContext)
         WidgetBridge.refresh(context: modelContext)
         dismiss()
     }

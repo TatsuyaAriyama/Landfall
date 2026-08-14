@@ -18,7 +18,7 @@
 <body>
 
 <h1>KeelMira プライバシーポリシー</h1>
-<p class="updated">最終更新日: 2026年7月31日</p>
+<p class="updated">最終更新日: 2026年8月10日</p>
 
 <p>KeelMira（以下「本アプリ」）は、学習の記録をつけるためのアプリです。開発者は、利用者のプライバシーを尊重し、必要最小限のデータのみを扱います。本ポリシーは、本アプリが取り扱うデータとその目的を説明します。</p>
 
@@ -29,25 +29,29 @@
   <li><strong>ユーザーID</strong>: アカウントを識別するための識別子。</li>
   <li><strong>学習記録</strong>: 学習項目名、記録した日時・時間、ひとこと。</li>
   <li><strong>港のユーザーコンテンツ</strong>: プロフィール、共有記録、チャット、共同タイマーの意図・振り返り。</li>
-  <li><strong>安全のための通報</strong>: 通報対象、対象メッセージ、通報日時。</li>
+  <li><strong>公開誌のユーザーコンテンツ</strong>: 利用者が公開誌へ明示的に送る文章と写真。</li>
+  <li><strong>改善案と技術情報</strong>: 任意で送る改善案、アプリ設置ごとのランダムID、アプリ・ビルド・iOSのバージョン、言語。</li>
+  <li><strong>安全のための通報</strong>: 通報対象、理由、通報時点のメッセージ・公開誌・公開プロフィールの写し、通報日時。</li>
 </ul>
-<p>Google Sign-InとFirebaseの組み込みSDKは、認証・不正利用防止・品質改善のため、電話番号や概算位置などのアカウント情報、端末ID、利用情報、技術的な診断情報を取り扱う場合があります。本アプリはこれらを学習プロフィールやFirestore記録として直接保存せず、広告やトラッキングには利用しません。</p>
+<p>改善案に添えるランダムIDと技術情報は、連投防止と不具合調査のためFirebaseの非公開領域に保存します。このIDは広告IDや端末のハードウェアIDではなく、広告やトラッキングには使用しません。Google Sign-InとFirebaseの組み込みSDKは、認証・不正利用防止・品質改善のため、電話番号や概算位置などのアカウント情報、端末ID、利用情報、技術的な診断情報を取り扱う場合があります。本アプリは、SDKが扱う電話番号や概算位置を学習プロフィールへコピーしません。</p>
 
 <h2>2. データの利用目的</h2>
 <ul>
   <li>サインインおよびアカウントの管理。</li>
   <li>学習記録を複数の端末で同期し、バックアップすること。</li>
   <li>利用者が自ら「港（ルーム）」に参加した場合に、同じ港のメンバーと学習記録を共有すること。</li>
+  <li>利用者が明示的に送った一日一件の文章と写真を、公開誌として提供すること。</li>
+  <li>改善案への対応、不具合の切り分け、連投や不正利用の防止、通報内容の安全確認。</li>
 </ul>
 
 <h2>3. データの共有</h2>
-<p>本アプリは、利用者のデータを第三者に販売しません。広告目的での提供も行いません。データの共有が起きるのは、利用者自身が招待コードを使って「港」に参加した場合のみで、その港のメンバーに対して当月の学習記録（項目名・時間・ひとこと・記録した日）が表示されます。港を出れば、その港での共有データは削除されます。</p>
+<p>本アプリは、利用者のデータを第三者に販売せず、広告目的でも提供しません。招待コードの港では、その港のメンバーに共有対象の学習記録が表示されます。公式港の公開誌へ利用者が明示的に送った文章と写真は、ログインして公開誌を開く利用者に表示されます。公開誌への投稿は一日一件で、投稿者自身が編集・削除できます。写真は公開前にサイズを整え、位置情報などのメタデータを除去します。非公開の航海誌や写真ライブラリの他の写真が自動で公開されることはありません。</p>
 
 <h2>4. データの保存</h2>
 <p>データは利用者の端末内に保存されるほか、Google の Firebase（Authentication および Cloud Firestore）に保存されます。通信は暗号化されています。</p>
 
 <h2>5. データの削除</h2>
-<p>設定画面から「アカウントを削除」を実行すると、アカウント、同期記録、港の共有記録、チャット、共同タイマーの投稿を削除し、Web版の航海証があれば解約します。AppleアカウントはAppleトークンも失効します。バックエンドの再試行により完了まで短時間かかる場合があります。法令上または安全対応上必要な通報記録は、必要な期間だけアクセスを制限して保持する場合があります。</p>
+<p>公開誌の各頁は投稿者自身が削除できます。設定画面から「アカウントを削除」を実行すると、アカウント、同期記録、公開誌の頁、港の共有記録、チャット、共同タイマーの投稿を削除し、Web版の航海証があれば解約します。AppleアカウントはAppleトークンも失効します。バックエンドの再試行により完了まで短時間かかる場合があります。法令上または安全対応上必要な通報記録は、必要な期間だけアクセスを制限して保持する場合があります。</p>
 
 <h2>6. トラッキングについて</h2>
 <p>本アプリは、利用者を追跡（トラッキング）しません。広告識別子の取得や、第三者の広告・解析ネットワークへのデータ送信は行いません。</p>
@@ -59,7 +63,7 @@
 <hr>
 
 <h1>KeelMira Privacy Policy</h1>
-<p class="updated">Last updated: July 31, 2026</p>
+<p class="updated">Last updated: August 10, 2026</p>
 
 <p>KeelMira ("the App") is an app for keeping a personal study log. The developer respects your privacy and handles only the minimum data necessary. This policy explains what data the App handles and why.</p>
 
@@ -70,25 +74,29 @@
   <li><strong>User ID</strong>: an identifier used to recognize your account.</li>
   <li><strong>Study records</strong>: item names, dates and durations, and short notes.</li>
   <li><strong>Harbor user content</strong>: profile, shared records, chat, and shared-timer intentions and reflections.</li>
-  <li><strong>Safety reports</strong>: reported user or message and report time.</li>
+  <li><strong>Public logbook content</strong>: text and photos you explicitly choose to publish.</li>
+  <li><strong>Feedback and technical context</strong>: optional feedback, a random per-installation ID, app and build versions, iOS version, and language.</li>
+  <li><strong>Safety reports</strong>: the reported target and reason, a snapshot of the reported message, public-logbook page, or public profile, and report time.</li>
 </ul>
-<p>The bundled Google Sign-In and Firebase SDKs may handle provider account details such as phone number or coarse location, device identifiers, usage data, and technical diagnostics for authentication, abuse prevention, and service quality. The App does not directly store those fields in your study profile or Firestore records and does not use them for advertising or tracking.</p>
+<p>The random ID and technical context attached to feedback are stored in a private Firebase area to prevent repeated submissions and investigate problems. The ID is not an advertising identifier or hardware identifier and is not used for advertising or tracking. The bundled Google Sign-In and Firebase SDKs may separately handle provider account details such as phone number or coarse location, device identifiers, usage data, and technical diagnostics for authentication, abuse prevention, and service quality. The App does not copy provider phone numbers or coarse location into your study profile.</p>
 
 <h2>2. How We Use Data</h2>
 <ul>
   <li>To sign you in and manage your account.</li>
   <li>To sync and back up your study records across your devices.</li>
   <li>To share your records with members of a "Harbor" (room) that you have chosen to join.</li>
+  <li>To provide the public logbook using one text-and-photo page that you explicitly publish each day.</li>
+  <li>To respond to feedback, diagnose problems, prevent repeated or abusive submissions, and review safety reports.</li>
 </ul>
 
 <h2>3. Data Sharing</h2>
-<p>We do not sell your data or share it for advertising. Sharing occurs only when you join a Harbor using an invite code; members of that Harbor can then see your current-month study records (item names, durations, notes, and which days you studied). Leaving a Harbor deletes the data shared there.</p>
+<p>We do not sell your data or share it for advertising. In invite-code Harbors, selected study records are visible to that Harbor's members. Text and a photo that you explicitly publish to the official-Harbor public logbook are visible to signed-in people who open it. You can publish at most one page per day and can edit or delete your own page. Before publication, the photo is resized and metadata such as location information is removed. Your private logbook and other photos in your library are never published automatically.</p>
 
 <h2>4. Data Storage</h2>
 <p>Data is stored on your device and in Google Firebase (Authentication and Cloud Firestore). Communication is encrypted.</p>
 
 <h2>5. Data Deletion</h2>
-<p>Choosing Delete Account removes your account, synced records, Harbor sharing, chat, and shared-timer posts, and cancels an active Web Voyage Pass. Apple tokens are revoked for Apple accounts. Backend retries may require a short period. Safety reports may be retained only as required for legal or safety purposes with restricted access.</p>
+<p>You can delete each public-logbook page yourself. Choosing Delete Account removes your account, synced records, public-logbook pages, Harbor sharing, chat, and shared-timer posts, and cancels an active Web Voyage Pass. Apple tokens are revoked for Apple accounts. Backend retries may require a short period. Safety reports may be retained only as required for legal or safety purposes with restricted access.</p>
 
 <h2>6. Tracking</h2>
 <p>The App does not track you. It does not collect an advertising identifier or send data to third-party advertising or analytics networks.</p>

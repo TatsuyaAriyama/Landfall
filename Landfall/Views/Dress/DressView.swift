@@ -275,7 +275,7 @@ struct DressView: View {
             BoatCustomization.selectSail(option.id)
             boatParts = BoatCustomization.currentParts
             Haptics.tap(.light)
-            RoomService.shared.pushProfileToAllRooms()
+            Task { await PrivateIslandService.shared.publishProfileToJoinedIslands() }
             PublicHarborService.shared.pushProfile()
         } label: {
             VStack(spacing: 5) {

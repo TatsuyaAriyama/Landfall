@@ -29,6 +29,7 @@ struct SignInView: View {
             ZStack(alignment: .topLeading) {
                 SignInVoyageSceneView(
                     timeOfDay: timeOfDay,
+                    date: now,
                     animate: !reduceMotion && scenePhase == .active
                 )
 

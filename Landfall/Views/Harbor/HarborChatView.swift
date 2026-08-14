@@ -9,6 +9,8 @@ import SwiftUI
 /// 旧来の「歩ける港」には遷移せず、入室すると直接この海へ入る。
 struct HarborChatView: View {
     let room: HarborRoom
+    private let showsOceanBackground: Bool
+    private let onEmbeddedBack: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -32,13 +34,21 @@ struct HarborChatView: View {
     @State private var copied = false
     @State private var reporting: ChatMessage?
     @State private var blocking: ChatMessage?
+    @State private var recentlyBlocked: ChatMessage?
+    @State private var blockError: String?
     @State private var receivedInitialMessages = false
     @FocusState private var inputFocused: Bool
 
     private let tick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
-    init(room: HarborRoom) {
+    init(
+        room: HarborRoom,
+        showsOceanBackground: Bool = true,
+        onEmbeddedBack: (() -> Void)? = nil
+    ) {
         self.room = room
+        self.showsOceanBackground = showsOceanBackground
+        self.onEmbeddedBack = onEmbeddedBack
         _chatOpen = State(
             initialValue: UserDefaults.standard.object(
                 forKey: "harbor.chat.open.\(room.id)"
@@ -90,7 +100,29 @@ struct HarborChatView: View {
         chat.messages.filter { !chat.blocked.contains($0.uid) }
     }
 
+    private var chatOpenDefaultsKey: String { "harbor.chat.open.\(room.id)" }
+    private var hasActionError: Binding<Bool> { optionalPresentation($actionError) }
+    private var hasBlockError: Binding<Bool> { optionalPresentation($blockError) }
+    private var hasRecentlyBlockedMessage: Binding<Bool> {
+        optionalPresentation($recentlyBlocked)
+    }
+    private var isReportingDialogPresented: Binding<Bool> { optionalPresentation($reporting) }
+    private var isBlockingDialogPresented: Binding<Bool> { optionalPresentation($blocking) }
+
+    private func optionalPresentation<Value>(_ value: Binding<Value?>) -> Binding<Bool> {
+        Binding(
+            get: { value.wrappedValue != nil },
+            set: { isPresented in
+                if !isPresented { value.wrappedValue = nil }
+            }
+        )
+    }
+
     var body: some View {
+        safetyPresentationContent
+    }
+
+    private var voyageScrollContent: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -118,7 +150,9 @@ struct HarborChatView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .background {
-                HarborOceanBackground()
+                if showsOceanBackground {
+                    HarborOceanBackground()
+                }
             }
             .onChange(of: visibleMessages.last?.id) { _, _ in
                 guard receivedInitialMessages else {
@@ -134,11 +168,19 @@ struct HarborChatView: View {
                 if chatOpen { inputBar }
             }
         }
+    }
+
+    private var voyageContent: some View {
+        voyageScrollContent
         .navigationBarBackButtonHidden(true)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
-                    dismiss()
+                    if let onEmbeddedBack {
+                        onEmbeddedBack()
+                    } else {
+                        dismiss()
+                    }
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "chevron.left")
@@ -156,6 +198,10 @@ struct HarborChatView: View {
             }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
+    }
+
+    private var lifecycleContent: some View {
+        voyageContent
         .task {
             crew.listen(room: room)
             chat.listen(roomId: room.id)
@@ -178,22 +224,44 @@ struct HarborChatView: View {
             loadPlanIntoForm(myPlan)
         }
         .onChange(of: chatOpen) { _, open in
-            UserDefaults.standard.set(open, forKey: "harbor.chat.open.\(room.id)")
+            UserDefaults.standard.set(open, forKey: chatOpenDefaultsKey)
         }
+    }
+
+    private var safetyPresentationContent: some View {
+        lifecycleContent
         .alert(
             "Couldn't update this voyage.",
-            isPresented: Binding(
-                get: { actionError != nil },
-                set: { if !$0 { actionError = nil } }
-            )
+            isPresented: hasActionError
         ) {
             Button("OK", role: .cancel) { actionError = nil }
         } message: {
             Text(verbatim: actionError ?? "")
         }
+        .alert(
+            "Couldn't update blocked sailors.",
+            isPresented: hasBlockError
+        ) {
+            Button("OK", role: .cancel) { blockError = nil }
+        } message: {
+            Text(verbatim: blockError ?? "")
+        }
+        .alert(
+            "Sailor blocked",
+            isPresented: hasRecentlyBlockedMessage,
+            presenting: recentlyBlocked
+        ) { message in
+            Button("Undo") {
+                recentlyBlocked = nil
+                undoBlock(message)
+            }
+            Button("OK", role: .cancel) { recentlyBlocked = nil }
+        } message: { _ in
+            Text("Their public logbook pages, harbor profile, and chat messages are now hidden.")
+        }
         .confirmationDialog(
             "Report this message?",
-            isPresented: Binding(get: { reporting != nil }, set: { if !$0 { reporting = nil } }),
+            isPresented: isReportingDialogPresented,
             titleVisibility: .visible,
             presenting: reporting
         ) { message in
@@ -208,18 +276,42 @@ struct HarborChatView: View {
         }
         .confirmationDialog(
             "Block this sailor?",
-            isPresented: Binding(get: { blocking != nil }, set: { if !$0 { blocking = nil } }),
+            isPresented: isBlockingDialogPresented,
             titleVisibility: .visible,
             presenting: blocking
         ) { message in
             Button("Block", role: .destructive) {
-                chat.block(message.uid)
-                Haptics.tap()
                 blocking = nil
+                block(message)
             }
             Button("Cancel", role: .cancel) { blocking = nil }
         } message: { _ in
-            Text("You won't see their messages anymore. They won't be told.")
+            Text("Their public logbook pages, harbor profile, and chat messages will be hidden. They won't be told.")
+        }
+    }
+
+    private func block(_ message: ChatMessage) {
+        Task {
+            do {
+                try await chat.block(message.uid)
+                recentlyBlocked = message
+                Haptics.success()
+            } catch {
+                blockError = error.localizedDescription
+                Haptics.error()
+            }
+        }
+    }
+
+    private func undoBlock(_ message: ChatMessage) {
+        Task {
+            do {
+                try await chat.unblock(message.uid)
+                Haptics.tap(.light)
+            } catch {
+                blockError = error.localizedDescription
+                Haptics.error()
+            }
         }
     }
 
@@ -1041,8 +1133,6 @@ struct HarborChatView: View {
             uid: uid
         )
         let finishDate = session.finishAt ?? Date()
-        let isToday = Calendar.current.isDateInToday(finishDate)
-        let blanks = isToday ? MonthStats.blankDays(since: days.first?.date, to: finishDate) : nil
 
         perform {
             var descriptor = FetchDescriptor<StudySession>(
@@ -1068,13 +1158,7 @@ struct HarborChatView: View {
                     throw error
                 }
                 SyncService.shared.push(local)
-                RoomService.shared.publishCurrentMonth(context: modelContext)
-                HarborChatService.shared.publishLog(
-                    item: item,
-                    minutes: session.durationMinutes,
-                    gapDays: blanks,
-                    isToday: isToday
-                )
+                PublicHarborService.shared.publishCurrentMonth(context: modelContext)
                 WidgetBridge.refresh(context: modelContext)
                 let recordedToday = StudyDayStore.recordedToday(context: modelContext)
                 Task { await NotificationService.reschedule(recordedToday: recordedToday) }

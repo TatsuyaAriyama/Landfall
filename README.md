@@ -60,7 +60,8 @@
 open Landfall.xcodeproj
 ```
 
-Xcode 16 以降でそのままビルドできます(依存パッケージなし)。
+Xcode 16 以降でビルドできます。Firebase iOS SDK 12.17.0 と Google Sign-In 9.2.0 などの
+依存関係は Swift Package Manager が `Package.resolved` に基づいて自動解決します。
 
 ## 構成
 

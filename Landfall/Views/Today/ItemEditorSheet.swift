@@ -123,27 +123,41 @@ struct ItemEditorSheet: View {
     }
 
     private var styleRow: some View {
-        HStack(spacing: 12) {
-            ForEach(TileStyle.itemCases) { candidate in
-                Button {
-                    style = candidate
-                } label: {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(candidate.background)
-                        .frame(width: 40, height: 40)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(
-                                    style == candidate ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
-                                    lineWidth: style == candidate ? 3 : 1
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach(TileStyle.itemCases) { candidate in
+                    Button {
+                        style = candidate
+                        Haptics.tap(.light)
+                    } label: {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(candidate.background)
+                            .frame(width: 42, height: 42)
+                            .overlay {
+                                TileSymbolView(
+                                    symbol: symbol,
+                                    fg: candidate.foreground,
+                                    bg: candidate.background
                                 )
-                        )
+                                .frame(width: 20, height: 20)
+                                .allowsHitTesting(false)
+                            }
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(
+                                        style == candidate
+                                            ? LFColor.returnOrange
+                                            : LFColor.ink.opacity(0.12),
+                                        lineWidth: style == candidate ? 3 : 1
+                                    )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(candidate.accessibilityName))
+                    .accessibilityAddTraits(style == candidate ? .isSelected : [])
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(candidate.accessibilityName))
-                .accessibilityAddTraits(style == candidate ? .isSelected : [])
             }
-            Spacer(minLength: 0)
+            .padding(.vertical, 4)
         }
     }
 

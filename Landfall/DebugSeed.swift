@@ -173,7 +173,6 @@ enum DebugSeed {
                 DestinationStep(name: isJapanese ? "単語帳を1周" : "One pass of the vocab book", doneAt: destCreatedAt),
                 DestinationStep(name: isJapanese ? "文法書を1周" : "One pass of grammar", doneAt: destCreatedAt),
                 DestinationStep(name: isJapanese ? "公式問題集を1回" : "Official test set once"),
-                DestinationStep(name: isJapanese ? "模試を2回" : "Two mock exams"),
             ]
         )
         // LANDFALL_SEED_REACHED=1 で全ステップ達成にし、着岸演出の確認に使う。

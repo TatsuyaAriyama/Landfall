@@ -22,6 +22,28 @@ struct Asset3DDescriptor: Identifiable, Hashable {
         if lowercased.contains("lake") || lowercased.contains("water") { return "water.waves" }
         if lowercased.contains("island") { return "mountain.2.fill" }
         if lowercased.contains("tree") { return "tree.fill" }
+        if lowercased.contains("lighthouse") { return "light.beacon.max.fill" }
+        if lowercased.contains("jetty") || lowercased.contains("pier") { return "water.waves" }
+        if lowercased.contains("campfire") { return "flame.fill" }
+        if lowercased.contains("well") { return "drop.fill" }
+        if lowercased.contains("flagpole") { return "flag.fill" }
+        if lowercased.contains("lookout") { return "binoculars.fill" }
+        if lowercased.contains("ruins") { return "building.columns.fill" }
+        if lowercased.contains("stone_path") { return "square.grid.3x3.fill" }
+        if lowercased.contains("coastal_rocks") { return "mountain.2.fill" }
+        if lowercased.contains("tent") { return "tent.fill" }
+        if lowercased.contains("desk") || lowercased.contains("table") { return "table.furniture.fill" }
+        if lowercased.contains("chair") { return "chair.fill" }
+        if lowercased.contains("bench") { return "chair.fill" }
+        if lowercased.contains("hammock") { return "bed.double.fill" }
+        if lowercased.contains("lantern") { return "lightbulb.fill" }
+        if lowercased.contains("anchor") { return "anchor" }
+        if lowercased.contains("drying_rack") { return "grid" }
+        if lowercased.contains("bell") { return "bell.fill" }
+        if lowercased.contains("notice_board") { return "map.fill" }
+        if lowercased.contains("barrel") { return "cylinder.split.1x2" }
+        if lowercased.contains("compass_rose") { return "location.north.circle.fill" }
+        if lowercased.contains("grass") { return "leaf.fill" }
         if lowercased.contains("cottage") || lowercased.contains("house") { return "house.fill" }
         if lowercased.contains("crate") { return "shippingbox.fill" }
         if lowercased.contains("boat") { return "sailboat.fill" }
@@ -37,7 +59,31 @@ enum Asset3DCatalog {
         "small_tree",
         "small_lake",
         "weathered_cottage",
+        "weathered_lighthouse",
+        "wooden_jetty",
+        "campfire_circle",
+        "stone_well",
+        "voyage_flagpole",
+        "cliff_lookout",
+        "mossy_ruins",
+        "stone_path_straight",
+        "stone_path_curve",
+        "stone_path_fork",
+        "coastal_rocks",
+        "navigator_tent",
+        "wooden_desk",
+        "wooden_chair",
         "weathered_crate",
+        "harbor_lantern_post",
+        "driftwood_bench",
+        "weathered_anchor",
+        "net_drying_rack",
+        "navigator_hammock",
+        "voyage_signal_bell",
+        "voyage_notice_board",
+        "supply_barrels",
+        "compass_rose_inlay",
+        "dune_grass_patch",
         "landfall_boat",
         "navigator_main",
     ]
@@ -72,7 +118,31 @@ enum Asset3DCatalog {
         case "small_tree": return String(localized: "Small Tree")
         case "small_lake": return String(localized: "Small Lake")
         case "weathered_cottage": return String(localized: "Weathered Cottage")
+        case "weathered_lighthouse": return String(localized: "Stone Lighthouse")
+        case "wooden_jetty": return String(localized: "Wooden Jetty")
+        case "campfire_circle": return String(localized: "Campfire Circle")
+        case "stone_well": return String(localized: "Stone Well")
+        case "voyage_flagpole": return String(localized: "Voyage Flagpole")
+        case "cliff_lookout": return String(localized: "Cliff Lookout")
+        case "mossy_ruins": return String(localized: "Mossy Ruins")
+        case "stone_path_straight": return String(localized: "Stone Path — Straight")
+        case "stone_path_curve": return String(localized: "Stone Path — Curve")
+        case "stone_path_fork": return String(localized: "Stone Path — Fork")
+        case "coastal_rocks": return String(localized: "Coastal Rocks")
+        case "navigator_tent": return String(localized: "Navigator's Tent")
+        case "wooden_desk": return String(localized: "Wooden Desk")
+        case "wooden_chair": return String(localized: "Wooden Chair")
         case "weathered_crate": return String(localized: "Weathered Crate")
+        case "harbor_lantern_post": return String(localized: "Harbor Lantern Post")
+        case "driftwood_bench": return String(localized: "Driftwood Bench")
+        case "weathered_anchor": return String(localized: "Weathered Anchor")
+        case "net_drying_rack": return String(localized: "Net Drying Rack")
+        case "navigator_hammock": return String(localized: "Navigator's Hammock")
+        case "voyage_signal_bell": return String(localized: "Voyage Signal Bell")
+        case "voyage_notice_board": return String(localized: "Voyage Notice Board")
+        case "supply_barrels": return String(localized: "Supply Barrels")
+        case "compass_rose_inlay": return String(localized: "Compass Rose Inlay")
+        case "dune_grass_patch": return String(localized: "Dune Grass Patch")
         case "landfall_boat": return "Landfall Boat"
         case "navigator_main": return "Navigator"
         default:
@@ -378,6 +448,12 @@ private struct AssetPlacementDocument: Codable {
 }
 
 enum AssetPlacementPersistence {
+    /// 配布アプリに焼き込む目的地の既定デザイン。
+    /// 3DスタジオのApplication Supportだけを参照すると、開発端末で作った島が
+    /// App Store / TestFlightの新規インストールへ届かないため、同じdocument形式を
+    /// Bundleにも持たせる。端末で編集済みのdocumentがある場合は常にそちらを優先する。
+    private static let bundledDefaultResourceName = "DefaultAssetPlacements"
+
     static var fileURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         return base
@@ -402,6 +478,14 @@ enum AssetPlacementPersistence {
         return (document, data)
     }
 
+    private static func bundledDefaultDocument(bundle: Bundle = .main) -> AssetPlacementDocument? {
+        guard let url = bundle.url(
+            forResource: bundledDefaultResourceName,
+            withExtension: "json"
+        ) else { return nil }
+        return decodedDocument(at: url)?.0
+    }
+
     /// 通常ファイルが欠損・破損していてもrecoveryから最新の完全保存を読み戻す。
     private static func loadDocument() -> AssetPlacementDocument? {
         let primary = decodedDocument(at: fileURL)
@@ -420,7 +504,8 @@ enum AssetPlacementPersistence {
             try? recovery.1.write(to: fileURL, options: .atomic)
             return recovery.0
         case (.none, .none):
-            return nil
+            // Clean installでも、ホーム・航海中・目的地が開発時と同じ最新の島を使う。
+            return bundledDefaultDocument()
         }
     }
 
@@ -1534,6 +1619,44 @@ enum AssetPlacementRuntime {
             body.collisionBitMask = 0
             body.contactTestBitMask = 0
             node.physicsBody = body
+        }
+        if resourceName == "weathered_lighthouse", !UIAccessibility.isReduceMotionEnabled {
+            let beacon = node.childNode(withName: "LF_LighthouseBeaconRotor_Mesh", recursively: true)
+                ?? node.childNode(withName: "LF_LighthouseBeaconRotor", recursively: true)
+            beacon?.runAction(.repeatForever(.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 8)))
+        }
+        if resourceName == "campfire_circle", !UIAccessibility.isReduceMotionEnabled {
+            let flameLayers = [
+                ("LF_CampfireFlameOuter", 0.72, 0.34, 2.8),
+                ("LF_CampfireFlameMid", 0.80, 0.27, -2.2),
+                ("LF_CampfireFlameCore", 0.86, 0.21, 1.7),
+            ]
+            for (name, dimOpacity, pulseDuration, turnDuration) in flameLayers {
+                let flame = node.childNode(withName: "\(name)_Mesh", recursively: true)
+                    ?? node.childNode(withName: name, recursively: true)
+                let flicker = SCNAction.sequence([
+                    .fadeOpacity(to: dimOpacity, duration: pulseDuration),
+                    .fadeOpacity(to: 1, duration: pulseDuration * 0.72),
+                ])
+                flame?.runAction(.repeatForever(flicker), forKey: "campfire-flicker")
+                let turnAngle = turnDuration < 0 ? -CGFloat.pi * 2 : CGFloat.pi * 2
+                flame?.runAction(
+                    .repeatForever(.rotateBy(x: 0, y: turnAngle, z: 0, duration: abs(turnDuration))),
+                    forKey: "campfire-turn"
+                )
+            }
+        }
+        if resourceName == "voyage_flagpole", !UIAccessibility.isReduceMotionEnabled {
+            let sway = SCNAction.sequence([
+                .rotateBy(x: 0, y: 0, z: 0.035, duration: 0.72),
+                .rotateBy(x: 0, y: 0, z: -0.07, duration: 1.18),
+                .rotateBy(x: 0, y: 0, z: 0.035, duration: 0.72),
+            ])
+            for name in ["LF_VoyageFlagCloth", "LF_VoyageFlagMark"] {
+                let flagPart = node.childNode(withName: "\(name)_Mesh", recursively: true)
+                    ?? node.childNode(withName: name, recursively: true)
+                flagPart?.runAction(.repeatForever(sway), forKey: "voyage-flag-sway")
+            }
         }
         return node
     }

@@ -4,15 +4,18 @@ import SwiftUI
 /// 既存ユーザーにも、新しくなった案内を一度だけ見せられる。
 enum TutorialState {
     static let completionKey = "tutorial.completed.v1"
+    static var requiredNote: String { LF.text("Tutorial") }
 }
 
 /// ログイン後に一度だけ表示する、KeelMira の操作チュートリアル。
 /// 航海世界を切らず、1ページにつき1つの操作だけを短く伝える。
 struct OnboardingView: View {
     private let secondaryActionTitle: LocalizedStringKey?
+    private let showsSceneBackground: Bool
     private let onDone: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var page = 0
     @State private var isAnimating = false
 
@@ -27,17 +30,21 @@ struct OnboardingView: View {
 
     init(
         secondaryActionTitle: LocalizedStringKey? = "Skip",
+        showsSceneBackground: Bool = true,
         onDone: @escaping () -> Void
     ) {
         self.secondaryActionTitle = secondaryActionTitle
+        self.showsSceneBackground = showsSceneBackground
         self.onDone = onDone
     }
 
     var body: some View {
         ZStack {
-            SignInVoyageSceneView(timeOfDay: .night, animate: shouldAnimate)
-                .ignoresSafeArea()
-                .accessibilityHidden(true)
+            if showsSceneBackground {
+                SignInVoyageSceneView(timeOfDay: .night, date: .now, animate: shouldAnimate)
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            }
 
             LinearGradient(
                 colors: [
@@ -73,6 +80,11 @@ struct OnboardingView: View {
                 page = min(max(requested, 0), pages.count - 1)
             }
             #endif
+            isAnimating = shouldAnimate
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            // 設定アプリやコントロールセンターから表示中に切り替えても、
+            // DEBUGのSTATIC指定を含む単一の判定に即時追従する。
             isAnimating = shouldAnimate
         }
         .onChange(of: page) { oldValue, newValue in
@@ -114,13 +126,39 @@ struct OnboardingView: View {
         .padding(.top, 8)
     }
 
+    @ViewBuilder
     private func tutorialPage(_ item: OnboardingPage) -> some View {
+        GeometryReader { geometry in
+            if usesScrollablePage(availableHeight: geometry.size.height) {
+                ScrollView(.vertical) {
+                    tutorialPageContents(
+                        item,
+                        illustrationHeight: dynamicTypeSize.isAccessibilitySize ? 112 : 160,
+                        usesSpacers: false
+                    )
+                }
+                .scrollIndicators(.visible)
+            } else {
+                tutorialPageContents(item, illustrationHeight: 228, usesSpacers: true)
+            }
+        }
+    }
+
+    private func usesScrollablePage(availableHeight: CGFloat) -> Bool {
+        dynamicTypeSize > .large || availableHeight < 500
+    }
+
+    private func tutorialPageContents(
+        _ item: OnboardingPage,
+        illustrationHeight: CGFloat,
+        usesSpacers: Bool
+    ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Spacer(minLength: 12)
+            if usesSpacers { Spacer(minLength: 12) }
 
             TutorialIllustration(kind: item.kind, animate: isAnimating)
                 .frame(maxWidth: 440)
-                .frame(height: 228)
+                .frame(height: illustrationHeight)
                 .frame(maxWidth: .infinity)
                 .accessibilityHidden(true)
 
@@ -128,7 +166,7 @@ struct OnboardingView: View {
                 .font(LFFont.label(12))
                 .tracking(2.2)
                 .foregroundStyle(LFColor.harborSand.opacity(0.72))
-                .padding(.top, 28)
+                .padding(.top, usesSpacers ? 28 : 16)
 
             Text(item.headline)
                 .font(LFFont.copy(29))
@@ -143,9 +181,10 @@ struct OnboardingView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 12)
 
-            Spacer(minLength: 14)
+            if usesSpacers { Spacer(minLength: 14) }
         }
         .padding(.horizontal, 24)
+        .padding(.vertical, usesSpacers ? 0 : 10)
         .accessibilityElement(children: .combine)
     }
 
@@ -204,7 +243,8 @@ struct OnboardingView: View {
                 .font(LFFont.copy(18))
                 .foregroundStyle(Color(hex: 0x173F3B))
                 .frame(maxWidth: .infinity)
-                .frame(height: 58)
+                .frame(minHeight: 58)
+                .padding(.vertical, 4)
                 .background(LFColor.harborSand)
                 .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
                 .shadow(color: Color.black.opacity(0.16), radius: 18, y: 9)
@@ -319,12 +359,18 @@ private struct TutorialWelcomeArt: View {
             Circle()
                 .fill(LFColor.returnOrange.opacity(0.14))
                 .frame(width: animate ? 124 : 104, height: animate ? 124 : 104)
-                .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true), value: animate)
+                .animation(
+                    animate ? .easeInOut(duration: 1.8).repeatForever(autoreverses: true) : nil,
+                    value: animate
+                )
 
             TileSymbolView(symbol: .sailboat, fg: LFColor.harborSand, bg: .clear)
                 .frame(width: 116, height: 116)
                 .offset(y: animate ? -4 : 4)
-                .animation(.easeInOut(duration: 1.7).repeatForever(autoreverses: true), value: animate)
+                .animation(
+                    animate ? .easeInOut(duration: 1.7).repeatForever(autoreverses: true) : nil,
+                    value: animate
+                )
 
             HStack(spacing: 46) {
                 routeDot(size: 8, opacity: 0.38)
@@ -377,7 +423,10 @@ private struct TutorialDestinationArt: View {
                         .stroke(LFColor.returnOrange.opacity(0.5), lineWidth: 2)
                         .frame(width: animate ? 94 : 66, height: animate ? 94 : 66)
                         .opacity(animate ? 0.08 : 0.7)
-                        .animation(.easeOut(duration: 1.7).repeatForever(autoreverses: false), value: animate)
+                        .animation(
+                            animate ? .easeOut(duration: 1.7).repeatForever(autoreverses: false) : nil,
+                            value: animate
+                        )
                     Circle()
                         .fill(LFColor.harborSand.opacity(0.1))
                         .frame(width: 72, height: 72)
@@ -391,7 +440,10 @@ private struct TutorialDestinationArt: View {
                     .foregroundStyle(LFColor.returnOrange)
                     .position(x: geometry.size.width * 0.82, y: geometry.size.height * 0.57)
                     .offset(y: animate ? -5 : 4)
-                    .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: animate)
+                    .animation(
+                        animate ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : nil,
+                        value: animate
+                    )
             }
         }
         .padding(18)
@@ -425,7 +477,10 @@ private struct TutorialWorkItemsArt: View {
                             radius: 12,
                             y: 8
                         )
-                        .animation(.easeInOut(duration: 1.25).repeatForever(autoreverses: true), value: animate)
+                        .animation(
+                            animate ? .easeInOut(duration: 1.25).repeatForever(autoreverses: true) : nil,
+                            value: animate
+                        )
                 }
             }
             .padding(.horizontal, 48)
@@ -456,7 +511,10 @@ private struct TutorialVoyageArt: View {
                         .frame(width: 72, height: 72)
                         .rotationEffect(.degrees(animate ? 2 : -2))
                         .offset(y: animate ? -3 : 3)
-                        .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: animate)
+                        .animation(
+                            animate ? .easeInOut(duration: 1.4).repeatForever(autoreverses: true) : nil,
+                            value: animate
+                        )
 
                     VStack(alignment: .leading, spacing: 7) {
                         Text(verbatim: "25:00")
@@ -491,7 +549,7 @@ private struct TutorialVoyageArt: View {
 private struct TutorialMenuArt: View {
     let animate: Bool
     private let items: [(LocalizedStringKey, TileSymbol)] = [
-        ("Logbook", .book), ("Harbor", .sailboat), ("Style", .attire), ("Settings", .wheel)
+        ("Logbook", .book), ("Harbor", .lighthouse), ("Style", .sailboat), ("Settings", .wheel)
     ]
 
     var body: some View {
@@ -528,7 +586,10 @@ private struct TutorialMenuArt: View {
                 .frame(width: 46, height: 46)
                 .background(LFColor.harborSand, in: Circle())
                 .scaleEffect(animate ? 1.04 : 0.94)
-                .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: animate)
+                .animation(
+                    animate ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true) : nil,
+                    value: animate
+                )
                 .offset(x: -19, y: -21)
         }
         .padding(.vertical, 38)
@@ -553,7 +614,10 @@ private struct TutorialReturnArt: View {
                 .scaleEffect(animate ? 1.04 : 0.94)
                 .offset(y: animate ? -5 : 3)
                 .shadow(color: LFColor.returnOrange.opacity(0.24), radius: 22)
-                .animation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true), value: animate)
+                .animation(
+                    animate ? .easeInOut(duration: 1.8).repeatForever(autoreverses: true) : nil,
+                    value: animate
+                )
 
             Circle()
                 .fill(LFColor.returnOrange)

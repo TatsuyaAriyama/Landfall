@@ -1,90 +1,284 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Combine
+import SwiftUI
 
-/// Web版と同じく、音源ファイルに頼らず端末内で作る航海用の環境音。
-/// 波音は低域へ丸めたノイズ、クラシックはAftide用の約2分のオリジナル曲。
+enum HomeVoyageSound: String, CaseIterable, Identifiable {
+    case off
+    case waves
+    case harborMinuet = "harbor_minuet_main_theme"
+    case beaconRondo = "beacon_rondo"
+    case celestialNocturne = "celestial_navigation_nocturne"
+    case approachingEvolution = "approaching_evolution"
+    case harborAndante = "harbor_andante"
+
+    /// まだ一度も選曲していない航海士が、最初の航海で聴く曲。
+    static let initialTimerSound: HomeVoyageSound = .harborMinuet
+
+    var id: String { rawValue }
+
+    static func resolve(_ storedValue: String) -> HomeVoyageSound {
+        // 旧版の「piano」は、正式曲名を持つ港のメヌエットへ移行する。
+        if storedValue == "piano" { return .harborMinuet }
+        // 前作の選曲設定は、新しい4曲目へ一度だけ移行する。
+        if storedValue == "stormfront_urgence" { return .approachingEvolution }
+        return HomeVoyageSound(rawValue: storedValue) ?? .off
+    }
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .off: "Sound off"
+        case .waves: "Waves"
+        case .harborMinuet: "Harbor Minuet"
+        case .beaconRondo: "Beacon Rondo"
+        case .celestialNocturne: "Celestial Navigation Nocturne"
+        case .approachingEvolution: "Approaching Evolution"
+        case .harborAndante: "Harbor Andante"
+        }
+    }
+
+    var subtitle: LocalizedStringKey {
+        switch self {
+        case .off: "Sail in silence"
+        case .waves: "Ambient sound"
+        case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante: "Original soundtrack"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .off: "speaker.slash.fill"
+        case .waves, .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante: "music.note"
+        }
+    }
+
+    fileprivate var resourceName: String? {
+        switch self {
+        case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante: rawValue
+        case .off, .waves: nil
+        }
+    }
+}
+
+/// BGM選択は波音も含め、同じ音符マークで表す。
+struct HomeVoyageSoundIcon: View {
+    let sound: HomeVoyageSound
+    let selected: Bool
+
+    private var color: Color {
+        selected ? LFColor.returnOrange : LFColor.harborSand.opacity(0.62)
+    }
+
+    var body: some View {
+        Image(systemName: sound.systemImage)
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(color)
+            .accessibilityHidden(true)
+    }
+}
+
+/// 航海タイマー専用の波音・オリジナルサウンドトラック。
+/// 選択のたびに音源を明示的に停止してから差し替え、表示と再生状態を一致させる。
 @MainActor
-final class HomeVoyageAudio: ObservableObject {
+final class HomeVoyageAudio: NSObject, ObservableObject, AVAudioPlayerDelegate {
     static let shared = HomeVoyageAudio()
 
     @Published private(set) var isPlaying = false
     @Published private(set) var playbackFailed = false
+    @Published private(set) var currentSound: HomeVoyageSound = .off
 
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
-    private var configured = false
-    private var currentMode = "off"
+    private let waveEngine = AVAudioEngine()
+    private let wavePlayer = AVAudioPlayerNode()
+    private var waveConfigured = false
     private var waveBuffer: AVAudioPCMBuffer?
-    private var pianoBuffer: AVAudioPCMBuffer?
+    private var musicPlayer: AVAudioPlayer?
+    private enum MusicPlaybackMode {
+        case playlist
+        case loopSingle
+    }
+    private var musicPlaybackMode: MusicPlaybackMode = .playlist
+    private let musicPlaylist: [HomeVoyageSound] = [
+        .harborMinuet,
+        .beaconRondo,
+        .celestialNocturne,
+        .approachingEvolution,
+        .harborAndante,
+    ]
+    private var playbackRequested = false
+    /// プレイリストが次曲へ進んでも、利用者が選んだ開始曲は別に保持する。
+    /// 画面外からの再生保証が毎回1曲目へ巻き戻さないために使う。
+    private var requestedSound: HomeVoyageSound = .off
 
-    private init() {}
+    private override init() {
+        super.init()
+    }
 
-    func play(_ mode: String) {
-        let normalized = ["waves", "piano"].contains(mode) ? mode : "off"
-        if normalized == currentMode, player.isPlaying, engine.isRunning {
+    func play(_ storedValue: String) {
+        play(storedValue, musicPlaybackMode: .playlist)
+    }
+
+    /// 画面遷移・前面復帰時に、航海中の音が途切れている場合だけ再開する。
+    /// プレイリストが既に次曲へ進んでいるときは、その曲を維持する。
+    func ensurePlaying(_ storedValue: String) {
+        let sound = HomeVoyageSound.resolve(storedValue)
+        if requestedSound == sound,
+           playbackFailed {
+            return
+        }
+        if requestedSound == sound,
+           playbackRequested,
+           currentSound != .off,
+           isPlaybackActive(for: currentSound) {
+            isPlaying = true
+            return
+        }
+        play(storedValue, musicPlaybackMode: .playlist)
+    }
+
+    /// 初回チュートリアル中は、読み上げに時間がかかっても
+    /// 次の曲へ進まず、港のメヌエットを同じ箇所から繰り返す。
+    func playLooping(_ storedValue: String) {
+        play(storedValue, musicPlaybackMode: .loopSingle)
+    }
+
+    private func play(_ storedValue: String, musicPlaybackMode: MusicPlaybackMode) {
+        let sound = HomeVoyageSound.resolve(storedValue)
+        requestedSound = sound
+        if sound == currentSound, isPlaybackActive(for: sound) {
+            self.musicPlaybackMode = musicPlaybackMode
+            musicPlayer?.numberOfLoops = musicPlaybackMode == .loopSingle ? -1 : 0
             isPlaying = true
             playbackFailed = false
             return
         }
-        stop(deactivateSession: false)
-        currentMode = normalized
+
+        playbackRequested = false
+        stopPlayback(deactivateSession: false)
+        currentSound = sound
+        self.musicPlaybackMode = musicPlaybackMode
         playbackFailed = false
-        guard normalized != "off" else {
+
+        guard sound != .off else {
             deactivateAudioSession()
             return
         }
+        playbackRequested = true
 
         do {
             let session = AVAudioSession.sharedInstance()
-            // ユーザーが明示的に選ぶBGMなので、消音スイッチで無音にならない
-            // playbackを使用する。他アプリの音は止めず、Aftide側を重ねる。
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-            try? session.setPreferredSampleRate(44_100)
             try session.setActive(true)
-            try configureIfNeeded()
 
-            let buffer: AVAudioPCMBuffer
-            if normalized == "waves" {
-                if waveBuffer == nil { waveBuffer = Self.makeWaveBuffer() }
-                guard let waveBuffer else { return }
-                buffer = waveBuffer
-                player.volume = 0.34
-            } else {
-                if pianoBuffer == nil { pianoBuffer = Self.makePianoBuffer() }
-                guard let pianoBuffer else { return }
-                buffer = pianoBuffer
-                player.volume = 0.38
+            switch sound {
+            case .waves:
+                try playWaves()
+            case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante:
+                try playMusic(sound, fadeDuration: 0.35)
+            case .off:
+                break
             }
-            if !engine.isRunning {
-                engine.prepare()
-                try engine.start()
-            }
-            player.scheduleBuffer(buffer, at: nil, options: [.loops])
-            player.play()
-            isPlaying = player.isPlaying && engine.isRunning
+
+            isPlaying = isPlaybackActive(for: sound)
             playbackFailed = !isPlaying
         } catch {
-            currentMode = "off"
-            player.stop()
-            engine.stop()
-            isPlaying = false
+            playbackRequested = false
+            stopPlayback(deactivateSession: true)
             playbackFailed = true
-            deactivateAudioSession()
         }
     }
 
     func stop() {
-        stop(deactivateSession: true)
+        playbackRequested = false
+        requestedSound = .off
+        stopPlayback(deactivateSession: true)
+        musicPlaybackMode = .playlist
+        playbackFailed = false
     }
 
-    private func stop(deactivateSession: Bool) {
-        if player.isPlaying { player.stop() }
-        if engine.isRunning { engine.stop() }
-        currentMode = "off"
-        isPlaying = false
-        if deactivateSession {
+    private func playMusic(_ sound: HomeVoyageSound, fadeDuration: TimeInterval) throws {
+        guard let resourceName = sound.resourceName,
+              let url = Bundle.main.url(
+                forResource: resourceName,
+                withExtension: "m4a",
+                subdirectory: "Resources"
+              ) ?? Bundle.main.url(forResource: resourceName, withExtension: "m4a")
+        else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let player = try AVAudioPlayer(contentsOf: url)
+        player.delegate = self
+        player.numberOfLoops = musicPlaybackMode == .loopSingle ? -1 : 0
+        player.volume = 0
+        player.prepareToPlay()
+        musicPlayer = player
+        guard player.play() else {
+            musicPlayer = nil
+            throw CocoaError(.fileReadUnknown)
+        }
+        player.setVolume(0.34, fadeDuration: fadeDuration)
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let finishedPlayerID = ObjectIdentifier(player)
+        Task { @MainActor [weak self] in
+            self?.advanceAfterTrackFinished(playerID: finishedPlayerID, successfully: flag)
+        }
+    }
+
+    private func advanceAfterTrackFinished(playerID: ObjectIdentifier, successfully: Bool) {
+        guard playbackRequested,
+              musicPlaybackMode == .playlist,
+              successfully,
+              let musicPlayer,
+              ObjectIdentifier(musicPlayer) == playerID,
+              let currentIndex = musicPlaylist.firstIndex(of: currentSound)
+        else { return }
+
+        let nextSound = musicPlaylist[(currentIndex + 1) % musicPlaylist.count]
+        self.musicPlayer = nil
+        currentSound = nextSound
+        do {
+            try playMusic(nextSound, fadeDuration: 1.35)
+            isPlaying = true
             playbackFailed = false
-            deactivateAudioSession()
+        } catch {
+            playbackRequested = false
+            isPlaying = false
+            playbackFailed = true
+        }
+    }
+
+    private func playWaves() throws {
+        try configureWavesIfNeeded()
+        if waveBuffer == nil { waveBuffer = Self.makeWaveBuffer() }
+        guard let waveBuffer else { throw CocoaError(.fileReadUnknown) }
+
+        if !waveEngine.isRunning {
+            waveEngine.prepare()
+            try waveEngine.start()
+        }
+        // 波音は低域中心かつモノラルなので、楽曲と同じ数値では小さく感じる。
+        // 波形のピークには十分な余裕を残しつつ、聴感上の音量をBGMへ合わせる。
+        wavePlayer.volume = 0.44
+        wavePlayer.scheduleBuffer(waveBuffer, at: nil, options: [.loops])
+        wavePlayer.play()
+    }
+
+    private func stopPlayback(deactivateSession: Bool) {
+        musicPlayer?.stop()
+        musicPlayer = nil
+        wavePlayer.stop()
+        if waveEngine.isRunning { waveEngine.stop() }
+        currentSound = .off
+        isPlaying = false
+        if deactivateSession { deactivateAudioSession() }
+    }
+
+    private func isPlaybackActive(for sound: HomeVoyageSound) -> Bool {
+        switch sound {
+        case .off: false
+        case .waves: wavePlayer.isPlaying && waveEngine.isRunning
+        case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante: musicPlayer?.isPlaying == true
         }
     }
 
@@ -95,13 +289,13 @@ final class HomeVoyageAudio: ObservableObject {
         )
     }
 
-    private func configureIfNeeded() throws {
-        guard !configured else { return }
+    private func configureWavesIfNeeded() throws {
+        guard !waveConfigured else { return }
         let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
-        engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: format)
-        engine.mainMixerNode.outputVolume = 1
-        configured = true
+        waveEngine.attach(wavePlayer)
+        waveEngine.connect(wavePlayer, to: waveEngine.mainMixerNode, format: format)
+        waveEngine.mainMixerNode.outputVolume = 1
+        waveConfigured = true
     }
 
     private static func makeWaveBuffer() -> AVAudioPCMBuffer {
@@ -128,146 +322,6 @@ final class HomeVoyageAudio: ObservableObject {
         return buffer
     }
 
-    private static func makePianoBuffer() -> AVAudioPCMBuffer {
-        let rate = 44_100.0
-        let step = 0.42
-        let beatsPerBar = 6
-        let barDuration = step * Double(beatsPerBar)
-        let bars = classicalBars()
-        let duration = barDuration * Double(bars.count)
-        let frameCount = AVAudioFrameCount(rate * duration)
-        let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)!
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
-        buffer.frameLength = frameCount
-        let samples = buffer.floatChannelData![0]
-        for index in 0..<Int(frameCount) { samples[index] = 0 }
-
-        // D major / B minor、6/8。従来の冒頭4小節をそのまま主題にし、
-        // 主題提示 → 展開 → 再現 → コーダの48小節(約2分)へ広げる。
-        for (barIndex, bar) in bars.enumerated() {
-            let barStart = Double(barIndex) * barDuration
-            for (noteIndex, midi) in bar.arpeggio.enumerated() {
-                let start = barStart + Double(noteIndex) * step
-                addPianoTone(
-                    samples: samples,
-                    frameCount: Int(frameCount),
-                    sampleRate: rate,
-                    midi: midi,
-                    start: start,
-                    duration: noteIndex % 6 == 0 ? 2.25 : 1.55,
-                    level: (noteIndex % 6 == 0 ? 0.12 : 0.075) * bar.dynamic
-                )
-            }
-            // 2拍ごとの長い旋律。主題の分散和音を壊さず、後半ほど歌う。
-            for (melodyIndex, midi) in bar.melody.enumerated() {
-                guard let midi else { continue }
-                addPianoTone(
-                    samples: samples,
-                    frameCount: Int(frameCount),
-                    sampleRate: rate,
-                    midi: midi,
-                    start: barStart + Double(melodyIndex * 2) * step + 0.018,
-                    duration: melodyIndex == 2 ? 2.05 : 1.72,
-                    level: 0.068 * bar.dynamic
-                )
-            }
-        }
-
-        // 曲の奥に、ごく遠い海だけを残す。
-        var seed: UInt64 = 0x5EA5_0A7D_1138_4A91
-        var sea: Float = 0
-        for index in 0..<Int(frameCount) {
-            seed = seed &* 2_862_933_555_777_941_757 &+ 3_037_000_493
-            let white = Float(Int32(truncatingIfNeeded: seed >> 32)) / Float(Int32.max)
-            sea += (white - sea) * 0.018
-            samples[index] = max(-0.9, min(0.9, samples[index] + sea * 0.018))
-        }
-        normalize(samples: samples, count: Int(frameCount), peak: 0.74)
-        return buffer
-    }
-
-    private typealias ClassicalBar = (
-        arpeggio: [Int],
-        melody: [Int?],
-        dynamic: Double
-    )
-
-    /// 48小節 = 120.96秒。最後の小節は余韻を残し、冒頭へ唐突につながらない。
-    private static func classicalBars() -> [ClassicalBar] {
-        let theme: [ClassicalBar] = [
-            // 既存曲の冒頭。ここは音程・強弱とも変更しない。
-            ([38, 50, 57, 54, 57, 50], [nil, nil, nil], 1.00),
-            ([37, 49, 57, 52, 57, 49], [nil, nil, nil], 1.00),
-            ([35, 47, 54, 50, 54, 47], [nil, nil, nil], 1.00),
-            ([42, 54, 61, 57, 61, 54], [nil, nil, nil], 1.00),
-            // 同じ主題に、遠い上声が入り始める。
-            ([38, 50, 57, 62, 57, 54], [66, 69, 74], 0.94),
-            ([37, 49, 56, 61, 56, 52], [64, 68, 73], 0.92),
-            ([35, 47, 54, 59, 54, 50], [62, 66, 71], 0.96),
-            ([42, 54, 57, 61, 66, 61], [69, 73, 78], 1.00)
-        ]
-
-        let secondTheme: [ClassicalBar] = [
-            ([43, 55, 59, 62, 67, 62], [71, 74, 79], 0.92),
-            ([42, 54, 57, 62, 66, 57], [69, 74, 78], 0.94),
-            ([40, 52, 59, 55, 59, 52], [67, 71, 76], 0.98),
-            ([35, 47, 54, 59, 62, 54], [66, 71, 74], 1.02),
-            ([43, 55, 62, 59, 62, 55], [74, 71, 67], 1.04),
-            ([45, 52, 61, 57, 61, 52], [73, 69, 76], 1.06),
-            ([38, 50, 57, 62, 66, 57], [74, 78, 81], 1.08),
-            ([45, 52, 61, 57, 64, 61], [76, 73, 69], 0.98)
-        ]
-
-        let development: [ClassicalBar] = [
-            ([35, 47, 54, 59, 66, 59], [71, 74, 78], 1.02),
-            ([33, 45, 52, 57, 61, 52], [69, 73, 76], 1.04),
-            ([31, 43, 50, 55, 59, 50], [67, 71, 74], 1.06),
-            ([38, 50, 57, 62, 69, 62], [74, 78, 81], 1.10),
-            ([40, 52, 59, 64, 71, 64], [76, 79, 83], 1.12),
-            ([35, 47, 54, 59, 66, 62], [74, 71, 78], 1.14),
-            ([43, 55, 62, 67, 71, 62], [79, 78, 74], 1.10),
-            ([45, 52, 61, 64, 69, 61], [76, 73, 69], 1.02)
-        ]
-
-        let quietPassage: [ClassicalBar] = [
-            ([38, 50, 57, 54, 57, 50], [66, nil, 69], 0.78),
-            ([37, 49, 56, 52, 56, 49], [64, nil, 68], 0.76),
-            ([35, 47, 54, 50, 54, 47], [62, nil, 66], 0.74),
-            ([42, 54, 61, 57, 61, 54], [69, nil, 73], 0.78),
-            ([43, 55, 59, 62, 59, 55], [71, 74, 71], 0.82),
-            ([40, 52, 59, 55, 59, 52], [67, 71, 76], 0.84),
-            ([45, 52, 61, 57, 61, 52], [69, 73, 76], 0.88),
-            ([45, 52, 61, 64, 69, 61], [76, 73, 69], 0.92)
-        ]
-
-        let recapitulation: [ClassicalBar] = [
-            ([38, 50, 57, 54, 57, 50], [74, 69, 66], 1.02),
-            ([37, 49, 57, 52, 57, 49], [73, 68, 64], 1.00),
-            ([35, 47, 54, 50, 54, 47], [71, 66, 62], 1.02),
-            ([42, 54, 61, 57, 61, 54], [73, 78, 76], 1.06),
-            ([38, 50, 57, 62, 66, 57], [74, 78, 81], 1.10),
-            ([43, 55, 62, 59, 67, 62], [79, 74, 71], 1.08),
-            ([45, 52, 61, 57, 64, 61], [76, 73, 69], 1.04),
-            ([45, 52, 61, 64, 69, 61], [76, 73, 78], 1.00)
-        ]
-
-        let coda: [ClassicalBar] = [
-            ([43, 55, 62, 59, 67, 62], [74, 71, 67], 0.94),
-            ([42, 54, 57, 62, 66, 57], [69, 74, 78], 0.92),
-            ([40, 52, 59, 55, 64, 59], [76, 71, 67], 0.88),
-            ([45, 52, 61, 57, 64, 61], [73, 69, 76], 0.86),
-            ([38, 50, 57, 54, 62, 57], [74, 69, 66], 0.82),
-            ([35, 47, 54, 50, 59, 54], [71, 66, 62], 0.76),
-            ([38, 50, 57, 62, 66, 69], [74, 78, 74], 0.70),
-            // 最後の和音を一度だけ置き、残りを海と減衰の余韻にする。
-            ([38], [66, nil, nil], 0.62)
-        ]
-
-        return theme + secondTheme + development + quietPassage + recapitulation + coda
-    }
-
-    /// フィルタ後の波音は振幅が極端に小さくなるため、生成結果を一度だけ正規化する。
-    /// プレイヤー側の音量を別に残し、集中用BGMとして過大にならない余白も確保する。
     private static func normalize(
         samples: UnsafeMutablePointer<Float>,
         count: Int,
@@ -282,30 +336,6 @@ final class HomeVoyageAudio: ObservableObject {
         let gain = min(12, targetPeak / sourcePeak)
         for index in 0..<count {
             samples[index] = max(-0.95, min(0.95, samples[index] * gain))
-        }
-    }
-
-    private static func addPianoTone(
-        samples: UnsafeMutablePointer<Float>,
-        frameCount: Int,
-        sampleRate: Double,
-        midi: Int,
-        start: Double,
-        duration: Double,
-        level: Double
-    ) {
-        let first = max(0, Int(start * sampleRate))
-        let count = min(frameCount - first, Int(duration * sampleRate))
-        guard count > 0 else { return }
-        let frequency = 440 * pow(2, Double(midi - 69) / 12)
-        for offset in 0..<count {
-            let time = Double(offset) / sampleRate
-            let attack = min(1, time / 0.014)
-            let decay = exp(-time * 1.75)
-            let body = sin(2 * .pi * frequency * time)
-            let second = sin(2 * .pi * frequency * 2.003 * time) * exp(-time * 2.8) * 0.22
-            let third = sin(2 * .pi * frequency * 3.01 * time) * exp(-time * 4.2) * 0.07
-            samples[first + offset] += Float((body + second + third) * attack * decay * level)
         }
     }
 }

@@ -325,10 +325,7 @@ struct RecordSessionSheet: View {
         StudyDayStore.markDay(date, context: modelContext)
         try? modelContext.save()
         SyncService.shared.push(session)
-        RoomService.shared.publishCurrentMonth(context: modelContext)
-        // プライベートの港のチャットに「着岸/帰還」を流す(今日の記録だけ)。
-        // パブリックへの記録反映は publishCurrentMonth の中で行われる。
-        HarborChatService.shared.publishLog(item: item, minutes: minutes, gapDays: blanks, isToday: isToday)
+        PublicHarborService.shared.publishCurrentMonth(context: modelContext)
         WidgetBridge.refresh(context: modelContext)
         // 今日つけたなら、今日のそっと通知は取り下げる(来た人はつつかない)。
         let recorded = StudyDayStore.recordedToday(context: modelContext)

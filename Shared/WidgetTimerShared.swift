@@ -40,6 +40,8 @@ enum KeelMiraWidgetStore {
             startedAt: defaults.double(forKey: Key.timerStart),
             itemID: defaults.string(forKey: Key.timerItem) ?? "",
             itemName: defaults.string(forKey: Key.timerItemName) ?? "",
+            timerMode: defaults.string(forKey: Key.timerMode) ?? "free",
+            pomodoroStartElapsed: defaults.double(forKey: Key.pomodoroStartElapsed),
             breakSeconds: defaults.double(forKey: Key.breakSeconds),
             breakStartedAt: defaults.double(forKey: Key.breakStartedAt)
         )
@@ -137,6 +139,8 @@ struct KeelMiraWidgetTimer: Codable, Hashable, Sendable {
     let startedAt: Double
     let itemID: String
     let itemName: String
+    let timerMode: String
+    let pomodoroStartElapsed: Double
     let breakSeconds: Double
     let breakStartedAt: Double
 
@@ -150,8 +154,17 @@ struct KeelMiraWidgetTimer: Codable, Hashable, Sendable {
         return max(0, Int(now - startedAt - breakSeconds - activeBreak))
     }
 
+    func workedSeconds(at date: Date = Date()) -> Int {
+        let elapsed = elapsedSeconds(at: date)
+        guard timerMode == "pomodoro" else { return elapsed }
+        let anchor = min(elapsed, max(0, Int(pomodoroStartElapsed)))
+        let pomodoroElapsed = max(0, elapsed - anchor)
+        let cycles = pomodoroElapsed / 1_800
+        return anchor + cycles * 1_500 + min(pomodoroElapsed % 1_800, 1_500)
+    }
+
     func creditedMinutes(at date: Date = Date()) -> Int {
-        min(6_000, max(1, Int((Double(elapsedSeconds(at: date)) / 60).rounded())))
+        min(6_000, max(1, Int((Double(workedSeconds(at: date)) / 60).rounded())))
     }
 
     /// `Text(date, style: .timer)`が休憩を除いた経過時間を表示するための基準日時。

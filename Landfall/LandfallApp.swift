@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import SwiftData
 import FirebaseCore
@@ -16,7 +17,10 @@ struct LandfallApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
     @AppStorage(AppTheme.storageKey) private var appTheme = AppTheme.system.rawValue
+    @AppStorage(PrologueState.completionKey) private var hasCompletedPrologue = false
     @AppStorage(TutorialState.completionKey) private var hasCompletedTutorial = false
+    @State private var isLaunchingFirstVoyage = false
+    @State private var dismissedForcedPrologue = false
     @State private var dismissedForcedTutorial = false
 
     init() {
@@ -73,18 +77,52 @@ struct LandfallApp: App {
     var body: some Scene {
         WindowGroup {
             Group {
-                if auth.canEnterApp || Self.skipAuth {
-                    if !hasCompletedTutorial || (Self.forceOnboarding && !dismissedForcedTutorial) {
-                        // サインイン後、実際の航海へ入る直前に操作を一度だけ案内する。
-                        OnboardingView {
-                            hasCompletedTutorial = true
-                            dismissedForcedTutorial = true
+                if !hasCompletedPrologue || (Self.forcePrologue && !dismissedForcedPrologue) {
+                    if isLaunchingFirstVoyage {
+                        // 序章の古船から、タイマーと同じ航海中の世界へ連続して入る。
+                        PrologueVoyageLaunchSceneView {
+                            withAnimation(.easeInOut(duration: 0.52)) {
+                                hasCompletedPrologue = true
+                                dismissedForcedPrologue = true
+                                isLaunchingFirstVoyage = false
+                            }
+                            if !auth.canEnterApp {
+                                HomeVoyageAudio.shared.stop()
+                            }
                         }
+                        .ignoresSafeArea()
+                        .transition(.opacity)
+                    } else {
+                        // 初回起動では認証より先に世界観の序章を見せる。
+                        ForgottenSeaPrologueView(onComplete: {
+                            HomeVoyageAudio.shared.play(
+                                HomeVoyageSound.initialTimerSound.rawValue
+                            )
+                            withAnimation(.easeInOut(duration: 0.48)) {
+                                isLaunchingFirstVoyage = true
+                            }
+                        })
+                        .transition(.opacity)
+                    }
+                } else if auth.canEnterApp || Self.skipAuth {
+                    if !hasCompletedTutorial || (Self.forceOnboarding && !dismissedForcedTutorial) {
+                        // 操作を読んだら、同じ海で最初のメモと作業記録まで残す。
+                        FirstVoyageExperienceView(
+                            recoverPreviouslySavedRecord: !Self.forceOnboarding
+                        ) {
+                            withAnimation(.easeInOut(duration: 0.52)) {
+                                hasCompletedTutorial = true
+                                dismissedForcedTutorial = true
+                            }
+                        }
+                        .transition(.opacity)
                     } else {
                         ContentView()
+                            .transition(.opacity)
                     }
                 } else {
                     SignInView()
+                        .transition(.opacity)
                 }
             }
             .environmentObject(auth)
@@ -142,6 +180,15 @@ struct LandfallApp: App {
             // 前面復帰のたびに再同期。他端末で追加された記録を取り込み、
             // 保留中の書き込みも送信される。ローカルは常に真実の源のまま。
             .onChange(of: scenePhase) { _, phase in
+                if isLaunchingFirstVoyage {
+                    if phase == .active {
+                        HomeVoyageAudio.shared.play(
+                            HomeVoyageSound.initialTimerSound.rawValue
+                        )
+                    } else {
+                        HomeVoyageAudio.shared.stop()
+                    }
+                }
                 if phase == .active {
                     WidgetTimerInbox.importPending(context: container.mainContext)
                     WidgetBridge.refresh(context: container.mainContext)
@@ -166,6 +213,15 @@ struct LandfallApp: App {
         #endif
     }
 
+    /// 動作確認用: LANDFALL_PROLOGUE=1 で序章を強制表示する(既に見た後でも)。
+    private static var forcePrologue: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["LANDFALL_PROLOGUE"] == "1"
+        #else
+        return false
+        #endif
+    }
+
     /// 動作確認用: LANDFALL_ONBOARD=1 でチュートリアルを強制表示する(既に見た後でも)。
     private static var forceOnboarding: Bool {
         #if DEBUG
@@ -177,22 +233,40 @@ struct LandfallApp: App {
 }
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system.rawValue
+    @AppStorage(HomeBackgroundMusic.enabledKey) private var homeMusicEnabled = false
+    @AppStorage(HomeBackgroundMusic.selectedTrackKey)
+    private var homeMusicTrack = HomeVoyageSound.harborMinuet.rawValue
+    @AppStorage(HomeWaveAmbience.enabledKey) private var homeWavesEnabled = true
+    @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    @AppStorage(StudyTimer.modeKey, store: StudyTimer.defaults)
+    private var timerMode = HomeTimerMode.free.rawValue
+    @AppStorage(StudyTimer.pomodoroStartElapsedKey, store: StudyTimer.defaults)
+    private var timerPomodoroStartElapsed: Double = 0
+    @AppStorage(StudyTimer.breakSecondsKey, store: StudyTimer.defaults)
+    private var timerBreakSeconds: Double = 0
+    @AppStorage(StudyTimer.breakStartedAtKey, store: StudyTimer.defaults)
+    private var timerBreakStartedAt: Double = 0
+    @AppStorage(StudyTimer.soundKey, store: StudyTimer.defaults)
+    private var timerSoundMode = HomeVoyageSound.initialTimerSound.rawValue
+    @State private var lastTimerResting: Bool?
+
+    private let timerAudioClock = Timer.publish(
+        every: 1,
+        tolerance: 0.15,
+        on: .main,
+        in: .common
+    ).autoconnect()
 
     var body: some View {
         Group {
             #if DEBUG
-            if ProcessInfo.processInfo.environment["LANDFALL_PRIVATE_PREVIEW"] == "1" {
-                NavigationStack {
-                    HarborChatView(
-                        room: HarborRoom(
-                            id: "W7D3UD",
-                            name: "星影の並走船団",
-                            memberIds: ["preview-self", "preview-akari", "preview-nagi"],
-                            ownerUid: "preview-self"
-                        )
-                    )
-                }
+            if let rawInterior = ProcessInfo.processInfo.environment["LANDFALL_INTERIOR"],
+               let interior = HomeIslandInteriorKind(assetID: rawInterior) {
+                HomeIslandInteriorView(kind: interior)
+            } else if ProcessInfo.processInfo.environment["LANDFALL_PRIVATE_PREVIEW"] == "1" {
+                PrivateIslandPreviewView()
             } else if ProcessInfo.processInfo.environment["LANDFALL_DRESS_NAV"] != nil {
                 DressView()
             } else {
@@ -205,6 +279,7 @@ struct ContentView: View {
         // アプリ内の言語設定を全体に反映(端末言語に関わらず切替可能)。
         .environment(\.locale, (AppLanguage(rawValue: appLanguage) ?? .system).locale)
         .onAppear {
+            updateHomeAudio()
             #if DEBUG
             // 動作確認用: LANDFALL_LANG=en/ja/system でアプリ内言語を固定できる。
             if let raw = ProcessInfo.processInfo.environment["LANDFALL_LANG"],
@@ -220,6 +295,87 @@ struct ContentView: View {
             }
             #endif
         }
+        .onChange(of: scenePhase) { _, _ in
+            updateHomeAudio()
+        }
+        .onChange(of: timerStart) { _, _ in
+            updateHomeAudio()
+        }
+        .onChange(of: timerMode) { _, _ in
+            updateHomeAudio()
+        }
+        .onChange(of: timerPomodoroStartElapsed) { _, _ in
+            updateHomeAudio()
+        }
+        .onChange(of: timerBreakSeconds) { _, _ in
+            updateHomeAudio()
+        }
+        .onChange(of: timerBreakStartedAt) { _, _ in
+            updateHomeAudio()
+        }
+        .onChange(of: timerSoundMode) { _, _ in
+            updateHomeAudio()
+        }
+        .onChange(of: homeMusicEnabled) { _, _ in
+            updateHomeAudio()
+        }
+        .onChange(of: homeMusicTrack) { _, _ in
+            updateHomeAudio()
+        }
+        .onChange(of: homeWavesEnabled) { _, _ in
+            updateHomeAudio()
+        }
+        .onReceive(timerAudioClock) { date in
+            guard timerStart > 0 else { return }
+            let resting = timerIsResting(at: date)
+            guard resting != lastTimerResting else { return }
+            updateHomeAudio(at: date)
+        }
+        .onDisappear {
+            HomeBackgroundMusic.shared.stop()
+            HomeWaveAmbience.shared.stop()
+        }
+    }
+
+    private var timerSnapshot: HomeTimerSnapshot {
+        HomeTimerSnapshot(
+            startedAt: timerStart,
+            mode: HomeTimerMode(rawValue: timerMode) ?? .free,
+            pomodoroStartElapsed: timerPomodoroStartElapsed,
+            breakSeconds: timerBreakSeconds,
+            breakStartedAt: timerBreakStartedAt
+        )
+    }
+
+    private func timerIsResting(at date: Date) -> Bool {
+        timerSnapshot.isResting || timerSnapshot.phase(at: date)?.focusing == false
+    }
+
+    /// 航海中のBGMはタイマー画面の表示状態に依存させない。
+    /// 手動休憩・ポモドーロ休憩だけ停止し、画面外やバックグラウンドでも維持する。
+    private func updateHomeAudio(at date: Date = Date()) {
+        if timerStart > 0 {
+            HomeBackgroundMusic.shared.stop()
+            HomeWaveAmbience.shared.stop()
+
+            let resting = timerIsResting(at: date)
+            lastTimerResting = resting
+            if resting {
+                HomeVoyageAudio.shared.stop()
+            } else {
+                HomeVoyageAudio.shared.ensurePlaying(timerSoundMode)
+            }
+            return
+        }
+
+        lastTimerResting = nil
+        HomeVoyageAudio.shared.stop()
+        let shouldPlayHomeAudio = scenePhase == .active
+        if shouldPlayHomeAudio && homeMusicEnabled { HomeBackgroundMusic.shared.play() }
+        else { HomeBackgroundMusic.shared.stop() }
+
+        if shouldPlayHomeAudio && homeWavesEnabled { HomeWaveAmbience.shared.play() }
+        else { HomeWaveAmbience.shared.stop() }
     }
 
 }

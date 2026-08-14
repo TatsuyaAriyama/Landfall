@@ -52,6 +52,17 @@ docID = `yyyy-MM-dd`(端末ローカルのタイムゾーンでの startOfDay)�
 | `note` | string? | その日のひとこと(セッションのメモとは別)。上限120文字 |
 | `updatedAt` | timestamp? | LWW |
 
+### `users/{uid}/voyageLogs/{yyyy-MM-dd}` — 航海日録
+
+作業記録の有無にかかわらず、その日に残した振り返りを一日一件で保存する。
+docIDと日付の解釈は `days` と同じ。空本文はドキュメント自体を削除する。
+
+| フィールド | 型 | 備考 |
+|---|---|---|
+| `date` | timestamp | その日の startOfDay |
+| `body` | string | 本文。1〜260文字 |
+| `updatedAt` | timestamp | LWW |
+
 ### `users/{uid}/destinations/{uuid}` — 目的地(島)
 
 学習の目標を「島」として置く。到達した日が Landfall(着岸)。アクティブは1つまで(クライアント制約、`MAX_ACTIVE_DESTINATIONS`)。
@@ -65,7 +76,7 @@ docID = `yyyy-MM-dd`(端末ローカルのタイムゾーンでの startOfDay)�
 | `targetHasTime` | boolean? | `targetDate` に時刻まで含まれるか。false/未設定なら「その日いっぱい」= 締切はその日の 23:59:59.999(`destinationDeadline`) |
 | `manual` | boolean? | 完了ゴール(3つ目の目標種類)。時間や日数で測れない課題向け |
 | `manualDone` | boolean? | 完了ゴールで本人が「完了にする」を押したか。**このアプリで唯一の手動達成** — 記録からは自動導出しない |
-| `steps` | array? | ステップ目標(4つ目の目標種類)。長期の大きな目標を小さな目印に分解。要素 `{ id: string, name: string(≤60), doneAt?: timestamp }`。最大20(`MAX_STEPS`)。非空なら他の目標種類とは排他 |
+| `steps` | array? | ステップ目標。長期の大きな目標を小さな目印に分解。要素 `{ id: string, name: string(≤60), scheduledAt?: timestamp, doneAt?: timestamp }`。最大3(`MAX_STEPS`)。非空なら他の目標種類とは排他 |
 | `createdAt` | timestamp | 進捗の起点 |
 | `achievedAt` | timestamp? | 着岸した日。設定後は「到達した島」として航海誌に残る |
 | `updatedAt` | timestamp | |
@@ -235,7 +246,33 @@ slug は固定: `language / certification / student / reading / making`(ルー�
 
 ---
 
-## 4. `reports/{reportId}` — 通報(書き捨て)
+## 4. `publicJournalEntries/{uid}_{yyyy-MM-dd}` — 公開誌(一日一頁)
+
+公開港に参加している利用者が、日本時間の1日につき1件だけ公開する写真付きの頁。
+読み取りはサインイン済み利用者に限り、一覧取得は1クエリ30件以下。作成・更新・削除は
+App Check付きCallableだけがAdmin SDKで行い、クライアントからの直接書き込みは禁止する。
+
+| フィールド | 型 | 備考 |
+|---|---|---|
+| `authorUid` | string | 投稿者。文書IDのuid部分と一致 |
+| `dayID` | string | サーバーが日本時間で確定する `yyyy-MM-dd` |
+| `harborSlug` | string | 投稿時に所属を再確認した公式港 |
+| `displayName` / `styleToken` / `symbolToken` | string | 投稿時の公開プロフィール写し |
+| `body` | string | NFC正規化した本文。1〜260文字 |
+| `imageData` | bytes | EXIF/GPSを除去して再圧縮したJPEG。700KB以下 |
+| `imageWidth` / `imageHeight` | number(int) | 公開JPEGのピクセル寸法 |
+| `requestId` | string | Callableの冪等性キー |
+| `revision` | number(int) | 同日の更新ごとに増える版番号 |
+| `createdAt` / `updatedAt` | timestamp | サーバー時刻 |
+
+`publicContentReports` は公開誌/公開プロフィールの運営専用通報キュー、
+`publicContentReportLimits` と `publicJournalPublishRateLimits` はサーバー専用の連投制限。
+いずれもクライアントの読み書きを許可しない。通報には後から投稿が差し替え・削除されても
+確認できるよう、対象revisionの本文・公開JPEGまたはプロフィールの安全対応用写しを保持する。
+
+---
+
+## 5. `reports/{reportId}` — 通報(書き捨て)
 
 create のみ可(`reporterUid == auth.uid`)。読みは運営(コンソール)のみ。
 

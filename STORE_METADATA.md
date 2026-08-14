@@ -2,7 +2,7 @@
 
 > **【最優先・審査リスク】App Privacy の是正が必要。**
 > このアプリはサインイン(Apple/Google)・端末間同期・港での共有を持ち、`PrivacyInfo.xcprivacy` は
-> メール/名前/ユーザーID/ユーザーコンテンツの収集(Linked・非トラッキング・App機能目的)を宣言している。
+> メール/名前/ユーザーID/デバイスID/ユーザーコンテンツ/写真/その他の診断データの収集(Linked・非トラッキング・App機能目的)を宣言している。
 > 一方、下の説明文と App Privacy 回答は「収集なし・完全ローカル」と書いており **バイナリと矛盾**する。
 > これは審査(5.1.1 / 2.3.1)で拒否される典型。**App Store Connect で App Privacy 回答を今すぐ修正すること**
 > (下の「App Privacy」節に正しい回答を記載)。説明文の該当箇所も本ファイルで是正済み。
@@ -45,6 +45,8 @@ MAKE IT YOURS
 Customize your ship, sails, sailor, app icon, language, and appearance.
 
 There are no streaks or leaderboards. Motivation comes in waves. Keep sailing anyway.
+
+Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
 ### JA
@@ -67,6 +69,8 @@ KeelMiraは、集中した時間を3Dの航海として残す作業・学習タ�
 船、帆、航海士、アプリアイコン、言語、外観をカスタマイズできます。
 
 連続記録も順位もありません。モチベーションの波はある。それでも、航海を続けよう。
+
+利用規約（EULA）: https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
 ```
 
 ## Keywords(100文字以内、カンマ区切り、スペース節約)/ キーワード
@@ -76,6 +80,44 @@ KeelMiraは、集中した時間を3Dの航海として残す作業・学習タ�
     別途インデックスされるので keyword には入れない。100文字/カンマ区切り(スペースは入れない)。
 
 ## What's New
+
+### v1.4
+- EN:
+```
+The Voyage Notice Board is now easier to use.
+
+• Open public harbors and private islands directly from your home island.
+• Join a friend's island for free with a six-character invite code.
+• Host your own private island with Voyage Pass and enter it immediately after creation.
+• The iPad notice board now shows every public harbor at a glance.
+```
+- JA:
+```
+航海掲示板を、より使いやすくしました。
+
+・ホーム島から公開港とプライベート島へ直接移動できます。
+・6文字の招待コードで、友達の島へ無料で参加できます。
+・航海証で自分の島を作成し、作成後すぐに上陸できます。
+・iPadでは掲示板上ですべての公開港を一覧できます。
+```
+
+### v1.3
+- EN:
+```
+KeelMira is now designed for iPad.
+
+• Enjoy the voyage across the full iPad display instead of an iPhone-sized window.
+• Use KeelMira in portrait or landscape and in resizable iPad windows.
+• Layouts adapt across iPad and iPhone while keeping your existing records and voyage intact.
+```
+- JA:
+```
+KeelMiraがiPadに正式対応しました。
+
+・iPhoneサイズの互換表示ではなく、iPadの画面全体で航海を楽しめます。
+・縦向き・横向きと、サイズ変更できるiPadウインドウに対応しました。
+・記録や航海はそのままに、iPadとiPhoneそれぞれに合うレイアウトで表示します。
+```
 
 ### v1.1
 - EN:
@@ -112,7 +154,10 @@ KeelMiraの航海体験を新しくしました。
   1. **Contact Info → Email Address**(Apple/Google サインイン)
   2. **Contact Info → Name**(表示名・プレイヤー名)
   3. **Identifiers → User ID**(Firebase UID)
-  4. **User Content → Other User Content**(学習記録・ひとこと・港のチャット/共同タイマー)
+  4. **User Content → Other User Content**(学習記録・ひとこと・港のチャット/共同タイマー・任意の改善案)
+  5. **User Content → Photos or Videos**(利用者が公開誌へ明示的に送る写真)
+  6. **Identifiers → Device ID**(改善案の連投防止に使う、アプリ設置ごとのランダムID)
+  7. **Diagnostics → Other Diagnostic Data**(改善案に自動添付するアプリ/ビルド/iOSバージョンと言語)
 - 組み込みSDKの `PrivacyInfo.xcprivacy` が追加で宣言する項目も、App Store Connectで開示する:
   1. **Contact Info → Phone Number**(Google Sign-In / Linked / App Functionality)
   2. **Location → Coarse Location**(Google Sign-In / Linked / App Functionality)
@@ -124,6 +169,7 @@ KeelMiraの航海体験を新しくしました。
 
 > Google Sign-Inの電話番号・概算位置などはKeelMiraの画面やFirestoreで直接保存しないが、
 > 同梱SDKの公式プライバシーマニフェストが収集を宣言しているため、第三者SDK分として回答する。
+> 一方、上記6・7はKeelMiraが改善案送信時に直接取得するデータであり、SDK分と別にも回答する。
 > 全項目で **Used for tracking=No**。
 
 > 記録の中核は端末内(SwiftData)だが、サインイン時に上記が Firebase(Auth/Firestore)へ同期・共有されるため
@@ -160,3 +206,4 @@ management are available in Settings. Notifications are local, optional, and off
 - Support URL: `https://aftide.app/privacy#support`
 - Marketing URL: `https://aftide.app`
 - Privacy Policy URL: `https://aftide.app/privacy`
+- Terms of Use (Apple Standard EULA): `https://www.apple.com/legal/internet-services/itunes/dev/stdeula/`

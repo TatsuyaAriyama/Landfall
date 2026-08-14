@@ -11,6 +11,7 @@ struct VoyageWorldView: View {
     var homeWorldReady: Bool
     var homeWorldTapToken: Int
     var onRequestClose: (() -> Void)?
+    var onStepsChange: ([DestinationStep]) -> Void
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
@@ -33,6 +34,7 @@ struct VoyageWorldView: View {
     /// 退場ドリーを開始する要求(true でズームアウト→dismiss)。
     @State private var closing = false
     @FocusState private var nameFocused: Bool
+    @FocusState private var focusedStepID: DestinationStep.ID?
 
     init(
         existing: Destination?,
@@ -41,6 +43,7 @@ struct VoyageWorldView: View {
         homeWorldReady: Bool = true,
         homeWorldTapToken: Int = 0,
         onRequestClose: (() -> Void)? = nil,
+        onStepsChange: @escaping ([DestinationStep]) -> Void = { _ in },
         onLand: @escaping (Destination) -> Void = { _ in }
     ) {
         self.existing = existing
@@ -49,6 +52,7 @@ struct VoyageWorldView: View {
         self.homeWorldReady = homeWorldReady
         self.homeWorldTapToken = homeWorldTapToken
         self.onRequestClose = onRequestClose
+        self.onStepsChange = onStepsChange
         self.onLand = onLand
         _name = State(initialValue: existing?.name ?? "")
         let hasSteps = !(existing?.steps.isEmpty ?? true)
@@ -57,14 +61,24 @@ struct VoyageWorldView: View {
         _targetDate = State(initialValue: existing?.targetDate ?? defaultDate)
         _hasTargetDate = State(initialValue: existing?.targetDate != nil)
         _withTime = State(initialValue: existing?.targetHasTime == true)
-        _steps = State(initialValue: existing?.steps ?? [])
+        _steps = State(initialValue: Array((existing?.steps ?? []).prefix(Destination.maxSteps)))
     }
 
     private var trimmedName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     private var namedSteps: [DestinationStep] {
-        steps.filter { !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        validSteps(from: steps)
+    }
+    private var completedStepCount: Int {
+        namedSteps.filter { $0.doneAt != nil }.count
+    }
+    private var allStepsComplete: Bool {
+        !namedSteps.isEmpty && completedStepCount == namedSteps.count
+    }
+    private var stepProgressRatio: Double {
+        guard !namedSteps.isEmpty else { return 0 }
+        return Double(completedStepCount) / Double(namedSteps.count)
     }
     private var isValid: Bool {
         !trimmedName.isEmpty &&
@@ -83,11 +97,17 @@ struct VoyageWorldView: View {
         guard kind == .date, let draftDeadline else { return false }
         return draftDeadline <= Date()
     }
+
+    /// 空行は下書きとして扱い、進捗・3D航路・保存には数えない。
+    private func validSteps(from source: [DestinationStep]) -> [DestinationStep] {
+        Array(source.lazy.filter {
+            !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }.prefix(Destination.maxSteps))
+    }
     /// 編集中の局所stateから、船の位置(ratio)を出す。
     private var liveRatio: Double {
         if kind == .steps {
-            guard !steps.isEmpty else { return 0 }
-            return Double(steps.filter { $0.doneAt != nil }.count) / Double(steps.count)
+            return stepProgressRatio
         }
         guard let end = draftDeadline else { return 0 }
         let remaining = max(0, end.timeIntervalSinceNow)
@@ -103,7 +123,9 @@ struct VoyageWorldView: View {
             } else {
                 ImmersiveVoyageView(
                     ratio: liveRatio,
-                    steps: kind == .steps ? steps.map { VoyageStep(doneAt: $0.doneAt) } : [],
+                    steps: kind == .steps
+                        ? namedSteps.map { VoyageStep(doneAt: $0.doneAt) }
+                        : [],
                     islandName: trimmedName,
                     closeRequested: closing,
                     onToggleStep: { index in toggleStep(index: index) },
@@ -134,9 +156,16 @@ struct VoyageWorldView: View {
             }
         }
         .onAppear {
+            onStepsChange(kind == .steps ? namedSteps : [])
             #if DEBUG
             if ProcessInfo.processInfo.environment["LANDFALL_IMMERSE"] != nil { uiHidden = true }
             #endif
+        }
+        .onChange(of: steps) { _, value in
+            onStepsChange(kind == .steps ? validSteps(from: value) : [])
+        }
+        .onChange(of: kind) { _, value in
+            onStepsChange(value == .steps ? namedSteps : [])
         }
         .onChange(of: homeWorldTapToken) {
             guard usesHomeWorld else { return }
@@ -164,39 +193,43 @@ struct VoyageWorldView: View {
         (usesHomeWorld ? homeWorldReady : isIdle) && !uiHidden
     }
 
+    /// 3D の景色に関わらず、ホームと同じ明るい編集面を保つ。
+    private var editorSurface: Color { Color(hex: 0xF6EEE1) }
+    private var editorInk: Color { Color(hex: 0x173F3C) }
+
     private var topBar: some View {
         VStack {
             HStack(spacing: 10) {
                 TextField("e.g. TOEIC, finish the book", text: $name)
                     .font(LFFont.copy(16))
-                    .foregroundStyle(LFColor.harborSand)
+                    .foregroundStyle(editorInk)
                     .focused($nameFocused)
                     .textInputAutocapitalization(.never)
                     .padding(.horizontal, 18)
                     .frame(height: 48)
                     .background(
-                        Color(VoyageSceneKit.seaDeep).opacity(0.62),
+                        editorSurface.opacity(0.97),
                         in: Capsule()
                     )
                     .overlay(
                         Capsule()
-                            .stroke(LFColor.harborSand.opacity(0.28), lineWidth: 1)
+                            .stroke(editorInk.opacity(0.16), lineWidth: 1)
                     )
                     .accessibilityLabel(Text("Island name"))
 
                 Button { requestClose() } label: {
                     Text("Close")
                         .font(LFFont.copy(14))
-                        .foregroundStyle(LFColor.harborSand)
+                        .foregroundStyle(LFColor.returnOrange)
                         .padding(.horizontal, 18)
                         .frame(height: 48)
                         .background(
-                            Color(VoyageSceneKit.seaDeep).opacity(0.62),
+                            editorSurface.opacity(0.97),
                             in: Capsule()
                         )
                         .overlay(
                             Capsule()
-                                .stroke(LFColor.harborSand.opacity(0.28), lineWidth: 1)
+                                .stroke(editorInk.opacity(0.16), lineWidth: 1)
                         )
                 }
                 .buttonStyle(LFPressableButtonStyle())
@@ -216,7 +249,7 @@ struct VoyageWorldView: View {
                 Text("How will you reach this island?")
                     .font(LFFont.label(13))
                     .tracking(0.7)
-                    .foregroundStyle(LFColor.harborSand.opacity(0.58))
+                    .foregroundStyle(editorInk.opacity(0.68))
 
                 HStack(spacing: 10) {
                     kindChip("Set a date", .date)
@@ -228,24 +261,25 @@ struct VoyageWorldView: View {
                 } else {
                     Text("Break a big goal into small steps. Each one you finish moves the boat forward; finish them all to make landfall.")
                         .font(LFFont.copy(14))
-                        .foregroundStyle(LFColor.harborSand.opacity(0.7))
+                        .foregroundStyle(editorInk.opacity(0.74))
                     stepsEditor
                 }
 
                 Text("Drag to look around. Pinch to zoom in. Tap the world to see only it.")
                     .font(LFFont.label(11))
-                    .foregroundStyle(LFColor.harborSand.opacity(0.45))
+                    .foregroundStyle(editorInk.opacity(0.52))
 
                 saveButton
 
-                if let existing,
-                   !existing.progress(sessions: sessions).reached {
+                if let existing {
                     Button {
                         confirmingLand = true
                     } label: {
-                        Text("Go ashore here")
+                        Text(existing.progress(sessions: sessions).reached
+                            ? "Go ashore"
+                             : "Go ashore here")
                             .font(LFFont.copy(13))
-                            .foregroundStyle(LFColor.harborSand.opacity(0.68))
+                            .foregroundStyle(LFColor.returnOrange)
                             .frame(maxWidth: .infinity)
                             .frame(minHeight: 44)
                     }
@@ -269,9 +303,14 @@ struct VoyageWorldView: View {
         }
         .frame(maxHeight: 400)
         .background(
-            Color(VoyageSceneKit.seaDeep).opacity(0.90),
+            editorSurface.opacity(0.97),
             in: RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous)
+                .stroke(editorInk.opacity(0.12), lineWidth: 1)
+        )
+        .shadow(color: LFColor.inkFixed.opacity(0.12), radius: 16, y: 7)
         .padding(.horizontal, 16)
         .safeAreaPadding(.bottom, 12)
     }
@@ -280,12 +319,12 @@ struct VoyageWorldView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("The target date guides your voyage. When you achieve it, choose Go ashore. Without a time, the whole day counts.")
                 .font(LFFont.copy(14))
-                .foregroundStyle(LFColor.harborSand.opacity(0.7))
+                .foregroundStyle(editorInk.opacity(0.74))
 
             Text("Target date")
                 .font(LFFont.label(13))
                 .tracking(0.7)
-                .foregroundStyle(LFColor.harborSand.opacity(0.58))
+                .foregroundStyle(editorInk.opacity(0.68))
 
             if hasTargetDate {
                 DatePicker(
@@ -297,7 +336,7 @@ struct VoyageWorldView: View {
                 .labelsHidden()
                 .datePickerStyle(.compact)
                 .tint(LFColor.returnOrange)
-                .environment(\.colorScheme, .dark)
+                .environment(\.colorScheme, .light)
             } else {
                 Button {
                     hasTargetDate = true
@@ -308,13 +347,13 @@ struct VoyageWorldView: View {
                         Image(systemName: "calendar")
                     }
                     .font(LFFont.copy(15))
-                    .foregroundStyle(LFColor.harborSand)
+                    .foregroundStyle(editorInk)
                     .padding(.horizontal, 16)
                     .frame(maxWidth: .infinity)
                     .frame(height: 48)
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(LFColor.harborSand.opacity(0.28), lineWidth: 1)
+                            .stroke(editorInk.opacity(0.20), lineWidth: 1)
                     )
                 }
                 .buttonStyle(LFPressableButtonStyle())
@@ -322,8 +361,8 @@ struct VoyageWorldView: View {
 
             Toggle("Set a time too", isOn: $withTime)
                 .font(LFFont.copy(14))
-                .tint(LFColor.harborSand)
-                .foregroundStyle(LFColor.harborSand.opacity(0.82))
+                .tint(LFColor.returnOrange)
+                .foregroundStyle(editorInk.opacity(0.82))
                 .disabled(!hasTargetDate)
 
             if withTime && hasTargetDate {
@@ -334,15 +373,15 @@ struct VoyageWorldView: View {
                 )
                 .font(LFFont.copy(14))
                 .tint(LFColor.returnOrange)
-                .foregroundStyle(LFColor.harborSand)
-                .environment(\.colorScheme, .dark)
+                .foregroundStyle(editorInk)
+                .environment(\.colorScheme, .light)
 
                 Text(deadlinePassed
                      ? "That time has passed. Pick a later one."
                      : "This is the date you aim to achieve it.")
                     .font(LFFont.label(12))
                     .foregroundStyle(
-                        deadlinePassed ? LFColor.coral : LFColor.harborSand.opacity(0.62)
+                        deadlinePassed ? LFColor.coral : editorInk.opacity(0.62)
                     )
             } else if deadlinePassed {
                 Text("That day has passed. Pick today or later.")
@@ -355,25 +394,90 @@ struct VoyageWorldView: View {
     private func kindChip(_ title: LocalizedStringKey, _ value: Kind) -> some View {
         let selected = kind == value
         return Button {
-            kind = value
+            selectKind(value)
         } label: {
             Text(title)
                 .font(LFFont.copy(15))
-                .foregroundStyle(selected ? LFColor.inkFixed : LFColor.harborSand)
+                .foregroundStyle(selected ? LFColor.returnOrange : editorInk)
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .background(
-                    Capsule().fill(selected ? LFColor.harborSand : Color.clear)
+                    Capsule().fill(selected ? LFColor.returnOrange.opacity(0.14) : Color.clear)
                 )
                 .overlay(
-                    Capsule().stroke(LFColor.harborSand.opacity(selected ? 0 : 0.3), lineWidth: 1)
+                    Capsule().stroke(
+                        selected ? LFColor.returnOrange.opacity(0.42) : editorInk.opacity(0.22),
+                        lineWidth: 1
+                    )
                 )
         }
         .buttonStyle(.plain)
     }
 
+    private func selectKind(_ value: Kind) {
+        kind = value
+        guard value == .steps, steps.isEmpty else { return }
+        let first = DestinationStep(name: "")
+        steps = [first]
+        DispatchQueue.main.async { focusedStepID = first.id }
+    }
+
+    /// 空行が既にあれば増やさず、その行の入力へ戻す。
+    private func addStep() {
+        if let blank = steps.first(where: {
+            $0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) {
+            focusedStepID = blank.id
+            return
+        }
+        guard steps.count < Destination.maxSteps else { return }
+        let step = DestinationStep(name: "")
+        steps.append(step)
+        DispatchQueue.main.async { focusedStepID = step.id }
+    }
+
+    private func removeStep(id: DestinationStep.ID) {
+        guard steps.count > 1 else { return }
+        var next = steps
+        next.removeAll { $0.id == id }
+        steps = next
+        persistSteps(next)
+    }
+
+    private func advanceFromStep(id: DestinationStep.ID) {
+        persistSteps()
+        guard let index = steps.firstIndex(where: { $0.id == id }) else { return }
+        if steps.indices.contains(index + 1) {
+            focusedStepID = steps[index + 1].id
+        } else if !steps[index].name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            addStep()
+        }
+    }
+
     private var stepsEditor: some View {
         VStack(spacing: 8) {
+            VStack(spacing: 7) {
+                HStack {
+                    Text("\(completedStepCount) of \(namedSteps.count) completed")
+                        .font(LFFont.label(12))
+                        .foregroundStyle(
+                            allStepsComplete
+                                ? LFColor.returnOrange
+                                : editorInk.opacity(0.72)
+                        )
+                    Spacer()
+                    Text("\(steps.count) / \(Destination.maxSteps) steps")
+                        .font(LFFont.label(11))
+                        .foregroundStyle(editorInk.opacity(0.50))
+                }
+
+                ProgressView(value: stepProgressRatio)
+                    .tint(LFColor.returnOrange)
+            }
+            .padding(.horizontal, 4)
+
             ForEach($steps) { $step in
+                let stepNumber = (steps.firstIndex(where: { $0.id == step.id }) ?? 0) + 1
+                let hasName = !step.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 10) {
                         Button {
@@ -381,36 +485,106 @@ struct VoyageWorldView: View {
                         } label: {
                             ZStack {
                                 Circle()
-                                    .strokeBorder(LFColor.harborSand.opacity(0.5), lineWidth: 1.5)
-                                    .background(Circle().fill(step.doneAt != nil ? LFColor.harborSand : .clear))
+                                    .strokeBorder(
+                                        step.doneAt != nil
+                                            ? LFColor.returnOrange
+                                            : editorInk.opacity(0.42),
+                                        lineWidth: 1.5
+                                    )
+                                    .background(
+                                        Circle().fill(
+                                            step.doneAt != nil ? LFColor.returnOrange : .clear
+                                        )
+                                    )
                                     .frame(width: 26, height: 26)
                                 if step.doneAt != nil {
                                     Image(systemName: "checkmark")
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(LFColor.inkFixed)
+                                } else {
+                                    Text(verbatim: "\(stepNumber)")
+                                        .font(LFFont.label(11))
+                                        .foregroundStyle(editorInk.opacity(0.72))
                                 }
                             }
                         }
                         .buttonStyle(.plain)
+                        .disabled(!hasName)
+                        .opacity(hasName ? 1 : 0.45)
+                        .accessibilityLabel(
+                            Text(step.doneAt == nil ? "Mark complete" : "Mark incomplete")
+                        )
 
                         TextField("e.g. one pass of the vocab book", text: $step.name)
                             .font(LFFont.copy(15))
-                            .foregroundStyle(LFColor.harborSand)
-                            .strikethrough(step.doneAt != nil, color: LFColor.harborSand.opacity(0.6))
-                            .submitLabel(.done)
-                            .onSubmit { persistSteps() }
+                            .foregroundStyle(editorInk)
+                            .strikethrough(step.doneAt != nil, color: editorInk.opacity(0.6))
+                            .focused($focusedStepID, equals: step.id)
+                            .submitLabel(stepNumber < Destination.maxSteps ? .next : .done)
+                            .onSubmit { advanceFromStep(id: step.id) }
 
                         Button {
-                            var next = steps
-                            next.removeAll { $0.id == step.id }
-                            steps = next
-                            persistSteps(next)
+                            toggleStepSchedule(id: step.id)
                         } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 13))
-                                .foregroundStyle(LFColor.harborSand.opacity(0.5))
+                            Image(systemName: step.scheduledAt == nil ? "calendar" : "calendar.badge.checkmark")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(
+                                    step.scheduledAt == nil
+                                        ? editorInk.opacity(0.5)
+                                        : LFColor.returnOrange
+                                )
+                                .frame(width: 30, height: 30)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(Text("Set schedule"))
+
+                        if steps.count > 1 {
+                            Button {
+                                removeStep(id: step.id)
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(editorInk.opacity(0.5))
+                                    .frame(width: 30, height: 30)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(Text("Delete step"))
+                        } else {
+                            Color.clear
+                                .frame(width: 30, height: 30)
+                                .accessibilityHidden(true)
+                        }
+                    }
+
+                    if step.scheduledAt != nil {
+                        HStack(spacing: 8) {
+                            Text("Scheduled for")
+                                .font(LFFont.label(11))
+                                .foregroundStyle(editorInk.opacity(0.62))
+                            Spacer()
+                            DatePicker(
+                                "",
+                                selection: stepScheduledAtBinding(id: step.id),
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            .labelsHidden()
+                            .datePickerStyle(.compact)
+                            .font(LFFont.label(11))
+                            .tint(LFColor.returnOrange)
+                            .environment(\.colorScheme, .light)
+                            .fixedSize()
+
+                            Button {
+                                clearStepSchedule(id: step.id)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(editorInk.opacity(0.42))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(Text("Clear schedule"))
+                        }
+                        .padding(.leading, 36)
                     }
 
                     if step.doneAt != nil {
@@ -429,32 +603,40 @@ struct VoyageWorldView: View {
                             .datePickerStyle(.compact)
                             .font(LFFont.label(11))
                             .tint(LFColor.returnOrange)
-                            .environment(\.colorScheme, .dark)
+                            .environment(\.colorScheme, .light)
                             .fixedSize()
                         }
                         .padding(.leading, 36)
                     }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(LFColor.harborSand.opacity(0.06),
+                .background(editorInk.opacity(0.05),
                             in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
             if steps.count < Destination.maxSteps {
                 Button {
-                    steps.append(DestinationStep(name: ""))
+                    addStep()
                 } label: {
                     Text("+ Add a step")
                         .font(LFFont.copy(15))
-                        .foregroundStyle(LFColor.harborSand)
+                        .foregroundStyle(editorInk)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                         .overlay(
                             RoundedRectangle(cornerRadius: 999, style: .continuous)
-                                .strokeBorder(LFColor.harborSand.opacity(0.34),
+                                .strokeBorder(editorInk.opacity(0.28),
                                               style: StrokeStyle(lineWidth: 1, dash: [4]))
                         )
                 }
                 .buttonStyle(.plain)
+            }
+
+            if allStepsComplete {
+                Label("All steps complete. You can go ashore.", systemImage: "flag.checkered")
+                    .font(LFFont.label(12))
+                    .foregroundStyle(LFColor.returnOrange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 2)
             }
         }
     }
@@ -468,11 +650,11 @@ struct VoyageWorldView: View {
                 .padding(.vertical, 14)
                 .background(
                     RoundedRectangle(cornerRadius: LFMetrics.cardCorner, style: .continuous)
-                        .fill(isValid ? LFColor.harborSand : LFColor.harborSand.opacity(0.3))
+                        .fill(isValid ? LFColor.returnOrange : editorInk.opacity(0.10))
                 )
         }
         .buttonStyle(.plain)
-        .disabled(!isValid)
+        .disabled(!isValid || working)
     }
 
     // MARK: - ステップの反転(既存目的地はその場で確定=Web persistSteps)
@@ -485,11 +667,20 @@ struct VoyageWorldView: View {
     /// ブイのタップ(世界)/チェックのタップ(パネル)共通。
     private func toggleStep(index i: Int) {
         guard steps.indices.contains(i) else { return }
+        guard !steps[i].name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            focusedStepID = steps[i].id
+            return
+        }
         var next = steps
         next[i].doneAt = next[i].doneAt == nil ? Date() : nil
+        let completed = next[i].doneAt != nil
         steps = next
         SoundFX.plink()
-        Haptics.tap(.light)
+        if completed {
+            Haptics.success()
+        } else {
+            Haptics.tap(.light)
+        }
         persistSteps(next)
     }
 
@@ -509,12 +700,51 @@ struct VoyageWorldView: View {
         )
     }
 
+    private func stepScheduledAtBinding(id: DestinationStep.ID) -> Binding<Date> {
+        Binding(
+            get: {
+                steps.first(where: { $0.id == id })?.scheduledAt ?? Date()
+            },
+            set: { value in
+                guard let i = steps.firstIndex(where: { $0.id == id }) else { return }
+                var next = steps
+                next[i].scheduledAt = value
+                steps = next
+                persistSteps(next)
+            }
+        )
+    }
+
+    private func toggleStepSchedule(id: DestinationStep.ID) {
+        guard let i = steps.firstIndex(where: { $0.id == id }) else { return }
+        var next = steps
+        if next[i].scheduledAt == nil {
+            next[i].scheduledAt = Calendar.current.date(
+                byAdding: .day,
+                value: 1,
+                to: Date()
+            ) ?? Date()
+        } else {
+            next[i].scheduledAt = nil
+        }
+        steps = next
+        persistSteps(next)
+        Haptics.tap(.light)
+    }
+
+    private func clearStepSchedule(id: DestinationStep.ID) {
+        guard let i = steps.firstIndex(where: { $0.id == id }) else { return }
+        var next = steps
+        next[i].scheduledAt = nil
+        steps = next
+        persistSteps(next)
+        Haptics.tap(.light)
+    }
+
     /// チェックの反転は、既存の目的地ならその場で確定する(fire-and-forget)。
     /// 新規(未保存)は局所stateだけ動かし、確定は「保存」に委ねる。
     private func persistSteps(_ source: [DestinationStep]? = nil) {
-        let validSteps = (source ?? steps).filter {
-            !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
+        let validSteps = validSteps(from: source ?? steps)
         guard let existing, !trimmedName.isEmpty, !validSteps.isEmpty else { return }
         existing.name = trimmedName
         // 新しい配列を再代入し、SwiftData に Codable 配列の変更を確実に検知させる。
@@ -522,6 +752,7 @@ struct VoyageWorldView: View {
             DestinationStep(
                 id: $0.id,
                 name: String($0.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60)),
+                scheduledAt: $0.scheduledAt,
                 doneAt: $0.doneAt
             )
         }
@@ -554,8 +785,13 @@ struct VoyageWorldView: View {
             dest.steps = []
         } else {
             // 名前を整えて上限で切る(Web saveDestination と同じ)。
-            dest.steps = namedSteps.map {
-                DestinationStep(id: $0.id, name: String($0.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60)), doneAt: $0.doneAt)
+            dest.steps = namedSteps.prefix(Destination.maxSteps).map {
+                DestinationStep(
+                    id: $0.id,
+                    name: String($0.name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60)),
+                    scheduledAt: $0.scheduledAt,
+                    doneAt: $0.doneAt
+                )
             }
             dest.targetDate = nil
             dest.targetHasTime = false

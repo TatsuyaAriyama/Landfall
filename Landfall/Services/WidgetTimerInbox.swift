@@ -11,7 +11,7 @@ enum WidgetTimerInbox {
         let items = (try? context.fetch(FetchDescriptor<StudyItem>())) ?? []
         let sessions = (try? context.fetch(FetchDescriptor<StudySession>())) ?? []
         var knownIDs = Set(sessions.map(\.uuid))
-        var imported: [(record: KeelMiraPendingLandfall, session: StudySession, item: StudyItem)] = []
+        var imported: [StudySession] = []
         var remaining: [KeelMiraPendingLandfall] = []
 
         for record in pending {
@@ -36,7 +36,7 @@ enum WidgetTimerInbox {
             context.insert(session)
             StudyDayStore.markDay(record.finishedAt, context: context)
             knownIDs.insert(record.id)
-            imported.append((record, session, item))
+            imported.append(session)
         }
 
         guard !imported.isEmpty else {
@@ -52,16 +52,10 @@ enum WidgetTimerInbox {
         }
 
         KeelMiraWidgetStore.pendingLandfalls = remaining
-        for value in imported {
-            SyncService.shared.push(value.session)
-            HarborChatService.shared.publishLog(
-                item: value.item,
-                minutes: value.record.minutes,
-                gapDays: nil,
-                isToday: Calendar.current.isDateInToday(value.record.finishedAt)
-            )
+        for session in imported {
+            SyncService.shared.push(session)
         }
-        RoomService.shared.publishCurrentMonth(context: context)
+        PublicHarborService.shared.publishCurrentMonth(context: context)
         WidgetBridge.refresh(context: context)
         let recorded = StudyDayStore.recordedToday(context: context)
         Task { await NotificationService.reschedule(recordedToday: recorded) }

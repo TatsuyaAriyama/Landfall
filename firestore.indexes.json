@@ -1,5 +1,20 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "publicJournalEntries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "harborSlug",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dayID",
+          "order": "DESCENDING"
+        }
+      ]
+    }
+  ],
   "fieldOverrides": [
     {
       "collectionGroup": "chat",
@@ -10,6 +25,36 @@
           "queryScope": "COLLECTION_GROUP"
         }
       ]
+    },
+    {
+      "collectionGroup": "publicJournalEntries",
+      "fieldPath": "imageData",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "publicJournalEntries",
+      "fieldPath": "body",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "publicJournalEntries",
+      "fieldPath": "requestId",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "publicContentReports",
+      "fieldPath": "imageDataSnapshot",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "publicContentReports",
+      "fieldPath": "bodySnapshot",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "publicContentReports",
+      "fieldPath": "profileSnapshot",
+      "indexes": []
     }
   ]
 }
