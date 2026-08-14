@@ -66,6 +66,7 @@ struct VoyageHomeView: View {
     @State private var homeIslandSceneGeneration = UUID()
     @State private var privateIslandVisit: PrivateIslandRoom?
     @State private var queuedPrivateIslandVisit: PrivateIslandRoom?
+    @StateObject private var hostedPrivateIsland = HostedPrivateIslandSessionCoordinator()
     @FocusState private var workManifestKeyboardFocused: Bool
     @FocusState private var commandMenuKeyboardFocused: Bool
     @AccessibilityFocusState private var workManifestAccessibilityFocused: Bool
@@ -200,6 +201,7 @@ struct VoyageHomeView: View {
                             boardingRequest: homeIslandBoardingRequest,
                             noticeBoardRequestID: noticeBoardRequestID,
                             onBoatSelected: openWorkManifest,
+                            multiplayerSession: hostedPrivateIsland.multiplayerSession,
                             onPrivateIslandSelected: presentPrivateIsland,
                             onDepartureCompleted: finishIslandDeparture,
                             onBoardingRejected: cancelIslandDeparture
@@ -607,6 +609,19 @@ struct VoyageHomeView: View {
             }
             #endif
         }
+        .task(id: auth.user?.uid) {
+            guard auth.user?.uid != nil else {
+                hostedPrivateIsland.deactivate()
+                return
+            }
+            guard hostedPrivateIsland.activeRoom == nil,
+                  let room = try? await PrivateIslandService.shared.ownedIsland()
+            else { return }
+            hostedPrivateIsland.activate(
+                room: room,
+                localOwnerID: auth.homeIslandOwnerID
+            )
+        }
     }
 
     private func openPendingHarborInviteIfNeeded(_ requested: Bool) {
@@ -672,7 +687,8 @@ struct VoyageHomeView: View {
         showingWorkManifest = false
         menuOpen = false
 
-        if privateIslandVisit?.id == room.id {
+        if privateIslandVisit?.id == room.id
+            || hostedPrivateIsland.activeRoom?.id == room.id {
             return
         }
         if presentedRoute != nil || privateIslandVisit != nil {
@@ -684,7 +700,20 @@ struct VoyageHomeView: View {
             }
             return
         }
-        privateIslandVisit = room
+        activatePrivateIsland(room)
+    }
+
+    /// Hosts stay in the existing Home Island scene. Only guests need a
+    /// separate full-screen visit world for another sailor's local island.
+    private func activatePrivateIsland(_ room: PrivateIslandRoom) {
+        if room.hostUid == auth.user?.uid {
+            hostedPrivateIsland.activate(
+                room: room,
+                localOwnerID: auth.homeIslandOwnerID
+            )
+        } else {
+            privateIslandVisit = room
+        }
     }
 
     private func presentQueuedPrivateIslandIfPossible() {
@@ -701,7 +730,7 @@ struct VoyageHomeView: View {
                 queuedPrivateIslandVisit = room
                 return
             }
-            privateIslandVisit = room
+            activatePrivateIsland(room)
         }
     }
 
@@ -2270,6 +2299,7 @@ private struct VoyageHomeIslandSceneHost: View {
     let boardingRequest: HomeIslandBoatBoardingRequest?
     let noticeBoardRequestID: UUID?
     let onBoatSelected: () -> Void
+    let multiplayerSession: HomeIslandMultiplayerSession?
     let onPrivateIslandSelected: (PrivateIslandRoom) -> Void
     let onDepartureCompleted: () -> Void
     let onBoardingRejected: () -> Void
@@ -2285,6 +2315,7 @@ private struct VoyageHomeIslandSceneHost: View {
             onBoatSelected: onBoatSelected,
             onDepartureCompleted: onDepartureCompleted,
             onBoardingRejected: onBoardingRejected,
+            multiplayerSession: multiplayerSession,
             onPrivateIslandSelected: onPrivateIslandSelected
         )
     }

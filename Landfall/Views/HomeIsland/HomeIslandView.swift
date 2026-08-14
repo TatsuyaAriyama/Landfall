@@ -432,7 +432,7 @@ struct HomeIslandView: View {
                         }
                     }
                     if mode == .explore,
-                       multiplayerSession == nil,
+                       multiplayerSession?.isReadOnly != true,
                        !showingBoatCustomization {
                         voyageNoticeBoardShortcut
                             .padding(.top, 8)
