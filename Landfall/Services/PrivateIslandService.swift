@@ -232,11 +232,10 @@ final class PrivateIslandService: ObservableObject {
     /// lobby listener. Used by Home Island autosave publishing.
     func ownedIsland() async throws -> PrivateIslandRoom? {
         guard let uid = currentUserID else { throw PrivateIslandError.notSignedIn }
-        let snapshot = try await db.collection("privateIslands")
-            .whereField("hostUid", isEqualTo: uid)
-            .limit(to: 1)
-            .getDocuments()
-        return snapshot.documents.first.flatMap(Self.decodeRoom)
+        // Firestore rules authorize list queries through memberIds. A
+        // hostUid-only query cannot prove membership and is therefore denied.
+        return try await fetchJoinedIslands(uid: uid)
+            .first(where: { $0.hostUid == uid })
     }
 
     /// Coalesces ordinary Home Island edits and publishes them in one serial
@@ -280,16 +279,23 @@ final class PrivateIslandService: ObservableObject {
         )
         guard !name.isEmpty else { throw PrivateIslandError.invalidName }
 
-        try await VoyagePassStore.shared.preparePrivateHarborCreation()
+        // A previous attempt may have committed the island and host card, then
+        // lost its connection while publishing the first layout. Recover that
+        // durable island instead of making the sailor hit "already hosts" on
+        // every retry while the lobby listener is still catching up.
         let joined = try await fetchJoinedIslands(uid: uid)
+        if let existing = joined.first(where: { $0.hostUid == uid }) {
+            if let initialSnapshot {
+                enqueueOwnedSnapshot(initialSnapshot)
+            }
+            await refreshIslands()
+            return existing.code
+        }
+
+        try await VoyagePassStore.shared.preparePrivateHarborCreation()
         guard joined.count < PrivateIslandRoom.maxJoined else {
             throw PrivateIslandError.tooManyIslands
         }
-        let owned = try await db.collection("privateIslands")
-            .whereField("hostUid", isEqualTo: uid)
-            .limit(to: 1)
-            .getDocuments()
-        guard owned.documents.isEmpty else { throw PrivateIslandError.alreadyOwnsIsland }
 
         let memberData = Self.memberProfileData(joinedAt: true)
         for _ in 0..<8 {
@@ -316,7 +322,16 @@ final class PrivateIslandService: ObservableObject {
             }
             if Self.boolValue(result) {
                 if let initialSnapshot {
-                    try await publishSnapshot(initialSnapshot, to: code)
+                    do {
+                        try await publishSnapshot(initialSnapshot, to: code)
+                    } catch {
+                        // The parent island and host membership are already
+                        // committed. Do not report creation as failed just
+                        // because the first layout publication was interrupted;
+                        // Home Island autosave retries it after entry.
+                        errorMessage = error.localizedDescription
+                        enqueueOwnedSnapshot(initialSnapshot)
+                    }
                 }
                 await refreshIslands()
                 return code
