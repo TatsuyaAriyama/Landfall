@@ -162,6 +162,7 @@
 				1A0000081A0000081A000008 /* Sources */,
 				1A0000021A0000021A000002 /* Frameworks */,
 				1A0000091A0000091A000009 /* Resources */,
+				E0510A01E0510A01E0510A01 /* Embed EOSSDK on Device */,
 				3C17FCA65F68D3E7AFF30BCF /* Embed Foundation Extensions */,
 			);
 			buildRules = (
@@ -267,6 +268,29 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		E0510A01E0510A01E0510A01 /* Embed EOSSDK on Device */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed EOSSDK on Device";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\nif [ \"$PLATFORM_NAME\" != \"iphoneos\" ]; then\n    exit 0\nfi\nSOURCE_FRAMEWORK=\"$PROJECT_DIR/Vendor/EOSSDK.xcframework/ios-arm64/EOSSDK.framework\"\nDESTINATION_FRAMEWORK=\"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/EOSSDK.framework\"\nif [ ! -d \"$SOURCE_FRAMEWORK\" ]; then\n    echo \"error: EOS iOS SDK is missing. Run Scripts/install_eos_ios_sdk.sh\" >&2\n    exit 1\nfi\nmkdir -p \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH\"\nrm -rf \"$DESTINATION_FRAMEWORK\"\nditto \"$SOURCE_FRAMEWORK\" \"$DESTINATION_FRAMEWORK\"\nrm -rf \"$DESTINATION_FRAMEWORK/Headers\" \"$DESTINATION_FRAMEWORK/Modules\"\nif [ \"${CODE_SIGNING_ALLOWED:-NO}\" = \"YES\" ] && [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ]; then\n    /usr/bin/codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --preserve-metadata=identifier,entitlements,flags \"$DESTINATION_FRAMEWORK\"\nfi\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		1A0000081A0000081A000008 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -360,9 +384,21 @@
 				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = SZ343VGXTL;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				EOS_CLIENT_ID = "";
+				EOS_CLIENT_SECRET = "";
+				EOS_DEPLOYMENT_ID = "";
+				EOS_PRODUCT_ID = "";
+				EOS_SANDBOX_ID = "";
+				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]" = "$(inherited) $(PROJECT_DIR)/Vendor/EOSSDK.xcframework/ios-arm64";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Landfall/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = KeelMira;
+				INFOPLIST_KEY_EOSClientID = "$(EOS_CLIENT_ID)";
+				INFOPLIST_KEY_EOSClientSecret = "$(EOS_CLIENT_SECRET)";
+				INFOPLIST_KEY_EOSDeploymentID = "$(EOS_DEPLOYMENT_ID)";
+				INFOPLIST_KEY_EOSProductID = "$(EOS_PRODUCT_ID)";
+				INFOPLIST_KEY_EOSSandboxID = "$(EOS_SANDBOX_ID)";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -374,9 +410,11 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.4;
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = "$(inherited) -framework EOSSDK";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tatsuyaariyama.Landfall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS[sdk=iphoneos*]" = "$(inherited) EOS_SDK_AVAILABLE";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -393,9 +431,21 @@
 				CURRENT_PROJECT_VERSION = 14;
 				DEVELOPMENT_TEAM = SZ343VGXTL;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				EOS_CLIENT_ID = "";
+				EOS_CLIENT_SECRET = "";
+				EOS_DEPLOYMENT_ID = "";
+				EOS_PRODUCT_ID = "";
+				EOS_SANDBOX_ID = "";
+				"FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*]" = "$(inherited) $(PROJECT_DIR)/Vendor/EOSSDK.xcframework/ios-arm64";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Landfall/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = KeelMira;
+				INFOPLIST_KEY_EOSClientID = "$(EOS_CLIENT_ID)";
+				INFOPLIST_KEY_EOSClientSecret = "$(EOS_CLIENT_SECRET)";
+				INFOPLIST_KEY_EOSDeploymentID = "$(EOS_DEPLOYMENT_ID)";
+				INFOPLIST_KEY_EOSProductID = "$(EOS_PRODUCT_ID)";
+				INFOPLIST_KEY_EOSSandboxID = "$(EOS_SANDBOX_ID)";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -407,10 +457,12 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.4;
+				"OTHER_LDFLAGS[sdk=iphoneos*]" = "$(inherited) -framework EOSSDK";
 				PRODUCT_BUNDLE_IDENTIFIER = com.tatsuyaariyama.Landfall;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "KeelMira App Store";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS[sdk=iphoneos*]" = "$(inherited) EOS_SDK_AVAILABLE";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

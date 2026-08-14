@@ -12,7 +12,7 @@ struct PrivateIslandVisitWorld: View {
     let onPrivateIslandSelected: (PrivateIslandRoom) -> Void
 
     @StateObject private var islandService: PrivateIslandService
-    @StateObject private var chatService: PrivateIslandChatService
+    @StateObject private var realtimeClient: PrivateIslandRealtimeClient
 
     @State private var hasStarted = false
     @State private var isShuttingDown = false
@@ -27,7 +27,7 @@ struct PrivateIslandVisitWorld: View {
     @State private var snapshotPublishTask: Task<Void, Never>?
     @State private var pendingPresence: HomeIslandRemotePlayerState?
     @State private var presencePublishTask: Task<Void, Never>?
-    @State private var lastPublishedPresence: HomeIslandRemotePlayerState?
+    @State private var lastPublishedPresence: PrivateIslandTransportPresence?
 
     private let currentUserID: String
 
@@ -36,7 +36,10 @@ struct PrivateIslandVisitWorld: View {
         localOwnerID: String,
         levelProgress: PlayerLevelProgress,
         onClose: @escaping () -> Void,
-        onPrivateIslandSelected: @escaping (PrivateIslandRoom) -> Void
+        onPrivateIslandSelected: @escaping (PrivateIslandRoom) -> Void,
+        realtimeClientFactory: @escaping PrivateIslandRealtimeClientFactory = { room, persistence in
+            PrivateIslandRealtimeClient.live(room: room, persistence: persistence)
+        }
     ) {
         self.room = room
         self.localOwnerID = localOwnerID
@@ -44,9 +47,10 @@ struct PrivateIslandVisitWorld: View {
         self.onClose = onClose
         self.onPrivateIslandSelected = onPrivateIslandSelected
         currentUserID = Auth.auth().currentUser?.uid ?? ""
-        _islandService = StateObject(wrappedValue: PrivateIslandService())
-        _chatService = StateObject(
-            wrappedValue: PrivateIslandChatService(islandCode: room.code)
+        let persistence = PrivateIslandService()
+        _islandService = StateObject(wrappedValue: persistence)
+        _realtimeClient = StateObject(
+            wrappedValue: realtimeClientFactory(room, persistence)
         )
     }
 
@@ -62,13 +66,17 @@ struct PrivateIslandVisitWorld: View {
         HomeIslandMultiplayerSession(
             room: islandService.currentIsland ?? room,
             snapshot: islandService.islandSnapshot,
-            presences: islandService.presences,
+            presences: realtimeClient.state.presences.map {
+                PrivateIslandTransportCodec.legacyPresence(from: $0)
+            },
             currentUserID: currentUserID,
             role: isHost ? .host : .guestReadOnly,
-            messages: chatService.messages,
+            messages: realtimeClient.state.messages.map {
+                PrivateIslandTransportCodec.legacyChatMessage(from: $0)
+            },
             // A recovered listener may retain its last diagnostic text. The
             // live room is the authoritative availability signal for sending.
-            isChatConnected: islandService.currentIsland != nil,
+            isChatConnected: realtimeClient.state.connectionState == .connected,
             onLocalPlayerStateChanged: { state in
                 enqueuePresence(state)
             },
@@ -76,7 +84,7 @@ struct PrivateIslandVisitWorld: View {
                 enqueueHostSnapshot(snapshot)
             } : nil,
             onSendChatMessage: { text in
-                try await chatService.send(text)
+                try await realtimeClient.sendChat(text)
             },
             onReportChatMessage: { message in
                 report(message)
@@ -170,7 +178,7 @@ struct PrivateIslandVisitWorld: View {
     }
 
     private var errorText: String? {
-        coordinatorError ?? islandService.errorMessage ?? chatService.errorMessage
+        coordinatorError ?? islandService.errorMessage ?? realtimeClient.state.errorDescription
     }
 
     private func start() {
@@ -184,8 +192,8 @@ struct PrivateIslandVisitWorld: View {
             return
         }
 
-        islandService.listenToIsland(code: room.code)
-        chatService.start()
+        listenToDurableIslandState()
+        realtimeClient.start()
 
         Task { @MainActor in
             do {
@@ -221,8 +229,8 @@ struct PrivateIslandVisitWorld: View {
             withAnimation(.easeOut(duration: 0.2)) {
                 guestWaitIsLong = true
             }
-            islandService.listenToIsland(code: room.code)
-            chatService.start()
+            listenToDurableIslandState()
+            realtimeClient.start()
 
             try? await Task.sleep(for: .seconds(8))
             guard !Task.isCancelled,
@@ -237,10 +245,17 @@ struct PrivateIslandVisitWorld: View {
         guard !isShuttingDown else { return }
         coordinatorError = nil
         guestWaitIsLong = false
-        islandService.listenToIsland(code: room.code)
-        chatService.start()
+        listenToDurableIslandState()
+        realtimeClient.start()
         beginGuestResolutionWatchdog()
         Haptics.tap(.medium)
+    }
+
+    private func listenToDurableIslandState() {
+        islandService.listenToIsland(
+            code: room.code,
+            includeFirestorePresence: realtimeClient.requiresFirestorePresenceListener
+        )
     }
 
     // MARK: - Host snapshot transport
@@ -295,20 +310,20 @@ struct PrivateIslandVisitWorld: View {
             while !Task.isCancelled, !isShuttingDown,
                   let state = pendingPresence {
                 pendingPresence = nil
+                let presence = PrivateIslandTransportCodec.presence(
+                    from: state,
+                    participantID: currentUserID
+                )
                 let previous = lastPublishedPresence
                 do {
-                    try await islandService.publishPresence(
-                        code: room.code,
-                        x: state.x,
-                        z: state.z,
-                        yaw: state.yaw,
-                        pose: state.pose,
-                        scene: state.scene,
-                        phase: state.phase,
-                        seat: seatAddress(from: state),
-                        force: shouldForcePresence(state, after: previous)
+                    try await realtimeClient.publishPresence(
+                        presence,
+                        delivery: PrivateIslandTransportCodec.delivery(
+                            for: presence,
+                            after: previous
+                        )
                     )
-                    lastPublishedPresence = state
+                    lastPublishedPresence = presence
                     coordinatorError = nil
                 } catch is CancellationError {
                     break
@@ -320,36 +335,14 @@ struct PrivateIslandVisitWorld: View {
         }
     }
 
-    private func seatAddress(
-        from state: HomeIslandRemotePlayerState
-    ) -> HomeIslandSeatAddress? {
-        guard let placementString = state.seatPlacementID,
-              let placementID = UUID(uuidString: placementString),
-              let slotID = state.seatSlotID,
-              !slotID.isEmpty
-        else { return nil }
-        return HomeIslandSeatAddress(placementID: placementID, slotID: slotID)
-    }
-
-    private func shouldForcePresence(
-        _ state: HomeIslandRemotePlayerState,
-        after previous: HomeIslandRemotePlayerState?
-    ) -> Bool {
-        guard let previous else { return true }
-        return state.phase != previous.phase
-            || state.pose != previous.pose
-            || state.scene != previous.scene
-            || state.seatPlacementID != previous.seatPlacementID
-            || state.seatSlotID != previous.seatSlotID
-            || state.isVisible != previous.isVisible
-    }
-
     // MARK: - Chat moderation
 
     private func report(_ message: PrivateIslandChatMessage) {
         Task { @MainActor in
             do {
-                try await chatService.report(message, targetUserID: message.senderID)
+                try await realtimeClient.report(
+                    PrivateIslandTransportCodec.chatMessage(from: message)
+                )
             } catch {
                 coordinatorError = error.localizedDescription
             }
@@ -359,11 +352,10 @@ struct PrivateIslandVisitWorld: View {
     private func block(_ message: PrivateIslandChatMessage) {
         Task { @MainActor in
             do {
-                if chatService.blockedUserIDs.contains(message.senderID) {
-                    try await chatService.unblock(message.senderID)
-                } else {
-                    try await chatService.block(message.senderID)
-                }
+                let isBlocked = realtimeClient.state.blockedParticipantIDs.contains(
+                    message.senderID
+                )
+                try await realtimeClient.setBlocked(message.senderID, blocked: !isBlocked)
             } catch {
                 coordinatorError = error.localizedDescription
             }
@@ -398,9 +390,8 @@ struct PrivateIslandVisitWorld: View {
             // final deletion.
             await snapshotTask?.value
             await presenceTask?.value
-            await islandService.removePresence(from: room.code)
+            await realtimeClient.stop()
             islandService.stopIslandListeners()
-            chatService.stop()
         }
     }
 }

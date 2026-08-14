@@ -512,9 +512,13 @@ final class PrivateIslandService: ObservableObject {
 
     // MARK: - Current island listeners
 
-    /// Starts the room, read-only island snapshot, and live-presence listeners
-    /// as one visit session. Use a separate service instance for simultaneous UI.
-    func listenToIsland(code rawCode: String) {
+    /// Starts durable room/snapshot listeners for one visit session. The
+    /// Firestore presence listener is optional so an EOS transport can own all
+    /// high-frequency session traffic without paying for duplicate reads.
+    func listenToIsland(
+        code rawCode: String,
+        includeFirestorePresence: Bool = true
+    ) {
         let code = Self.normalizedCode(rawCode)
         guard code.count == 6 else {
             errorMessage = PrivateIslandError.invalidCode.localizedDescription
@@ -526,7 +530,9 @@ final class PrivateIslandService: ObservableObject {
         errorMessage = nil
         listenToRoom(code: code)
         listenToSnapshot(code: code)
-        listenToPresence(code: code)
+        if includeFirestorePresence {
+            listenToPresence(code: code)
+        }
     }
 
     func stopIslandListeners() {

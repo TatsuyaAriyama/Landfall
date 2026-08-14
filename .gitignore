@@ -24,3 +24,7 @@ xcuserdata/
 
 # Firebase client config (obtain from Firebase console; required to build)
 GoogleService-Info.plist
+
+# Epic Online Services iOS SDK is fetched from Epic for local/device builds.
+# Do not redistribute the SDK binary through source control.
+Vendor/EOSSDK.xcframework/

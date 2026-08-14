@@ -13,20 +13,28 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
     @Published private(set) var activeRoom: PrivateIslandRoom?
     @Published private(set) var coordinatorError: String?
     @Published private var liveRoom: PrivateIslandRoom?
-    @Published private var livePresences: [PrivateIslandPresence] = []
-    @Published private var liveMessages: [PrivateIslandChatMessage] = []
+    @Published private var realtimeState = PrivateIslandRealtimeState.disconnected
 
+    private let realtimeClientFactory: PrivateIslandRealtimeClientFactory
     private var islandService: PrivateIslandService?
-    private var chatService: PrivateIslandChatService?
+    private var realtimeClient: PrivateIslandRealtimeClient?
     private var subscriptions: Set<AnyCancellable> = []
     private var pendingPresence: HomeIslandRemotePlayerState?
     private var presencePublishTask: Task<Void, Never>?
-    private var lastPublishedPresence: HomeIslandRemotePlayerState?
+    private var lastPublishedPresence: PrivateIslandTransportPresence?
+
+    init(
+        realtimeClientFactory: @escaping PrivateIslandRealtimeClientFactory = { room, persistence in
+            PrivateIslandRealtimeClient.live(room: room, persistence: persistence)
+        }
+    ) {
+        self.realtimeClientFactory = realtimeClientFactory
+    }
 
     var multiplayerSession: HomeIslandMultiplayerSession? {
         guard let activeRoom,
-              let islandService,
-              let chatService,
+              islandService != nil,
+              let realtimeClient,
               let uid = Auth.auth().currentUser?.uid,
               !uid.isEmpty,
               uid == activeRoom.hostUid
@@ -35,22 +43,23 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
         return HomeIslandMultiplayerSession(
             room: liveRoom ?? activeRoom,
             snapshot: nil,
-            presences: livePresences,
+            presences: realtimeState.presences.map {
+                PrivateIslandTransportCodec.legacyPresence(from: $0)
+            },
             currentUserID: uid,
             role: .host,
-            messages: liveMessages,
-            isChatConnected: liveRoom != nil,
+            messages: realtimeState.messages.map {
+                PrivateIslandTransportCodec.legacyChatMessage(from: $0)
+            },
+            isChatConnected: realtimeState.connectionState == .connected,
             onLocalPlayerStateChanged: { [weak self] state in
                 self?.enqueuePresence(state)
             },
             onHostSnapshotChanged: { [weak self] snapshot in
                 self?.islandService?.enqueueOwnedSnapshot(snapshot)
             },
-            onSendChatMessage: { [weak self] text in
-                guard let self, let chatService = self.chatService else {
-                    throw PrivateIslandError.islandNotFound
-                }
-                try await chatService.send(text)
+            onSendChatMessage: { text in
+                try await realtimeClient.sendChat(text)
             },
             onReportChatMessage: { [weak self] message in
                 self?.report(message)
@@ -76,9 +85,9 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
         coordinatorError = nil
 
         let islandService = PrivateIslandService()
-        let chatService = PrivateIslandChatService(islandCode: room.code)
+        let realtimeClient = realtimeClientFactory(room, islandService)
         self.islandService = islandService
-        self.chatService = chatService
+        self.realtimeClient = realtimeClient
 
         // Mirror published values after mutation. Forwarding objectWillChange
         // fires before the nested value changes and could leave the existing
@@ -86,16 +95,16 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
         islandService.$currentIsland
             .sink { [weak self] room in self?.liveRoom = room }
             .store(in: &subscriptions)
-        islandService.$presences
-            .sink { [weak self] presences in self?.livePresences = presences }
-            .store(in: &subscriptions)
-        chatService.$messages
-            .sink { [weak self] messages in self?.liveMessages = messages }
+        realtimeClient.$state
+            .sink { [weak self] state in self?.realtimeState = state }
             .store(in: &subscriptions)
 
         activeRoom = room
-        islandService.listenToIsland(code: room.code)
-        chatService.start()
+        islandService.listenToIsland(
+            code: room.code,
+            includeFirestorePresence: realtimeClient.requiresFirestorePresenceListener
+        )
+        realtimeClient.start()
 
         Task { @MainActor [weak self] in
             do {
@@ -114,19 +123,17 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
 
     /// Detaches networking only. The local Home Island view remains alive.
     func deactivate() {
-        guard activeRoom != nil || islandService != nil || chatService != nil else { return }
-        let room = activeRoom
+        guard activeRoom != nil || islandService != nil || realtimeClient != nil else { return }
         let islandService = islandService
-        let chatService = chatService
+        let realtimeClient = realtimeClient
         let presenceTask = presencePublishTask
 
         activeRoom = nil
         self.islandService = nil
-        self.chatService = nil
+        self.realtimeClient = nil
         subscriptions.removeAll()
         liveRoom = nil
-        livePresences = []
-        liveMessages = []
+        realtimeState = .disconnected
         pendingPresence = nil
         lastPublishedPresence = nil
         presencePublishTask = nil
@@ -134,18 +141,16 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
 
         Task { @MainActor in
             await presenceTask?.value
-            if let room, let islandService {
-                await islandService.removePresence(from: room.code)
-            }
+            await realtimeClient?.stop()
             islandService?.stopIslandListeners()
-            chatService?.stop()
         }
     }
 
     private func enqueuePresence(_ state: HomeIslandRemotePlayerState) {
         guard let room = activeRoom,
-              let islandService,
-              Auth.auth().currentUser?.uid == room.hostUid
+              let realtimeClient,
+              let uid = Auth.auth().currentUser?.uid,
+              uid == room.hostUid
         else { return }
 
         pendingPresence = state
@@ -157,20 +162,20 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
                   self.activeRoom?.code == room.code,
                   let state = self.pendingPresence {
                 self.pendingPresence = nil
+                let presence = PrivateIslandTransportCodec.presence(
+                    from: state,
+                    participantID: uid
+                )
                 let previous = self.lastPublishedPresence
                 do {
-                    try await islandService.publishPresence(
-                        code: room.code,
-                        x: state.x,
-                        z: state.z,
-                        yaw: state.yaw,
-                        pose: state.pose,
-                        scene: state.scene,
-                        phase: state.phase,
-                        seat: Self.seatAddress(from: state),
-                        force: Self.shouldForcePresence(state, after: previous)
+                    try await realtimeClient.publishPresence(
+                        presence,
+                        delivery: PrivateIslandTransportCodec.delivery(
+                            for: presence,
+                            after: previous
+                        )
                     )
-                    self.lastPublishedPresence = state
+                    self.lastPublishedPresence = presence
                     self.coordinatorError = nil
                 } catch is CancellationError {
                     break
@@ -182,35 +187,13 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
         }
     }
 
-    private static func seatAddress(
-        from state: HomeIslandRemotePlayerState
-    ) -> HomeIslandSeatAddress? {
-        guard let placementString = state.seatPlacementID,
-              let placementID = UUID(uuidString: placementString),
-              let slotID = state.seatSlotID,
-              !slotID.isEmpty
-        else { return nil }
-        return HomeIslandSeatAddress(placementID: placementID, slotID: slotID)
-    }
-
-    private static func shouldForcePresence(
-        _ state: HomeIslandRemotePlayerState,
-        after previous: HomeIslandRemotePlayerState?
-    ) -> Bool {
-        guard let previous else { return true }
-        return state.phase != previous.phase
-            || state.pose != previous.pose
-            || state.scene != previous.scene
-            || state.seatPlacementID != previous.seatPlacementID
-            || state.seatSlotID != previous.seatSlotID
-            || state.isVisible != previous.isVisible
-    }
-
     private func report(_ message: PrivateIslandChatMessage) {
         Task { @MainActor [weak self] in
-            guard let self, let chatService else { return }
+            guard let self, let realtimeClient else { return }
             do {
-                try await chatService.report(message, targetUserID: message.senderID)
+                try await realtimeClient.report(
+                    PrivateIslandTransportCodec.chatMessage(from: message)
+                )
             } catch {
                 coordinatorError = error.localizedDescription
             }
@@ -219,13 +202,10 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
 
     private func toggleBlock(_ message: PrivateIslandChatMessage) {
         Task { @MainActor [weak self] in
-            guard let self, let chatService else { return }
+            guard let self, let realtimeClient else { return }
             do {
-                if chatService.blockedUserIDs.contains(message.senderID) {
-                    try await chatService.unblock(message.senderID)
-                } else {
-                    try await chatService.block(message.senderID)
-                }
+                let isBlocked = realtimeState.blockedParticipantIDs.contains(message.senderID)
+                try await realtimeClient.setBlocked(message.senderID, blocked: !isBlocked)
             } catch {
                 coordinatorError = error.localizedDescription
             }
