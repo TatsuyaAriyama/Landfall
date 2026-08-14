@@ -1227,6 +1227,17 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
             var removedVisuals: [RemotePlayerVisual] = []
             var arrivalsToStart: [(id: String, nonce: String)] = []
+
+            // Ground resolution asks SceneKit for a segment hit. Do it before
+            // taking the remote-player lock: the render callback already owns
+            // SceneKit's scene lock and must never wait on this lock in the
+            // opposite order.
+            var positionsByID: [String: SCNVector3] = [:]
+            positionsByID.reserveCapacity(statesByID.count)
+            for (id, state) in statesByID {
+                positionsByID[id] = resolvedRemotePosition(for: state)
+            }
+
             remotePlayersLock.lock()
             for id in Array(remotePlayerVisuals.keys) where statesByID[id] == nil {
                 if let removed = remotePlayerVisuals.removeValue(forKey: id) {
@@ -1235,7 +1246,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
 
             for (id, state) in statesByID {
-                let position = resolvedRemotePosition(for: state)
+                guard let position = positionsByID[id] else { continue }
                 if let visual = remotePlayerVisuals[id] {
                     visual.targetPosition = position
                     visual.targetYaw = state.yaw
@@ -3901,7 +3912,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func updateRemotePlayers(deltaTime: Float) {
-            remotePlayersLock.lock()
+            // SceneKit invokes this while holding its internal scene lock. A
+            // blocking acquisition here can deadlock against SwiftUI's main
+            // thread, which may be applying a Firestore state update. Skipping
+            // one interpolation frame is invisible and keeps both threads live.
+            guard remotePlayersLock.try() else { return }
             defer { remotePlayersLock.unlock() }
 
             for visual in remotePlayerVisuals.values {

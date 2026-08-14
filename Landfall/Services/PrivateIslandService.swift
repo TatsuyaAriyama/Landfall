@@ -153,7 +153,9 @@ final class PrivateIslandService: ObservableObject {
         static let placementCoordinate: Float = 10_000
         static let presenceCoordinate: Float = 80
         static let stalePresence: TimeInterval = 45
-        static let presenceWriteInterval: TimeInterval = 0.8
+        /// About two position samples per second keeps remote movement
+        /// responsive while the SceneKit client interpolates between samples.
+        static let presenceWriteInterval: TimeInterval = 0.45
     }
 
     private enum TransactionFailure: Int {
@@ -638,7 +640,7 @@ final class PrivateIslandService: ObservableObject {
 
     // MARK: - Live presence
 
-    /// Publishes at most about once per second during movement. Set `force` for
+    /// Publishes at most about twice per second during movement. Set `force` for
     /// arrival, sitting, standing, and departure transitions.
     func publishPresence(
         code rawCode: String,
