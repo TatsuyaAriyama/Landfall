@@ -521,6 +521,7 @@ final class PrivateIslandService: ObservableObject {
         stopIslandListeners()
         listeningCode = code
         visitArrivalNonce = UUID().uuidString.lowercased()
+        errorMessage = nil
         listenToRoom(code: code)
         listenToSnapshot(code: code)
         listenToPresence(code: code)
@@ -563,6 +564,7 @@ final class PrivateIslandService: ObservableObject {
                         self.errorMessage = error.localizedDescription
                         return
                     }
+                    self.errorMessage = nil
                     self.currentIsland = document.flatMap(Self.decodeRoom)
                 }
             }
@@ -602,6 +604,7 @@ final class PrivateIslandService: ObservableObject {
                         self.errorMessage = error.localizedDescription
                         return
                     }
+                    self.errorMessage = nil
                     guard let document, document.exists else {
                         self.islandSnapshot = nil
                         self.hasResolvedIslandSnapshot = true
@@ -611,6 +614,26 @@ final class PrivateIslandService: ObservableObject {
                     self.hasResolvedIslandSnapshot = true
                 }
             }
+
+        // A cached host snapshot can be painted immediately even if the live
+        // watch stream is reconnecting after the full-screen world transition.
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let document = try await db.collection("privateIslands").document(code)
+                    .collection("island").document("current")
+                    .getDocument(source: .cache)
+                guard listeningCode == code,
+                      !hasResolvedIslandSnapshot,
+                      document.exists
+                else { return }
+                islandSnapshot = Self.decodeSnapshot(document, code: code)
+                hasResolvedIslandSnapshot = true
+            } catch {
+                // A cache miss is expected for a first visit. The live listener
+                // remains authoritative and will resolve either data or absence.
+            }
+        }
     }
 
     // MARK: - Live presence
@@ -1038,6 +1061,7 @@ final class PrivateIslandChatService: ObservableObject {
 
     func start() {
         stop(clearMessages: false)
+        errorMessage = nil
         guard islandCode.count == 6 else {
             errorMessage = PrivateIslandError.invalidCode.localizedDescription
             return
@@ -1072,6 +1096,7 @@ final class PrivateIslandChatService: ObservableObject {
                         self.errorMessage = error.localizedDescription
                         return
                     }
+                    self.errorMessage = nil
                     self.allMessages = snapshot?.documents.compactMap(Self.decodeMessage) ?? []
                     if self.hasResolvedBlocks { self.applyBlocks() }
                 }

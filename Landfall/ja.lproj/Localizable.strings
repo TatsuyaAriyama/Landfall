@@ -699,6 +699,8 @@
 "Landfall card" = "上陸カード";
 "Only available at the moment you go ashore." = "上陸したこの瞬間だけ作れる記念カードです。";
 "Charting the island…" = "島の景色を描いています…";
+"Waiting for the host's island" = "ホストの島を待っています";
+"The host's island could not be loaded. Please try again." = "ホストの島を読み込めませんでした。もう一度お試しください。";
 "Save or share" = "保存・共有";
 "Voyage completed" = "航海達成";
 "Landed on" = "上陸日";

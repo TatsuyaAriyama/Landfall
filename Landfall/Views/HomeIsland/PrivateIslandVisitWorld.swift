@@ -18,6 +18,7 @@ struct PrivateIslandVisitWorld: View {
     @State private var isShuttingDown = false
     @State private var coordinatorError: String?
     @State private var guestWaitIsLong = false
+    @State private var guestResolutionTask: Task<Void, Never>?
 
     // Firestore writes are kept serial. Placement edits debounce into the
     // newest complete snapshot; player transforms use a latest-value queue and
@@ -104,24 +105,33 @@ struct PrivateIslandVisitWorld: View {
             statusOverlay
                 .padding(.horizontal, 16)
                 .safeAreaPadding(.top, 10)
-                .allowsHitTesting(false)
         }
         .id(sessionIdentity)
         .onAppear(perform: start)
-        .onDisappear {
-            shutDown(thenClose: false)
+        .onChange(of: islandService.hasResolvedIslandSnapshot) { _, resolved in
+            guard resolved else { return }
+            guestResolutionTask?.cancel()
+            guestResolutionTask = nil
+            guestWaitIsLong = false
         }
     }
 
     @ViewBuilder
     private var statusOverlay: some View {
         if let errorText {
-            Label {
-                Text(verbatim: errorText)
-                    .lineLimit(2)
-            } icon: {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(LFColor.deepRust)
+            HStack(spacing: 10) {
+                Label {
+                    Text(verbatim: errorText)
+                        .lineLimit(2)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(LFColor.deepRust)
+                }
+                Button("Retry") {
+                    restartVisit()
+                }
+                .font(LFFont.label(10))
+                .buttonStyle(.bordered)
             }
             .font(LFFont.label(11))
             .foregroundStyle(Color(uiColor: VoyageSceneKit.nightBG))
@@ -132,7 +142,6 @@ struct PrivateIslandVisitWorld: View {
                 Capsule().stroke(Color.white.opacity(0.7), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
-            .accessibilityElement(children: .combine)
         } else if !isHost, !islandService.hasResolvedIslandSnapshot {
             HStack(spacing: 9) {
                 ProgressView()
@@ -193,17 +202,45 @@ struct PrivateIslandVisitWorld: View {
                 immediately: true
             )
         } else {
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(5))
-                guard !Task.isCancelled,
-                      !isShuttingDown,
-                      !islandService.hasResolvedIslandSnapshot
-                else { return }
-                withAnimation(.easeOut(duration: 0.2)) {
-                    guestWaitIsLong = true
-                }
-            }
+            beginGuestResolutionWatchdog()
         }
+    }
+
+    /// Firestore can briefly lose its watch stream while a full-screen SceneKit
+    /// world is being attached. Recover the visit once instead of leaving the
+    /// guest on an empty local-looking island with an endless spinner.
+    private func beginGuestResolutionWatchdog() {
+        guestResolutionTask?.cancel()
+        guestResolutionTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled,
+                  !isShuttingDown,
+                  !islandService.hasResolvedIslandSnapshot
+            else { return }
+
+            withAnimation(.easeOut(duration: 0.2)) {
+                guestWaitIsLong = true
+            }
+            islandService.listenToIsland(code: room.code)
+            chatService.start()
+
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled,
+                  !isShuttingDown,
+                  !islandService.hasResolvedIslandSnapshot
+            else { return }
+            coordinatorError = LF.text("The host's island could not be loaded. Please try again.")
+        }
+    }
+
+    private func restartVisit() {
+        guard !isShuttingDown else { return }
+        coordinatorError = nil
+        guestWaitIsLong = false
+        islandService.listenToIsland(code: room.code)
+        chatService.start()
+        beginGuestResolutionWatchdog()
+        Haptics.tap(.medium)
     }
 
     // MARK: - Host snapshot transport
@@ -338,6 +375,8 @@ struct PrivateIslandVisitWorld: View {
     private func shutDown(thenClose: Bool) {
         guard !isShuttingDown else { return }
         isShuttingDown = true
+        guestResolutionTask?.cancel()
+        guestResolutionTask = nil
         pendingHostSnapshot = nil
         pendingPresence = nil
 

@@ -1303,7 +1303,7 @@ struct HomeIslandView: View {
         HStack(spacing: 9) {
             ProgressView()
                 .tint(Color(uiColor: VoyageSceneKit.sand))
-            Text(verbatim: LF.format("Approaching %@…", PlayerProfile.islandName))
+            Text(verbatim: LF.format("Approaching %@…", arrivalIslandName))
                 .font(LFFont.label(12))
                 .foregroundStyle(.white.opacity(0.84))
         }
@@ -1312,6 +1312,15 @@ struct HomeIslandView: View {
         .background(.black.opacity(0.42), in: Capsule())
         .overlay(Capsule().stroke(.white.opacity(0.13), lineWidth: 1))
         .allowsHitTesting(false)
+    }
+
+    /// A guest is sailing toward the room owner's island, not the island name
+    /// stored on this device. The local name remains correct for solo arrivals.
+    private var arrivalIslandName: String {
+        guard let multiplayerSession, multiplayerSession.isReadOnly else {
+            return PlayerProfile.islandName
+        }
+        return multiplayerSession.room.name
     }
 
     private var saveFailureHint: some View {
