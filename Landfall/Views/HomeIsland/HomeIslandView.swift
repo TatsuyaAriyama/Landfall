@@ -145,6 +145,8 @@ struct HomeIslandView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Query(sort: \StudySession.date) private var studySessions: [StudySession]
     @ObservedObject private var homeMusic = HomeBackgroundMusic.shared
     @StateObject private var store: HomeIslandStore
@@ -260,11 +262,9 @@ struct HomeIslandView: View {
                 cameraExposureOffset: cameraExposureOffset,
                 cameraInteractionLocked: isCapturing
                     || showingHarborPanel
-                    || privateChatExpanded
                     || privateChatInputFocused,
                 walkInput: showingBoatCustomization
                     || showingHarborPanel
-                    || privateChatExpanded
                     || privateChatInputFocused
                     ? .zero
                     : walkInput,
@@ -373,12 +373,11 @@ struct HomeIslandView: View {
 
             if mode == .explore,
                !showingBoatCustomization,
-               !showingHarborPanel,
-               !privateChatExpanded {
+               !showingHarborPanel {
                 HomeIslandClockHUD()
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
                     .safeAreaPadding(.leading, 16)
-                    .safeAreaPadding(.bottom, multiplayerSession == nil ? 16 : 76)
+                    .safeAreaPadding(.bottom, homeIslandClockBottomPadding)
                     .allowsHitTesting(false)
                     .transition(.opacity)
             }
@@ -411,7 +410,6 @@ struct HomeIslandView: View {
                     onBlock: multiplayerSession.onBlockChatMessage,
                     onExpandedChanged: { expanded in
                         privateChatExpanded = expanded
-                        if expanded { walkInput = .zero }
                     },
                     onInputFocusChanged: { focused in
                         privateChatInputFocused = focused
@@ -996,6 +994,17 @@ struct HomeIslandView: View {
 
     private var compactTopHUD: Bool {
         horizontalSizeClass == .compact
+    }
+
+    /// Keep the clock visible while chat is open. On compact layouts the chat
+    /// spans the screen, so lift the clock above it; iPad keeps the clock on
+    /// the left and the chat dock on the right.
+    private var homeIslandClockBottomPadding: CGFloat {
+        guard multiplayerSession != nil else { return 16 }
+        guard privateChatExpanded, horizontalSizeClass == .compact else { return 76 }
+        if dynamicTypeSize.isAccessibilitySize { return 406 }
+        if verticalSizeClass == .compact { return 266 }
+        return 316
     }
 
     /// A medium detent is useful on iPhone because the island remains visible
@@ -2453,8 +2462,8 @@ private struct HomeIslandHarborPanel: View {
             let panelWidth = min(regular ? 760 : availableWidth, availableWidth)
             // Keep enough vertical room for a dense sailor list. Individual
             // community headers are compact; the panel itself is the viewport.
-            let preferredHeight = geometry.size.height * (regular ? 0.84 : 0.58)
-            let panelHeight = min(regular ? 900 : 500, preferredHeight, availableHeight)
+            let preferredHeight = geometry.size.height * (regular ? 0.84 : 0.82)
+            let panelHeight = min(regular ? 900 : 680, preferredHeight, availableHeight)
             ZStack {
                 Color.clear
                     .contentShape(Rectangle())

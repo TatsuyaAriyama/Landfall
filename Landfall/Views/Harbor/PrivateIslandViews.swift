@@ -69,6 +69,7 @@ struct PrivateIslandLobbyView: View {
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var presentedAction: PrivateIslandLobbyAction?
 
     private var ownedRoom: PrivateIslandRoom? {
@@ -82,8 +83,11 @@ struct PrivateIslandLobbyView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            header
+        VStack(alignment: .leading, spacing: usesCompactCards ? 12 : 20) {
+            if !usesCompactCards {
+                header
+            }
+            entryActions
                 .overlay(alignment: .topTrailing) {
                     if isLoading, rooms.isEmpty {
                         ProgressView()
@@ -92,7 +96,6 @@ struct PrivateIslandLobbyView: View {
                             .accessibilityLabel(Text("Looking for private islands…"))
                     }
                 }
-            entryActions
 
             if let ownedRoom {
                 sectionTitle("Your private island")
@@ -106,8 +109,8 @@ struct PrivateIslandLobbyView: View {
         }
         .frame(maxWidth: 820, alignment: .leading)
         .padding(.horizontal, horizontalPadding)
-        .padding(.top, 10)
-        .padding(.bottom, 28)
+        .padding(.top, usesCompactCards ? 0 : 10)
+        .padding(.bottom, usesCompactCards ? 0 : 28)
         .frame(maxWidth: .infinity)
         .sheet(item: $presentedAction) { action in
             switch action {
@@ -159,7 +162,7 @@ struct PrivateIslandLobbyView: View {
     private var entryActions: some View {
         LazyVGrid(columns: actionColumns, alignment: .leading, spacing: 12) {
             joinCodeCard
-            if ownedRoom == nil {
+            if ownedRoom == nil, !isLoading {
                 createIslandCard
             }
         }
@@ -176,7 +179,7 @@ struct PrivateIslandLobbyView: View {
             }
         } label: {
             entryActionLabel(
-                symbol: canHost ? "house.and.flag.fill" : "ticket.fill",
+                symbol: "globe.asia.australia.fill",
                 badge: canHost ? "READY" : "VOYAGE PASS",
                 title: "Host your own island",
                 detail: canHost
@@ -219,7 +222,90 @@ struct PrivateIslandLobbyView: View {
         .accessibilityHint(Text("Adds a friend's island"))
     }
 
+    @ViewBuilder
     private func entryActionLabel(
+        symbol: String,
+        badge: LocalizedStringKey,
+        title: LocalizedStringKey,
+        detail: LocalizedStringKey,
+        isPrimary: Bool,
+        isWorking: Bool
+    ) -> some View {
+        if usesCompactCards, dynamicTypeSize < .xxxLarge {
+            compactEntryActionLabel(
+                symbol: symbol,
+                title: title,
+                isPrimary: isPrimary,
+                isWorking: isWorking
+            )
+        } else {
+            regularEntryActionLabel(
+                symbol: symbol,
+                badge: badge,
+                title: title,
+                detail: detail,
+                isPrimary: isPrimary,
+                isWorking: isWorking
+            )
+        }
+    }
+
+    private func compactEntryActionLabel(
+        symbol: String,
+        title: LocalizedStringKey,
+        isPrimary: Bool,
+        isWorking: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                ZStack {
+                    Circle()
+                        .fill(isPrimary ? Color.white.opacity(0.12) : PrivateIslandGlass.ink.opacity(0.07))
+                    if isWorking {
+                        ProgressView()
+                            .tint(isPrimary ? .white : PrivateIslandGlass.ink)
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: symbol)
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                }
+                .frame(width: 36, height: 36)
+                .accessibilityHidden(true)
+
+                Spacer(minLength: 4)
+
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .opacity(0.56)
+            }
+
+            Text(title)
+                .font(LFFont.copy(14))
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(isPrimary ? "Enter code" : (canHost ? "Create island" : "View Voyage Pass"))
+                .font(LFFont.label(10))
+                .opacity(0.62)
+        }
+        .foregroundStyle(isPrimary ? Color.white : PrivateIslandGlass.ink)
+        .padding(13)
+        .frame(maxWidth: .infinity, minHeight: 126, alignment: .topLeading)
+        .contentShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
+        .background {
+            if isPrimary {
+                RoundedRectangle(cornerRadius: 19, style: .continuous)
+                    .fill(PrivateIslandGlass.ink)
+            } else {
+                RoundedRectangle(cornerRadius: 19, style: .continuous)
+                    .fill(Color.clear)
+                    .privateIslandGlass(cornerRadius: 19)
+            }
+        }
+    }
+
+    private func regularEntryActionLabel(
         symbol: String,
         badge: LocalizedStringKey,
         title: LocalizedStringKey,
@@ -424,6 +510,7 @@ struct PrivateIslandLobbyView: View {
             .tracking(0.9)
             .foregroundStyle(PrivateIslandGlass.ink.opacity(0.5))
             .padding(.top, 2)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func shareText(for room: PrivateIslandRoom) -> String {
@@ -447,6 +534,12 @@ struct PrivateIslandLobbyView: View {
     }
 
     private var actionColumns: [GridItem] {
+        if usesCompactCards, dynamicTypeSize < .xxxLarge, ownedRoom == nil {
+            return [
+                GridItem(.flexible(), spacing: 10),
+                GridItem(.flexible(), spacing: 10),
+            ]
+        }
         guard horizontalSizeClass == .regular else {
             return [GridItem(.flexible(), spacing: 12)]
         }
@@ -458,6 +551,10 @@ struct PrivateIslandLobbyView: View {
 
     private var horizontalPadding: CGFloat {
         horizontalSizeClass == .regular ? 28 : 14
+    }
+
+    private var usesCompactCards: Bool {
+        horizontalSizeClass != .regular
     }
 }
 
@@ -842,7 +939,6 @@ struct PrivateIslandChatDock: View {
         .privateIslandGlass(cornerRadius: isExpanded ? 22 : 18, opacity: 0.86)
         .shadow(color: .black.opacity(0.12), radius: 14, y: 6)
         .padding(.horizontal, 12)
-        .padding(.bottom, 6)
         .frame(maxWidth: .infinity, alignment: dockAlignment)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isExpanded)
         .onChange(of: inputFocused) { _, focused in
@@ -852,7 +948,6 @@ struct PrivateIslandChatDock: View {
             if !expanded { inputFocused = false }
             onExpandedChanged(expanded)
         }
-        .accessibilityAddTraits(isExpanded ? .isModal : [])
     }
 
     private var dockHeader: some View {
@@ -922,12 +1017,8 @@ struct PrivateIslandChatDock: View {
             ScrollView {
                 LazyVStack(spacing: 10) {
                     if messages.isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "wind")
-                                .font(.system(size: 18, weight: .regular))
-                            Text("Say hello to everyone on the island.")
-                                .font(LFFont.label(12))
-                        }
+                        Text("Say hello to everyone on the island.")
+                            .font(LFFont.label(12))
                         .foregroundStyle(PrivateIslandGlass.ink.opacity(0.43))
                         .frame(maxWidth: .infinity)
                         .padding(.top, 26)

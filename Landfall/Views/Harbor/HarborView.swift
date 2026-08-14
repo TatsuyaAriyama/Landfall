@@ -93,12 +93,13 @@ struct HarborOceanBackground: View {
 /// 順位・ランキング・ストリークは作らない。休んだ日も学んだ日と同格に見える。
 struct HarborView: View {
     @EnvironmentObject private var auth: AuthService
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @StateObject private var privateIslandService = PrivateIslandService.shared
     @StateObject private var voyagePass = VoyagePassStore.shared
     @Environment(\.modelContext) private var modelContext
 
-    /// 初回ロードが済むまでは空状態CTAを出さない(在港者に「空です」を一瞬見せないため)。
-    @State private var hasLoaded = false
+    @State private var isPrivateIslandLoading = true
+    @State private var privateIslandLoadError: String?
     @StateObject private var router = DeepLinkRouter.shared
     @State private var joiningInviteCode: String?
     @State private var privateIslandError: String?
@@ -149,14 +150,11 @@ struct HarborView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        // Invite-only actions are the first thing sailors see;
-                        // public lists no longer bury the host/join routes.
                         privateSection
                         publicSection
                     }
                     .padding(showsOceanBackground ? LFMetrics.cardPadding : 16)
                 }
-                .background(Color.clear)
             }
             .navigationDestination(for: MemberTraceKey.self) { key in
                 MemberTraceView(
@@ -205,6 +203,15 @@ struct HarborView: View {
                 joinPrivateIslandInvite(code)
             }
         }
+        .onChange(of: auth.user?.uid) { _, _ in
+            isPrivateIslandLoading = true
+            privateIslandLoadError = nil
+            privateIslandService.listenToJoinedIslands()
+            Task { await reload() }
+            if auth.isSignedIn, let code = router.pendingJoinCode {
+                joinPrivateIslandInvite(code)
+            }
+        }
         .onDisappear {
             privateIslandService.stopJoinedIslandsListener()
         }
@@ -247,16 +254,19 @@ struct HarborView: View {
     }
 
     private func reload() async {
-        async let privateRefresh: Void = privateIslandService.refreshIslands()
+        isPrivateIslandLoading = true
+        privateIslandLoadError = nil
         async let publicRefresh: Void = publicService.refresh()
-        _ = await (privateRefresh, publicRefresh)
+        await privateIslandService.refreshIslands()
+        privateIslandLoadError = privateIslandService.errorMessage
+        isPrivateIslandLoading = false
+        _ = await publicRefresh
         // Web版と同じ規則でサービス開始日を確定し、既存のカードにも補完する。
         PlayerProfile.rememberVoyageStart(
             context: modelContext,
             accountCreatedAt: auth.user?.metadata.creationDate
         )
         await publicService.syncProfile()
-        hasLoaded = true
     }
 
     private func selectPrivateIsland(_ room: PrivateIslandRoom) {
@@ -265,6 +275,7 @@ struct HarborView: View {
     }
 
     private func joinPrivateIslandInvite(_ rawCode: String) {
+        guard auth.isSignedIn else { return }
         let code = PrivateIslandService.normalizedCode(rawCode)
         guard code.count == 6, joiningInviteCode != code else {
             router.pendingJoinCode = nil
@@ -290,11 +301,13 @@ struct HarborView: View {
 
     @ViewBuilder
     private var privateSection: some View {
-        Text("Private")
-            .font(LFFont.label(13))
-            .tracking(1)
-            .foregroundStyle(LFColor.ink.opacity(0.5))
-            .padding(.top, 8)
+        if horizontalSizeClass == .regular {
+            Text("Private")
+                .font(LFFont.label(13))
+                .tracking(1)
+                .foregroundStyle(LFColor.ink.opacity(0.5))
+                .padding(.top, 8)
+        }
 
         if !auth.isSignedIn {
             Text("Sign in to enter a harbor.")
@@ -305,11 +318,30 @@ struct HarborView: View {
                 .background(Color.white.opacity(showsOceanBackground ? 0 : 0.68))
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .padding(.top, 10)
+        } else if let privateIslandLoadError {
+            Button {
+                Task { await reload() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.clockwise")
+                        .accessibilityHidden(true)
+                    Text("Try again")
+                        .font(LFFont.copy(14))
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(timeOfDay.palette.inkColor)
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity, minHeight: 54)
+                .background(timeOfDay.palette.glassColor.opacity(0.86))
+                .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+            }
+            .buttonStyle(LFPressableButtonStyle())
+            .accessibilityHint(Text(verbatim: privateIslandLoadError))
         } else {
             PrivateIslandLobbyView(
                 rooms: privateIslandService.islands,
                 currentUserID: privateIslandService.currentUserID ?? auth.user?.uid ?? "",
-                isLoading: !hasLoaded,
+                isLoading: isPrivateIslandLoading,
                 canHost: voyagePass.isActive,
                 isHostAccessLoading: voyagePass.isLoading,
                 onOpenVoyagePass: {
@@ -359,14 +391,16 @@ struct HarborView: View {
             Text("Public")
                 .font(LFFont.label(13))
                 .tracking(1)
-                .foregroundStyle(LFColor.ink.opacity(0.5))
-                .padding(.top, showsOceanBackground ? 36 : 22)
+                .foregroundStyle(publicListInk.opacity(0.58))
+                .padding(.top, horizontalSizeClass == .regular ? 36 : 18)
+                .padding(.bottom, 6)
+                .accessibilityAddTraits(.isHeader)
 
             VStack(spacing: 0) {
                 ForEach(PublicHarbor.all) { harbor in
                     if harbor.slug != PublicHarbor.all.first?.slug {
                         Rectangle()
-                            .fill(LFColor.ink.opacity(0.08))
+                            .fill(publicListInk.opacity(0.10))
                             .frame(height: 1)
                     }
                     publicRow(harbor)
@@ -380,7 +414,6 @@ struct HarborView: View {
                     : Color.white.opacity(0.74)
             )
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .padding(.top, 6)
         }
     }
 
@@ -471,12 +504,12 @@ struct HarborView: View {
                     HStack(spacing: 8) {
                         Text(harbor.title)
                             .font(LFFont.copy(showsOceanBackground ? 17 : 16))
-                            .foregroundStyle(LFColor.ink)
+                            .foregroundStyle(publicListInk)
                             .lineLimit(1)
                         if publicService.joined.contains(harbor.slug) {
                             Text("In harbor")
                                 .font(LFFont.label(12))
-                                .foregroundStyle(LFColor.ink)
+                                .foregroundStyle(publicListInk)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 4)
                                 .background(LFColor.seaGreen.opacity(0.3))
@@ -486,15 +519,19 @@ struct HarborView: View {
                     }
                     Text(harbor.tagline)
                         .font(LFFont.label(showsOceanBackground ? 12 : 11))
-                        .foregroundStyle(LFColor.ink.opacity(0.45))
+                        .foregroundStyle(publicListInk.opacity(0.52))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(LFColor.ink.opacity(0.25))
+                    .foregroundStyle(publicListInk.opacity(0.32))
             }
             .padding(.vertical, showsOceanBackground ? 12 : 7)
+    }
+
+    private var publicListInk: Color {
+        showsOceanBackground ? timeOfDay.palette.inkColor : LFColor.harborTeal
     }
 
 }

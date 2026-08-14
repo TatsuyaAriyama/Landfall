@@ -12,11 +12,13 @@ import SwiftUI
 final class HostedPrivateIslandSessionCoordinator: ObservableObject {
     @Published private(set) var activeRoom: PrivateIslandRoom?
     @Published private(set) var coordinatorError: String?
+    @Published private var liveRoom: PrivateIslandRoom?
+    @Published private var livePresences: [PrivateIslandPresence] = []
+    @Published private var liveMessages: [PrivateIslandChatMessage] = []
 
     private var islandService: PrivateIslandService?
     private var chatService: PrivateIslandChatService?
-    private var islandChanges: AnyCancellable?
-    private var chatChanges: AnyCancellable?
+    private var subscriptions: Set<AnyCancellable> = []
     private var pendingPresence: HomeIslandRemotePlayerState?
     private var presencePublishTask: Task<Void, Never>?
     private var lastPublishedPresence: HomeIslandRemotePlayerState?
@@ -31,13 +33,13 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
         else { return nil }
 
         return HomeIslandMultiplayerSession(
-            room: islandService.currentIsland ?? activeRoom,
+            room: liveRoom ?? activeRoom,
             snapshot: nil,
-            presences: islandService.presences,
+            presences: livePresences,
             currentUserID: uid,
             role: .host,
-            messages: chatService.messages,
-            isChatConnected: islandService.currentIsland != nil,
+            messages: liveMessages,
+            isChatConnected: liveRoom != nil,
             onLocalPlayerStateChanged: { [weak self] state in
                 self?.enqueuePresence(state)
             },
@@ -78,14 +80,18 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
         self.islandService = islandService
         self.chatService = chatService
 
-        // Forward nested ObservableObject changes so the existing
-        // HomeIslandView receives fresh sailors, room state, and chat lines.
-        islandChanges = islandService.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }
-        chatChanges = chatService.objectWillChange.sink { [weak self] _ in
-            self?.objectWillChange.send()
-        }
+        // Mirror published values after mutation. Forwarding objectWillChange
+        // fires before the nested value changes and could leave the existing
+        // HomeIslandView rendering the previous chat array.
+        islandService.$currentIsland
+            .sink { [weak self] room in self?.liveRoom = room }
+            .store(in: &subscriptions)
+        islandService.$presences
+            .sink { [weak self] presences in self?.livePresences = presences }
+            .store(in: &subscriptions)
+        chatService.$messages
+            .sink { [weak self] messages in self?.liveMessages = messages }
+            .store(in: &subscriptions)
 
         activeRoom = room
         islandService.listenToIsland(code: room.code)
@@ -117,8 +123,10 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
         activeRoom = nil
         self.islandService = nil
         self.chatService = nil
-        islandChanges = nil
-        chatChanges = nil
+        subscriptions.removeAll()
+        liveRoom = nil
+        livePresences = []
+        liveMessages = []
         pendingPresence = nil
         lastPublishedPresence = nil
         presencePublishTask = nil

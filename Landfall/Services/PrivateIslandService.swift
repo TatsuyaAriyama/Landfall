@@ -115,6 +115,7 @@ final class PrivateIslandService: ObservableObject {
     @Published private(set) var errorMessage: String?
 
     private var islandsListener: ListenerRegistration?
+    private var islandsListenerUserID: String?
     private var islandListener: ListenerRegistration?
     private var snapshotListener: ListenerRegistration?
     private var presenceListener: ListenerRegistration?
@@ -188,18 +189,25 @@ final class PrivateIslandService: ObservableObject {
     // MARK: - Island list
 
     func listenToJoinedIslands() {
+        let previousUserID = islandsListenerUserID
         islandsListener?.remove()
         islandsListener = nil
         guard let uid = currentUserID else {
+            islandsListenerUserID = nil
             islands = []
             return
+        }
+        islandsListenerUserID = uid
+        if previousUserID != uid {
+            islands = []
+            errorMessage = nil
         }
 
         islandsListener = db.collection("privateIslands")
             .whereField("memberIds", arrayContains: uid)
             .addSnapshotListener { [weak self] snapshot, error in
                 Task { @MainActor in
-                    guard let self else { return }
+                    guard let self, self.islandsListenerUserID == uid else { return }
                     if let error {
                         self.errorMessage = error.localizedDescription
                         return
@@ -214,11 +222,17 @@ final class PrivateIslandService: ObservableObject {
     func refreshIslands() async {
         guard let uid = currentUserID else {
             islands = []
+            errorMessage = nil
             return
         }
+        errorMessage = nil
         do {
-            islands = try await fetchJoinedIslands(uid: uid)
+            let refreshed = try await fetchJoinedIslands(uid: uid)
+            guard currentUserID == uid else { return }
+            islands = refreshed
+            errorMessage = nil
         } catch {
+            guard currentUserID == uid else { return }
             errorMessage = error.localizedDescription
         }
     }
@@ -226,6 +240,7 @@ final class PrivateIslandService: ObservableObject {
     func stopJoinedIslandsListener() {
         islandsListener?.remove()
         islandsListener = nil
+        islandsListenerUserID = nil
     }
 
     /// Fetches the current sailor's hosted island without depending on a
@@ -1083,13 +1098,34 @@ final class PrivateIslandChatService: ObservableObject {
         )
         guard !senderName.isEmpty else { throw PrivateIslandError.islandNotFound }
 
-        try await chatReference.addDocument(data: [
-            "uid": uid,
-            "senderName": senderName,
-            "kind": "text",
-            "text": text,
-            "createdAt": FieldValue.serverTimestamp(),
-        ])
+        // Echo the line immediately instead of leaving a successful tap with
+        // no visible result while Firestore waits for the server round-trip.
+        // The snapshot listener replaces this provisional copy after commit.
+        let messageReference = chatReference.document()
+        let optimisticMessage = PrivateIslandChatMessage(
+            id: messageReference.documentID,
+            senderID: uid,
+            senderName: senderName,
+            text: text,
+            createdAt: Date()
+        )
+        allMessages.removeAll { $0.id == optimisticMessage.id }
+        allMessages.append(optimisticMessage)
+        applyBlocks()
+
+        do {
+            try await messageReference.setData([
+                "uid": uid,
+                "senderName": senderName,
+                "kind": "text",
+                "text": text,
+                "createdAt": FieldValue.serverTimestamp(),
+            ])
+        } catch {
+            allMessages.removeAll { $0.id == optimisticMessage.id }
+            applyBlocks()
+            throw error
+        }
     }
 
     func delete(_ message: PrivateIslandChatMessage) async throws {

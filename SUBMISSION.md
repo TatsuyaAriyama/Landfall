@@ -14,7 +14,7 @@ KeelMira を App Store に提出するための手順と、記載が必要な項
 - **輸出コンプライアンス** `ITSAppUsesNonExemptEncryption = NO`(Info.plist)→ 提出時の暗号化質問は不要
 - **アプリアイコン** 標準1種+代替3種。全て1024×1024、アルファチャンネルなし
 - **ローカライズ** 英語(既定)+ 日本語
-- **Bundle ID** `com.tatsuyaariyama.Landfall` / **バージョン** 1.4 (build 11)
+- **Bundle ID** `com.tatsuyaariyama.Landfall` / **バージョン** 1.4 (build 12)
 - **写真の権限**: 写真は PhotosPicker(PHPicker)経由のため `NSPhotoLibraryUsageDescription` は不要(アプリはフォトライブラリに直接アクセスしない)
 - **公開誌の写真**: 選択した一枚だけをJPEGへ整形し、EXIF/GPSを除去してFirestoreへ保存。App Privacyは
   Photos or Videos / Linked / App Functionality / Not used for tracking と回答する。
