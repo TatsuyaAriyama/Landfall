@@ -510,13 +510,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             static let tableForwardInset: Float = 0.10
             /// small_stump.blend の切断面。苔や年輪の装飾上端は座面に含めない。
             static let stumpCutSurfaceLocalY: Float = 0.605
-            /// 切断面の半径。座る位置は中心ではなく、入ってきた側の縁から
-            /// 少し内側に置き、腰は木の上、脚は外へ下ろせるようにする。
-            static let stumpCutRadiusLocal: Float = 0.326
-            static let stumpSeatRimInsetLocal: Float = 0.085
             static let stumpApproachClearance: Float = 0.05
-            /// 丸い切り株では衣装下端をわずかに木へ沈め、接触感を出す。
-            static let stumpContactInset: Float = 0.05
         }
 
         /// A lying navigator is rotated around the model root at its feet.
@@ -544,27 +538,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     transform.x,
                     topY
                         - rootToSeatSurface
-                        + NavigatorSeatMetrics.surfaceClearance
-                        - NavigatorSeatMetrics.stumpContactInset,
+                        + NavigatorSeatMetrics.surfaceClearance,
                     transform.z
-                )
-            }
-
-            func seatPosition(
-                approachingAlong direction: SCNVector3,
-                rootToSeatSurface: Float
-            ) -> SCNVector3 {
-                let base = seatPosition(rootToSeatSurface: rootToSeatSurface)
-                let safeScale = max(transform.scale, 0.05)
-                let rimOffset = max(
-                    0,
-                    (NavigatorSeatMetrics.stumpCutRadiusLocal
-                        - NavigatorSeatMetrics.stumpSeatRimInsetLocal) * safeScale
-                )
-                return SCNVector3(
-                    base.x - direction.x * rimOffset,
-                    base.y,
-                    base.z - direction.z * rimOffset
                 )
             }
 
@@ -4494,11 +4469,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     InteractiveSeat(
                         address: stump.address,
                         motion: .sit,
-                        // Enter from the near side, then sit just inside the
-                        // authored cut-surface rim. This avoids snapping across
-                        // the trunk while keeping the navigator on the wood.
+                        // The approach remains outside the trunk, but the final
+                        // contact must be the authored cut-surface centre. Moving
+                        // the final point toward the approach leaves the body
+                        // visibly sitting on the ground beside the stump.
                         seatPosition: stump.seatPosition(
-                            approachingAlong: towardStump,
                             rootToSeatSurface: navigatorRootToSeatSurface
                         ),
                         approachPosition: SCNVector3(
@@ -4658,7 +4633,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     to: seat.seatPosition,
                     duration: UIAccessibility.isReduceMotionEnabled
                         ? 0
-                        : (seat.motion == .lie ? 0.62 : 0.50)
+                        : (seat.motion == .lie ? 0.62 : 0.68)
                 ),
                 .rotateTo(
                     x: 0,
