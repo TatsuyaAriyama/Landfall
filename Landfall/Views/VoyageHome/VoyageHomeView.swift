@@ -2236,6 +2236,11 @@ struct VoyageHomeView: View {
 
     private func dismissTimerVoyage() {
         guard timerVoyageItem != nil else { return }
+        // The island leaves the hierarchy while the timer voyage is visible.
+        // Give it a new identity on return so SwiftUI cannot restore the
+        // pre-voyage departure state (input locked, boarding latched and the
+        // boat already cast off). The rebuilt scene starts moored in Explore.
+        homeIslandSceneGeneration = UUID()
         withAnimation(.easeOut(duration: 0.18)) {
             timerSceneReady = false
             timerVoyageItem = nil
