@@ -1632,6 +1632,7 @@ struct HomeIslandView: View {
                 }
                 .disabled(selected.assetID == "wooden_jetty")
                 .opacity(selected.assetID == "wooden_jetty" ? 0.34 : 1)
+                .accessibilityHint(Text("Rotates 15 degrees clockwise"))
                 toolButton(
                     "Size",
                     symbol: "arrow.up.left.and.arrow.down.right",

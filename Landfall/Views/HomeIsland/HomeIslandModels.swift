@@ -946,14 +946,17 @@ final class HomeIslandStore: ObservableObject {
         return true
     }
 
-    func rotateSelected(by radians: Float = .pi / 4) {
+    /// Rotates in 15-degree steps so small props and furniture can be aligned
+    /// precisely without turning the build dock into a continuous slider.
+    func rotateSelected(by radians: Float = .pi / 12) {
         guard !isReadOnly,
               let selectedID,
               let index = placements.firstIndex(where: { $0.id == selectedID })
         else { return }
         guard placements[index].assetID != "wooden_jetty" else { return }
         let previous = editState
-        placements[index].transform.yaw += radians
+        let yaw = placements[index].transform.yaw + radians
+        placements[index].transform.yaw = atan2(sin(yaw), cos(yaw))
         finishEdit(from: previous)
     }
 

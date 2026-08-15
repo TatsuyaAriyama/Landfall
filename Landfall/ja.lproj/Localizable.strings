@@ -910,6 +910,7 @@
 "Placement JSON copied" = "配置JSONをコピーしました";
 "Move" = "移動";
 "Rotate" = "回転";
+"Rotates 15 degrees clockwise" = "15度ずつ右に回転します";
 "Scale" = "拡縮";
 "Camera" = "カメラ";
 "Position" = "位置";
