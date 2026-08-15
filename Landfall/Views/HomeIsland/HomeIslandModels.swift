@@ -552,6 +552,19 @@ enum HomeIslandAssetCatalog {
         }
     }
 
+    /// Walking collision is intentionally independent from the placement
+    /// footprint. Wide interactive furniture needs generous placement space,
+    /// but a much tighter body collider so the navigator can reach its
+    /// authored interaction point.
+    static func walkingCollisionRadius(assetID: String, scale: Float) -> Float {
+        if assetID == "navigator_hammock" {
+            guard let asset = asset(id: assetID) else { return 0.54 }
+            let scaleRatio = max(scale, 0.05) / max(asset.defaultScale, 0.05)
+            return max(0.30, 0.54 * scaleRatio)
+        }
+        return max(0.25, footprintMargin(assetID: assetID, scale: scale) * 0.72)
+    }
+
     /// A compact gameplay collision profile. Paths remain deliberately
     /// traversable and may sit beneath furniture or scenery; jetties only need
     /// separation from other jetties because their landward end touches sand.

@@ -1175,14 +1175,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
                       HomeIslandAssetCatalog.blocksWalking(assetID: placement.assetID) else {
                     return nil
                 }
-                let footprint = HomeIslandAssetCatalog.footprintMargin(
+                let collisionRadius = HomeIslandAssetCatalog.walkingCollisionRadius(
                     assetID: placement.assetID,
                     scale: placement.transform.scale
                 )
                 return WalkingObstacle(
                     x: placement.transform.x,
                     z: placement.transform.z,
-                    radius: max(0.25, footprint * 0.72)
+                    radius: collisionRadius
                 )
             }
             if fixedNoticeBoardNode?.parent != nil {
@@ -1237,12 +1237,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
                             HomeIslandMetrics.surfaceY,
                             placement.transform.z
                         ),
-                        obstacleRadius: max(
-                            0.25,
-                            HomeIslandAssetCatalog.footprintMargin(
-                                assetID: placement.assetID,
-                                scale: placement.transform.scale
-                            ) * 0.72
+                        obstacleRadius: HomeIslandAssetCatalog.walkingCollisionRadius(
+                            assetID: placement.assetID,
+                            scale: placement.transform.scale
                         )
                     )
                 }
