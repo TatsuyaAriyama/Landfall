@@ -478,6 +478,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
             static let islandScale: Float = 0.78
         }
 
+        private enum NavigatorCollision {
+            static let radius: Float = 0.32
+        }
+
         private enum DepartureMotion {
             static let boardingRadius: Float = 1.15
             static let approachSpeed: Float = 2.20
@@ -776,6 +780,35 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 return isOnMainDeck || isOnBoardingFloat || isOnConnector
             }
 
+            /// Physical surface lookup is deliberately wider than the capsule
+            /// centre corridor so foot probes still see timber near an edge.
+            /// Its connector padding, however, must exactly cover the expanded
+            /// gameplay route or an accepted position can sample the sea below.
+            func containsGroundSurface(x: Float, z: Float, playerRadius: Float) -> Bool {
+                let local = localPosition(x: x, z: z)
+                let scale = max(transform.scale, 0.05)
+                let isOnMainDeck = abs(local.x) <= 0.68 * scale
+                    && local.z >= HomeIslandMetrics.jettyDeckSeawardEndLocalZ * scale
+                    && local.z <= HomeIslandMetrics.jettyDeckLandwardEndLocalZ * scale
+                let floatCenterX = HomeIslandMetrics.boardingFloatCenterLocalX * scale
+                let floatCenterZ = HomeIslandMetrics.boardingFloatCenterLocalZ * scale
+                let isOnBoardingFloat = abs(local.x - floatCenterX)
+                        <= HomeIslandMetrics.boardingFloatHalfWidth * scale
+                    && abs(local.z - floatCenterZ)
+                        <= HomeIslandMetrics.boardingFloatHalfLength * scale
+                let connectorOverlap = playerRadius * 0.12
+                let isOnConnector = local.x
+                        >= HomeIslandMetrics.boardingConnectorNearLocalX * scale
+                            - connectorOverlap
+                    && local.x
+                        <= HomeIslandMetrics.boardingConnectorFarLocalX * scale
+                            + connectorOverlap
+                    && abs(local.z - floatCenterZ)
+                        <= HomeIslandMetrics.boardingConnectorHalfLength * scale
+                            + connectorOverlap
+                return isOnMainDeck || isOnBoardingFloat || isOnConnector
+            }
+
             /// Blocks the authored toe board and rope line even where the long
             /// jetty overlaps walkable shore sand. The reduced body allowance
             /// matches the stylized navigator capsule while leaving a generous
@@ -819,31 +852,49 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 )
             }
 
-            func height(x: Float, z: Float, baseHeight: Float) -> Float {
+            func height(
+                x: Float,
+                z: Float,
+                playerRadius: Float,
+                baseHeight: Float
+            ) -> Float {
                 let local = localPosition(x: x, z: z)
                 let localZ = local.z
                 let scale = max(transform.scale, 0.05)
                 let flatDeck = HomeIslandMetrics.surfaceY + 0.445 * scale
                 let floatCenterX = HomeIslandMetrics.boardingFloatCenterLocalX * scale
                 let floatCenterZ = HomeIslandMetrics.boardingFloatCenterLocalZ * scale
+                let lowDeck = HomeIslandMetrics.surfaceY - 0.215 * scale
+                // Ground sampling must cover every point accepted by
+                // `contains`. Previously its narrower connector rectangle
+                // exposed strips that were walkable but sampled the water or
+                // island beneath the stairs.
+                let connectorOverlap = playerRadius * 0.12
+                let connectorNearX = HomeIslandMetrics.boardingConnectorNearLocalX * scale
+                    - connectorOverlap
+                let connectorFarX = HomeIslandMetrics.boardingConnectorFarLocalX * scale
+                    + connectorOverlap
+                let connectorHalfLength = HomeIslandMetrics.boardingConnectorHalfLength * scale
+                    + connectorOverlap
+                if local.x >= connectorNearX,
+                   local.x <= connectorFarX,
+                   abs(local.z - floatCenterZ) <= connectorHalfLength {
+                    // The harbor asset is four overlapping timber steps, not
+                    // a ramp. Match the authored top faces so feet do not sink
+                    // through the boards and the motor can step one riser at a
+                    // time in either direction. The first/top tread differs
+                    // from the main deck by only 0.02 model units, so treating
+                    // it as deck height avoids a needless micro-step.
+                    let authoredTop = HomeIslandBoardingStairProfile.authoredTop(
+                        at: local.x / scale
+                    )
+                    return HomeIslandMetrics.surfaceY + authoredTop * scale
+                }
                 let isOnFloat = abs(local.x - floatCenterX)
                         <= HomeIslandMetrics.boardingFloatHalfWidth * scale
                     && abs(local.z - floatCenterZ)
                         <= HomeIslandMetrics.boardingFloatHalfLength * scale
-                let lowDeck = HomeIslandMetrics.surfaceY - 0.215 * scale
                 if isOnFloat { return lowDeck }
-                let connectorNearX = HomeIslandMetrics.boardingConnectorNearLocalX * scale
-                let connectorFarX = HomeIslandMetrics.boardingConnectorFarLocalX * scale
-                if local.x >= connectorNearX,
-                   local.x <= connectorFarX,
-                   abs(local.z - floatCenterZ)
-                       <= HomeIslandMetrics.boardingConnectorHalfLength * scale {
-                    let progress = min(
-                        max((local.x - connectorNearX) / (connectorFarX - connectorNearX), 0),
-                        1
-                    )
-                    return flatDeck + (lowDeck - flatDeck) * progress
-                }
                 let rampStart = 1.70 * scale
                 let shoreEnd = 2.30 * scale
                 guard localZ > rampStart else { return max(baseHeight, flatDeck) }
@@ -855,27 +906,60 @@ struct HomeIslandSceneView: UIViewRepresentable {
             func normal(
                 x: Float,
                 z: Float,
+                playerRadius: Float,
                 baseHeight: (Float, Float) -> Float
             ) -> SIMD3<Float> {
+                let local = localPosition(x: x, z: z)
+                let scale = max(transform.scale, 0.05)
+                let connectorOverlap = playerRadius * 0.12
+                let connectorNearX = HomeIslandMetrics.boardingConnectorNearLocalX * scale
+                    - connectorOverlap
+                let connectorFarX = HomeIslandMetrics.boardingConnectorFarLocalX * scale
+                    + connectorOverlap
+                let connectorCenterZ = HomeIslandMetrics.boardingFloatCenterLocalZ * scale
+                let connectorHalfLength = HomeIslandMetrics.boardingConnectorHalfLength * scale
+                    + connectorOverlap
+                let isOnBoardingFloat = abs(
+                    local.x - HomeIslandMetrics.boardingFloatCenterLocalX * scale
+                ) <= HomeIslandMetrics.boardingFloatHalfWidth * scale
+                    && abs(local.z - connectorCenterZ)
+                        <= HomeIslandMetrics.boardingFloatHalfLength * scale
+                if local.x >= connectorNearX,
+                   local.x <= connectorFarX,
+                   abs(local.z - connectorCenterZ) <= connectorHalfLength
+                    || isOnBoardingFloat {
+                    // Each tread is level. Returning the old interpolated ramp
+                    // normal tilted the entire navigator sideways by up to the
+                    // body-angle clamp and disabled the motor's step smoothing.
+                    return SIMD3<Float>(0, 1, 0)
+                }
+                if abs(local.x) <= 0.68 * scale,
+                   local.z <= 1.70 * scale {
+                    return SIMD3<Float>(0, 1, 0)
+                }
                 let epsilon: Float = 0.08
                 let left = height(
                     x: x - epsilon,
                     z: z,
+                    playerRadius: playerRadius,
                     baseHeight: baseHeight(x - epsilon, z)
                 )
                 let right = height(
                     x: x + epsilon,
                     z: z,
+                    playerRadius: playerRadius,
                     baseHeight: baseHeight(x + epsilon, z)
                 )
                 let near = height(
                     x: x,
                     z: z - epsilon,
+                    playerRadius: playerRadius,
                     baseHeight: baseHeight(x, z - epsilon)
                 )
                 let far = height(
                     x: x,
                     z: z + epsilon,
+                    playerRadius: playerRadius,
                     baseHeight: baseHeight(x, z + epsilon)
                 )
                 return simd_normalize(SIMD3<Float>(
@@ -4111,7 +4195,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func isWalkable(x: Float, z: Float) -> Bool {
-            let playerRadius: Float = 0.32
+            let playerRadius = NavigatorCollision.radius
             let isOnSand = HomeIslandMetrics.containsWalkableSand(
                 x: x,
                 z: z,
@@ -4343,10 +4427,15 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let gradient = normal.y > 0.001
                 ? SIMD2<Float>(-normal.x / normal.y, -normal.z / normal.y)
                 : .zero
-            let slopePitch = frame.isGrounded
+            // Timber decks and stairs support the feet independently; tilting
+            // the model root makes a humanoid lean unnaturally across a tread.
+            // Keep the body upright on wood while retaining terrain alignment
+            // on genuinely sloped sand and stone.
+            let alignsBodyToSurface = frame.isGrounded && frame.ground.surface != .wood
+            let slopePitch = alignsBodyToSurface
                 ? -atan(simd_dot(gradient, forward))
                 : 0
-            let slopeRoll = frame.isGrounded
+            let slopeRoll = alignsBodyToSurface
                 ? atan(simd_dot(gradient, right))
                 : 0
             let targetPitch = min(max(slopePitch, -0.18), 0.18)
@@ -4817,14 +4906,21 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         private func groundSample(x: Float, z: Float) -> HomeIslandGroundSample {
             let foundation = foundationGroundSample(x: x, z: z)
+            let playerRadius = NavigatorCollision.radius
             if let jetty = jettyWalkSurfaces.first(where: {
-                $0.contains(x: x, z: z, playerRadius: 0.02)
+                $0.containsGroundSurface(x: x, z: z, playerRadius: playerRadius)
             }) {
                 return HomeIslandGroundSample(
-                    height: jetty.height(x: x, z: z, baseHeight: foundation.height),
+                    height: jetty.height(
+                        x: x,
+                        z: z,
+                        playerRadius: playerRadius,
+                        baseHeight: foundation.height
+                    ),
                     normal: jetty.normal(
                         x: x,
                         z: z,
+                        playerRadius: playerRadius,
                         baseHeight: { [weak self] sampleX, sampleZ in
                             self?.foundationGroundHeight(x: sampleX, z: sampleZ)
                                 ?? HomeIslandMetrics.surfaceY

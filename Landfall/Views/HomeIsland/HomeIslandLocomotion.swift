@@ -87,6 +87,26 @@ enum HomeIslandGroundSurface: String, Codable, CaseIterable, Sendable {
     case boat
 }
 
+/// Logical top faces of the four-step connector between the arrival jetty and
+/// the low boarding float. Values are in the authored asset's local Y space;
+/// the SceneKit integration applies island surface height and asset scale.
+enum HomeIslandBoardingStairProfile {
+    static func authoredTop(at localX: Float) -> Float {
+        switch localX {
+        case ..<0.86:
+            0.445
+        case ..<1.06:
+            0.245
+        case ..<1.26:
+            0.065
+        case ..<1.505:
+            -0.115
+        default:
+            -0.215
+        }
+    }
+}
+
 struct HomeIslandGroundSample: Equatable, Sendable {
     var height: Float
     var normal: SIMD3<Float>

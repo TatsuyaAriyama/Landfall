@@ -197,6 +197,76 @@ private enum HomeIslandLocomotionProbe {
         try require(stepFrame.position.z > 0.9, "walkable step blocked traversal")
         try require(abs(stepFrame.position.y - 0.20) < 0.001, "step lost ground contact")
 
+        // Reproduce the fixed harbor connector at its shipped 0.72 scale.
+        // This guards both directions because the original scene treated the
+        // four visible treads as one ramp and used a narrower ground query than
+        // its occupancy corridor, creating stalls and sudden height changes.
+        let boardingScale: Float = 0.72
+        let boardingSurfaceY: Float = 0.62
+        let connectorPadding = Float(0.32 * 0.12)
+        let connectorMinimumX = 0.35 * boardingScale - connectorPadding
+        let connectorMaximumX = 1.72 * boardingScale + connectorPadding
+        let boardingGround: HomeIslandLocomotionMotor.GroundSampler = { x, _ in
+            HomeIslandGroundSample(
+                height: boardingSurfaceY
+                    + HomeIslandBoardingStairProfile.authoredTop(
+                        at: x / boardingScale
+                    ) * boardingScale,
+                normal: SIMD3<Float>(0, 1, 0),
+                surface: .wood
+            )
+        }
+        let boardingOccupancy: HomeIslandLocomotionMotor.OccupancyTest = { x, z in
+            x >= connectorMinimumX && x <= connectorMaximumX && abs(z) <= 0.47
+        }
+        func traverseBoardingStairs(
+            from startX: Float,
+            inputX: Float
+        ) -> HomeIslandLocomotionFrame {
+            let motor = HomeIslandLocomotionMotor(tuning: tuning)
+            var frame = HomeIslandLocomotionFrame.idle(
+                position: SIMD3<Float>(startX, boardingGround(startX, 0).height, 0),
+                yaw: inputX < 0 ? -.pi / 2 : .pi / 2
+            )
+            for _ in 0..<150 {
+                frame = motor.update(
+                    input: HomeIslandWalkInput(x: inputX),
+                    position: frame.position,
+                    currentYaw: frame.facingYaw,
+                    cameraForward: SIMD2<Float>(0, 1),
+                    cameraRight: SIMD2<Float>(1, 0),
+                    deltaTime: 1 / 60,
+                    sampleGround: boardingGround,
+                    canOccupy: boardingOccupancy
+                )
+            }
+            return frame
+        }
+        let climbed = traverseBoardingStairs(
+            from: 1.66 * boardingScale,
+            inputX: -0.72
+        )
+        try require(
+            climbed.position.x < 0.48 * boardingScale,
+            "boarding stairs blocked ascent: \(climbed.position)"
+        )
+        try require(
+            abs(climbed.position.y - boardingGround(climbed.position.x, 0).height) < 0.001,
+            "boarding stair ascent lost ground contact"
+        )
+        let descended = traverseBoardingStairs(
+            from: 0.58 * boardingScale,
+            inputX: 0.72
+        )
+        try require(
+            descended.position.x > 1.62 * boardingScale,
+            "boarding stairs blocked descent: \(descended.position)"
+        )
+        try require(
+            abs(descended.position.y - boardingGround(descended.position.x, 0).height) < 0.001,
+            "boarding stair descent lost ground contact"
+        )
+
         let stepGround: HomeIslandLocomotionMotor.GroundSampler = { _, z in
             HomeIslandGroundSample(height: z >= 0.80 ? 0.20 : 0)
         }
@@ -373,6 +443,6 @@ private enum HomeIslandLocomotionProbe {
 
         print("PASS frame-rate walking/sprint: \(distances)")
         print("PASS responsive stop and weighted 180-degree turn")
-        print("PASS slope, step, jump/landing, and gamepad mapping")
+        print("PASS slope, four-step boarding traversal, jump/landing, and gamepad mapping")
     }
 }
