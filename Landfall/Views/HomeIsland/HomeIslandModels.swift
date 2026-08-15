@@ -32,6 +32,10 @@ enum HomeIslandMetrics {
     static let boardingFloatCenterLocalZ: Float = -4.17
     static let boardingFloatHalfWidth: Float = 0.67
     static let boardingFloatHalfLength: Float = 1.50
+    static let boardingFloatBoatGateHalfLength: Float = 0.62
+    static let boardingConnectorNearLocalX: Float = 0.35
+    static let boardingConnectorFarLocalX: Float = 1.72
+    static let boardingConnectorHalfLength: Float = 0.60
     static let arrivalJettyTransferLocalX: Float = 2.70
     static let arrivalJettyTransferLocalZ: Float = -4.17
     static let arrivalJettyIslandLocalZ: Float = 1.50

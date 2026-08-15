@@ -694,9 +694,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 )
                 let isOnBoardingFloat = abs(local.x - floatCenterX) <= floatHalfWidth
                     && abs(local.z - floatCenterZ) <= floatHalfLength
-                let connectorNearX = 0.52 * scale
-                let connectorFarX = 1.54 * scale
-                let connectorHalfLength = 0.52 * scale
+                // Overlap both authored walkable regions. The former values
+                // left tiny non-walkable seams at the first and last stair,
+                // which made descending feel blocked.
+                let connectorNearX = HomeIslandMetrics.boardingConnectorNearLocalX * scale
+                let connectorFarX = HomeIslandMetrics.boardingConnectorFarLocalX * scale
+                let connectorHalfLength = HomeIslandMetrics.boardingConnectorHalfLength * scale
                 let isOnConnector = local.x >= connectorNearX
                     && local.x <= connectorFarX
                     && abs(local.z - floatCenterZ) <= connectorHalfLength
@@ -747,11 +750,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         <= HomeIslandMetrics.boardingFloatHalfLength * scale
                 let lowDeck = HomeIslandMetrics.surfaceY - 0.215 * scale
                 if isOnFloat { return lowDeck }
-                let connectorNearX = 0.58 * scale
-                let connectorFarX = 1.54 * scale
-                if local.x > connectorNearX,
-                   local.x < connectorFarX,
-                   abs(local.z - floatCenterZ) <= 0.56 * scale {
+                let connectorNearX = HomeIslandMetrics.boardingConnectorNearLocalX * scale
+                let connectorFarX = HomeIslandMetrics.boardingConnectorFarLocalX * scale
+                if local.x >= connectorNearX,
+                   local.x <= connectorFarX,
+                   abs(local.z - floatCenterZ)
+                       <= HomeIslandMetrics.boardingConnectorHalfLength * scale {
                     let progress = min(
                         max((local.x - connectorNearX) / (connectorFarX - connectorNearX), 0),
                         1

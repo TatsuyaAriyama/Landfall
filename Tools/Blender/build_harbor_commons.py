@@ -134,9 +134,11 @@ def build_harbor_boarding_float() -> None:
             vertices=7,
         )
 
-    # The water-facing rail is continuous; the pier-facing side is deliberately
-    # open only where the stair connector makes the intended route obvious.
-    for y in (-1.32, -0.44, 0.44, 1.32):
+    # The boat-facing rail stops at a broad central boarding gate. Posts frame
+    # the opening, but no rope crosses the gangplank or the navigator's path.
+    # The opposite side remains open toward the stair connector.
+    gate_half_length = 0.62
+    for y in (-1.32, -gate_half_length, gate_half_length, 1.32):
         kit.add_cylinder(
             f"Outer_Post_{y:+.2f}",
             (0.68, y, 0.02),
@@ -147,7 +149,10 @@ def build_harbor_boarding_float() -> None:
             objects,
             vertices=8,
         )
-    for index, (start, end) in enumerate(((-1.32, -0.44), (-0.44, 0.44), (0.44, 1.32)), 1):
+    for index, (start, end) in enumerate(
+        ((-1.32, -gate_half_length), (gate_half_length, 1.32)),
+        1,
+    ):
         middle = (start + end) * 0.5
         kit.add_beam(
             f"Float_Upper_Rope_{index}",
