@@ -526,30 +526,43 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         private struct StumpSeat {
             let id: UUID
-            let node: SCNNode
+            let transform: HomeIslandTransform
+            let topY: Float
             let obstacleRadius: Float
 
             var centerWorldPosition: SCNVector3 {
-                node.presentation.worldPosition
+                SCNVector3(transform.x, topY, transform.z)
             }
 
             func seatPosition(rootToSeatSurface: Float) -> SCNVector3 {
-                let cutSurface = node.presentation.convertPosition(
-                    SCNVector3(0, NavigatorSeatMetrics.stumpCutSurfaceLocalY, 0),
-                    to: nil
-                )
                 return SCNVector3(
-                    cutSurface.x,
-                    cutSurface.y
+                    transform.x,
+                    topY
                         - rootToSeatSurface
                         + NavigatorSeatMetrics.surfaceClearance
                         - NavigatorSeatMetrics.stumpContactInset,
-                    cutSurface.z
+                    transform.z
                 )
             }
 
             var triggerRadius: Float {
                 max(0.92, obstacleRadius + 0.47)
+            }
+
+            /// Keep the original stump-specific contact point: the navigator
+            /// sits toward the far rim, so their legs hang beside the trunk
+            /// instead of intersecting the cut surface.
+            func seatPosition(
+                facing direction: SCNVector3,
+                rootToSeatSurface: Float
+            ) -> SCNVector3 {
+                let edgeOffset = max(0.12, obstacleRadius - 0.26)
+                let base = seatPosition(rootToSeatSurface: rootToSeatSurface)
+                return SCNVector3(
+                    base.x + direction.x * edgeOffset,
+                    base.y,
+                    base.z + direction.z * edgeOffset
+                )
             }
 
             var address: HomeIslandSeatAddress {
@@ -1171,7 +1184,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 azimuth = nearestEquivalentAzimuth(to: 0.82)
                 elevation = 0.30
                 radius = 6.8
-                let berthFocus = arrivalJettyLandingPath().transfer
+                let berthFocus = arrivalJettyLandingPath().landing
                 let focusTarget = SCNVector3(
                     berthFocus.x,
                     berthFocus.y + 0.72,
@@ -1581,7 +1594,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 )
                 return StumpSeat(
                     id: placement.id,
-                    node: node,
+                    transform: placement.transform,
+                    topY: node.position.y
+                        + NavigatorSeatMetrics.stumpCutSurfaceLocalY * scale,
                     obstacleRadius: obstacleRadius
                 )
             }
@@ -2412,7 +2427,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                   !departureStarted,
                   let navigator = navigatorNode
             else { return }
-            let boardingPoint = arrivalJettyLandingPath().transfer
+            let boardingPoint = arrivalJettyLandingPath().landing
             let dx = navigator.position.x - boardingPoint.x
             let dz = navigator.position.z - boardingPoint.z
             guard dx * dx + dz * dz
@@ -3402,21 +3417,18 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func prepareNavigatorForEmbeddedBoarding() {
             guard let navigator = navigatorNode else { return }
             cancelStumpInteraction()
-            let transfer = arrivalJettyLandingPath().transfer
+            let path = arrivalJettyLandingPath()
+            let landing = path.landing
             navigator.removeAllActions()
-            navigator.position = transfer
+            navigator.position = landing
             navigator.scale = SCNVector3(
                 NavigatorAppearance.islandScale,
                 NavigatorAppearance.islandScale,
                 NavigatorAppearance.islandScale
             )
             navigator.opacity = 1
-            if let boatNavigator = arrivalBoatNavigator {
-                let direction = boatNavigator.presentation.worldPosition - transfer
-                navigator.eulerAngles.y = atan2(direction.x, direction.z)
-            } else {
-                navigator.eulerAngles.y = .pi
-            }
+            let islandDirection = path.deck - landing
+            navigator.eulerAngles.y = atan2(islandDirection.x, islandDirection.z)
             navigatorAnimator.pose = .idle
             arrivalNavigatorIsWalking = false
             storeCachedWalkInput(.zero)
@@ -3425,78 +3437,46 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func beginLanding() {
             guard !arrivalFinished, let navigator = navigatorNode else { return }
             let path = arrivalJettyLandingPath()
-            let fallbackStart = SCNVector3(
-                arrivalBoatStopPosition.x + 0.17,
-                0.28,
-                arrivalBoatStopPosition.z - 0.68
-            )
-            let transferStart = arrivalBoatNavigator?.presentation.worldPosition
-                ?? fallbackStart
-            let transferEnd = path.transfer
-            let transferDirection = transferEnd - transferStart
+            let landing = path.landing
+            let islandDirection = path.deck - landing
 
-            navigator.position = transferStart
-            navigator.eulerAngles.y = atan2(transferDirection.x, transferDirection.z)
+            navigator.removeAllActions()
+            navigator.position = landing
+            navigator.eulerAngles.y = atan2(islandDirection.x, islandDirection.z)
             navigator.scale = SCNVector3(
                 NavigatorAppearance.islandScale,
                 NavigatorAppearance.islandScale,
                 NavigatorAppearance.islandScale
             )
             navigator.opacity = 0
-            arrivalNavigatorIsWalking = true
-
-            let gangplank = makeArrivalGangplank(from: transferStart, to: transferEnd)
-            arrivalGangplank = gangplank
-            gangplank.runAction(.fadeIn(duration: 0.18))
-
-            let fadeSailor = SCNAction.sequence([
-                .wait(duration: 0.04),
-                .fadeOut(duration: 0.18),
-            ])
-            arrivalBoatNavigator?.runAction(fadeSailor)
-
-            let fadeNavigator = SCNAction.sequence([
-                .wait(duration: 0.10),
-                .fadeIn(duration: 0.18),
-            ])
-            let transfer = SCNAction.move(
-                to: transferEnd,
-                duration: ArrivalMotion.transferDuration
-            )
-            transfer.timingMode = .easeInEaseOut
+            navigatorAnimator.pose = .idle
+            arrivalNavigatorIsWalking = false
+            arrivalBoatNavigator?.runAction(.fadeOut(duration: 0.16))
 
             animateArrivalCamera(
                 target: SCNVector3(
-                    transferEnd.x,
-                    transferEnd.y + 0.72,
-                    transferEnd.z
+                    landing.x,
+                    landing.y + 0.72,
+                    landing.z
                 ),
                 azimuth: 0.77,
                 elevation: 0.28,
                 radius: 11.8,
                 fieldOfView: 42,
-                duration: ArrivalMotion.transferDuration
-                    + ArrivalMotion.jettySettleDuration
+                duration: ArrivalMotion.jettySettleDuration
             )
 
             navigator.runAction(.sequence([
-                .group([fadeNavigator, transfer]),
-                .run { [weak self] _ in
-                    DispatchQueue.main.async {
-                        self?.arrivalGangplank?.runAction(.sequence([
-                            .fadeOut(duration: 0.24),
-                            .removeFromParentNode(),
-                        ]))
-                    }
-                },
+                .wait(duration: 0.08),
+                .fadeIn(duration: 0.20),
                 .run { [weak self] _ in
                     guard let self else { return }
                     DispatchQueue.main.async {
                         self.animateArrivalCamera(
                             target: SCNVector3(
-                                transferEnd.x,
-                                transferEnd.y + 0.72,
-                                transferEnd.z
+                                landing.x,
+                                landing.y + 0.72,
+                                landing.z
                             ),
                             azimuth: self.nearestEquivalentAzimuth(to: 0.82),
                             elevation: 0.30,
@@ -3506,7 +3486,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         )
                     }
                 },
-                .wait(duration: ArrivalMotion.jettySettleDuration),
+                .wait(duration: 0.24),
                 .run { [weak self] _ in
                     DispatchQueue.main.async {
                         self?.finishArrival()
@@ -3517,6 +3497,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         private func arrivalJettyLandingPath() -> (
             transfer: SCNVector3,
+            landing: SCNVector3,
             deck: SCNVector3
         ) {
             let fallbackCoast = HomeIslandMetrics.arrivalJettyPosition
@@ -3525,6 +3506,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 localX: HomeIslandMetrics.arrivalJettyTransferLocalX,
                 localZ: HomeIslandMetrics.arrivalJettyTransferLocalZ
             ) ?? (x: fallbackCoast.x - 1.94, z: fallbackCoast.z + 3.00)
+            let landingXZ = surface?.worldPosition(
+                localX: HomeIslandMetrics.arrivalJettyLandingLocalX,
+                localZ: HomeIslandMetrics.arrivalJettyTransferLocalZ
+            ) ?? (x: fallbackCoast.x - 0.25, z: fallbackCoast.z + 3.00)
             let deckXZ = surface?.worldPosition(
                 localX: 0,
                 localZ: HomeIslandMetrics.arrivalJettyIslandLocalZ
@@ -3534,6 +3519,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     transferXZ.x,
                     groundHeight(x: transferXZ.x, z: transferXZ.z),
                     transferXZ.z
+                ),
+                SCNVector3(
+                    landingXZ.x,
+                    groundHeight(x: landingXZ.x, z: landingXZ.z),
+                    landingXZ.z
                 ),
                 SCNVector3(
                     deckXZ.x,
@@ -3597,9 +3587,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func completeArrivalImmediately() {
             let destination = arrivalJettyWalkSurface == nil
                 ? safestLandingPosition()
-                : arrivalJettyLandingPath().transfer
+                : arrivalJettyLandingPath().landing
             navigatorNode?.position = destination
-            navigatorNode?.eulerAngles.y = .pi
+            let path = arrivalJettyLandingPath()
+            let islandDirection = path.deck - path.landing
+            navigatorNode?.eulerAngles.y = atan2(islandDirection.x, islandDirection.z)
             navigatorNode?.scale = SCNVector3(
                 NavigatorAppearance.islandScale,
                 NavigatorAppearance.islandScale,
@@ -4489,10 +4481,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     InteractiveSeat(
                         address: stump.address,
                         motion: .sit,
-                        // Resolve the rendered cut surface directly. Saved
-                        // placement coordinates and chair socket offsets do not
-                        // belong in the stump's contact position.
+                        // Stumps use their own authored cut-surface height and
+                        // rim offset; chair socket clearances must not leak in.
                         seatPosition: stump.seatPosition(
+                            facing: direction,
                             rootToSeatSurface: navigatorRootToSeatSurface
                         ),
                         approachPosition: nil,

@@ -41,6 +41,9 @@ enum HomeIslandMetrics {
     // the navigator in an invalid position beside the rope posts.
     static let arrivalJettyTransferLocalX: Float = 2.58
     static let arrivalJettyTransferLocalZ: Float = -4.17
+    // Arrival ends at the pier-side top tread, visibly clear of the vessel.
+    // The transfer point remains on the low float for the departure walk.
+    static let arrivalJettyLandingLocalX: Float = 0.35
     static let arrivalJettyIslandLocalZ: Float = 1.50
     // The reserved corridor includes both the permanent jetty and the
     // player's moored boat, so newly placed props cannot overlap the berth.
