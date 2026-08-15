@@ -18,11 +18,21 @@ enum HomeIslandMetrics {
     static let maximumPlacements = 120
     static let arrivalJettyScale: Float = 0.72
     static let arrivalJettyYaw: Float = .pi
+    // Authored wooden_jetty model-space dimensions. Keeping these beside the
+    // fixed placement prevents rendering, walking and arrival choreography
+    // from drifting apart when the source asset changes.
+    static let jettyDeckSeawardEndLocalZ: Float = -13.85
+    static let jettyDeckLandwardEndLocalZ: Float = 2.30
+    static let jettyRailSeawardEndLocalZ: Float = -13.55
+    static let jettyRailLandwardEndLocalZ: Float = 1.55
+    static let jettyRailCenterLocalX: Float = 0.69
+    static let arrivalJettyTransferLocalZ: Float = -13.48
+    static let arrivalJettyIslandLocalZ: Float = 1.50
     // The reserved corridor includes both the permanent jetty and the
     // player's moored boat, so newly placed props cannot overlap the berth.
     static let arrivalJettyReservedHalfWidth: Float = 2.15
     static let arrivalJettyReservedNearZ: Float = 7.10
-    static let arrivalJettyReservedFarZ: Float = 11.20
+    static let arrivalJettyReservedFarZ: Float = 21.80
     // Permanently place the notice board on the positive-X side of the jetty,
     // just inside the authored shoreline. This keeps the moored boat's
     // negative-X berth clear while making both fixtures read as one entrance.
