@@ -1,10 +1,10 @@
-"""Build Landfall's long wooden arrival jetty.
+"""Build Landfall's social harbor arrival jetty.
 
-The rebuilt jetty keeps the original handcrafted width and shore ramp while
-extending the deck to four times its former length. Continuous double rope
-rails, toe boards, deep driven piles, and submerged cross-bracing make every
-part read as one safe structure rather than a floating prop. One deterministic
-build emits the editable Blender source, runtime USDZ, and a review render.
+The jetty is deliberately shorter than the first long-pier revision and hands
+arrivals to a low side float. Continuous double rope rails, a clearly framed
+boarding gate, deep driven piles, and submerged cross-bracing make the harbor
+safe without reading as a featureless bridge. One deterministic build emits
+the editable Blender source, runtime USDZ, and a review render.
 """
 
 from __future__ import annotations
@@ -210,14 +210,15 @@ def add_rope(
     return obj
 
 
-# Low shore ramp: local -Y is land, +Y points out toward the water. Preserve
-# the old landward endpoint and extend its 3.9 m deck span by exactly 4×.
+# Low shore ramp: local -Y is land, +Y points out toward the water. A little
+# over twice the original span gives boats room to berth without separating
+# the gathering place from the island.
 deck_start = -1.75
 legacy_deck_length = 3.90
-deck_length = legacy_deck_length * 4
+deck_length = legacy_deck_length * 2.35
 deck_end = deck_start + deck_length
 deck_height = 0.39
-plank_count = 84
+plank_count = 50
 spacing = (deck_end - deck_start) / plank_count
 plank_mats = (MATS["wood"], MATS["wood_sun"], MATS["wood_wet"], MATS["wood"], MATS["wood_pale"])
 
@@ -228,7 +229,7 @@ for index in range(plank_count):
     yaw = RNG.uniform(-0.018, 0.018)
     width = RNG.uniform(1.23, 1.36)
     # Occasional repairs keep the much longer deck from becoming repetitive.
-    if index in (16, 47, 73):
+    if index in (16, 38):
         for side, x in (("L", -0.34), ("R", 0.34)):
             add_box(
                 f"Split_Plank_{side}",
@@ -273,7 +274,7 @@ for x in (-0.47, 0.47):
 post_spacing = 1.25
 post_ys = tuple(
     deck_start + 0.25 + index * post_spacing
-    for index in range(13)
+    for index in range(8)
 )
 for index, y in enumerate(post_ys):
     add_box(
@@ -339,40 +340,53 @@ for index, y in enumerate(post_ys[1:-1:3]):
         vertices=7,
     )
 
-# Low toe boards remove the ambiguous open strip beneath the rope railing.
+# Low toe boards remove the ambiguous open strip beneath the rope railing. The
+# starboard side has one intentional opening, aligned exactly with the authored
+# stair connector to the low boarding float.
+gate_start = post_ys[4]
+gate_end = post_ys[5]
 for side, x in (("L", -0.67), ("R", 0.67)):
-    add_box(
-        f"Toe_Board_{side}",
-        (x, deck_center, 0.49),
-        (0.085, deck_length - 0.12, 0.16),
-        MATS["wood_deep"],
-        bevel=0.016,
-    )
+    spans = ((deck_start + 0.06, deck_end - 0.06),)
+    if side == "R":
+        spans = ((deck_start + 0.06, gate_start), (gate_end, deck_end - 0.06))
+    for span_index, (start, end) in enumerate(spans, 1):
+        add_box(
+            f"Toe_Board_{side}_{span_index}",
+            (x, (start + end) * 0.5, 0.49),
+            (0.085, end - start, 0.16),
+            MATS["wood_deep"],
+            bevel=0.016,
+        )
 
 # Each side is authored as two continuous ropes. Mid-span sag points are part
 # of the same curve, so there are no floating endpoints or pass-through gaps.
 for side, x in (("L", -0.72), ("R", 0.72)):
-    upper_points: list[tuple[float, float, float]] = []
-    lower_points: list[tuple[float, float, float]] = []
-    for section, (start, end) in enumerate(zip(post_ys[:-1], post_ys[1:])):
-        if section == 0:
-            upper_points.append((x, start, 1.02))
-            lower_points.append((x, start, 0.76))
-        middle = (start + end) * 0.5
-        upper_points.extend(((x, middle, 0.85), (x, end, 1.02)))
-        lower_points.extend(((x, middle, 0.65), (x, end, 0.76)))
-    add_rope(
-        f"Continuous_Upper_Rope_{side}",
-        upper_points,
-        0.026,
-        MATS["rope"],
-    )
-    add_rope(
-        f"Continuous_Lower_Rope_{side}",
-        lower_points,
-        0.023,
-        MATS["rope_dark"],
-    )
+    post_spans = (post_ys,)
+    if side == "R":
+        post_spans = (post_ys[:5], post_ys[5:])
+    for span_index, span in enumerate(post_spans, 1):
+        upper_points: list[tuple[float, float, float]] = []
+        lower_points: list[tuple[float, float, float]] = []
+        for section, (start, end) in enumerate(zip(span[:-1], span[1:])):
+            if section == 0:
+                upper_points.append((x, start, 1.02))
+                lower_points.append((x, start, 0.76))
+            middle = (start + end) * 0.5
+            upper_points.extend(((x, middle, 0.85), (x, end, 1.02)))
+            lower_points.extend(((x, middle, 0.65), (x, end, 0.76)))
+        if len(upper_points) >= 2:
+            add_rope(
+                f"Continuous_Upper_Rope_{side}_{span_index}",
+                upper_points,
+                0.026,
+                MATS["rope"],
+            )
+            add_rope(
+                f"Continuous_Lower_Rope_{side}_{span_index}",
+                lower_points,
+                0.023,
+                MATS["rope_dark"],
+            )
 
 # Nail heads and shallow cracks sell the deck at close range.
 for index in range(1, plank_count, 3):
@@ -389,10 +403,10 @@ for index in range(1, plank_count, 3):
 crack_specs = [
     (
         RNG.uniform(-0.36, 0.36),
-        deck_start + 0.72 + index * (deck_length - 1.44) / 11,
+        deck_start + 0.72 + index * (deck_length - 1.44) / 7,
         RNG.uniform(0.22, 0.34),
     )
-    for index in range(12)
+    for index in range(8)
 ]
 for index, (x, y, length) in enumerate(crack_specs):
     add_beam(
@@ -405,7 +419,7 @@ for index, (x, y, length) in enumerate(crack_specs):
     )
 
 # Mooring cleats repeat at useful intervals along the extended berth.
-for index, (x, y) in enumerate(((-0.45, 0.16), (0.45, 4.60), (-0.45, 9.10), (0.45, 12.75))):
+for index, (x, y) in enumerate(((-0.45, 0.16), (0.45, 3.05), (-0.45, 6.65))):
     add_cylinder(f"Cleat_Pin_{index + 1:02}", (x, y, 0.52), 0.027, 0.16, MATS["iron"], vertices=7)
     add_beam(
         f"Cleat_Arm_{index + 1:02}",
@@ -416,7 +430,7 @@ for index, (x, y) in enumerate(((-0.45, 0.16), (0.45, 4.60), (-0.45, 9.10), (0.4
         vertices=7,
     )
 
-coil_y = 10.65
+coil_y = 5.65
 for index, radius in enumerate((0.12, 0.16, 0.20, 0.235)):
     add_torus(
         f"Rope_Coil_{index + 1:02}",
@@ -496,13 +510,13 @@ def add_preview_stage() -> None:
         light.data.shape = "DISK"
         light.data.size = size
         light.data.color = rgba(color)[:3]
-        look_at(light, (0, 5.6, 0.15))
+        look_at(light, (0, 2.7, 0.15))
 
     bpy.ops.object.camera_add(location=(8.6, -7.8, 8.4))
     camera = bpy.context.object
     camera.name = "PREVIEW_Camera"
     camera.data.lens = 57
-    look_at(camera, (0, 5.7, 0.18))
+    look_at(camera, (0, 2.8, 0.18))
     bpy.context.scene.camera = camera
 
 

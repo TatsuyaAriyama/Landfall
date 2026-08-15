@@ -287,6 +287,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var frozenOceanTime = HomeIslandOceanEffects.currentTime
         private weak var foundationNode: SCNNode?
         private weak var fixedNoticeBoardNode: SCNNode?
+        private var fixedHarborSeatAssets: [FixedHarborSeatAsset] = []
+        private var fixedHarborWalkingObstacles: [WalkingObstacle] = []
         private weak var navigatorNode: SCNNode?
         private weak var arrivalBoat: SCNNode?
         private weak var arrivalBoatBob: SCNNode?
@@ -398,17 +400,15 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private enum ArrivalMotion {
-            static let boatY: Float = -0.35
+            static let boatY: Float = -0.12
             static let boatScale: Float = 0.92
             static let offshoreStartDistance: Float = 5
             static let berthLeadDistance: Float = 1.70
-            static let visibleShoreLipDepth: Float = 0.43
-            static let shoreClearance: Float = 0.35
             static let openWaterDuration: TimeInterval = 1.80
             static let berthingDuration: TimeInterval = 1.25
             static let mooringSettleDuration: TimeInterval = 0.25
             static let transferDuration: TimeInterval = 0.72
-            static let deckWalkDuration: TimeInterval = 4.65
+            static let deckWalkDuration: TimeInterval = 2.85
             static let jettySettleDuration: TimeInterval = 0.55
         }
 
@@ -575,6 +575,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
         }
 
+        private struct FixedHarborSeatAsset {
+            let id: UUID
+            let assetID: String
+            let node: SCNNode
+            let obstacleCenter: SCNVector3
+            let obstacleRadius: Float
+        }
+
         private struct InteractiveSeat {
             let address: HomeIslandSeatAddress
             let motion: HomeIslandContactMotion
@@ -671,9 +679,28 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     + playerRadius * 0.42
                 // Slightly overlap the sand so the player can step onto the ramp.
                 let landwardEnd = HomeIslandMetrics.jettyDeckLandwardEndLocalZ * scale
-                return abs(local.x) <= halfWidth
+                let isOnMainDeck = abs(local.x) <= halfWidth
                     && local.z >= seawardEnd
                     && local.z <= landwardEnd
+                let floatCenterX = HomeIslandMetrics.boardingFloatCenterLocalX * scale
+                let floatCenterZ = HomeIslandMetrics.boardingFloatCenterLocalZ * scale
+                let floatHalfWidth = max(
+                    0.16,
+                    HomeIslandMetrics.boardingFloatHalfWidth * scale - playerRadius * 0.32
+                )
+                let floatHalfLength = max(
+                    0.22,
+                    HomeIslandMetrics.boardingFloatHalfLength * scale - playerRadius * 0.22
+                )
+                let isOnBoardingFloat = abs(local.x - floatCenterX) <= floatHalfWidth
+                    && abs(local.z - floatCenterZ) <= floatHalfLength
+                let connectorNearX = 0.52 * scale
+                let connectorFarX = 1.54 * scale
+                let connectorHalfLength = 0.52 * scale
+                let isOnConnector = local.x >= connectorNearX
+                    && local.x <= connectorFarX
+                    && abs(local.z - floatCenterZ) <= connectorHalfLength
+                return isOnMainDeck || isOnBoardingFloat || isOnConnector
             }
 
             /// Blocks the authored toe board and rope line even where the long
@@ -686,6 +713,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let seawardEnd = HomeIslandMetrics.jettyRailSeawardEndLocalZ * scale
                 let landwardEnd = HomeIslandMetrics.jettyRailLandwardEndLocalZ * scale
                 guard local.z >= seawardEnd, local.z <= landwardEnd else { return false }
+                let isBoardingGate = local.x > 0
+                    && local.z >= HomeIslandMetrics.jettyBoardingGateSeawardLocalZ * scale
+                    && local.z <= HomeIslandMetrics.jettyBoardingGateLandwardLocalZ * scale
+                if isBoardingGate { return false }
                 let railCenter = HomeIslandMetrics.jettyRailCenterLocalX * scale
                 let railClearance = 0.055 * scale + playerRadius * 0.24
                 return abs(abs(local.x) - railCenter) <= railClearance
@@ -704,9 +735,29 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
 
             func height(x: Float, z: Float, baseHeight: Float) -> Float {
-                let localZ = localPosition(x: x, z: z).z
+                let local = localPosition(x: x, z: z)
+                let localZ = local.z
                 let scale = max(transform.scale, 0.05)
                 let flatDeck = HomeIslandMetrics.surfaceY + 0.445 * scale
+                let floatCenterX = HomeIslandMetrics.boardingFloatCenterLocalX * scale
+                let floatCenterZ = HomeIslandMetrics.boardingFloatCenterLocalZ * scale
+                let isOnFloat = abs(local.x - floatCenterX)
+                        <= HomeIslandMetrics.boardingFloatHalfWidth * scale
+                    && abs(local.z - floatCenterZ)
+                        <= HomeIslandMetrics.boardingFloatHalfLength * scale
+                let lowDeck = HomeIslandMetrics.surfaceY - 0.215 * scale
+                if isOnFloat { return lowDeck }
+                let connectorNearX = 0.58 * scale
+                let connectorFarX = 1.54 * scale
+                if local.x > connectorNearX,
+                   local.x < connectorFarX,
+                   abs(local.z - floatCenterZ) <= 0.56 * scale {
+                    let progress = min(
+                        max((local.x - connectorNearX) / (connectorFarX - connectorNearX), 0),
+                        1
+                    )
+                    return flatDeck + (lowDeck - flatDeck) * progress
+                }
                 let rampStart = 1.70 * scale
                 let shoreEnd = 2.30 * scale
                 guard localZ > rampStart else { return max(baseHeight, flatDeck) }
@@ -972,6 +1023,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 arrivalJettyWalkSurface = JettyWalkSurface(transform: transform)
             }
 
+            installHarborCommons(in: scene)
+
             if let noticeBoard = AssetPlacementRuntime.makeAssetNode(
                 resourceName: "voyage_notice_board"
             ) {
@@ -1086,21 +1139,24 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let bob = SCNNode()
             bob.name = "home-island-arrival-bob"
             let boat = VoyageSceneKit.makeBoatModel(BoatCustomization.currentParts)
-            // With the boat turned toward the island, local +X is its world -Z bow.
-            // Stop outside both the authored sand edge and the visible raised shore lip,
-            // deriving the remaining offset from the active boat model so customization
-            // cannot put the bow back inside the island.
-            let shoreEdge = HomeIslandMetrics.sandEdgePoint(angle: -.pi / 2).z
-                + ArrivalMotion.visibleShoreLipDepth
-            let bowExtent = max(boat.boundingBox.max.x, 0) * ArrivalMotion.boatScale
-            let jettyTip = arrivalJettyWalkSurface?.worldPosition(
-                localX: 0,
-                localZ: HomeIslandMetrics.jettyDeckSeawardEndLocalZ
-            ) ?? (x: Float(0), z: shoreEdge + 9.8)
+            // The vessel now lies alongside the low float rather than pointing
+            // under the high pier. Its customized beam determines the final
+            // clearance, while the raised waterline keeps both decks close
+            // enough for a short, believable gangplank.
+            let halfBeam = max(
+                abs(boat.boundingBox.min.z),
+                abs(boat.boundingBox.max.z)
+            ) * ArrivalMotion.boatScale
+            let floatCenter = arrivalJettyWalkSurface?.worldPosition(
+                localX: HomeIslandMetrics.boardingFloatCenterLocalX,
+                localZ: HomeIslandMetrics.boardingFloatCenterLocalZ
+            ) ?? (x: Float(-1.55), z: Float(12.0))
+            let floatHalfWidth = HomeIslandMetrics.boardingFloatHalfWidth
+                * HomeIslandMetrics.arrivalJettyScale
             arrivalBoatStopPosition = SCNVector3(
-                jettyTip.x,
+                floatCenter.x - floatHalfWidth - halfBeam - 0.28,
                 ArrivalMotion.boatY,
-                jettyTip.z + bowExtent + ArrivalMotion.shoreClearance
+                floatCenter.z
             )
             travel.position = SCNVector3(
                 arrivalBoatStopPosition.x - 0.10,
@@ -1136,6 +1192,140 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
 
             return scene
+        }
+
+        private func installHarborCommons(in scene: SCNScene) {
+            fixedHarborSeatAssets.removeAll(keepingCapacity: true)
+            fixedHarborWalkingObstacles.removeAll(keepingCapacity: true)
+
+            @discardableResult
+            func addAsset(
+                _ resourceName: String,
+                name: String,
+                position: (x: Float, z: Float),
+                yaw: Float = 0,
+                scale: Float
+            ) -> SCNNode? {
+                guard let node = AssetPlacementRuntime.makeAssetNode(
+                    resourceName: resourceName
+                ) else { return nil }
+                node.name = name
+                HomeIslandTransform(
+                    x: position.x,
+                    z: position.z,
+                    yaw: yaw,
+                    scale: scale
+                ).apply(to: node)
+                scene.rootNode.addChildNode(node)
+                return node
+            }
+
+            if let surface = arrivalJettyWalkSurface {
+                let floatCenter = surface.worldPosition(
+                    localX: HomeIslandMetrics.boardingFloatCenterLocalX,
+                    localZ: HomeIslandMetrics.boardingFloatCenterLocalZ
+                )
+                addAsset(
+                    "harbor_boarding_float",
+                    name: "home-island-locked-boarding-float",
+                    position: floatCenter,
+                    yaw: HomeIslandMetrics.arrivalJettyYaw,
+                    scale: HomeIslandMetrics.arrivalJettyScale
+                )
+            }
+
+            addAsset(
+                "harbor_gathering_deck",
+                name: "home-island-locked-gathering-deck",
+                position: HomeIslandMetrics.gatheringDeckPosition,
+                scale: HomeIslandMetrics.gatheringDeckScale
+            )
+
+            if addAsset(
+                "harbor_sail_canopy",
+                name: "home-island-locked-sail-canopy",
+                position: HomeIslandMetrics.sailCanopyPosition,
+                yaw: HomeIslandMetrics.sailCanopyYaw,
+                scale: HomeIslandMetrics.sailCanopyScale
+            ) != nil {
+                let center = HomeIslandMetrics.sailCanopyPosition
+                let yaw = HomeIslandMetrics.sailCanopyYaw
+                let scale = HomeIslandMetrics.sailCanopyScale
+                let postOffsets: [(Float, Float)] = [
+                    (-1.65, 1.18),
+                    (1.65, 1.18),
+                    (-1.65, -1.18),
+                    (1.65, -1.18),
+                ]
+                for (localX, localZ) in postOffsets {
+                    let cosine = cos(yaw)
+                    let sine = sin(yaw)
+                    fixedHarborWalkingObstacles.append(WalkingObstacle(
+                        x: center.x + localX * scale * cosine + localZ * scale * sine,
+                        z: center.z - localX * scale * sine + localZ * scale * cosine,
+                        radius: 0.18
+                    ))
+                }
+            }
+
+            if let table = addAsset(
+                "harbor_council_table",
+                name: "home-island-locked-council-table",
+                position: HomeIslandMetrics.councilTablePosition,
+                scale: HomeIslandMetrics.councilTableScale
+            ) {
+                let position = HomeIslandMetrics.councilTablePosition
+                fixedHarborSeatAssets.append(FixedHarborSeatAsset(
+                    id: HomeIslandMetrics.councilTableSeatID,
+                    assetID: "harbor_council_table",
+                    node: table,
+                    obstacleCenter: SCNVector3(position.x, HomeIslandMetrics.surfaceY, position.z),
+                    obstacleRadius: 0.62
+                ))
+                fixedHarborWalkingObstacles.append(WalkingObstacle(
+                    x: position.x,
+                    z: position.z,
+                    radius: 0.62
+                ))
+            }
+
+            if let bench = addAsset(
+                "harbor_arc_bench",
+                name: "home-island-locked-arc-bench",
+                position: HomeIslandMetrics.arcBenchPosition,
+                yaw: HomeIslandMetrics.arcBenchYaw,
+                scale: HomeIslandMetrics.arcBenchScale
+            ) {
+                let position = HomeIslandMetrics.arcBenchPosition
+                fixedHarborSeatAssets.append(FixedHarborSeatAsset(
+                    id: HomeIslandMetrics.arcBenchSeatID,
+                    assetID: "harbor_arc_bench",
+                    node: bench,
+                    obstacleCenter: SCNVector3(position.x, HomeIslandMetrics.surfaceY, position.z),
+                    obstacleRadius: 1.08
+                ))
+                fixedHarborWalkingObstacles.append(WalkingObstacle(
+                    x: position.x,
+                    z: position.z,
+                    radius: 1.08
+                ))
+            }
+
+            for (index, position) in HomeIslandMetrics.welcomeBeaconPositions.enumerated() {
+                if addAsset(
+                    "harbor_welcome_beacon",
+                    name: "home-island-locked-welcome-beacon-\(index + 1)",
+                    position: position,
+                    yaw: .pi,
+                    scale: HomeIslandMetrics.welcomeBeaconScale
+                ) != nil {
+                    fixedHarborWalkingObstacles.append(WalkingObstacle(
+                        x: position.x,
+                        z: position.z,
+                        radius: 0.20
+                    ))
+                }
+            }
         }
 
         private func syncPlacements() {
@@ -1192,6 +1382,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     radius: HomeIslandMetrics.fixedNoticeBoardObstacleRadius
                 ))
             }
+            walkingObstacles.append(contentsOf: fixedHarborWalkingObstacles)
             ruinsWalkObstacles = owner.store.placements.compactMap { placement in
                 guard placement.assetID == "mossy_ruins" else { return nil }
                 return RuinsWalkObstacle(transform: placement.transform)
@@ -1241,6 +1432,26 @@ struct HomeIslandSceneView: UIViewRepresentable {
                             assetID: placement.assetID,
                             scale: placement.transform.scale
                         )
+                    )
+                }
+            }
+            placedSeatSlots += fixedHarborSeatAssets.flatMap { asset in
+                HomeIslandAssetCatalog.contactSlots(for: asset.assetID).compactMap { slot in
+                    guard let seatNode = asset.node.childNode(
+                        withName: slot.seatNodeName,
+                        recursively: true
+                    ), let approachNode = asset.node.childNode(
+                        withName: slot.approachNodeName,
+                        recursively: true
+                    ) else { return nil }
+                    return PlacedSeatSlot(
+                        placementID: asset.id,
+                        slotID: slot.id,
+                        motion: slot.motion,
+                        seatNode: seatNode,
+                        approachNode: approachNode,
+                        obstacleCenter: asset.obstacleCenter,
+                        obstacleRadius: asset.obstacleRadius
                     )
                 }
             }
@@ -1656,18 +1867,18 @@ struct HomeIslandSceneView: UIViewRepresentable {
             ]), forKey: "remote-landing")
         }
 
-        /// Visitors berth bow-on beyond the permanent local boat. Three
-        /// deterministic lanes keep simultaneous arrivals legible without
-        /// altering the fixed jetty or the host's boarding target.
+        /// Visitors queue in three parallel positions along the outside of the
+        /// boarding float. The local boat keeps the closest berth while the
+        /// deterministic fore/aft offsets keep simultaneous arrivals legible.
         private func remoteArrivalBerth(for playerID: String) -> SCNVector3 {
             let laneSeed = playerID.utf8.reduce(0) { partial, byte in
                 (partial + Int(byte)) % 3
             }
             let lane = Float(laneSeed - 1)
             return SCNVector3(
-                lane * 1.45,
+                arrivalBoatStopPosition.x - 0.55 - abs(lane) * 0.12,
                 arrivalBoatStopPosition.y,
-                arrivalBoatStopPosition.z + 2.25 + abs(lane) * 0.18
+                arrivalBoatStopPosition.z + lane * 1.75
             )
         }
 
@@ -2630,8 +2841,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
             azimuth = 0.88
             elevation = 0.31
-            radius = 29.0
-            cameraTarget?.position = SCNVector3(0, 0.85, 7.8)
+            radius = 26.0
+            cameraTarget?.position = SCNVector3(-0.6, 0.85, 6.0)
             updateCamera()
 
             guard !UIAccessibility.isReduceMotionEnabled, let boat = arrivalBoat else {
@@ -2665,10 +2876,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
             berth.timingMode = .easeOut
 
             animateArrivalCamera(
-                target: SCNVector3(-0.12, 0.88, 10.4),
+                target: SCNVector3(-0.8, 0.88, 8.8),
                 azimuth: 0.83,
                 elevation: 0.30,
-                radius: 25.0,
+                radius: 22.0,
                 fieldOfView: 48,
                 duration: ArrivalMotion.openWaterDuration
             )
@@ -2678,10 +2889,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 .run { [weak self] _ in
                     DispatchQueue.main.async {
                         self?.animateArrivalCamera(
-                            target: SCNVector3(-0.08, 0.82, 14.2),
+                            target: SCNVector3(-1.0, 0.82, 11.1),
                             azimuth: 0.754,
                             elevation: 0.299,
-                            radius: 14.6,
+                            radius: 12.8,
                             fieldOfView: 42,
                             duration: ArrivalMotion.berthingDuration,
                             timingFunction: CAMediaTimingFunction(
@@ -2826,10 +3037,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
             growToIslandScale.timingMode = .easeOut
 
             animateArrivalCamera(
-                target: SCNVector3(-0.04, 0.96, 13.0),
+                target: SCNVector3(-0.65, 0.96, 9.7),
                 azimuth: 0.77,
                 elevation: 0.28,
-                radius: 15.2,
+                radius: 11.8,
                 fieldOfView: 42,
                 duration: ArrivalMotion.transferDuration + ArrivalMotion.deckWalkDuration
             )
@@ -2878,9 +3089,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let fallbackCoast = HomeIslandMetrics.arrivalJettyPosition
             let surface = arrivalJettyWalkSurface
             let transferXZ = surface?.worldPosition(
-                localX: 0,
+                localX: HomeIslandMetrics.arrivalJettyTransferLocalX,
                 localZ: HomeIslandMetrics.arrivalJettyTransferLocalZ
-            ) ?? (x: fallbackCoast.x, z: fallbackCoast.z + 9.70)
+            ) ?? (x: fallbackCoast.x - 1.94, z: fallbackCoast.z + 3.00)
             let deckXZ = surface?.worldPosition(
                 localX: 0,
                 localZ: HomeIslandMetrics.arrivalJettyIslandLocalZ
@@ -3967,6 +4178,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 $0.contains(x: x, z: z, playerRadius: 0.02)
             }) {
                 return jetty.height(x: x, z: z, baseHeight: foundationHeight)
+            }
+            if HomeIslandMetrics.containsGatheringDeck(x: x, z: z) {
+                return max(
+                    foundationHeight,
+                    HomeIslandMetrics.surfaceY
+                        + HomeIslandMetrics.gatheringDeckLocalTopY
+                        * HomeIslandMetrics.gatheringDeckScale
+                )
             }
             return foundationHeight
         }

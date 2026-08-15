@@ -21,18 +21,43 @@ enum HomeIslandMetrics {
     // Authored wooden_jetty model-space dimensions. Keeping these beside the
     // fixed placement prevents rendering, walking and arrival choreography
     // from drifting apart when the source asset changes.
-    static let jettyDeckSeawardEndLocalZ: Float = -13.85
+    static let jettyDeckSeawardEndLocalZ: Float = -7.42
     static let jettyDeckLandwardEndLocalZ: Float = 2.30
-    static let jettyRailSeawardEndLocalZ: Float = -13.55
+    static let jettyRailSeawardEndLocalZ: Float = -7.25
     static let jettyRailLandwardEndLocalZ: Float = 1.55
     static let jettyRailCenterLocalX: Float = 0.69
-    static let arrivalJettyTransferLocalZ: Float = -13.48
+    static let jettyBoardingGateSeawardLocalZ: Float = -4.75
+    static let jettyBoardingGateLandwardLocalZ: Float = -3.50
+    static let boardingFloatCenterLocalX: Float = 2.15
+    static let boardingFloatCenterLocalZ: Float = -4.17
+    static let boardingFloatHalfWidth: Float = 0.67
+    static let boardingFloatHalfLength: Float = 1.50
+    static let arrivalJettyTransferLocalX: Float = 2.70
+    static let arrivalJettyTransferLocalZ: Float = -4.17
     static let arrivalJettyIslandLocalZ: Float = 1.50
     // The reserved corridor includes both the permanent jetty and the
     // player's moored boat, so newly placed props cannot overlap the berth.
-    static let arrivalJettyReservedHalfWidth: Float = 2.15
-    static let arrivalJettyReservedNearZ: Float = 7.10
-    static let arrivalJettyReservedFarZ: Float = 21.80
+    static let arrivalJettyReservedHalfWidth: Float = 4.90
+    static let arrivalJettyReservedNearZ: Float = 5.00
+    static let arrivalJettyReservedFarZ: Float = 16.80
+    static let gatheringDeckPosition = (x: Float(0), z: Float(6.75))
+    static let gatheringDeckScale: Float = 0.90
+    static let gatheringDeckLocalTopY: Float = 0.195
+    static let sailCanopyPosition = (x: Float(-1.35), z: Float(6.35))
+    static let sailCanopyYaw: Float = -0.10
+    static let sailCanopyScale: Float = 0.72
+    static let councilTablePosition = (x: Float(-1.35), z: Float(6.35))
+    static let councilTableScale: Float = 0.72
+    static let councilTableSeatID = UUID(uuidString: "A184B6C1-4B58-44F0-A000-000000000001")!
+    static let arcBenchPosition = (x: Float(1.55), z: Float(6.25))
+    static let arcBenchYaw: Float = -.pi / 2
+    static let arcBenchScale: Float = 0.72
+    static let arcBenchSeatID = UUID(uuidString: "A184B6C1-4B58-44F0-A000-000000000002")!
+    static let welcomeBeaconPositions = [
+        (x: Float(-0.98), z: Float(8.05)),
+        (x: Float(0.98), z: Float(8.05)),
+    ]
+    static let welcomeBeaconScale: Float = 0.72
     // Permanently place the notice board on the positive-X side of the jetty,
     // just inside the authored shoreline. This keeps the moored boat's
     // negative-X berth clear while making both fixtures read as one entrance.
@@ -66,6 +91,13 @@ enum HomeIslandMetrics {
 
     static var arrivalJettyPosition: (x: Float, z: Float) {
         sandEdgePoint(angle: -.pi / 2)
+    }
+
+    static func containsGatheringDeck(x: Float, z: Float) -> Bool {
+        let dx = abs(x - gatheringDeckPosition.x)
+        let dz = abs(z - gatheringDeckPosition.z)
+        return dx <= 2.90 * gatheringDeckScale
+            && dz <= 1.57 * gatheringDeckScale
     }
 
     static func containsWalkableSand(x: Float, z: Float, margin: Float) -> Bool {
@@ -185,12 +217,29 @@ enum HomeIslandAssetCatalog {
         ),
     ]
 
+    private static let harborCouncilTableSeatSlots = [
+        HomeIslandContactSlotDefinition(id: "north", motion: .sit, seatNodeName: "SeatSocket_North", approachNodeName: "SeatApproach_North"),
+        HomeIslandContactSlotDefinition(id: "east", motion: .sit, seatNodeName: "SeatSocket_East", approachNodeName: "SeatApproach_East"),
+        HomeIslandContactSlotDefinition(id: "south", motion: .sit, seatNodeName: "SeatSocket_South", approachNodeName: "SeatApproach_South"),
+        HomeIslandContactSlotDefinition(id: "west", motion: .sit, seatNodeName: "SeatSocket_West", approachNodeName: "SeatApproach_West"),
+    ]
+
+    private static let harborArcBenchSeatSlots = [
+        HomeIslandContactSlotDefinition(id: "left", motion: .sit, seatNodeName: "SeatSocket_Left", approachNodeName: "SeatApproach_Left"),
+        HomeIslandContactSlotDefinition(id: "center", motion: .sit, seatNodeName: "SeatSocket_Center", approachNodeName: "SeatApproach_Center"),
+        HomeIslandContactSlotDefinition(id: "right", motion: .sit, seatNodeName: "SeatSocket_Right", approachNodeName: "SeatApproach_Right"),
+    ]
+
     static func contactSlots(for assetID: String) -> [HomeIslandContactSlotDefinition] {
         switch assetID {
         case "driftwood_bench":
             driftwoodBenchSeatSlots
         case "navigator_hammock":
             navigatorHammockContactSlots
+        case "harbor_council_table":
+            harborCouncilTableSeatSlots
+        case "harbor_arc_bench":
+            harborArcBenchSeatSlots
         default:
             []
         }
