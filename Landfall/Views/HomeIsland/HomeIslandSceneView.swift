@@ -470,7 +470,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
             static let berthingDuration: TimeInterval = 1.25
             static let mooringSettleDuration: TimeInterval = 0.25
             static let transferDuration: TimeInterval = 0.72
-            static let deckWalkDuration: TimeInterval = 2.85
             static let jettySettleDuration: TimeInterval = 0.55
         }
 
@@ -527,38 +526,30 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         private struct StumpSeat {
             let id: UUID
-            let transform: HomeIslandTransform
-            let topY: Float
+            let node: SCNNode
             let obstacleRadius: Float
 
+            var centerWorldPosition: SCNVector3 {
+                node.presentation.worldPosition
+            }
+
             func seatPosition(rootToSeatSurface: Float) -> SCNVector3 {
+                let cutSurface = node.presentation.convertPosition(
+                    SCNVector3(0, NavigatorSeatMetrics.stumpCutSurfaceLocalY, 0),
+                    to: nil
+                )
                 return SCNVector3(
-                    transform.x,
-                    topY
+                    cutSurface.x,
+                    cutSurface.y
                         - rootToSeatSurface
                         + NavigatorSeatMetrics.surfaceClearance
                         - NavigatorSeatMetrics.stumpContactInset,
-                    transform.z
+                    cutSurface.z
                 )
             }
 
             var triggerRadius: Float {
                 max(0.92, obstacleRadius + 0.47)
-            }
-
-            /// Sit on the near edge and turn back toward the side we came from.
-            /// Unlike a chair, a stump has no authored front/back socket.
-            func seatPosition(
-                approachedAlong direction: SCNVector3,
-                rootToSeatSurface: Float
-            ) -> SCNVector3 {
-                let edgeOffset = max(0.12, obstacleRadius - 0.26)
-                let base = seatPosition(rootToSeatSurface: rootToSeatSurface)
-                return SCNVector3(
-                    base.x - direction.x * edgeOffset,
-                    base.y,
-                    base.z - direction.z * edgeOffset
-                )
             }
 
             var address: HomeIslandSeatAddress {
@@ -1590,9 +1581,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 )
                 return StumpSeat(
                     id: placement.id,
-                    transform: placement.transform,
-                    topY: node.position.y
-                        + NavigatorSeatMetrics.stumpCutSurfaceLocalY * scale,
+                    node: node,
                     obstacleRadius: obstacleRadius
                 )
             }
@@ -1990,7 +1979,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
             navigator.removeAllActions()
             navigator.position = transferStart
             navigator.eulerAngles.y = atan2(transferDirection.x, transferDirection.z)
-            navigator.scale = SCNVector3(0.57, 0.57, 0.57)
+            navigator.scale = SCNVector3(
+                NavigatorAppearance.islandScale,
+                NavigatorAppearance.islandScale,
+                NavigatorAppearance.islandScale
+            )
             navigator.opacity = 0
             visual.arrivalPose = .walk
 
@@ -2004,7 +1997,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             deckSailor?.runAction(.fadeOut(duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.18))
 
             if UIAccessibility.isReduceMotionEnabled {
-                navigator.position = path.deck
+                navigator.position = path.transfer
                 navigator.scale = SCNVector3(
                     NavigatorAppearance.islandScale,
                     NavigatorAppearance.islandScale,
@@ -2024,31 +2017,15 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 duration: ArrivalMotion.transferDuration
             )
             transfer.timingMode = .easeInEaseOut
-            let growOnTransfer = SCNAction.scale(
-                to: 0.68,
-                duration: ArrivalMotion.transferDuration
-            )
-            growOnTransfer.timingMode = .easeInEaseOut
-            let crossJetty = SCNAction.move(
-                to: path.deck,
-                duration: ArrivalMotion.deckWalkDuration
-            )
-            crossJetty.timingMode = .easeInEaseOut
-            let growToIslandScale = SCNAction.scale(
-                to: CGFloat(NavigatorAppearance.islandScale),
-                duration: 0.62
-            )
-            growToIslandScale.timingMode = .easeOut
 
             navigator.runAction(.sequence([
-                .group([fadeIn, transfer, growOnTransfer]),
+                .group([fadeIn, transfer]),
                 .run { _ in
                     gangplank.runAction(.sequence([
                         .fadeOut(duration: 0.24),
                         .removeFromParentNode(),
                     ]))
                 },
-                .group([crossJetty, growToIslandScale]),
                 .wait(duration: ArrivalMotion.jettySettleDuration),
                 .run { [weak self] _ in
                     DispatchQueue.main.async {
@@ -3460,7 +3437,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
             navigator.position = transferStart
             navigator.eulerAngles.y = atan2(transferDirection.x, transferDirection.z)
-            navigator.scale = SCNVector3(0.57, 0.57, 0.57)
+            navigator.scale = SCNVector3(
+                NavigatorAppearance.islandScale,
+                NavigatorAppearance.islandScale,
+                NavigatorAppearance.islandScale
+            )
             navigator.opacity = 0
             arrivalNavigatorIsWalking = true
 
@@ -3483,31 +3464,23 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 duration: ArrivalMotion.transferDuration
             )
             transfer.timingMode = .easeInEaseOut
-            let growOnTransfer = SCNAction.scale(to: 0.68, duration: ArrivalMotion.transferDuration)
-            growOnTransfer.timingMode = .easeInEaseOut
-
-            let crossDeck = SCNAction.move(
-                to: path.deck,
-                duration: ArrivalMotion.deckWalkDuration
-            )
-            crossDeck.timingMode = .easeInEaseOut
-            let growToIslandScale = SCNAction.scale(
-                to: CGFloat(NavigatorAppearance.islandScale),
-                duration: 0.62
-            )
-            growToIslandScale.timingMode = .easeOut
 
             animateArrivalCamera(
-                target: SCNVector3(-0.65, 0.96, 9.7),
+                target: SCNVector3(
+                    transferEnd.x,
+                    transferEnd.y + 0.72,
+                    transferEnd.z
+                ),
                 azimuth: 0.77,
                 elevation: 0.28,
                 radius: 11.8,
                 fieldOfView: 42,
-                duration: ArrivalMotion.transferDuration + ArrivalMotion.deckWalkDuration
+                duration: ArrivalMotion.transferDuration
+                    + ArrivalMotion.jettySettleDuration
             )
 
             navigator.runAction(.sequence([
-                .group([fadeNavigator, transfer, growOnTransfer]),
+                .group([fadeNavigator, transfer]),
                 .run { [weak self] _ in
                     DispatchQueue.main.async {
                         self?.arrivalGangplank?.runAction(.sequence([
@@ -3516,15 +3489,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         ]))
                     }
                 },
-                .group([crossDeck, growToIslandScale]),
                 .run { [weak self] _ in
                     guard let self else { return }
                     DispatchQueue.main.async {
                         self.animateArrivalCamera(
                             target: SCNVector3(
-                                path.deck.x,
-                                path.deck.y + 0.72,
-                                path.deck.z
+                                transferEnd.x,
+                                transferEnd.y + 0.72,
+                                transferEnd.z
                             ),
                             azimuth: self.nearestEquivalentAzimuth(to: 0.82),
                             elevation: 0.30,
@@ -3625,7 +3597,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func completeArrivalImmediately() {
             let destination = arrivalJettyWalkSurface == nil
                 ? safestLandingPosition()
-                : arrivalJettyLandingPath().deck
+                : arrivalJettyLandingPath().transfer
             navigatorNode?.position = destination
             navigatorNode?.eulerAngles.y = .pi
             navigatorNode?.scale = SCNVector3(
@@ -3661,10 +3633,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 guard let self, let navigator = self.navigatorNode else { return }
                 let approach: SCNVector3
                 if requestedSeat == "stump", let stump = self.stumpSeats.first {
+                    let center = stump.centerWorldPosition
                     approach = SCNVector3(
-                        stump.transform.x,
-                        self.groundHeight(x: stump.transform.x, z: stump.transform.z + stump.triggerRadius * 0.82),
-                        stump.transform.z + stump.triggerRadius * 0.82
+                        center.x,
+                        self.groundHeight(x: center.x, z: center.z + stump.triggerRadius * 0.82),
+                        center.z + stump.triggerRadius * 0.82
                     )
                 } else if let slot = self.placedSeatSlots.first {
                     approach = slot.approachWorldPosition
@@ -4505,8 +4478,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let occupiedSeats = remotelyOccupiedSeatAddresses
             var candidates = stumpSeats.compactMap { stump -> (InteractiveSeat, Float)? in
                 guard !occupiedSeats.contains(stump.address) else { return nil }
-                let dx = stump.transform.x - position.x
-                let dz = stump.transform.z - position.z
+                let stumpCenter = stump.centerWorldPosition
+                let dx = stumpCenter.x - position.x
+                let dz = stumpCenter.z - position.z
                 let distance = sqrt(dx * dx + dz * dz)
                 guard distance > 0.001, distance <= stump.triggerRadius else { return nil }
                 let alignment = (dx * direction.x + dz * direction.z) / distance
@@ -4515,27 +4489,20 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     InteractiveSeat(
                         address: stump.address,
                         motion: .sit,
-                        // A stump has no backrest or authored front edge. Use
-                        // its own cut-surface geometry instead of borrowing the
-                        // directional socket correction used by chairs. Sit at
-                        // the near edge so the navigator never travels through
-                        // the stump before the animation begins.
+                        // Resolve the rendered cut surface directly. Saved
+                        // placement coordinates and chair socket offsets do not
+                        // belong in the stump's contact position.
                         seatPosition: stump.seatPosition(
-                            approachedAlong: direction,
                             rootToSeatSurface: navigatorRootToSeatSurface
                         ),
                         approachPosition: nil,
                         obstacleCenter: SCNVector3(
-                            stump.transform.x,
+                            stumpCenter.x,
                             HomeIslandMetrics.surfaceY,
-                            stump.transform.z
+                            stumpCenter.z
                         ),
                         obstacleRadius: stump.obstacleRadius,
-                        facingDirection: SCNVector3(
-                            -direction.x,
-                            0,
-                            -direction.z
-                        )
+                        facingDirection: direction
                     ),
                     distance
                 )
