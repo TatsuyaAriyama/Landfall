@@ -444,6 +444,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private enum NavigatorSeatMetrics {
             static let surfaceClearance: Float = 0.008
             static let backrestClearance: Float = 0.145
+            /// Council-table seats face away from their approach marker, so the
+            /// navigator root belongs slightly inside the socket, toward the table.
+            static let tableForwardInset: Float = 0.10
             /// small_stump.blend の切断面。苔や年輪の装飾上端は座面に含めない。
             static let stumpCutSurfaceLocalY: Float = 0.605
             /// 丸い切り株では衣装下端をわずかに木へ沈め、接触感を出す。
@@ -508,6 +511,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let motion: HomeIslandContactMotion
             let seatNode: SCNNode
             let approachNode: SCNNode
+            let facesAwayFromApproach: Bool
             let obstacleCenter: SCNVector3
             let obstacleRadius: Float
 
@@ -538,10 +542,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let outwardZ = approach.z - surface.z
                 let outwardLength = sqrt(outwardX * outwardX + outwardZ * outwardZ)
                 guard outwardLength > 0.001 else { return SCNVector3(0, 0, 1) }
+                let direction: Float = facesAwayFromApproach ? -1 : 1
                 return SCNVector3(
-                    outwardX / outwardLength,
+                    outwardX / outwardLength * direction,
                     0,
-                    outwardZ / outwardLength
+                    outwardZ / outwardLength * direction
                 )
             }
 
@@ -559,14 +564,17 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let outwardX = approach.x - surface.x
                 let outwardZ = approach.z - surface.z
                 let outwardLength = sqrt(outwardX * outwardX + outwardZ * outwardZ)
+                let outwardOffset = facesAwayFromApproach
+                    ? -NavigatorSeatMetrics.tableForwardInset
+                    : NavigatorSeatMetrics.backrestClearance
                 return SCNVector3(
                     surface.x + outwardX / max(outwardLength, 0.001)
-                        * NavigatorSeatMetrics.backrestClearance,
+                        * outwardOffset,
                     surface.y
                         - rootToSeatSurface
                         + NavigatorSeatMetrics.surfaceClearance,
                     surface.z + outwardZ / max(outwardLength, 0.001)
-                        * NavigatorSeatMetrics.backrestClearance
+                        * outwardOffset
                 )
             }
 
@@ -1378,6 +1386,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         motion: slot.motion,
                         seatNode: seatNode,
                         approachNode: approachNode,
+                        facesAwayFromApproach: slot.facesAwayFromApproach,
                         obstacleCenter: SCNVector3(
                             placement.transform.x,
                             HomeIslandMetrics.surfaceY,
@@ -1405,6 +1414,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         motion: slot.motion,
                         seatNode: seatNode,
                         approachNode: approachNode,
+                        facesAwayFromApproach: slot.facesAwayFromApproach,
                         obstacleCenter: asset.obstacleCenter,
                         obstacleRadius: asset.obstacleRadius
                     )

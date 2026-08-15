@@ -216,10 +216,6 @@ def build_harbor_gathering_deck() -> None:
             objects,
             bevel=0.018,
         )
-    # A flush compass rose gives arriving players a natural meeting point.
-    kit.add_cylinder("Commons_Compass_Ring", (0, 0, 0.205), 0.64, 0.022, mats["green"], root, objects, vertices=32)
-    kit.add_box("Commons_Compass_NS", (0, 0, 0.223), (0.15, 1.04, 0.018), mats["accent"], root, objects, rotation=(0, 0, math.pi / 4), bevel=0.01)
-    kit.add_box("Commons_Compass_EW", (0, 0, 0.225), (0.15, 1.04, 0.018), mats["sun"], root, objects, rotation=(0, 0, -math.pi / 4), bevel=0.01)
     finish("harbor_gathering_deck", root, objects)
 
 
@@ -292,17 +288,34 @@ def build_harbor_council_table() -> None:
     kit.add_cylinder("Council_Table_Top", (0, 0, 0.88), 0.80, 0.14, mats["sun"], root, objects, vertices=20)
     kit.add_cylinder("Council_Map_Inlay", (0, 0, 0.956), 0.60, 0.018, mats["green"], root, objects, vertices=20)
     kit.add_cylinder("Council_Table_Pedestal", (0, 0, 0.44), 0.17, 0.78, mats["deep"], root, objects, vertices=10)
+    chair_radius = 1.55
+    backrest_radius = 1.86
+    approach_radius = 2.38
     for index, angle in enumerate((0, math.pi / 2, math.pi, math.pi * 1.5), 1):
-        x = math.cos(angle) * 1.25
-        y = math.sin(angle) * 1.25
+        x = math.cos(angle) * chair_radius
+        y = math.sin(angle) * chair_radius
         kit.add_cylinder(f"Council_Stool_{index}", (x, y, 0.47), 0.31, 0.14, mats["wood"], root, objects, vertices=12)
         kit.add_cylinder(f"Council_Stool_Leg_{index}", (x, y, 0.23), 0.09, 0.46, mats["wet"], root, objects, vertices=8)
+        # The backrest sits outside the stool, making the inward seating
+        # direction legible before the player interacts with it.
+        back_x = math.cos(angle) * backrest_radius
+        back_y = math.sin(angle) * backrest_radius
+        kit.add_box(
+            f"Council_Chair_Back_{index}",
+            (back_x, back_y, 0.73),
+            (0.52, 0.12, 0.42),
+            mats["sun"],
+            root,
+            objects,
+            rotation=(0, 0, angle + math.pi / 2),
+            bevel=0.035,
+        )
     sockets: list[bpy.types.Object] = []
     for slot_id, angle in zip(("north", "east", "south", "west"), (math.pi / 2, 0, -math.pi / 2, math.pi)):
-        x = math.cos(angle) * 1.25
-        y = math.sin(angle) * 1.25
+        x = math.cos(angle) * chair_radius
+        y = math.sin(angle) * chair_radius
         sockets.append(kit.add_socket(f"SeatSocket_{slot_id.title()}", (x, y, 0.58), root, slot_id=slot_id, purpose="seat"))
-        sockets.append(kit.add_socket(f"SeatApproach_{slot_id.title()}", (math.cos(angle) * 1.92, math.sin(angle) * 1.92, 0), root, slot_id=slot_id, purpose="approach"))
+        sockets.append(kit.add_socket(f"SeatApproach_{slot_id.title()}", (math.cos(angle) * approach_radius, math.sin(angle) * approach_radius, 0), root, slot_id=slot_id, purpose="approach"))
     finish("harbor_council_table", root, objects, tuple(sockets))
 
 
@@ -344,15 +357,26 @@ def build_harbor_welcome_beacon() -> None:
 
 
 BUILDERS = (
-    build_harbor_boarding_float,
-    build_harbor_gathering_deck,
-    build_harbor_sail_canopy,
-    build_harbor_council_table,
-    build_harbor_arc_bench,
-    build_harbor_welcome_beacon,
+    ("harbor_boarding_float", build_harbor_boarding_float),
+    ("harbor_gathering_deck", build_harbor_gathering_deck),
+    ("harbor_sail_canopy", build_harbor_sail_canopy),
+    ("harbor_council_table", build_harbor_council_table),
+    ("harbor_arc_bench", build_harbor_arc_bench),
+    ("harbor_welcome_beacon", build_harbor_welcome_beacon),
 )
 
-for builder in BUILDERS:
+requested_ids = {
+    value.strip()
+    for value in os.environ.get("KEELMIRA_HARBOR_ASSET_IDS", "").split(",")
+    if value.strip()
+}
+selected_builders = [
+    builder
+    for asset_id, builder in BUILDERS
+    if not requested_ids or asset_id in requested_ids
+]
+
+for builder in selected_builders:
     builder()
 
-print(f"HARBOR_COMMONS_COMPLETE={len(BUILDERS)}")
+print(f"HARBOR_COMMONS_COMPLETE={len(selected_builders)}")

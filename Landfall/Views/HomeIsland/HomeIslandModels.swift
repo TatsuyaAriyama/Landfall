@@ -183,6 +183,21 @@ struct HomeIslandContactSlotDefinition: Identifiable, Hashable, Sendable {
     let motion: HomeIslandContactMotion
     let seatNodeName: String
     let approachNodeName: String
+    let facesAwayFromApproach: Bool
+
+    init(
+        id: String,
+        motion: HomeIslandContactMotion,
+        seatNodeName: String,
+        approachNodeName: String,
+        facesAwayFromApproach: Bool = false
+    ) {
+        self.id = id
+        self.motion = motion
+        self.seatNodeName = seatNodeName
+        self.approachNodeName = approachNodeName
+        self.facesAwayFromApproach = facesAwayFromApproach
+    }
 }
 
 /// Network-safe identity for one seat on one placed asset.
@@ -217,10 +232,10 @@ enum HomeIslandAssetCatalog {
     ]
 
     private static let harborCouncilTableSeatSlots = [
-        HomeIslandContactSlotDefinition(id: "north", motion: .sit, seatNodeName: "SeatSocket_North", approachNodeName: "SeatApproach_North"),
-        HomeIslandContactSlotDefinition(id: "east", motion: .sit, seatNodeName: "SeatSocket_East", approachNodeName: "SeatApproach_East"),
-        HomeIslandContactSlotDefinition(id: "south", motion: .sit, seatNodeName: "SeatSocket_South", approachNodeName: "SeatApproach_South"),
-        HomeIslandContactSlotDefinition(id: "west", motion: .sit, seatNodeName: "SeatSocket_West", approachNodeName: "SeatApproach_West"),
+        HomeIslandContactSlotDefinition(id: "north", motion: .sit, seatNodeName: "SeatSocket_North", approachNodeName: "SeatApproach_North", facesAwayFromApproach: true),
+        HomeIslandContactSlotDefinition(id: "east", motion: .sit, seatNodeName: "SeatSocket_East", approachNodeName: "SeatApproach_East", facesAwayFromApproach: true),
+        HomeIslandContactSlotDefinition(id: "south", motion: .sit, seatNodeName: "SeatSocket_South", approachNodeName: "SeatApproach_South", facesAwayFromApproach: true),
+        HomeIslandContactSlotDefinition(id: "west", motion: .sit, seatNodeName: "SeatSocket_West", approachNodeName: "SeatApproach_West", facesAwayFromApproach: true),
     ]
 
     static func contactSlots(for assetID: String) -> [HomeIslandContactSlotDefinition] {
