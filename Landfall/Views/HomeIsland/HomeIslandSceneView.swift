@@ -546,17 +546,18 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 max(0.92, obstacleRadius + 0.47)
             }
 
-            /// 進んできた方向を向いたまま、膝下が切り株の縁から自然に下りる位置。
+            /// Sit on the near edge and turn back toward the side we came from.
+            /// Unlike a chair, a stump has no authored front/back socket.
             func seatPosition(
-                facing direction: SCNVector3,
+                approachedAlong direction: SCNVector3,
                 rootToSeatSurface: Float
             ) -> SCNVector3 {
                 let edgeOffset = max(0.12, obstacleRadius - 0.26)
                 let base = seatPosition(rootToSeatSurface: rootToSeatSurface)
                 return SCNVector3(
-                    base.x + direction.x * edgeOffset,
+                    base.x - direction.x * edgeOffset,
                     base.y,
-                    base.z + direction.z * edgeOffset
+                    base.z - direction.z * edgeOffset
                 )
             }
 
@@ -4514,8 +4515,13 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     InteractiveSeat(
                         address: stump.address,
                         motion: .sit,
+                        // A stump has no backrest or authored front edge. Use
+                        // its own cut-surface geometry instead of borrowing the
+                        // directional socket correction used by chairs. Sit at
+                        // the near edge so the navigator never travels through
+                        // the stump before the animation begins.
                         seatPosition: stump.seatPosition(
-                            facing: direction,
+                            approachedAlong: direction,
                             rootToSeatSurface: navigatorRootToSeatSurface
                         ),
                         approachPosition: nil,
@@ -4525,7 +4531,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                             stump.transform.z
                         ),
                         obstacleRadius: stump.obstacleRadius,
-                        facingDirection: direction
+                        facingDirection: SCNVector3(
+                            -direction.x,
+                            0,
+                            -direction.z
+                        )
                     ),
                     distance
                 )
