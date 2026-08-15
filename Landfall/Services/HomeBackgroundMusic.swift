@@ -14,6 +14,7 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
         .celestialNocturne,
         .approachingEvolution,
         .harborAndante,
+        .leewardCove,
     ]
 
     @Published private(set) var isPlaying = false
@@ -48,7 +49,7 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
         player?.duration ?? 0
     }
 
-    /// ホームのオリジナルテーマ5曲を固定順で繰り返す。
+    /// ホームのオリジナルテーマ6曲を固定順で繰り返す。
     func play() {
         playbackRequested = true
         fadeTask?.cancel()

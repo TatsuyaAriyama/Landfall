@@ -10,6 +10,7 @@ enum HomeVoyageSound: String, CaseIterable, Identifiable {
     case celestialNocturne = "celestial_navigation_nocturne"
     case approachingEvolution = "approaching_evolution"
     case harborAndante = "harbor_andante"
+    case leewardCove = "leeward_cove"
 
     /// まだ一度も選曲していない航海士が、最初の航海で聴く曲。
     static let initialTimerSound: HomeVoyageSound = .harborMinuet
@@ -33,6 +34,7 @@ enum HomeVoyageSound: String, CaseIterable, Identifiable {
         case .celestialNocturne: "Celestial Navigation Nocturne"
         case .approachingEvolution: "Approaching Evolution"
         case .harborAndante: "Harbor Andante"
+        case .leewardCove: "Leeward Cove"
         }
     }
 
@@ -40,20 +42,20 @@ enum HomeVoyageSound: String, CaseIterable, Identifiable {
         switch self {
         case .off: "Sail in silence"
         case .waves: "Ambient sound"
-        case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante: "Original soundtrack"
+        case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante, .leewardCove: "Original soundtrack"
         }
     }
 
     var systemImage: String {
         switch self {
         case .off: "speaker.slash.fill"
-        case .waves, .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante: "music.note"
+        case .waves, .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante, .leewardCove: "music.note"
         }
     }
 
     fileprivate var resourceName: String? {
         switch self {
-        case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante: rawValue
+        case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante, .leewardCove: rawValue
         case .off, .waves: nil
         }
     }
@@ -102,6 +104,7 @@ final class HomeVoyageAudio: NSObject, ObservableObject, AVAudioPlayerDelegate {
         .celestialNocturne,
         .approachingEvolution,
         .harborAndante,
+        .leewardCove,
     ]
     private var playbackRequested = false
     /// プレイリストが次曲へ進んでも、利用者が選んだ開始曲は別に保持する。
@@ -171,7 +174,7 @@ final class HomeVoyageAudio: NSObject, ObservableObject, AVAudioPlayerDelegate {
             switch sound {
             case .waves:
                 try playWaves()
-            case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante:
+            case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante, .leewardCove:
                 try playMusic(sound, fadeDuration: 0.35)
             case .off:
                 break
@@ -278,7 +281,7 @@ final class HomeVoyageAudio: NSObject, ObservableObject, AVAudioPlayerDelegate {
         switch sound {
         case .off: false
         case .waves: wavePlayer.isPlaying && waveEngine.isRunning
-        case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante: musicPlayer?.isPlaying == true
+        case .harborMinuet, .beaconRondo, .celestialNocturne, .approachingEvolution, .harborAndante, .leewardCove: musicPlayer?.isPlaying == true
         }
     }
 

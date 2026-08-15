@@ -739,6 +739,7 @@ struct HomeVoyageTimerView: View {
         case .celestialNocturne: LF.text("Celestial Navigation Nocturne")
         case .approachingEvolution: LF.text("Approaching Evolution")
         case .harborAndante: LF.text("Harbor Andante")
+        case .leewardCove: LF.text("Leeward Cove")
         }
     }
 
