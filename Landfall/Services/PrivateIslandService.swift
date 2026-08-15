@@ -168,7 +168,7 @@ final class PrivateIslandService: ObservableObject {
     /// Keep these values identical to `PhoenixPose.rawValue`. Unknown values
     /// are rendered as idle, but are never written to Firestore.
     private static let allowedPoses: Set<String> = [
-        "idle", "walk", "lookout", "raise", "hail", "point", "stargaze", "rest", "sit",
+        "idle", "walk", "lookout", "raise", "hail", "point", "stargaze", "rest", "sit", "lie",
     ]
     /// Keep these values identical to HomeIslandSceneView's visit phases.
     private static let allowedPhases: Set<String> = [

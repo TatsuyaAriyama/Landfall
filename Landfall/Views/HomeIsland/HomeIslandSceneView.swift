@@ -452,6 +452,16 @@ struct HomeIslandSceneView: UIViewRepresentable {
             static let stumpContactInset: Float = 0.05
         }
 
+        /// A lying navigator is rotated around the model root at its feet.
+        /// Sleep sockets mark the centre of the authored bed surface, so the
+        /// root is shifted back by half the visible body length and raised by
+        /// half its width. These dimensions stay independent of asset scale.
+        private enum NavigatorSleepMetrics {
+            static let bodyCenterFromRoot: Float = 0.49
+            static let surfaceClearance: Float = 0.145
+            static let roll: Float = -.pi / 2
+        }
+
         private struct StumpSeat {
             let id: UUID
             let transform: HomeIslandTransform
@@ -497,6 +507,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private struct PlacedSeatSlot {
             let placementID: UUID
             let slotID: String
+            let motion: HomeIslandContactMotion
             let seatNode: SCNNode
             let approachNode: SCNNode
             let obstacleCenter: SCNVector3
@@ -506,8 +517,46 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 HomeIslandSeatAddress(placementID: placementID, slotID: slotID)
             }
 
-            func seatWorldPosition(rootToSeatSurface: Float) -> SCNVector3 {
+            var contactFacingDirection: SCNVector3 {
                 let surface = seatNode.presentation.worldPosition
+                let approach = approachNode.presentation.worldPosition
+                if motion == .lie {
+                    let worldAxis = seatNode.presentation.convertVector(
+                        SCNVector3(1, 0, 0),
+                        to: nil
+                    )
+                    let length = sqrt(
+                        worldAxis.x * worldAxis.x + worldAxis.z * worldAxis.z
+                    )
+                    if length > 0.001 {
+                        return SCNVector3(
+                            worldAxis.x / length,
+                            0,
+                            worldAxis.z / length
+                        )
+                    }
+                }
+                let outwardX = approach.x - surface.x
+                let outwardZ = approach.z - surface.z
+                let outwardLength = sqrt(outwardX * outwardX + outwardZ * outwardZ)
+                guard outwardLength > 0.001 else { return SCNVector3(0, 0, 1) }
+                return SCNVector3(
+                    outwardX / outwardLength,
+                    0,
+                    outwardZ / outwardLength
+                )
+            }
+
+            func contactWorldPosition(rootToSeatSurface: Float) -> SCNVector3 {
+                let surface = seatNode.presentation.worldPosition
+                let facing = contactFacingDirection
+                if motion == .lie {
+                    return SCNVector3(
+                        surface.x - facing.x * NavigatorSleepMetrics.bodyCenterFromRoot,
+                        surface.y + NavigatorSleepMetrics.surfaceClearance,
+                        surface.z - facing.z * NavigatorSleepMetrics.bodyCenterFromRoot
+                    )
+                }
                 let approach = approachNode.presentation.worldPosition
                 let outwardX = approach.x - surface.x
                 let outwardZ = approach.z - surface.z
@@ -530,6 +579,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         private struct InteractiveSeat {
             let address: HomeIslandSeatAddress
+            let motion: HomeIslandContactMotion
             let seatPosition: SCNVector3
             let approachPosition: SCNVector3?
             let obstacleCenter: SCNVector3
@@ -1146,7 +1196,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
             placedSeatSlots = owner.store.placements.flatMap { placement -> [PlacedSeatSlot] in
                 guard let node = placementNodes[placement.id] else { return [] }
-                return HomeIslandAssetCatalog.seatSlots(for: placement.assetID).compactMap { slot in
+                return HomeIslandAssetCatalog.contactSlots(for: placement.assetID).compactMap { slot in
                     guard let seatNode = node.childNode(
                         withName: slot.seatNodeName,
                         recursively: true
@@ -1157,6 +1207,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     return PlacedSeatSlot(
                         placementID: placement.id,
                         slotID: slot.id,
+                        motion: slot.motion,
                         seatNode: seatNode,
                         approachNode: approachNode,
                         obstacleCenter: SCNVector3(
@@ -1271,6 +1322,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 )
                 navigator.position = position
                 navigator.eulerAngles.y = state.yaw
+                navigator.eulerAngles.z = state.phoenixPose == .lie
+                    ? NavigatorSleepMetrics.roll
+                    : 0
                 navigator.opacity = 0
                 remotePlayersParent.addChildNode(navigator)
 
@@ -1320,7 +1374,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func resolvedRemotePosition(
             for state: HomeIslandRemotePlayerState
         ) -> SCNVector3 {
-            if state.phoenixPose == .sit || state.phoenixPose == .idle,
+            if state.phoenixPose == .sit
+                || state.phoenixPose == .lie
+                || state.phoenixPose == .idle,
                let placementID = state.seatPlacementID.flatMap(UUID.init(uuidString:)),
                let slotID = state.seatSlotID {
                 let address = HomeIslandSeatAddress(
@@ -1328,7 +1384,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     slotID: slotID
                 )
                 if let slot = placedSeatSlots.first(where: { $0.address == address }) {
-                    return slot.seatWorldPosition(
+                    return slot.contactWorldPosition(
                         rootToSeatSurface: navigatorRootToSeatSurface
                     )
                 }
@@ -2921,7 +2977,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         rootToSeatSurface: self.navigatorRootToSeatSurface
                     )
                 } else if let slot = self.placedSeatSlots.first {
-                    target = slot.seatWorldPosition(
+                    target = slot.contactWorldPosition(
                         rootToSeatSurface: self.navigatorRootToSeatSurface
                     )
                 } else {
@@ -3504,6 +3560,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 return (
                     InteractiveSeat(
                         address: stump.address,
+                        motion: .sit,
                         seatPosition: stump.seatPosition(
                             facing: direction,
                             rootToSeatSurface: navigatorRootToSeatSurface
@@ -3523,7 +3580,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
             candidates += placedSeatSlots.compactMap { slot -> (InteractiveSeat, Float)? in
                 guard !occupiedSeats.contains(slot.address) else { return nil }
-                let seatPosition = slot.seatWorldPosition(
+                let seatPosition = slot.contactWorldPosition(
                     rootToSeatSurface: navigatorRootToSeatSurface
                 )
                 let approachPosition = slot.approachWorldPosition
@@ -3539,22 +3596,16 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let alignment = (toSeatX * direction.x + toSeatZ * direction.z) / seatDistance
                 guard alignment >= 0.72 else { return nil }
 
-                let outwardX = approachPosition.x - seatPosition.x
-                let outwardZ = approachPosition.z - seatPosition.z
-                let outwardLength = sqrt(outwardX * outwardX + outwardZ * outwardZ)
-                guard outwardLength > 0.001 else { return nil }
+                let facingDirection = slot.contactFacingDirection
                 return (
                     InteractiveSeat(
                         address: slot.address,
+                        motion: slot.motion,
                         seatPosition: seatPosition,
                         approachPosition: approachPosition,
                         obstacleCenter: slot.obstacleCenter,
                         obstacleRadius: slot.obstacleRadius,
-                        facingDirection: SCNVector3(
-                            outwardX / outwardLength,
-                            0,
-                            outwardZ / outwardLength
-                        )
+                        facingDirection: facingDirection
                     ),
                     approachDistance
                 )
@@ -3566,7 +3617,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var remotelyOccupiedSeatAddresses: Set<HomeIslandSeatAddress> {
             Set(owner.remotePlayers.compactMap { state in
                 guard state.isVisible,
-                      state.phoenixPose == .sit,
+                      state.phoenixPose == .sit || state.phoenixPose == .lie,
                       let placement = state.seatPlacementID.flatMap(UUID.init(uuidString:)),
                       let slot = state.seatSlotID,
                       !slot.isEmpty
@@ -3585,7 +3636,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                   let conflictingID = owner.remotePlayers
                     .filter({ state in
                         state.isVisible
-                            && state.phoenixPose == .sit
+                            && (state.phoenixPose == .sit || state.phoenixPose == .lie)
                             && state.seatPlacementID.flatMap(UUID.init(uuidString:))
                                 == activeSeat.address.placementID
                             && state.seatSlotID == activeSeat.address.slotID
@@ -3624,13 +3675,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
             navigator.removeAction(forKey: "seat-transition")
             let targetYaw = atan2(seat.facingDirection.x, seat.facingDirection.z)
+            let targetRoll = seat.motion == .lie ? NavigatorSleepMetrics.roll : 0
             let approach = SCNAction.group([
                 .move(to: seat.seatPosition, duration: 0.42),
                 .rotateTo(
                     x: 0,
                     y: CGFloat(targetYaw),
-                    z: 0,
-                    duration: 0.30,
+                    z: CGFloat(targetRoll),
+                    duration: seat.motion == .lie ? 0.52 : 0.30,
                     usesShortestUnitArc: true
                 ),
             ])
@@ -3645,7 +3697,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         self.seatInteractionState = .settling(seat)
                     }
                 },
-                .wait(duration: 0.52),
+                .wait(duration: seat.motion == .lie ? 0.62 : 0.52),
                 .run { [weak self] _ in
                     DispatchQueue.main.async {
                         guard let self,
@@ -3746,7 +3798,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             facingYaw: Float
         ) {
             navigator.position = position
-            navigator.eulerAngles.y = facingYaw
+            navigator.eulerAngles = SCNVector3(0, facingYaw, 0)
             seatInteractionState = .free
             contactReentryBlockedUntil = CACurrentMediaTime() + 0.75
             snapFacingOnNextMovement = true
@@ -3944,6 +3996,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         cos(visual.targetYaw - node.eulerAngles.y)
                     )
                     node.eulerAngles.y += yawDelta * (1 - exp(-12 * deltaTime))
+                    let targetRoll = visual.targetPose == .lie
+                        ? NavigatorSleepMetrics.roll
+                        : 0
+                    let rollDelta = atan2(
+                        sin(targetRoll - node.eulerAngles.z),
+                        cos(targetRoll - node.eulerAngles.z)
+                    )
+                    node.eulerAngles.z += rollDelta * (1 - exp(-10 * deltaTime))
                 }
 
                 visual.animator.pose = visual.isArrivalAnimating
@@ -4051,8 +4111,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
             switch seatInteractionState {
             case .approaching, .leaving:
                 navigatorAnimator.pose = .walk
-            case .settling, .seated:
-                navigatorAnimator.pose = .sit
+            case let .settling(contact), let .seated(contact):
+                navigatorAnimator.pose = contact.motion == .lie ? .lie : .sit
             case .standingUp:
                 navigatorAnimator.pose = .idle
             case .free:

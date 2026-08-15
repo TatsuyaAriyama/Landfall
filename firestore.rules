@@ -271,7 +271,7 @@ service cloud.firestore {
           && request.resource.data.yaw <= 7
           && request.resource.data.pose in [
             'idle', 'walk', 'lookout', 'raise', 'hail', 'point',
-            'stargaze', 'rest', 'sit'
+            'stargaze', 'rest', 'sit', 'lie'
           ]
           && request.resource.data.scene in [
             'island',

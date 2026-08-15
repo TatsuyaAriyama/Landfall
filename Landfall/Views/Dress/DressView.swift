@@ -190,7 +190,7 @@ struct DressView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(PhoenixPose.allCases) { pose in
+                    ForEach(PhoenixPose.selectableCases) { pose in
                         poseChip(pose)
                     }
                 }

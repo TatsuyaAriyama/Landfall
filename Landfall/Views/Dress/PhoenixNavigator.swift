@@ -31,8 +31,11 @@ private func damp(_ cur: Float, _ target: Float, _ lambda: Float, _ dt: Float) -
 // MARK: - ポーズ
 
 enum PhoenixPose: String, CaseIterable, Identifiable {
-    case idle, walk, lookout, raise, hail, point, stargaze, rest, sit
+    case idle, walk, lookout, raise, hail, point, stargaze, rest, sit, lie
     var id: String { rawValue }
+    static var selectableCases: [PhoenixPose] {
+        allCases.filter { $0 != .lie }
+    }
     var title: LocalizedStringKey {
         switch self {
         case .idle: "Idle"
@@ -44,6 +47,7 @@ enum PhoenixPose: String, CaseIterable, Identifiable {
         case .stargaze: "Stargaze"
         case .rest: "Rest"
         case .sit: "Sit"
+        case .lie: "Lie down"
         }
     }
 
@@ -90,6 +94,8 @@ private func poseBase(_ p: PhoenixPose) -> PoseBase {
         return PoseBase(armRx: -0.8, armRz: -0.3, armLx: -0.86, armLz: 0.32, lean: 0.07, wind: 0.75, headX: 0.32, scan: 0.05, scanSpeed: 0.22, turn: 0, sway: 0.6, breathAmp: 1.75, breathSpeed: 0.58, glow: 2, sit: 0)
     case .sit:
         return PoseBase(armRx: 0.62, armRz: 0.3, armLx: 0.62, armLz: -0.3, lean: -0.04, wind: 0.7, headX: -0.05, scan: 0.13, scanSpeed: 0.18, turn: 0, sway: 0.45, breathAmp: 0.75, breathSpeed: 0.6, glow: 1.8, sit: 1)
+    case .lie:
+        return PoseBase(armRx: -0.72, armRz: 0.22, armLx: -0.78, armLz: -0.22, lean: 0, wind: 0.12, headX: 0.16, scan: 0.035, scanSpeed: 0.10, turn: 0, sway: 0.16, breathAmp: 0.45, breathSpeed: 0.42, glow: 0.55, sit: 0)
     }
 }
 
@@ -637,7 +643,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private var headX: Float = 0, scan: Float = 0.14, scanSpeed: Float = 0.3
     private var turn: Float = 0, sway: Float = 1
     private var breathAmp: Float = 1, breathSpeed: Float = 0.85
-    private var glow: Float = 1.5, sit: Float = 0
+    private var glow: Float = 1.5, sit: Float = 0, lie: Float = 0
     private var breathPhase: Float = 0, scanPhase: Float = 0
 
     private func bindComponents(
@@ -741,6 +747,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         breathSpeed = damp(breathSpeed, base.breathSpeed, 6, dt)
         glow = damp(glow, base.glow, 3, dt)
         sit = damp(sit, base.sit, pose == .sit ? 1.5 : 6, dt)
+        lie = damp(lie, pose == .lie ? 1 : 0, pose == .lie ? 2.2 : 7, dt)
         breathPhase += dt * breathSpeed
         scanPhase += dt * scanSpeed
 
@@ -760,7 +767,8 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
 
         // 体: 待機は呼吸、歩行は歩調の弾み
         if let core {
-            let standingBreath = sin(breathPhase) * 0.018 * breathAmp * (1 - sit)
+            let standingBreath = sin(breathPhase) * 0.018 * breathAmp
+                * (1 - sit) * (1 - lie * 0.75)
             core.position.y = (walking ? abs(cos(t * stride)) * 0.035 : standingBreath) - drop
             core.eulerAngles.x = lean + sin(breathPhase + 0.9) * 0.01 * breathAmp
             core.eulerAngles.y = sin(scanPhase - 0.55) * turn
@@ -813,6 +821,9 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         if let lantern {
             lantern.eulerAngles.x = -(armRx + armSwing) + sin(t * 0.9) * (walking ? 0.2 : 0.1 * sway)
             lantern.eulerAngles.z = sin(t * 0.7 + 0.6) * 0.12 * sway
+            // Fade the hand lantern while sleeping so it cannot clip through
+            // the rope bed or the navigator's resting body.
+            lantern.opacity = CGFloat(1 - lie)
         }
         glowMat?.emission.intensity = CGFloat(glow + sin(t * 2.1) * 0.2 * glow)
     }

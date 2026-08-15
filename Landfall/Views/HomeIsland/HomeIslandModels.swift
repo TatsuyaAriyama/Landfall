@@ -166,8 +166,24 @@ enum HomeIslandAssetCatalog {
         ),
     ]
 
+    private static let navigatorHammockContactSlots = [
+        HomeIslandContactSlotDefinition(
+            id: "center",
+            motion: .lie,
+            seatNodeName: "SleepSocket_Center",
+            approachNodeName: "SleepApproach_Center"
+        ),
+    ]
+
     static func contactSlots(for assetID: String) -> [HomeIslandContactSlotDefinition] {
-        assetID == "driftwood_bench" ? driftwoodBenchSeatSlots : []
+        switch assetID {
+        case "driftwood_bench":
+            driftwoodBenchSeatSlots
+        case "navigator_hammock":
+            navigatorHammockContactSlots
+        default:
+            []
+        }
     }
 
     static func seatSlots(for assetID: String) -> [HomeIslandContactSlotDefinition] {
@@ -387,7 +403,7 @@ enum HomeIslandAssetCatalog {
             id: "navigator_hammock",
             title: String(localized: "Navigator's Hammock"),
             symbolName: "bed.double.fill",
-            defaultScale: 0.72,
+            defaultScale: 0.52,
             footprintMargin: 1.45,
             unlockLevel: 9
         ),

@@ -749,7 +749,7 @@ def build_navigator_hammock() -> None:
             irregularity=0.04,
         )
 
-    sleep_socket = bpy.data.objects.new("SleepSocket.Center", None)
+    sleep_socket = bpy.data.objects.new("SleepSocket_Center", None)
     sleep_socket.location = (0.0, 0.0, 0.80)
     sleep_socket.empty_display_type = "ARROWS"
     sleep_socket.empty_display_size = 0.18
@@ -760,7 +760,23 @@ def build_navigator_hammock() -> None:
     sleep_socket["usable_length"] = 2.18
     bpy.context.collection.objects.link(sleep_socket)
 
-    export_asset("navigator_hammock", root, objects, sockets=(sleep_socket,))
+    sleep_approach = bpy.data.objects.new("SleepApproach_Center", None)
+    # Keep the trigger outside the circular walking collider so walking into
+    # the hammock can activate sleep before obstacle resolution stops motion.
+    sleep_approach.location = (0.0, -1.72, 0.0)
+    sleep_approach.empty_display_type = "ARROWS"
+    sleep_approach.empty_display_size = 0.18
+    sleep_approach.parent = root
+    sleep_approach["interaction_kind"] = "sleep_approach"
+    sleep_approach["sleep_slot_id"] = "center"
+    bpy.context.collection.objects.link(sleep_approach)
+
+    export_asset(
+        "navigator_hammock",
+        root,
+        objects,
+        sockets=(sleep_socket, sleep_approach),
+    )
 
 
 def build_voyage_signal_bell() -> None:
