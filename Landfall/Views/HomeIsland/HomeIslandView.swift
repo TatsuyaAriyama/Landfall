@@ -892,13 +892,13 @@ struct HomeIslandView: View {
                         cameraResetToken &+= 1
                         Haptics.tap(.light)
                     } label: {
-                        Image(systemName: "view.3d")
+                        Image(systemName: "scope")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(homeGlassInk)
                             .frame(width: 44, height: 44)
                     }
                     .buttonStyle(LFPressableButtonStyle())
-                    .accessibilityLabel(Text("Reset view"))
+                    .accessibilityLabel(Text("Return view to navigator"))
 
                     Button {
                         enterExploreMode()

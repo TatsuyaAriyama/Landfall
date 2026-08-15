@@ -43,6 +43,18 @@ enum HomeIslandMode: Equatable {
     case departure
 }
 
+/// Close third-person construction framing. Editing should feel like the
+/// navigator is shaping the place they live in, not operating a distant map.
+private enum HomeIslandBuildCameraTuning {
+    static let elevation: Float = 0.34
+    static let radius: Float = 8.4
+    static let minimumRadius: Float = 4.6
+    static let maximumRadius: Float = 16.0
+    static let targetHeight: Float = 0.72
+    static let fieldOfView: CGFloat = 46
+    static let horizontalTargetLimit: Float = 18
+}
+
 /// A network-neutral snapshot of one navigator in a shared Home Island scene.
 /// Firestore-specific timestamps and room metadata stay in the multiplayer
 /// service; SceneKit only needs a stable identity and the visible pose.
@@ -2918,6 +2930,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 }
                 return
             }
+            if owner.mode == .edit {
+                enterBuildCamera(animated: animated ? 0.36 : 0)
+                return
+            }
             azimuth = nearestEquivalentAzimuth(to: 0.72)
             elevation = owner.mode == .camera ? 0.38 : 0.42
             radius = owner.mode == .camera ? 25.5 : 30.8
@@ -3122,13 +3138,25 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     : min(max(radius, 3.2), 11.5)
             case .camera:
                 radius = min(max(radius, 3.2), 48)
-            case .arrival, .edit, .departure:
+            case .edit:
+                radius = min(
+                    max(radius, HomeIslandBuildCameraTuning.minimumRadius),
+                    HomeIslandBuildCameraTuning.maximumRadius
+                )
+            case .arrival, .departure:
                 radius = min(max(radius, 1.4), 420)
             }
             guard let target = cameraTarget else { return }
-            let horizontalLimit: Float = owner.mode == .camera ? 18 : 64
-            let minimumHeight: Float = owner.mode == .camera ? -1 : -12
-            let maximumHeight: Float = owner.mode == .camera ? 18 : 96
+            let horizontalLimit: Float = switch owner.mode {
+            case .camera:
+                18
+            case .edit:
+                HomeIslandBuildCameraTuning.horizontalTargetLimit
+            case .arrival, .explore, .departure:
+                64
+            }
+            let minimumHeight: Float = owner.mode == .camera || owner.mode == .edit ? -1 : -12
+            let maximumHeight: Float = owner.mode == .camera || owner.mode == .edit ? 18 : 96
             target.position.x = min(max(target.position.x, -horizontalLimit), horizontalLimit)
             target.position.y = min(max(target.position.y, minimumHeight), maximumHeight)
             target.position.z = min(max(target.position.z, -horizontalLimit), horizontalLimit)
@@ -3904,9 +3932,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 storeCachedWalkInput(.zero)
                 resetLocomotionState()
                 cancelStumpInteraction()
+                if !seatInteractionState.keepsNavigatorOnSeat {
+                    ensureNavigatorIsWalkable()
+                }
                 navigatorAnimator.pose = .idle
-                navigatorNode?.opacity = 0
-                resetCamera(animated: true)
+                navigatorNode?.opacity = 1
+                enterBuildCamera(animated: 0.42)
             case .camera:
                 touchWalkInput = .zero
                 keyboardWalkInput = .zero
@@ -3968,6 +3999,19 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func enterExploreCamera(animated duration: TimeInterval) {
             guard let navigator = navigatorNode else { return }
             enterExploreCamera(focusing: navigator.position, animated: duration)
+        }
+
+        private func enterBuildCamera(animated duration: TimeInterval) {
+            guard let navigator = navigatorNode else { return }
+            elevation = HomeIslandBuildCameraTuning.elevation
+            radius = HomeIslandBuildCameraTuning.radius
+            cameraTarget?.position = SCNVector3(
+                navigator.position.x,
+                navigator.position.y + HomeIslandBuildCameraTuning.targetHeight,
+                navigator.position.z
+            )
+            camera?.camera?.fieldOfView = HomeIslandBuildCameraTuning.fieldOfView
+            updateCamera(animated: duration)
         }
 
         private func enterIslandOverviewCamera(animated duration: TimeInterval) {
