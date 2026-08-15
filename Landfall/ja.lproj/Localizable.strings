@@ -114,6 +114,12 @@
 "Tap once on the sand to place %@" = "砂地を1回タップして%@を配置";
 "Tap the new place on the sand" = "砂地の移動先をタップ";
 "Drag the selected asset freely across the island" = "移動モード：選択中のアセットをドラッグ";
+"Slide along the obstacle to find open space" = "障害物に沿って、空いている場所へ動かしてください";
+"Keep the asset inside the sandy build area" = "砂地の配置エリア内に置いてください";
+"Place the jetty along the island edge" = "桟橋は島の海岸線に沿って置いてください";
+"Removed %@ · Undo is available" = "%@を削除しました・取り消しできます";
+"Removed · Undo is available" = "削除しました・取り消しできます";
+"Finish editing" = "編集を完了";
 "Drag to look around · Pinch to zoom" = "ドラッグで見渡す・ピンチで拡大縮小";
 "Place an asset" = "アセットを配置";
 "Choose one, then tap anywhere on your island" = "選んだあと、島の好きな場所をタップ";

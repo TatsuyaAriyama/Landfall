@@ -152,6 +152,7 @@ struct HomeIslandView: View {
     @StateObject private var store: HomeIslandStore
     @State private var placementAssetID: String?
     @State private var movingSelection = false
+    @State private var placementMoveBlocked = false
     @State private var showingSizeControls = false
     @State private var showingSelectionActions = false
     @State private var lockedAssetID: String?
@@ -283,14 +284,29 @@ struct HomeIslandView: View {
                 cameraExposureOffset: cameraExposureOffset,
                 cameraInteractionLocked: sceneInputLocked,
                 walkInput: sceneInputLocked ? .zero : walkInput,
-                onMoveCompleted: { movingSelection = false },
+                onMoveCompleted: {
+                    movingSelection = false
+                    placementMoveBlocked = false
+                },
+                onMoveBlockedChanged: { blocked in
+                    placementMoveBlocked = blocked
+                },
                 onPlacementCompleted: { _ in
                     placementAssetID = nil
                     movingSelection = false
-                    showingSizeControls = true
+                    showingSizeControls = allowsAssetSizeCalibration
                 },
-                onPlacementRejected: {
-                    showTransientNotice(String(localized: "That space is occupied"))
+                onPlacementRejected: { reason in
+                    let notice: String
+                    switch reason {
+                    case .occupied:
+                        notice = String(localized: "That space is occupied")
+                    case .outsideBuildArea:
+                        notice = String(localized: "Keep the asset inside the sandy build area")
+                    case .coastRequired:
+                        notice = String(localized: "Place the jetty along the island edge")
+                    }
+                    showTransientNotice(notice)
                 },
                 onAssetActivated: { assetID in
                     if assetID == "fixed_notice_board" {
@@ -557,15 +573,20 @@ struct HomeIslandView: View {
                 showingSizeControls = false
             }
         }
+        .onChange(of: movingSelection) { _, moving in
+            if !moving { placementMoveBlocked = false }
+        }
         .onChange(of: store.selectedID) { _, value in
             guard value != nil else {
+                movingSelection = false
+                placementMoveBlocked = false
                 showingSizeControls = false
                 return
             }
             guard placementAssetID != nil else { return }
             placementAssetID = nil
             movingSelection = false
-            showingSizeControls = true
+            showingSizeControls = allowsAssetSizeCalibration
         }
         .onChange(of: store.placements) { _, _ in
             if multiplayerSession?.isHost == true {
@@ -692,9 +713,18 @@ struct HomeIslandView: View {
             .disabled(!canDuplicateSelection)
 
             Button("Remove", role: .destructive) {
+                let removedTitle = store.selectedPlacement.flatMap {
+                    HomeIslandAssetCatalog.asset(id: $0.assetID)?.title
+                }
                 store.deleteSelected()
                 movingSelection = false
                 showingSizeControls = false
+                placementMoveBlocked = false
+                showTransientNotice(
+                    removedTitle.map { LF.format("Removed %@ · Undo is available", $0) }
+                        ?? String(localized: "Removed · Undo is available")
+                )
+                Haptics.tap(.medium)
             }
 
             Button("Cancel", role: .cancel) {}
@@ -837,7 +867,7 @@ struct HomeIslandView: View {
                         Image(systemName: "arrow.uturn.backward")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(homeGlassInk.opacity(store.canUndo ? 1 : 0.30))
-                            .frame(width: 38, height: 40)
+                            .frame(width: 44, height: 44)
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .disabled(!store.canUndo)
@@ -852,7 +882,7 @@ struct HomeIslandView: View {
                         Image(systemName: "arrow.uturn.forward")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(homeGlassInk.opacity(store.canRedo ? 1 : 0.30))
-                            .frame(width: 34, height: 40)
+                            .frame(width: 44, height: 44)
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .disabled(!store.canRedo)
@@ -865,7 +895,7 @@ struct HomeIslandView: View {
                         Image(systemName: "view.3d")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(homeGlassInk)
-                            .frame(width: 38, height: 40)
+                            .frame(width: 44, height: 44)
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .accessibilityLabel(Text("Reset view"))
@@ -873,13 +903,13 @@ struct HomeIslandView: View {
                     Button {
                         enterExploreMode()
                     } label: {
-                        Image(systemName: "figure.walk")
+                        Image(systemName: "checkmark")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(homeGlassInk)
-                            .frame(width: 38, height: 40)
+                            .frame(width: 44, height: 44)
                     }
                     .buttonStyle(LFPressableButtonStyle())
-                    .accessibilityLabel(Text("Explore Island"))
+                    .accessibilityLabel(Text("Finish editing"))
                 }
                 .padding(3)
                 .background(homeGlassBackground, in: Capsule())
@@ -1593,8 +1623,12 @@ struct HomeIslandView: View {
             }
         } else if movingSelection {
             hintPill(
-                symbol: "arrow.up.and.down.and.arrow.left.and.right",
-                text: String(localized: "Drag the selected asset freely across the island"),
+                symbol: placementMoveBlocked
+                    ? "exclamationmark.triangle.fill"
+                    : "arrow.up.and.down.and.arrow.left.and.right",
+                text: String(localized: placementMoveBlocked
+                    ? "Slide along the obstacle to find open space"
+                    : "Drag the selected asset freely across the island"),
                 actionTitle: String(localized: "Cancel")
             ) {
                 movingSelection = false
@@ -1658,13 +1692,15 @@ struct HomeIslandView: View {
                 .disabled(selected.assetID == "wooden_jetty")
                 .opacity(selected.assetID == "wooden_jetty" ? 0.34 : 1)
                 .accessibilityHint(Text("Rotates 15 degrees clockwise"))
-                toolButton(
-                    "Size",
-                    symbol: "arrow.up.left.and.arrow.down.right",
-                    active: showingSizeControls
-                ) {
-                    movingSelection = false
-                    showingSizeControls.toggle()
+                if allowsAssetSizeCalibration {
+                    toolButton(
+                        "Size",
+                        symbol: "arrow.up.left.and.arrow.down.right",
+                        active: showingSizeControls
+                    ) {
+                        movingSelection = false
+                        showingSizeControls.toggle()
+                    }
                 }
 
                 Button {
@@ -1675,7 +1711,7 @@ struct HomeIslandView: View {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.white.opacity(0.82))
-                        .frame(width: 34, height: 50)
+                        .frame(width: 44, height: 50)
                         .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(LFPressableButtonStyle())
@@ -1690,7 +1726,7 @@ struct HomeIslandView: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(.white.opacity(0.62))
-                        .frame(width: 32, height: 50)
+                        .frame(width: 44, height: 50)
                 }
                 .buttonStyle(LFPressableButtonStyle())
                 .accessibilityLabel(Text("Clear selection"))
@@ -1745,7 +1781,9 @@ struct HomeIslandView: View {
         if store.duplicateSelected(playerLevel: levelProgress.level) == nil {
             Haptics.error()
         } else {
-            Haptics.tap(.light)
+            movingSelection = true
+            placementMoveBlocked = false
+            Haptics.tap(.medium)
         }
         showingSizeControls = false
     }
@@ -2000,6 +2038,14 @@ struct HomeIslandView: View {
 
     /// Simulator-only tuning value. It is deliberately absolute so a value
     /// approved during visual QA can be copied directly into `defaultScale`.
+    private var allowsAssetSizeCalibration: Bool {
+        #if targetEnvironment(simulator)
+        true
+        #else
+        false
+        #endif
+    }
+
     private func calibrationScalePercent(for placement: HomeIslandPlacement) -> Int {
         Int((placement.transform.scale * 100).rounded())
     }

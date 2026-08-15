@@ -29,6 +29,12 @@ struct HomeIslandBoatBoardingRequest: Equatable {
     let id = UUID()
 }
 
+enum HomeIslandPlacementRejection: Equatable {
+    case occupied
+    case outsideBuildArea
+    case coastRequired
+}
+
 enum HomeIslandMode: Equatable {
     case arrival
     case explore
@@ -236,8 +242,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
     var cameraInteractionLocked: Bool
     var walkInput: HomeIslandWalkInput
     var onMoveCompleted: () -> Void
+    var onMoveBlockedChanged: (Bool) -> Void = { _ in }
     var onPlacementCompleted: (UUID) -> Void
-    var onPlacementRejected: () -> Void
+    var onPlacementRejected: (HomeIslandPlacementRejection) -> Void
     var onAssetActivated: (String) -> Void
     var onAssetInteractionDenied: (String) -> Void
     var onArrivalCompleted: () -> Void
@@ -333,8 +340,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var initialCameraTarget = SCNVector3Zero
         private var pinchAnchorWorldPoint: SCNVector3?
         private var moveDragPlacementID: UUID?
-        private var moveDragOffset = SCNVector3Zero
+        private var moveDragLastGroundPoint: SCNVector3?
         private var moveDragPosition: SCNVector3?
+        private var selectionMoveBlocked = false
+        private var selectionMovePanActive = false
+        private var selectionMoveTouchPlacementID: UUID?
         private var renderedResetToken = 0
         private var processedCameraRequestID: UUID?
         private var processedCaptureRequestID: UUID?
@@ -973,6 +983,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         func update(owner: HomeIslandSceneView) {
             self.owner = owner
+            cancelSelectionMovePreviewIfNeeded()
             if renderedLocalPlayerID != owner.localPlayerID {
                 renderedLocalPlayerID = owner.localPlayerID
                 lastReportedLocalPlayerState = nil
@@ -2078,8 +2089,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
             box.lengthSegmentCount = 1
             let material = SCNMaterial()
             material.lightingModel = .constant
-            material.diffuse.contents = UIColor(rgb: 0xF3D58B)
-            material.emission.contents = UIColor(rgb: 0x8CCDB5).withAlphaComponent(0.28)
+            material.diffuse.contents = selectionMoveBlocked
+                ? UIColor(rgb: 0xF2A66F)
+                : UIColor(rgb: 0xF3D58B)
+            material.emission.contents = selectionMoveBlocked
+                ? UIColor(rgb: 0xC9664B).withAlphaComponent(0.34)
+                : UIColor(rgb: 0x8CCDB5).withAlphaComponent(0.28)
             material.fillMode = .lines
             material.readsFromDepthBuffer = false
             material.writesToDepthBuffer = false
@@ -2158,14 +2173,22 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
             if let assetID = owner.placementAssetID,
                let point = groundPoint(at: screenPoint) {
-                guard assetID == "wooden_jetty" || HomeIslandMetrics.contains(x: point.x, z: point.z),
-                      let placementID = owner.store.add(
+                guard assetID == "wooden_jetty"
+                        || HomeIslandMetrics.contains(x: point.x, z: point.z)
+                else {
+                    owner.onPlacementRejected(.outsideBuildArea)
+                    Haptics.error()
+                    return
+                }
+                guard let placementID = owner.store.add(
                     assetID: assetID,
                     x: point.x,
                     z: point.z,
                     playerLevel: owner.playerLevel
                 ) else {
-                    owner.onPlacementRejected()
+                    owner.onPlacementRejected(
+                        assetID == "wooden_jetty" ? .coastRequired : .occupied
+                    )
                     Haptics.error()
                     return
                 }
@@ -2178,17 +2201,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 return
             }
 
-            if owner.movingSelection,
-               let point = groundPoint(at: screenPoint),
-               (owner.store.selectedPlacement?.assetID == "wooden_jetty"
-                    || HomeIslandMetrics.contains(x: point.x, z: point.z)) {
-                guard owner.store.moveSelected(x: point.x, z: point.z) else {
-                    owner.onPlacementRejected()
-                    Haptics.error()
-                    return
-                }
-                owner.onMoveCompleted()
-                Haptics.tap(.medium)
+            if owner.movingSelection {
+                // Move mode is drag-only. A single tap used to teleport the
+                // object's centre to the touched ground point, which was easy
+                // to trigger while preparing a drag on iPad.
                 return
             }
 
@@ -2525,8 +2541,24 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 return
             }
             if owner.mode == .edit, owner.movingSelection {
-                handleSelectionMove(recognizer, in: view)
-                return
+                if recognizer.state == .began {
+                    // UIPan becomes `.began` only after the finger has moved a
+                    // few points. Small props could already be outside the hit
+                    // mesh by then, turning an intended move into camera orbit.
+                    // Use the touch-down hit captured by the gesture delegate.
+                    selectionMovePanActive = owner.store.selectedID.map {
+                        selectionMoveTouchPlacementID == $0
+                    } ?? false
+                }
+                if selectionMovePanActive {
+                    handleSelectionMove(recognizer, in: view)
+                    if recognizer.state == .ended
+                        || recognizer.state == .cancelled
+                        || recognizer.state == .failed {
+                        selectionMovePanActive = false
+                    }
+                    return
+                }
             }
             let translation = recognizer.translation(in: view)
             switch recognizer.state {
@@ -2604,31 +2636,34 @@ struct HomeIslandSceneView: UIViewRepresentable {
             case .began:
                 guard let point = groundPoint(at: screenPoint) else { return }
                 moveDragPlacementID = selected.id
-                moveDragOffset = SCNVector3(
-                    selected.transform.x - point.x,
-                    0,
-                    selected.transform.z - point.z
-                )
+                moveDragLastGroundPoint = point
                 moveDragPosition = SCNVector3(
                     selected.transform.x,
                     HomeIslandMetrics.surfaceY,
                     selected.transform.z
                 )
+                setSelectionMoveBlocked(false)
             case .changed:
                 guard moveDragPlacementID == selected.id,
-                      let point = groundPoint(at: screenPoint)
+                      let previousGroundPoint = moveDragLastGroundPoint,
+                      let point = groundPoint(at: screenPoint),
+                      let currentPosition = moveDragPosition
                 else { return }
-                let targetX = point.x + moveDragOffset.x
-                let targetZ = point.z + moveDragOffset.z
-                guard let transform = owner.store.validTransform(
-                    assetID: selected.assetID,
-                    x: targetX,
-                    z: targetZ,
-                    yaw: selected.transform.yaw,
-                    scale: selected.transform.scale,
-                    excluding: selected.id,
-                    requireValidCoastPoint: selected.assetID == "wooden_jetty"
-                ) else { return }
+                // Consume pointer deltas even while blocked. Absolute targeting
+                // accumulated distance behind an obstacle and then jumped the
+                // prop across it as soon as the far side became valid.
+                moveDragLastGroundPoint = point
+                let target = SIMD2<Float>(
+                    currentPosition.x + point.x - previousGroundPoint.x,
+                    currentPosition.z + point.z - previousGroundPoint.z
+                )
+                let resolution = resolveSelectionMove(
+                    selected: selected,
+                    from: SIMD2<Float>(currentPosition.x, currentPosition.z),
+                    toward: target
+                )
+                let transform = resolution.transform
+                setSelectionMoveBlocked(resolution.wasBlocked)
                 let worldPosition = SCNVector3(
                     transform.x,
                     HomeIslandMetrics.surfaceY,
@@ -2649,7 +2684,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 guard owner.store.moveSelected(x: position.x, z: position.z) else {
                     selected.transform.apply(to: node)
                     clearSelectionMoveDrag()
-                    owner.onPlacementRejected()
+                    owner.onPlacementRejected(.occupied)
                     Haptics.error()
                     return
                 }
@@ -2666,12 +2701,103 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         private func clearSelectionMoveDrag() {
             moveDragPlacementID = nil
-            moveDragOffset = SCNVector3Zero
+            moveDragLastGroundPoint = nil
             moveDragPosition = nil
+            selectionMovePanActive = false
+            selectionMoveTouchPlacementID = nil
+            setSelectionMoveBlocked(false)
+        }
+
+        private func cancelSelectionMovePreviewIfNeeded() {
+            guard let moveDragPlacementID,
+                  owner.mode != .edit
+                    || !owner.movingSelection
+                    || owner.cameraInteractionLocked
+                    || owner.store.selectedID != moveDragPlacementID
+            else { return }
+
+            if let stored = owner.store.placements.first(where: {
+                $0.id == moveDragPlacementID
+            }), let node = placementNodes[moveDragPlacementID] {
+                stored.transform.apply(to: node)
+            }
+            self.moveDragPlacementID = nil
+            moveDragLastGroundPoint = nil
+            moveDragPosition = nil
+            selectionMovePanActive = false
+            selectionMoveTouchPlacementID = nil
+            if selectionMoveBlocked {
+                selectionMoveBlocked = false
+                let onMoveBlockedChanged = owner.onMoveBlockedChanged
+                DispatchQueue.main.async {
+                    onMoveBlockedChanged(false)
+                }
+            }
+        }
+
+        private func setSelectionMoveBlocked(_ blocked: Bool) {
+            guard selectionMoveBlocked != blocked else { return }
+            selectionMoveBlocked = blocked
+            updateSelectionOutline()
+            owner.onMoveBlockedChanged(blocked)
+            if blocked { Haptics.tap(.light) }
+        }
+
+        /// Sweeps the prop in short deterministic steps and falls back to each
+        /// axis independently. This prevents tunnelling through small props and
+        /// lets the dragged object slide along a neighbour or shoreline instead
+        /// of feeling glued to the first collision point.
+        private func resolveSelectionMove(
+            selected: HomeIslandPlacement,
+            from start: SIMD2<Float>,
+            toward target: SIMD2<Float>
+        ) -> (transform: HomeIslandTransform, wasBlocked: Bool) {
+            let displacement = target - start
+            let distance = simd_length(displacement)
+            let stepCount = max(1, Int(ceil(distance / 0.12)))
+            let increment = displacement / Float(stepCount)
+            var current = selected.transform
+            current.x = start.x
+            current.z = start.y
+            var wasBlocked = false
+
+            func valid(_ x: Float, _ z: Float) -> HomeIslandTransform? {
+                owner.store.validTransform(
+                    assetID: selected.assetID,
+                    x: x,
+                    z: z,
+                    yaw: current.yaw,
+                    scale: selected.transform.scale,
+                    excluding: selected.id,
+                    requireValidCoastPoint: selected.assetID == "wooden_jetty"
+                )
+            }
+
+            for _ in 0..<stepCount {
+                let desiredX = current.x + increment.x
+                let desiredZ = current.z + increment.y
+                if let direct = valid(desiredX, desiredZ) {
+                    current = direct
+                    continue
+                }
+
+                wasBlocked = true
+                let xOnly = valid(desiredX, current.z)
+                let zOnly = valid(current.x, desiredZ)
+                if let xOnly, let zOnly {
+                    current = abs(increment.x) >= abs(increment.y) ? xOnly : zOnly
+                } else if let xOnly {
+                    current = xOnly
+                } else if let zOnly {
+                    current = zOnly
+                }
+            }
+            return (current, wasBlocked)
         }
 
         @objc private func handleTwoFingerPan(_ recognizer: UIPanGestureRecognizer) {
             guard owner.mode == .edit || owner.mode == .camera,
+                  !owner.movingSelection,
                   !owner.cameraInteractionLocked,
                   let view,
                   let target = cameraTarget
@@ -2701,6 +2827,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
             guard owner.mode != .arrival,
                   owner.mode != .departure,
+                  !owner.movingSelection,
                   !owner.cameraInteractionLocked,
                   let view,
                   let target = cameraTarget
@@ -2755,6 +2882,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func handlePointerScroll(_ recognizer: UIPanGestureRecognizer) {
             guard owner.mode != .arrival,
                   owner.mode != .departure,
+                  !owner.movingSelection,
                   !owner.cameraInteractionLocked,
                   let view
             else { return }
@@ -4939,6 +5067,15 @@ struct HomeIslandSceneView: UIViewRepresentable {
                owner.mode == .explore {
                 return !isMovementControlPoint(point, in: view)
             }
+            if gestureRecognizer === orbitPanRecognizer,
+               owner.mode == .edit,
+               owner.movingSelection {
+                // Capture the target before UIPan's movement threshold is met.
+                // This keeps rocks and stumps draggable even when the finger
+                // leaves their small projected mesh during the first few pixels.
+                selectionMoveTouchPlacementID = hitPlacement(at: point)
+                return true
+            }
             if gestureRecognizer === pinchRecognizer,
                owner.mode == .explore,
                touch.type == .direct,
@@ -4947,8 +5084,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 // for a pinch-to-zoom gesture.
                 return false
             }
+            if gestureRecognizer === pinchRecognizer,
+               owner.mode == .edit,
+               owner.movingSelection {
+                return false
+            }
             if gestureRecognizer === twoFingerPanRecognizer {
-                return owner.mode == .edit || owner.mode == .camera
+                return (owner.mode == .edit || owner.mode == .camera)
+                    && !owner.movingSelection
             }
             if gestureRecognizer === longPressRecognizer {
                 return owner.mode == .edit || owner.mode == .camera
@@ -4972,6 +5115,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     && otherGestureRecognizer === movementPanRecognizer
             )
             if isMovementAndOrbit { return true }
+            if owner.mode == .edit,
+               owner.movingSelection,
+               (gestureRecognizer === pinchRecognizer
+                    || otherGestureRecognizer === pinchRecognizer
+                    || gestureRecognizer === twoFingerPanRecognizer
+                    || otherGestureRecognizer === twoFingerPanRecognizer) {
+                return false
+            }
             let includesRunningJump = gestureRecognizer === runningJumpRecognizer
                 || otherGestureRecognizer === runningJumpRecognizer
             if includesRunningJump {
@@ -4980,6 +5131,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     || gestureRecognizer === orbitPanRecognizer
                     || otherGestureRecognizer === orbitPanRecognizer
             }
+            let isPinchAndTwoFingerPan = (
+                gestureRecognizer === pinchRecognizer
+                    && otherGestureRecognizer === twoFingerPanRecognizer
+            ) || (
+                gestureRecognizer === twoFingerPanRecognizer
+                    && otherGestureRecognizer === pinchRecognizer
+            )
+            if isPinchAndTwoFingerPan { return false }
             return gestureRecognizer is UIPinchGestureRecognizer
                 || otherGestureRecognizer is UIPinchGestureRecognizer
         }

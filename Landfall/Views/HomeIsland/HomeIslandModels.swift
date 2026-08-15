@@ -967,7 +967,10 @@ final class HomeIslandStore: ObservableObject {
             assetID: assetID,
             x: x,
             z: z,
-            yaw: Float(placements.count % 8) * (.pi / 4),
+            // New props should preserve their authored facing. Deriving yaw
+            // from the total object count made identical assets appear to
+            // rotate unpredictably as the island grew.
+            yaw: 0,
             scale: asset.defaultScale,
             excluding: nil,
             requireValidCoastPoint: true
@@ -1020,6 +1023,12 @@ final class HomeIslandStore: ObservableObject {
 
     @discardableResult
     func resizeSelected(by delta: Float) -> Bool {
+        #if !targetEnvironment(simulator)
+        // Asset scale is developer calibration data, not a consumer edit.
+        // Keep the model guarded as well as the UI so future call sites cannot
+        // re-enable device resizing accidentally.
+        return false
+        #else
         guard !isReadOnly,
               let selectedID,
               let index = placements.firstIndex(where: { $0.id == selectedID })
@@ -1038,6 +1047,7 @@ final class HomeIslandStore: ObservableObject {
         placements[index].transform = transform
         finishEdit(from: previous)
         return true
+        #endif
     }
 
     @discardableResult
@@ -1070,7 +1080,7 @@ final class HomeIslandStore: ObservableObject {
                     assetID: selected.assetID,
                     x: selected.transform.x + direction.0 * spacing,
                     z: selected.transform.z + direction.1 * spacing,
-                    yaw: selected.transform.yaw + .pi / 8,
+                    yaw: selected.transform.yaw,
                     scale: selected.transform.scale,
                     excluding: nil,
                     requireValidCoastPoint: false
@@ -1132,6 +1142,12 @@ final class HomeIslandStore: ObservableObject {
                 scale: scale,
                 requireValidCoastPoint: requireValidCoastPoint
               ),
+              // User gestures must never be silently clamped to a distant
+              // edge position. Persistence still sanitizes legacy snapshots
+              // through `placementTransform` directly, while live edits fail
+              // closed and keep the last valid transform under the finger.
+              (assetID == "wooden_jetty"
+                || hypot(transform.x - x, transform.z - z) <= 0.025),
               isValidPlacement(assetID: assetID, transform: transform, excluding: excludedID)
         else { return nil }
         return transform
@@ -1212,18 +1228,13 @@ final class HomeIslandStore: ObservableObject {
                   )
             else { return true }
 
-            if assetID == "wooden_jetty" || existing.assetID == "wooden_jetty" {
-                guard assetID == "wooden_jetty", existing.assetID == "wooden_jetty"
-                else { return true }
-            }
-
             let existingRadius = HomeIslandAssetCatalog.placementCollisionRadius(
                 assetID: existing.assetID,
                 scale: existing.transform.scale
             )
             let dx = transform.x - existing.transform.x
             let dz = transform.z - existing.transform.z
-            let minimumDistance = (candidateRadius + existingRadius) * 0.92
+            let minimumDistance = candidateRadius + existingRadius
             return dx * dx + dz * dz >= minimumDistance * minimumDistance
         }
     }
