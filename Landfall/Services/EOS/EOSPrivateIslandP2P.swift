@@ -23,12 +23,18 @@ final class EOSPrivateIslandP2P {
     var onConnectionRequest: ConnectionRequestHandler?
     var onPacket: PacketHandler?
     var onError: ErrorHandler?
+    var onConnectionEstablished: ConnectionRequestHandler?
+    var onConnectionClosed: ConnectionRequestHandler?
 
     private let runtime: EOSSDKRuntime
     private let socketName: String
     private var localUserID: EOS_ProductUserId?
     private var requestNotificationID: EOS_NotificationId?
     private var requestClientData: UnsafeMutableRawPointer?
+    private var establishedNotificationID: EOS_NotificationId?
+    private var establishedClientData: UnsafeMutableRawPointer?
+    private var closedNotificationID: EOS_NotificationId?
+    private var closedClientData: UnsafeMutableRawPointer?
     private var tickHandlerID: UUID?
 
     init(runtime: EOSSDKRuntime, socketName: String) throws {
@@ -93,6 +99,7 @@ final class EOSPrivateIslandP2P {
             requestNotificationID = notificationID
             requestClientData = clientData
             self.localUserID = localUserID
+            try await registerConnectionLifecycleNotifications(localUserID: localUserID)
             tickHandlerID = try await runtime.addTickHandler { [weak self] context in
                 self?.receivePump(context: context, localUserID: localUserID)
             }
@@ -150,7 +157,8 @@ final class EOSPrivateIslandP2P {
         _ data: Data,
         to remoteUserID: EOS_ProductUserId,
         channel: UInt8,
-        delivery: PrivateIslandTransportDelivery
+        delivery: PrivateIslandTransportDelivery,
+        allowDelayedDelivery: Bool = false
     ) async throws {
         guard let localUserID else {
             throw EOSPrivateIslandRuntimeError.transportNotReady
@@ -171,7 +179,9 @@ final class EOSPrivateIslandP2P {
                 options.Channel = channel
                 options.DataLengthBytes = UInt32(dataBytes.count)
                 options.Data = dataBytes.baseAddress
-                options.bAllowDelayedDelivery = EOS_FALSE
+                options.bAllowDelayedDelivery = allowDelayedDelivery
+                    ? EOS_TRUE
+                    : EOS_FALSE
                 options.Reliability = delivery == .bestEffort
                     ? EOS_PR_UnreliableUnordered
                     : EOS_PR_ReliableOrdered
@@ -195,11 +205,27 @@ final class EOSPrivateIslandP2P {
         guard let localUserID else { return }
         let notificationID = requestNotificationID
         let clientData = requestClientData
+        let establishedNotificationID = establishedNotificationID
+        let establishedClientData = establishedClientData
+        let closedNotificationID = closedNotificationID
+        let closedClientData = closedClientData
         _ = try? await runtime.run { context in
             if let notificationID {
                 EOS_P2P_RemoveNotifyPeerConnectionRequest(
                     context.p2p,
                     notificationID
+                )
+            }
+            if let establishedNotificationID {
+                EOS_P2P_RemoveNotifyPeerConnectionEstablished(
+                    context.p2p,
+                    establishedNotificationID
+                )
+            }
+            if let closedNotificationID {
+                EOS_P2P_RemoveNotifyPeerConnectionClosed(
+                    context.p2p,
+                    closedNotificationID
                 )
             }
             var socket = Self.makeSocketID(name: self.socketName)
@@ -217,9 +243,119 @@ final class EOSPrivateIslandP2P {
             // to invoke the callback, so retaining the box would only leak it.
             Unmanaged<ConnectionRequestBox>.fromOpaque(clientData).release()
         }
+        if let establishedClientData {
+            Unmanaged<ConnectionRequestBox>.fromOpaque(establishedClientData).release()
+        }
+        if let closedClientData {
+            Unmanaged<ConnectionRequestBox>.fromOpaque(closedClientData).release()
+        }
         requestNotificationID = nil
         requestClientData = nil
+        self.establishedNotificationID = nil
+        self.establishedClientData = nil
+        self.closedNotificationID = nil
+        self.closedClientData = nil
         self.localUserID = nil
+    }
+
+    private func registerConnectionLifecycleNotifications(
+        localUserID: EOS_ProductUserId
+    ) async throws {
+        let establishedBox = ConnectionRequestBox { [weak self] remoteUserID in
+            guard let self else { return }
+            do {
+                self.onConnectionEstablished?(
+                    remoteUserID,
+                    try Self.productUserIDString(remoteUserID)
+                )
+            } catch {
+                self.onError?(error)
+            }
+        }
+        let establishedData = Unmanaged.passRetained(establishedBox).toOpaque()
+        do {
+            let identifier: EOS_NotificationId = try await runtime.run { context in
+                var socket = Self.makeSocketID(name: self.socketName)
+                var options = EOS_P2P_AddNotifyPeerConnectionEstablishedOptions()
+                options.ApiVersion = EOS_P2P_ADDNOTIFYPEERCONNECTIONESTABLISHED_API_LATEST
+                options.LocalUserId = localUserID
+                return withUnsafePointer(to: &socket) { pointer in
+                    options.SocketId = pointer
+                    return EOS_P2P_AddNotifyPeerConnectionEstablished(
+                        context.p2p,
+                        &options,
+                        establishedData
+                    ) { info in
+                        guard let info,
+                              let data = info.pointee.ClientData
+                        else { return }
+                        Unmanaged<ConnectionRequestBox>
+                            .fromOpaque(data)
+                            .takeUnretainedValue()
+                            .handler(info.pointee.RemoteUserId)
+                    }
+                }
+            }
+            guard identifier != EOS_INVALID_NOTIFICATIONID else {
+                throw EOSPrivateIslandRuntimeError.sdkOperationFailed(
+                    operation: "P2P_AddNotifyPeerConnectionEstablished",
+                    result: "invalid notification identifier"
+                )
+            }
+            establishedNotificationID = identifier
+            establishedClientData = establishedData
+        } catch {
+            Unmanaged<ConnectionRequestBox>.fromOpaque(establishedData).release()
+            throw error
+        }
+
+        let closedBox = ConnectionRequestBox { [weak self] remoteUserID in
+            guard let self else { return }
+            do {
+                self.onConnectionClosed?(
+                    remoteUserID,
+                    try Self.productUserIDString(remoteUserID)
+                )
+            } catch {
+                self.onError?(error)
+            }
+        }
+        let closedData = Unmanaged.passRetained(closedBox).toOpaque()
+        do {
+            let identifier: EOS_NotificationId = try await runtime.run { context in
+                var socket = Self.makeSocketID(name: self.socketName)
+                var options = EOS_P2P_AddNotifyPeerConnectionClosedOptions()
+                options.ApiVersion = EOS_P2P_ADDNOTIFYPEERCONNECTIONCLOSED_API_LATEST
+                options.LocalUserId = localUserID
+                return withUnsafePointer(to: &socket) { pointer in
+                    options.SocketId = pointer
+                    return EOS_P2P_AddNotifyPeerConnectionClosed(
+                        context.p2p,
+                        &options,
+                        closedData
+                    ) { info in
+                        guard let info,
+                              let data = info.pointee.ClientData
+                        else { return }
+                        Unmanaged<ConnectionRequestBox>
+                            .fromOpaque(data)
+                            .takeUnretainedValue()
+                            .handler(info.pointee.RemoteUserId)
+                    }
+                }
+            }
+            guard identifier != EOS_INVALID_NOTIFICATIONID else {
+                throw EOSPrivateIslandRuntimeError.sdkOperationFailed(
+                    operation: "P2P_AddNotifyPeerConnectionClosed",
+                    result: "invalid notification identifier"
+                )
+            }
+            closedNotificationID = identifier
+            closedClientData = closedData
+        } catch {
+            Unmanaged<ConnectionRequestBox>.fromOpaque(closedData).release()
+            throw error
+        }
     }
 
     private func receivePump(

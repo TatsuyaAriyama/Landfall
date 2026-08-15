@@ -2,6 +2,7 @@ import FirebaseAuth
 import FirebaseFirestore
 import FirebaseFunctions
 import Foundation
+import Security
 
 /// An invite-only visit to the host's Home Island.
 ///
@@ -14,8 +15,53 @@ struct PrivateIslandRoom: Identifiable, Equatable, Hashable {
     let hostUid: String
     let memberIds: [String]
     let createdAt: Date
+    /// Loaded only from the member-readable runtime document. Keeping these
+    /// optional preserves Firestore transport compatibility for legacy rooms.
+    let sessionLocator: String?
+    let socketSecret: String?
+
+    init(
+        id: String,
+        name: String,
+        hostUid: String,
+        memberIds: [String],
+        createdAt: Date,
+        sessionLocator: String? = nil,
+        socketSecret: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.hostUid = hostUid
+        self.memberIds = memberIds
+        self.createdAt = createdAt
+        self.sessionLocator = sessionLocator
+        self.socketSecret = socketSecret
+    }
 
     var code: String { id }
+
+    var eosSessionConfiguration: EOSPrivateIslandSessionConfiguration? {
+        guard let sessionLocator, let socketSecret else { return nil }
+        return try? EOSPrivateIslandSessionConfiguration(
+            sessionLocator: sessionLocator,
+            socketSecret: socketSecret
+        )
+    }
+
+    func attachingEOSSession(
+        sessionLocator: String,
+        socketSecret: String
+    ) -> PrivateIslandRoom {
+        PrivateIslandRoom(
+            id: id,
+            name: name,
+            hostUid: hostUid,
+            memberIds: memberIds,
+            createdAt: createdAt,
+            sessionLocator: sessionLocator,
+            socketSecret: socketSecret
+        )
+    }
 
     static let maxMembers = 8
     static let maxJoined = 3
@@ -61,6 +107,7 @@ enum PrivateIslandError: LocalizedError {
     case hostCannotLeave
     case closeFailed
     case notHost
+    case sessionConfigurationUnavailable
     case invalidPresence
     case emptyMessage
     case unsafeMessage
@@ -89,6 +136,8 @@ enum PrivateIslandError: LocalizedError {
             LF.text("The private island could not be closed. Please try again.")
         case .notHost:
             LF.text("Only the island host can publish this island.")
+        case .sessionConfigurationUnavailable:
+            LF.text("Secure multiplayer could not be prepared. Please try again.")
         case .invalidPresence:
             LF.text("Your sailor's position could not be shared.")
         case .emptyMessage:
@@ -117,6 +166,7 @@ final class PrivateIslandService: ObservableObject {
     private var islandsListener: ListenerRegistration?
     private var islandsListenerUserID: String?
     private var islandListener: ListenerRegistration?
+    private var islandSessionListener: ListenerRegistration?
     private var snapshotListener: ListenerRegistration?
     private var presenceListener: ListenerRegistration?
     private var presencePruneTimer: Timer?
@@ -129,6 +179,9 @@ final class PrivateIslandService: ObservableObject {
     private var visitArrivalNonce: String?
     private var pendingOwnedSnapshot: HomeIslandSnapshot?
     private var ownedSnapshotPublishTask: Task<Void, Never>?
+    private var currentRoomBase: PrivateIslandRoom?
+    private var currentRoomSession: (locator: String, secret: String)?
+    private var sessionBackfillAttemptedCode: String?
 
     private struct PresenceDraft {
         let code: String
@@ -156,6 +209,7 @@ final class PrivateIslandService: ObservableObject {
         /// About two position samples per second keeps remote movement
         /// responsive while the SceneKit client interpolates between samples.
         static let presenceWriteInterval: TimeInterval = 0.45
+        static let eosCredentialBytes = 32
     }
 
     private enum TransactionFailure: Int {
@@ -180,6 +234,7 @@ final class PrivateIslandService: ObservableObject {
     deinit {
         islandsListener?.remove()
         islandListener?.remove()
+        islandSessionListener?.remove()
         snapshotListener?.remove()
         presenceListener?.remove()
         presencePruneTimer?.invalidate()
@@ -214,9 +269,10 @@ final class PrivateIslandService: ObservableObject {
                         self.errorMessage = error.localizedDescription
                         return
                     }
-                    self.islands = snapshot?.documents
+                    let rooms = snapshot?.documents
                         .compactMap(Self.decodeRoom)
                         .sorted(by: Self.sortRooms) ?? []
+                    self.islands = await self.roomsWithStoredEOSSessions(rooms)
                 }
             }
     }
@@ -302,6 +358,9 @@ final class PrivateIslandService: ObservableObject {
         // every retry while the lobby listener is still catching up.
         let joined = try await fetchJoinedIslands(uid: uid)
         if let existing = joined.first(where: { $0.hostUid == uid }) {
+            if existing.eosSessionConfiguration == nil {
+                try? await backfillEOSSessionIfHost(code: existing.code)
+            }
             if let initialSnapshot {
                 enqueueOwnedSnapshot(initialSnapshot)
             }
@@ -319,6 +378,8 @@ final class PrivateIslandService: ObservableObject {
             let code = Self.generateCode()
             let islandRef = db.collection("privateIslands").document(code)
             let memberRef = islandRef.collection("members").document(uid)
+            let sessionRef = islandRef.collection("runtime").document("eos")
+            let session = try Self.generateEOSSessionCredentials()
             let result = try await db.runTransaction { transaction, errorPointer -> Any? in
                 do {
                     let existing = try transaction.getDocument(islandRef)
@@ -331,6 +392,14 @@ final class PrivateIslandService: ObservableObject {
                         "createdAt": FieldValue.serverTimestamp(),
                     ], forDocument: islandRef)
                     transaction.setData(memberData, forDocument: memberRef)
+                    // Independent 256-bit values are committed with the room;
+                    // neither is derived from the short invite code.
+                    transaction.setData([
+                        "schemaVersion": 1,
+                        "sessionLocator": session.locator,
+                        "socketSecret": session.secret,
+                        "createdAt": FieldValue.serverTimestamp(),
+                    ], forDocument: sessionRef)
                     return true
                 } catch let error as NSError {
                     errorPointer?.pointee = error
@@ -406,8 +475,12 @@ final class PrivateIslandService: ObservableObject {
         }
 
         guard let document = try? await islandRef.getDocument(),
-              let room = Self.decodeRoom(document)
+              let baseRoom = Self.decodeRoom(document)
         else { throw PrivateIslandError.islandNotFound }
+        // Membership was committed before this read, so the member-only
+        // runtime document is now authorized. A legacy island without one
+        // remains on the Firestore compatibility transport.
+        let room = await roomWithStoredEOSSession(baseRoom)
         await refreshIslands()
         return room
     }
@@ -535,18 +608,32 @@ final class PrivateIslandService: ObservableObject {
         }
     }
 
+    /// Enables the durable compatibility stream after an EOS startup or
+    /// reconnect failure. This is idempotent and cannot attach a listener for
+    /// a room other than the currently presented island.
+    func enableFirestorePresenceFallback(for rawCode: String) {
+        let code = Self.normalizedCode(rawCode)
+        guard code.count == 6,
+              listeningCode == code,
+              presenceListener == nil
+        else { return }
+        listenToPresence(code: code)
+    }
+
     func stopIslandListeners() {
         if let draft = lastPresenceDraft {
             db.collection("privateIslands").document(draft.code)
                 .collection("presence").document(draft.uid).delete()
         }
         islandListener?.remove()
+        islandSessionListener?.remove()
         snapshotListener?.remove()
         presenceListener?.remove()
         presencePruneTimer?.invalidate()
         presenceHeartbeatTimer?.invalidate()
         presenceTrailingTask?.cancel()
         islandListener = nil
+        islandSessionListener = nil
         snapshotListener = nil
         presenceListener = nil
         presencePruneTimer = nil
@@ -557,6 +644,9 @@ final class PrivateIslandService: ObservableObject {
         lastPresenceWriteAt = .distantPast
         visitArrivalNonce = nil
         listeningCode = nil
+        currentRoomBase = nil
+        currentRoomSession = nil
+        sessionBackfillAttemptedCode = nil
         currentIsland = nil
         islandSnapshot = nil
         hasResolvedIslandSnapshot = false
@@ -573,7 +663,20 @@ final class PrivateIslandService: ObservableObject {
                         return
                     }
                     self.errorMessage = nil
-                    self.currentIsland = document.flatMap(Self.decodeRoom)
+                    self.currentRoomBase = document.flatMap(Self.decodeRoom)
+                    self.publishCurrentRoom()
+                    await self.backfillCurrentRoomSessionIfNeeded(code: code)
+                }
+            }
+
+        islandSessionListener = db.collection("privateIslands").document(code)
+            .collection("runtime").document("eos")
+            .addSnapshotListener { [weak self] document, _ in
+                Task { @MainActor in
+                    guard let self, self.listeningCode == code else { return }
+                    self.currentRoomSession = document.flatMap(Self.decodeEOSSession)
+                    self.publishCurrentRoom()
+                    await self.backfillCurrentRoomSessionIfNeeded(code: code)
                 }
             }
     }
@@ -825,7 +928,133 @@ final class PrivateIslandService: ObservableObject {
         let snapshot = try await db.collection("privateIslands")
             .whereField("memberIds", arrayContains: uid)
             .getDocuments()
-        return snapshot.documents.compactMap(Self.decodeRoom).sorted(by: Self.sortRooms)
+        let rooms = snapshot.documents.compactMap(Self.decodeRoom).sorted(by: Self.sortRooms)
+        return await roomsWithStoredEOSSessions(rooms)
+    }
+
+    private func roomsWithStoredEOSSessions(
+        _ rooms: [PrivateIslandRoom]
+    ) async -> [PrivateIslandRoom] {
+        var hydrated: [PrivateIslandRoom] = []
+        hydrated.reserveCapacity(rooms.count)
+        for room in rooms {
+            hydrated.append(await roomWithStoredEOSSession(room))
+        }
+        return hydrated
+    }
+
+    private func roomWithStoredEOSSession(
+        _ room: PrivateIslandRoom
+    ) async -> PrivateIslandRoom {
+        do {
+            let document = try await db.collection("privateIslands").document(room.code)
+                .collection("runtime").document("eos")
+                .getDocument()
+            guard let session = Self.decodeEOSSession(document) else { return room }
+            return room.attachingEOSSession(
+                sessionLocator: session.locator,
+                socketSecret: session.secret
+            )
+        } catch {
+            // During a staged rollout, old rules or an absent runtime document
+            // must not prevent the room list from loading.
+            return room
+        }
+    }
+
+    private func publishCurrentRoom() {
+        guard let room = currentRoomBase else {
+            currentIsland = nil
+            return
+        }
+        guard let session = currentRoomSession else {
+            currentIsland = room
+            return
+        }
+        currentIsland = room.attachingEOSSession(
+            sessionLocator: session.locator,
+            socketSecret: session.secret
+        )
+    }
+
+    private func backfillCurrentRoomSessionIfNeeded(code: String) async {
+        // Room and runtime listeners can resolve in either order, so both call
+        // this idempotent gate. Guests never provision shared credentials.
+        guard listeningCode == code,
+              currentRoomSession == nil,
+              currentRoomBase?.hostUid == currentUserID,
+              sessionBackfillAttemptedCode != code
+        else { return }
+        sessionBackfillAttemptedCode = code
+        try? await backfillEOSSessionIfHost(code: code)
+    }
+
+    /// Repairs only a missing or malformed legacy runtime document. A valid
+    /// secret is never rotated by reopening a room, avoiding split sessions.
+    private func backfillEOSSessionIfHost(code: String) async throws {
+        guard let uid = currentUserID else { throw PrivateIslandError.notSignedIn }
+        let islandRef = db.collection("privateIslands").document(code)
+        let sessionRef = islandRef.collection("runtime").document("eos")
+        let candidate = try Self.generateEOSSessionCredentials()
+
+        _ = try await db.runTransaction { transaction, errorPointer -> Any? in
+            do {
+                let island = try transaction.getDocument(islandRef)
+                guard island.exists, island.data()?["hostUid"] as? String == uid else {
+                    errorPointer?.pointee = Self.transactionError(.notFound)
+                    return nil
+                }
+                let stored = try transaction.getDocument(sessionRef)
+                if Self.decodeEOSSession(stored) != nil { return true }
+                transaction.setData([
+                    "schemaVersion": 1,
+                    "sessionLocator": candidate.locator,
+                    "socketSecret": candidate.secret,
+                    "createdAt": FieldValue.serverTimestamp(),
+                ], forDocument: sessionRef)
+                return true
+            } catch let error as NSError {
+                errorPointer?.pointee = error
+                return nil
+            }
+        }
+    }
+
+    private static func generateEOSSessionCredentials() throws -> (
+        locator: String,
+        secret: String
+    ) {
+        (
+            locator: try secureBase64URL(byteCount: Limit.eosCredentialBytes),
+            secret: try secureBase64URL(byteCount: Limit.eosCredentialBytes)
+        )
+    }
+
+    private static func secureBase64URL(byteCount: Int) throws -> String {
+        var bytes = [UInt8](repeating: 0, count: byteCount)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            throw PrivateIslandError.sessionConfigurationUnavailable
+        }
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
+    private static func decodeEOSSession(
+        _ document: DocumentSnapshot
+    ) -> (locator: String, secret: String)? {
+        guard document.exists,
+              let data = document.data(),
+              intValue(data["schemaVersion"]) == 1,
+              let locator = data["sessionLocator"] as? String,
+              let secret = data["socketSecret"] as? String,
+              (try? EOSPrivateIslandSessionConfiguration(
+                sessionLocator: locator,
+                socketSecret: secret
+              )) != nil
+        else { return nil }
+        return (locator, secret)
     }
 
     private static func sortRooms(_ lhs: PrivateIslandRoom, _ rhs: PrivateIslandRoom) -> Bool {

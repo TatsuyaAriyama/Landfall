@@ -73,7 +73,7 @@ struct EOSPrivateIslandSessionConfiguration: Equatable, Sendable {
 
     init(sessionLocator: String, socketSecret: String) throws {
         let locatorBytes = Array(sessionLocator.utf8)
-        guard (32...128).contains(locatorBytes.count),
+        guard (32...64).contains(locatorBytes.count),
               locatorBytes.allSatisfy({ 0x21...0x7e ~= $0 })
         else {
             throw EOSPrivateIslandRuntimeError.invalidSessionLocator

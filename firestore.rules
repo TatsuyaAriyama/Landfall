@@ -163,6 +163,51 @@ service cloud.firestore {
 
       allow delete: if false;
 
+      // EOS routing material is deliberately separated from the parent room.
+      // The parent permits authenticated get-by-invite-code for the legacy
+      // join transaction, while this document is visible only after membership
+      // has been committed. Secrets are independent 256-bit base64url values.
+      match /runtime/{runtimeId} {
+        function validEOSRuntimePayload(data) {
+          return data.keys().hasOnly([
+              'schemaVersion', 'sessionLocator', 'socketSecret', 'createdAt'
+            ])
+            && data.keys().hasAll([
+              'schemaVersion', 'sessionLocator', 'socketSecret', 'createdAt'
+            ])
+            && data.schemaVersion == 1
+            && data.sessionLocator is string
+            && data.sessionLocator.matches('^[A-Za-z0-9_-]{43}$')
+            && data.socketSecret is string
+            && data.socketSecret.matches('^[A-Za-z0-9_-]{43}$')
+            && data.createdAt is timestamp;
+        }
+
+        function isRuntimeHostAfter() {
+          return request.auth != null
+            && request.auth.uid == getAfter(
+              /databases/$(database)/documents/privateIslands/$(islandId)
+            ).data.hostUid
+            && request.auth.uid in getAfter(
+              /databases/$(database)/documents/privateIslands/$(islandId)
+            ).data.memberIds;
+        }
+
+        allow read: if runtimeId == 'eos' && isPrivateIslandMember();
+        allow create: if runtimeId == 'eos'
+          && isRuntimeHostAfter()
+          && validEOSRuntimePayload(request.resource.data)
+          && request.resource.data.createdAt == request.time;
+        // A host can repair malformed pre-release data, but reopening an island
+        // can never rotate an already valid secret and split active members.
+        allow update: if runtimeId == 'eos'
+          && isRuntimeHostAfter()
+          && !validEOSRuntimePayload(resource.data)
+          && validEOSRuntimePayload(request.resource.data)
+          && request.resource.data.createdAt == request.time;
+        allow delete: if false;
+      }
+
       match /members/{memberId} {
         function validPrivateIslandMemberPayload() {
           return request.resource.data.keys().hasOnly([

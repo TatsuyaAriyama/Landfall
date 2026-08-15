@@ -104,14 +104,44 @@ final class PrivateIslandRealtimeClient: ObservableObject {
         )
     }
 
-    /// Single production selection point. The EOS adapter will be enabled
-    /// here after Portal credentials and device-only SDK validation are ready;
-    /// callers retain the Firestore compatibility path automatically.
+    /// Single production selection point. EOS is attempted only on a real
+    /// device with complete Portal and member-only session configuration. Any
+    /// construction or runtime connection failure falls back to Firestore.
     static func live(
         room: PrivateIslandRoom,
         persistence: PrivateIslandService
     ) -> PrivateIslandRealtimeClient {
-        firestore(room: room, persistence: persistence)
+        let firestore = FirestorePrivateIslandRealtimeTransport(
+            room: room,
+            persistence: persistence
+        )
+#if EOS_SDK_AVAILABLE && !targetEnvironment(simulator)
+        if let session = room.eosSessionConfiguration,
+           let portal = try? EOSPrivateIslandConfiguration.load(),
+           let runtime = try? EOSSDKRuntime.shared(configuration: portal),
+           let eos = try? EOSPrivateIslandRealtimeTransportAdapter(
+               room: room,
+               session: session,
+               runtime: runtime,
+               persistence: persistence
+           ) {
+            let hybrid = EOSPresenceFirestoreFallbackTransport(
+                eosPresence: eos,
+                firestore: firestore,
+                activateFallbackReads: {
+                    persistence.enableFirestorePresenceFallback(for: room.code)
+                }
+            )
+            return PrivateIslandRealtimeClient(
+                transport: hybrid,
+                moderation: firestore
+            )
+        }
+#endif
+        return PrivateIslandRealtimeClient(
+            transport: firestore,
+            moderation: firestore
+        )
     }
 }
 
@@ -120,6 +150,219 @@ typealias PrivateIslandRealtimeClientFactory = @MainActor (
     _ room: PrivateIslandRoom,
     _ persistence: PrivateIslandService
 ) -> PrivateIslandRealtimeClient
+
+/// Keeps Firestore chat/moderation active while EOS owns presence. EOS failure
+/// switches presence once, irreversibly, to the already-running compatibility
+/// transport and enables the listener that callers initially skipped.
+@MainActor
+private final class EOSPresenceFirestoreFallbackTransport:
+    PrivateIslandRealtimeTransport
+{
+    private let eosPresence: PrivateIslandRealtimeTransport
+    private let firestore: PrivateIslandRealtimeTransport
+    private let activateFallbackReads: () -> Void
+    private let subject: CurrentValueSubject<PrivateIslandRealtimeState, Never>
+    private var eosState: PrivateIslandRealtimeState
+    private var firestoreState: PrivateIslandRealtimeState
+    private var eosSubscription: AnyCancellable?
+    private var firestoreSubscription: AnyCancellable?
+    private var transitionTask: Task<Void, Never>?
+    private var startupWatchdog: Task<Void, Never>?
+    private var pendingPresenceFlush: Task<Void, Never>?
+    private var pendingPresence: (
+        value: PrivateIslandTransportPresence,
+        delivery: PrivateIslandTransportDelivery
+    )?
+    private var isStarted = false
+    private var isUsingFallback = false
+
+    var currentState: PrivateIslandRealtimeState { subject.value }
+    var statePublisher: AnyPublisher<PrivateIslandRealtimeState, Never> {
+        subject.eraseToAnyPublisher()
+    }
+    var requiresFirestorePresenceListener: Bool { isUsingFallback }
+
+    init(
+        eosPresence: PrivateIslandRealtimeTransport,
+        firestore: PrivateIslandRealtimeTransport,
+        activateFallbackReads: @escaping () -> Void
+    ) {
+        self.eosPresence = eosPresence
+        self.firestore = firestore
+        self.activateFallbackReads = activateFallbackReads
+        eosState = eosPresence.currentState
+        firestoreState = firestore.currentState
+        subject = CurrentValueSubject(.disconnected)
+
+        eosSubscription = eosPresence.statePublisher.sink { [weak self] state in
+            guard let self else { return }
+            self.eosState = state
+            if self.isStarted,
+               !self.isUsingFallback,
+               state.connectionState == .disconnected,
+               state.errorDescription != nil {
+                self.beginFallbackTransition()
+            } else {
+                self.emitCombinedState()
+            }
+        }
+        firestoreSubscription = firestore.statePublisher.sink { [weak self] state in
+            self?.firestoreState = state
+            self?.emitCombinedState()
+        }
+        emitCombinedState()
+    }
+
+    func start() {
+        guard !isStarted else { return }
+        isStarted = true
+        // Firestore stays active for canonical chat, names, reports and blocks.
+        firestore.start()
+        if isUsingFallback {
+            emitCombinedState()
+        } else {
+            eosPresence.start()
+            startupWatchdog?.cancel()
+            startupWatchdog = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled,
+                      let self,
+                      self.isStarted,
+                      !self.isUsingFallback,
+                      self.eosState.connectionState != .connected
+                else { return }
+                self.beginFallbackTransition()
+            }
+        }
+    }
+
+    func stop() async {
+        isStarted = false
+        transitionTask?.cancel()
+        startupWatchdog?.cancel()
+        let pendingFlush = pendingPresenceFlush
+        pendingFlush?.cancel()
+        startupWatchdog = nil
+        let pendingTransition = transitionTask
+        await pendingTransition?.value
+        await pendingFlush?.value
+        transitionTask = nil
+        pendingPresenceFlush = nil
+        pendingPresence = nil
+        await eosPresence.stop()
+        await firestore.stop()
+    }
+
+    func publishPresence(
+        _ presence: PrivateIslandTransportPresence,
+        delivery: PrivateIslandTransportDelivery
+    ) async throws {
+        if isUsingFallback {
+            try await firestore.publishPresence(presence, delivery: delivery)
+            return
+        }
+        if eosState.connectionState == .connecting {
+            pendingPresence = (presence, delivery)
+            return
+        }
+        do {
+            try await eosPresence.publishPresence(presence, delivery: delivery)
+        } catch {
+            if eosState.connectionState == .connecting {
+                pendingPresence = (presence, delivery)
+                return
+            }
+            await ensureFallback()
+            try await firestore.publishPresence(presence, delivery: delivery)
+        }
+    }
+
+    func sendChat(_ text: String) async throws {
+        try await firestore.sendChat(text)
+    }
+
+    private func emitCombinedState() {
+        if isUsingFallback {
+            subject.send(firestoreState)
+            return
+        }
+        if eosState.connectionState == .connected {
+            startupWatchdog?.cancel()
+            startupWatchdog = nil
+            schedulePendingPresenceFlush()
+        }
+        subject.send(PrivateIslandRealtimeState(
+            connectionState: eosState.connectionState,
+            presences: eosState.presences,
+            messages: firestoreState.messages,
+            blockedParticipantIDs: firestoreState.blockedParticipantIDs,
+            errorDescription: eosState.errorDescription ?? firestoreState.errorDescription
+        ))
+    }
+
+    private func beginFallbackTransition() {
+        guard transitionTask == nil, !isUsingFallback else { return }
+        transitionTask = Task { @MainActor [weak self] in
+            await self?.performFallbackTransition()
+        }
+    }
+
+    private func schedulePendingPresenceFlush() {
+        guard pendingPresence != nil, pendingPresenceFlush == nil else { return }
+        pendingPresenceFlush = Task { @MainActor [weak self] in
+            await self?.flushPendingPresence()
+        }
+    }
+
+    private func flushPendingPresence() async {
+        defer { pendingPresenceFlush = nil }
+        guard isStarted,
+              !isUsingFallback,
+              eosState.connectionState == .connected,
+              let pending = pendingPresence
+        else { return }
+        pendingPresence = nil
+        do {
+            try await eosPresence.publishPresence(
+                pending.value,
+                delivery: pending.delivery
+            )
+        } catch {
+            pendingPresence = pending
+            await ensureFallback()
+        }
+    }
+
+    private func ensureFallback() async {
+        beginFallbackTransition()
+        await transitionTask?.value
+    }
+
+    private func performFallbackTransition() async {
+        guard !isUsingFallback else {
+            transitionTask = nil
+            return
+        }
+        await eosPresence.stop()
+        guard isStarted, !Task.isCancelled else {
+            transitionTask = nil
+            return
+        }
+        isUsingFallback = true
+        startupWatchdog?.cancel()
+        startupWatchdog = nil
+        activateFallbackReads()
+        if let pendingPresence {
+            self.pendingPresence = nil
+            try? await firestore.publishPresence(
+                pendingPresence.value,
+                delivery: pendingPresence.delivery
+            )
+        }
+        emitCombinedState()
+        transitionTask = nil
+    }
+}
 
 /// Compatibility adapter that preserves today's Firestore behavior until an
 /// EOS SDK-backed transport is linked. It observes the same persistence service
