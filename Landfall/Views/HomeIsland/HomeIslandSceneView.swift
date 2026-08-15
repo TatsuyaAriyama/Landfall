@@ -410,8 +410,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var walkingObstacles: [WalkingObstacle] = []
         private var ruinsWalkObstacles: [RuinsWalkObstacle] = []
         private var jettyWalkSurfaces: [JettyWalkSurface] = []
-        private var stumpSeats: [StumpSeat] = []
         private var placedSeatSlots: [PlacedSeatSlot] = []
+#if DEBUG
+        private var seatDemoDidBegin = false
+#endif
         private var seatInteractionState = SeatInteractionState.free
         private var navigatorRootToSeatSurface = PhoenixNavigator.seatedRig.rootToSurface
             * NavigatorAppearance.islandScale
@@ -508,9 +510,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
             /// Council-table seats face away from their approach marker, so the
             /// navigator root belongs slightly inside the socket, toward the table.
             static let tableForwardInset: Float = 0.10
-            /// small_stump.blend の切断面。苔や年輪の装飾上端は座面に含めない。
-            static let stumpCutSurfaceLocalY: Float = 0.605
-            static let stumpApproachClearance: Float = 0.05
         }
 
         /// A lying navigator is rotated around the model root at its feet.
@@ -523,35 +522,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
             static let roll: Float = -.pi / 2
         }
 
-        private struct StumpSeat {
-            let id: UUID
-            let transform: HomeIslandTransform
-            let topY: Float
-            let obstacleRadius: Float
-
-            var centerWorldPosition: SCNVector3 {
-                SCNVector3(transform.x, topY, transform.z)
-            }
-
-            func seatPosition(rootToSeatSurface: Float) -> SCNVector3 {
-                return SCNVector3(
-                    transform.x,
-                    topY
-                        - rootToSeatSurface
-                        + NavigatorSeatMetrics.surfaceClearance,
-                    transform.z
-                )
-            }
-
-            var triggerRadius: Float {
-                max(0.92, obstacleRadius + 0.47)
-            }
-
-            var address: HomeIslandSeatAddress {
-                HomeIslandSeatAddress(placementID: id, slotID: "stump")
-            }
-        }
-
         /// Runtime-resolved sockets for assets with more than one seat. The
         /// stable ID is suitable for a future multiplayer occupancy record.
         private struct PlacedSeatSlot {
@@ -561,6 +531,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let seatNode: SCNNode
             let approachNode: SCNNode
             let facesAwayFromApproach: Bool
+            let seatPlanarOffset: Float?
+            let approachClearance: Float?
             let obstacleCenter: SCNVector3
             let obstacleRadius: Float
 
@@ -613,9 +585,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let outwardX = approach.x - surface.x
                 let outwardZ = approach.z - surface.z
                 let outwardLength = sqrt(outwardX * outwardX + outwardZ * outwardZ)
-                let outwardOffset = facesAwayFromApproach
+                let outwardOffset = seatPlanarOffset ?? (facesAwayFromApproach
                     ? -NavigatorSeatMetrics.tableForwardInset
-                    : NavigatorSeatMetrics.backrestClearance
+                    : NavigatorSeatMetrics.backrestClearance)
                 return SCNVector3(
                     surface.x + outwardX / max(outwardLength, 0.001)
                         * outwardOffset,
@@ -628,7 +600,26 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
 
             var approachWorldPosition: SCNVector3 {
-                approachNode.presentation.worldPosition
+                let authored = approachNode.presentation.worldPosition
+                guard let approachClearance else { return authored }
+
+                let dx = authored.x - obstacleCenter.x
+                let dz = authored.z - obstacleCenter.z
+                let authoredRadius = sqrt(dx * dx + dz * dz)
+                guard authoredRadius > 0.001 else { return authored }
+
+                // Small seats use their authored approach socket as a facing
+                // direction. Keep the actual standing point outside both the
+                // prop and the navigator collision radii at every asset scale.
+                let safeRadius = max(
+                    authoredRadius,
+                    obstacleRadius + NavigatorCollision.radius + approachClearance
+                )
+                return SCNVector3(
+                    obstacleCenter.x + dx / authoredRadius * safeRadius,
+                    authored.y,
+                    obstacleCenter.z + dz / authoredRadius * safeRadius
+                )
             }
         }
 
@@ -1058,6 +1049,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
             syncRemotePlayers()
             if owner.startsMooredAtIsland {
                 prepareMooredHome()
+#if DEBUG
+                scheduleSeatDemoIfRequested()
+#endif
             } else {
                 updateCamera()
                 startArrivalIfNeeded()
@@ -1504,13 +1498,16 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func syncPlacements() {
-            let visibleIDs = Set(owner.store.placements.map(\.id))
+            let visiblePlacements = owner.store.placements.filter {
+                HomeIslandAssetCatalog.isVisibleInCurrentBuild(assetID: $0.assetID)
+            }
+            let visibleIDs = Set(visiblePlacements.map(\.id))
             for (id, node) in placementNodes where !visibleIDs.contains(id) {
                 node.removeFromParentNode()
                 placementNodes[id] = nil
             }
 
-            for placement in owner.store.placements {
+            for placement in visiblePlacements {
                 let node: SCNNode
                 if let existing = placementNodes[placement.id] {
                     node = existing
@@ -1535,7 +1532,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     placement.transform.apply(to: node)
                 }
             }
-            walkingObstacles = owner.store.placements.compactMap { placement in
+            walkingObstacles = visiblePlacements.compactMap { placement in
                 guard placement.assetID != "mossy_ruins",
                       HomeIslandAssetCatalog.blocksWalking(assetID: placement.assetID) else {
                     return nil
@@ -1558,31 +1555,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 ))
             }
             walkingObstacles.append(contentsOf: fixedHarborWalkingObstacles)
-            ruinsWalkObstacles = owner.store.placements.compactMap { placement in
+            ruinsWalkObstacles = visiblePlacements.compactMap { placement in
                 guard placement.assetID == "mossy_ruins" else { return nil }
                 return RuinsWalkObstacle(transform: placement.transform)
             }
-            stumpSeats = owner.store.placements.compactMap { placement in
-                guard placement.assetID == "small_stump",
-                      let node = placementNodes[placement.id]
-                else { return nil }
-                let scale = max(placement.transform.scale, 0.05)
-                let obstacleRadius = max(
-                    0.25,
-                    HomeIslandAssetCatalog.footprintMargin(
-                        assetID: placement.assetID,
-                        scale: scale
-                    ) * 0.72
-                )
-                return StumpSeat(
-                    id: placement.id,
-                    transform: placement.transform,
-                    topY: node.position.y
-                        + NavigatorSeatMetrics.stumpCutSurfaceLocalY * scale,
-                    obstacleRadius: obstacleRadius
-                )
-            }
-            placedSeatSlots = owner.store.placements.flatMap { placement -> [PlacedSeatSlot] in
+            placedSeatSlots = visiblePlacements.flatMap { placement -> [PlacedSeatSlot] in
                 guard let node = placementNodes[placement.id] else { return [] }
                 return HomeIslandAssetCatalog.contactSlots(for: placement.assetID).compactMap { slot in
                     guard let seatNode = node.childNode(
@@ -1599,6 +1576,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         seatNode: seatNode,
                         approachNode: approachNode,
                         facesAwayFromApproach: slot.facesAwayFromApproach,
+                        seatPlanarOffset: slot.seatPlanarOffset,
+                        approachClearance: slot.approachClearance,
                         obstacleCenter: SCNVector3(
                             placement.transform.x,
                             HomeIslandMetrics.surfaceY,
@@ -1627,19 +1606,28 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         seatNode: seatNode,
                         approachNode: approachNode,
                         facesAwayFromApproach: slot.facesAwayFromApproach,
+                        seatPlanarOffset: slot.seatPlanarOffset,
+                        approachClearance: slot.approachClearance,
                         obstacleCenter: asset.obstacleCenter,
                         obstacleRadius: asset.obstacleRadius
                     )
                 }
             }
             if let activeAddress = seatInteractionState.seat?.address {
-                let seatStillExists = stumpSeats.contains(where: { $0.address == activeAddress })
-                    || placedSeatSlots.contains(where: { $0.address == activeAddress })
+                let seatStillExists = placedSeatSlots.contains {
+                    $0.address == activeAddress
+                }
                 if !seatStillExists {
-                    cancelStumpInteraction()
+                    cancelSeatInteraction()
                     if owner.mode == .explore { ensureNavigatorIsWalkable() }
                 }
             }
+#if DEBUG
+            if ProcessInfo.processInfo.environment["LANDFALL_SEAT_DEMO"] != nil,
+               !placedSeatSlots.isEmpty {
+                scheduleSeatDemoIfRequested()
+            }
+#endif
             let playerJettySurfaces: [JettyWalkSurface] = owner.store.placements.compactMap {
                 placement -> JettyWalkSurface? in
                 guard placement.assetID == "wooden_jetty" else { return nil }
@@ -1794,12 +1782,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     return slot.contactWorldPosition(
                         rootToSeatSurface: navigatorRootToSeatSurface
                     )
-                }
-                if let stump = stumpSeats.first(where: { $0.address == address }) {
-                    let seat = stump.seatPosition(
-                        rootToSeatSurface: navigatorRootToSeatSurface
-                    )
-                    return SCNVector3(state.x, seat.y, state.z)
                 }
             }
             return SCNVector3(
@@ -3361,7 +3343,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
         /// Installs the same island, saved placements, jetty, boat and navigator
         /// as the standalone experience, but at the stable post-arrival state.
         /// This is intentionally separate from `completeArrivalImmediately()` so
-        /// an embedded home does not emit arrival callbacks or DEBUG demo events.
+        /// an embedded home does not emit production arrival callbacks. An
+        /// explicitly requested DEBUG seat demo is scheduled by `install(in:)`.
         private func prepareMooredHome() {
             guard !arrivalStarted else { return }
             arrivalStarted = true
@@ -3371,7 +3354,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             departureStarted = false
             storeCachedWalkInput(.zero)
             arrivalNavigatorIsWalking = false
-            cancelStumpInteraction()
+            cancelSeatInteraction()
 
             arrivalBoat?.removeAllActions()
             arrivalBoat?.position = arrivalBoatStopPosition
@@ -3398,7 +3381,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         /// second departure implementation.
         private func prepareNavigatorForEmbeddedBoarding() {
             guard let navigator = navigatorNode else { return }
-            cancelStumpInteraction()
+            cancelSeatInteraction()
             let path = arrivalJettyLandingPath()
             let landing = path.landing
             navigator.removeAllActions()
@@ -3605,36 +3588,23 @@ struct HomeIslandSceneView: UIViewRepresentable {
             else { return }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
                 guard let self, let navigator = self.navigatorNode else { return }
-                let approach: SCNVector3
-                if requestedSeat == "stump", let stump = self.stumpSeats.first {
-                    let center = stump.centerWorldPosition
-                    approach = SCNVector3(
-                        center.x,
-                        self.groundHeight(x: center.x, z: center.z + stump.triggerRadius * 0.82),
-                        center.z + stump.triggerRadius * 0.82
-                    )
-                } else if let slot = self.placedSeatSlots.first {
-                    approach = slot.approachWorldPosition
-                } else {
-                    return
-                }
+                guard self.owner.mode == .explore else { return }
+                guard self.arrivalFinished else { return }
+                guard !self.seatDemoDidBegin else { return }
+                let requestedSlot = requestedSeat == "stump"
+                    ? self.placedSeatSlots.first(where: { $0.slotID == "stump" })
+                    : self.placedSeatSlots.first
+                guard let requestedSlot else { return }
+                self.seatDemoDidBegin = true
+                let approach = requestedSlot.approachWorldPosition
                 navigator.position = SCNVector3(
                     approach.x,
                     approach.y,
                     approach.z
                 )
-                let target: SCNVector3
-                if requestedSeat == "stump", let stump = self.stumpSeats.first {
-                    target = stump.seatPosition(
-                        rootToSeatSurface: self.navigatorRootToSeatSurface
-                    )
-                } else if let slot = self.placedSeatSlots.first {
-                    target = slot.contactWorldPosition(
-                        rootToSeatSurface: self.navigatorRootToSeatSurface
-                    )
-                } else {
-                    return
-                }
+                let target = requestedSlot.contactWorldPosition(
+                    rootToSeatSurface: self.navigatorRootToSeatSurface
+                )
                 let dx = target.x - navigator.position.x
                 let dz = target.z - navigator.position.z
                 let length = sqrt(dx * dx + dz * dz)
@@ -3720,7 +3690,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             guard !departureStarted else { return }
             departureStarted = true
             storeCachedWalkInput(.zero)
-            cancelStumpInteraction()
+            cancelSeatInteraction()
             guard arrivalFinished,
                   let boat = arrivalBoat,
                   let navigator = navigatorNode,
@@ -3963,7 +3933,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 clearPendingTouchJump()
                 storeCachedWalkInput(.zero)
                 resetLocomotionState()
-                cancelStumpInteraction()
+                cancelSeatInteraction()
                 if !seatInteractionState.keepsNavigatorOnSeat {
                     ensureNavigatorIsWalkable()
                 }
@@ -4450,56 +4420,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             direction: SCNVector3
         ) -> InteractiveSeat? {
             let occupiedSeats = remotelyOccupiedSeatAddresses
-            var candidates = stumpSeats.compactMap { stump -> (InteractiveSeat, Float)? in
-                guard !occupiedSeats.contains(stump.address) else { return nil }
-                let stumpCenter = stump.centerWorldPosition
-                let dx = stumpCenter.x - position.x
-                let dz = stumpCenter.z - position.z
-                let distance = sqrt(dx * dx + dz * dz)
-                guard distance > 0.001, distance <= stump.triggerRadius else { return nil }
-                let alignment = (dx * direction.x + dz * direction.z) / distance
-                guard alignment >= 0.78 else { return nil }
-                let towardStump = SCNVector3(dx / distance, 0, dz / distance)
-                let approachRadius = stump.obstacleRadius
-                    + NavigatorCollision.radius
-                    + NavigatorSeatMetrics.stumpApproachClearance
-                let approachX = stumpCenter.x - towardStump.x * approachRadius
-                let approachZ = stumpCenter.z - towardStump.z * approachRadius
-                return (
-                    InteractiveSeat(
-                        address: stump.address,
-                        motion: .sit,
-                        // The approach remains outside the trunk, but the final
-                        // contact must be the authored cut-surface centre. Moving
-                        // the final point toward the approach leaves the body
-                        // visibly sitting on the ground beside the stump.
-                        seatPosition: stump.seatPosition(
-                            rootToSeatSurface: navigatorRootToSeatSurface
-                        ),
-                        approachPosition: SCNVector3(
-                            approachX,
-                            groundHeight(x: approachX, z: approachZ),
-                            approachZ
-                        ),
-                        obstacleCenter: SCNVector3(
-                            stumpCenter.x,
-                            HomeIslandMetrics.surfaceY,
-                            stumpCenter.z
-                        ),
-                        obstacleRadius: stump.obstacleRadius,
-                        // Turn before lowering so the legs hang toward the side
-                        // the navigator approached from.
-                        facingDirection: SCNVector3(
-                            -towardStump.x,
-                            0,
-                            -towardStump.z
-                        )
-                    ),
-                    distance
-                )
-            }
-
-            candidates += placedSeatSlots.compactMap { slot -> (InteractiveSeat, Float)? in
+            let candidates = placedSeatSlots.compactMap { slot -> (InteractiveSeat, Float)? in
                 guard !occupiedSeats.contains(slot.address) else { return nil }
                 let seatPosition = slot.contactWorldPosition(
                     rootToSeatSurface: navigatorRootToSeatSurface
@@ -4797,7 +4718,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             return safestLandingPosition()
         }
 
-        private func cancelStumpInteraction() {
+        private func cancelSeatInteraction() {
             guard seatInteractionState.keepsNavigatorOnSeat else { return }
             navigatorNode?.removeAction(forKey: "seat-transition")
             seatInteractionState = .free

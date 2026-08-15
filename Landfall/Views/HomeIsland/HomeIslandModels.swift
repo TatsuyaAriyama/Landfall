@@ -98,14 +98,18 @@ enum HomeIslandMetrics {
         sandEdgePoint(angle: -.pi / 2)
     }
 
-    static func containsGatheringDeck(x: Float, z: Float) -> Bool {
+    static func containsGatheringDeck(
+        x: Float,
+        z: Float,
+        margin: Float = 0
+    ) -> Bool {
         let dx = abs(x - gatheringDeckPosition.x)
         let relativeZ = z - gatheringDeckPosition.z
-        return dx <= 2.90 * gatheringDeckScale
+        return dx <= 2.90 * gatheringDeckScale + margin
             // Blender's positive Y becomes SceneKit's negative Z. Match the
             // four added planks beneath the seaward council-chair backrest.
-            && relativeZ >= -2.15 * gatheringDeckScale
-            && relativeZ <= 1.57 * gatheringDeckScale
+            && relativeZ >= -2.15 * gatheringDeckScale - margin
+            && relativeZ <= 1.57 * gatheringDeckScale + margin
     }
 
     static func containsWalkableSand(x: Float, z: Float, margin: Float) -> Bool {
@@ -193,19 +197,25 @@ struct HomeIslandContactSlotDefinition: Identifiable, Hashable, Sendable {
     let seatNodeName: String
     let approachNodeName: String
     let facesAwayFromApproach: Bool
+    let seatPlanarOffset: Float?
+    let approachClearance: Float?
 
     init(
         id: String,
         motion: HomeIslandContactMotion,
         seatNodeName: String,
         approachNodeName: String,
-        facesAwayFromApproach: Bool = false
+        facesAwayFromApproach: Bool = false,
+        seatPlanarOffset: Float? = nil,
+        approachClearance: Float? = nil
     ) {
         self.id = id
         self.motion = motion
         self.seatNodeName = seatNodeName
         self.approachNodeName = approachNodeName
         self.facesAwayFromApproach = facesAwayFromApproach
+        self.seatPlanarOffset = seatPlanarOffset
+        self.approachClearance = approachClearance
     }
 }
 
@@ -216,6 +226,35 @@ struct HomeIslandSeatAddress: Codable, Hashable, Sendable {
 }
 
 enum HomeIslandAssetCatalog {
+    /// Harbor equipment authored into every island at deterministic positions.
+    /// The moored boat is also fixed, but is rendered from BoatCustomization
+    /// rather than participating in the placeable-asset catalog.
+    static let allUsersFixedAssetIDs: Set<String> = [
+        "voyage_notice_board",
+        "wooden_jetty",
+        "harbor_boarding_float",
+        "harbor_gathering_deck",
+        "harbor_council_table",
+        "harbor_welcome_beacon",
+    ]
+
+    /// Saved instances remain in snapshots while these props are withheld.
+    private static let temporarilyHiddenAssetIDs: Set<String> = [
+        "small_stump",
+        "navigator_hammock",
+    ]
+
+    private static let smallStumpSeatSlots = [
+        HomeIslandContactSlotDefinition(
+            id: "stump",
+            motion: .sit,
+            seatNodeName: "SeatSocket_Stump",
+            approachNodeName: "SeatApproach_Stump",
+            seatPlanarOffset: 0,
+            approachClearance: 0.05
+        ),
+    ]
+
     private static let driftwoodBenchSeatSlots = [
         HomeIslandContactSlotDefinition(
             id: "left",
@@ -249,6 +288,8 @@ enum HomeIslandAssetCatalog {
 
     static func contactSlots(for assetID: String) -> [HomeIslandContactSlotDefinition] {
         switch assetID {
+        case "small_stump":
+            smallStumpSeatSlots
         case "driftwood_bench":
             driftwoodBenchSeatSlots
         case "navigator_hammock":
@@ -517,11 +558,35 @@ enum HomeIslandAssetCatalog {
 
     static var approvedIDs: Set<String> { Set(approved.map(\.id)) }
 
+    /// Temporarily keeps unfinished assets out of customer builds without
+    /// deleting their saved placements. Debug tuning can opt them back in.
+    static func isVisibleInCurrentBuild(assetID: String) -> Bool {
+        guard temporarilyHiddenAssetIDs.contains(assetID) else { return true }
+        #if DEBUG
+        let environment = ProcessInfo.processInfo.environment
+        if environment["LANDFALL_SHOW_HIDDEN_HOME_ASSETS"] == "1" {
+            return true
+        }
+        return assetID == "small_stump"
+            && (environment["LANDFALL_SHOW_STUMP"] == "1"
+                || environment["LANDFALL_SEAT_DEMO"] == "stump")
+        #else
+        return false
+        #endif
+    }
+
     static func available(in bundle: Bundle = .main) -> [HomeIslandAsset] {
         approved.filter { asset in
-            asset.id == "small_lake"
-                || bundle.url(forResource: asset.id, withExtension: "usdz") != nil
+            isUserPlaceable(assetID: asset.id)
+                && (asset.id == "small_lake"
+                    || bundle.url(forResource: asset.id, withExtension: "usdz") != nil)
         }
+    }
+
+    static func isUserPlaceable(assetID: String) -> Bool {
+        approvedIDs.contains(assetID)
+            && !allUsersFixedAssetIDs.contains(assetID)
+            && isVisibleInCurrentBuild(assetID: assetID)
     }
 
     static func asset(id: String) -> HomeIslandAsset? {
@@ -951,6 +1016,7 @@ final class HomeIslandStore: ObservableObject {
 
     func canAdd(assetID: String) -> Bool {
         canAdd
+            && HomeIslandAssetCatalog.isUserPlaceable(assetID: assetID)
             && placementCount(assetID: assetID) < HomeIslandAssetCatalog.placementLimit(for: assetID)
     }
 
@@ -1213,6 +1279,16 @@ final class HomeIslandStore: ObservableObject {
         if abs(transform.x) <= HomeIslandMetrics.arrivalJettyReservedHalfWidth + candidateRadius,
            transform.z >= HomeIslandMetrics.arrivalJettyReservedNearZ - candidateRadius,
            transform.z <= HomeIslandMetrics.arrivalJettyReservedFarZ + candidateRadius {
+            return false
+        }
+
+        // The shared deck reaches slightly beyond the jetty reservation on its
+        // outer edge. Reserve its full authored footprint for solid props too.
+        if HomeIslandMetrics.containsGatheringDeck(
+            x: transform.x,
+            z: transform.z,
+            margin: candidateRadius
+        ) {
             return false
         }
 
