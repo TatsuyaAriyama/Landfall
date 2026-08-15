@@ -44,19 +44,14 @@ enum HomeIslandMetrics {
     static let arrivalJettyReservedHalfWidth: Float = 4.90
     static let arrivalJettyReservedNearZ: Float = 5.00
     static let arrivalJettyReservedFarZ: Float = 16.80
-    static let gatheringDeckPosition = (x: Float(0), z: Float(6.75))
+    // Keep the social furniture on the camera-right side of the island. The
+    // central x = 0 corridor remains an unobstructed continuation of the pier.
+    static let gatheringDeckPosition = (x: Float(-3.25), z: Float(6.75))
     static let gatheringDeckScale: Float = 0.90
     static let gatheringDeckLocalTopY: Float = 0.195
-    static let sailCanopyPosition = (x: Float(-1.35), z: Float(6.35))
-    static let sailCanopyYaw: Float = -0.10
-    static let sailCanopyScale: Float = 0.72
-    static let councilTablePosition = (x: Float(-1.35), z: Float(6.35))
+    static let councilTablePosition = (x: Float(-2.65), z: Float(6.35))
     static let councilTableScale: Float = 0.72
     static let councilTableSeatID = UUID(uuidString: "A184B6C1-4B58-44F0-A000-000000000001")!
-    static let arcBenchPosition = (x: Float(1.55), z: Float(6.25))
-    static let arcBenchYaw: Float = -.pi / 2
-    static let arcBenchScale: Float = 0.72
-    static let arcBenchSeatID = UUID(uuidString: "A184B6C1-4B58-44F0-A000-000000000002")!
     static let welcomeBeaconPositions = [
         (x: Float(-0.98), z: Float(8.05)),
         (x: Float(0.98), z: Float(8.05)),
@@ -228,12 +223,6 @@ enum HomeIslandAssetCatalog {
         HomeIslandContactSlotDefinition(id: "west", motion: .sit, seatNodeName: "SeatSocket_West", approachNodeName: "SeatApproach_West"),
     ]
 
-    private static let harborArcBenchSeatSlots = [
-        HomeIslandContactSlotDefinition(id: "left", motion: .sit, seatNodeName: "SeatSocket_Left", approachNodeName: "SeatApproach_Left"),
-        HomeIslandContactSlotDefinition(id: "center", motion: .sit, seatNodeName: "SeatSocket_Center", approachNodeName: "SeatApproach_Center"),
-        HomeIslandContactSlotDefinition(id: "right", motion: .sit, seatNodeName: "SeatSocket_Right", approachNodeName: "SeatApproach_Right"),
-    ]
-
     static func contactSlots(for assetID: String) -> [HomeIslandContactSlotDefinition] {
         switch assetID {
         case "driftwood_bench":
@@ -242,8 +231,6 @@ enum HomeIslandAssetCatalog {
             navigatorHammockContactSlots
         case "harbor_council_table":
             harborCouncilTableSeatSlots
-        case "harbor_arc_bench":
-            harborArcBenchSeatSlots
         default:
             []
         }

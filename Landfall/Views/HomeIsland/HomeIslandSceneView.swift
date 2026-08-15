@@ -1245,33 +1245,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 scale: HomeIslandMetrics.gatheringDeckScale
             )
 
-            if addAsset(
-                "harbor_sail_canopy",
-                name: "home-island-locked-sail-canopy",
-                position: HomeIslandMetrics.sailCanopyPosition,
-                yaw: HomeIslandMetrics.sailCanopyYaw,
-                scale: HomeIslandMetrics.sailCanopyScale
-            ) != nil {
-                let center = HomeIslandMetrics.sailCanopyPosition
-                let yaw = HomeIslandMetrics.sailCanopyYaw
-                let scale = HomeIslandMetrics.sailCanopyScale
-                let postOffsets: [(Float, Float)] = [
-                    (-1.65, 1.18),
-                    (1.65, 1.18),
-                    (-1.65, -1.18),
-                    (1.65, -1.18),
-                ]
-                for (localX, localZ) in postOffsets {
-                    let cosine = cos(yaw)
-                    let sine = sin(yaw)
-                    fixedHarborWalkingObstacles.append(WalkingObstacle(
-                        x: center.x + localX * scale * cosine + localZ * scale * sine,
-                        z: center.z - localX * scale * sine + localZ * scale * cosine,
-                        radius: 0.18
-                    ))
-                }
-            }
-
             if let table = addAsset(
                 "harbor_council_table",
                 name: "home-island-locked-council-table",
@@ -1290,28 +1263,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     x: position.x,
                     z: position.z,
                     radius: 0.62
-                ))
-            }
-
-            if let bench = addAsset(
-                "harbor_arc_bench",
-                name: "home-island-locked-arc-bench",
-                position: HomeIslandMetrics.arcBenchPosition,
-                yaw: HomeIslandMetrics.arcBenchYaw,
-                scale: HomeIslandMetrics.arcBenchScale
-            ) {
-                let position = HomeIslandMetrics.arcBenchPosition
-                fixedHarborSeatAssets.append(FixedHarborSeatAsset(
-                    id: HomeIslandMetrics.arcBenchSeatID,
-                    assetID: "harbor_arc_bench",
-                    node: bench,
-                    obstacleCenter: SCNVector3(position.x, HomeIslandMetrics.surfaceY, position.z),
-                    obstacleRadius: 1.08
-                ))
-                fixedHarborWalkingObstacles.append(WalkingObstacle(
-                    x: position.x,
-                    z: position.z,
-                    radius: 1.08
                 ))
             }
 
