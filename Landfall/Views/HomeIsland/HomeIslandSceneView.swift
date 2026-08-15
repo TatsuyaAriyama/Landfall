@@ -3702,6 +3702,15 @@ struct HomeIslandSceneView: UIViewRepresentable {
             arrivalGangplank?.removeFromParentNode()
             guard departureStarted else { return }
             departureStarted = false
+            // This coordinator can survive while the timer voyage replaces
+            // the island branch. Never carry the boarding latch into the
+            // moored Explore scene when the player returns home.
+            boardingRequested = false
+            touchWalkInput = .zero
+            keyboardWalkInput = .zero
+            gamepadWalkInput = .zero
+            clearPendingTouchJump()
+            storeCachedWalkInput(.zero)
             DispatchQueue.main.async { [weak self] in
                 self?.owner.onDepartureCompleted()
             }
@@ -3718,6 +3727,18 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 resetLocomotionState()
                 break
             case .explore:
+                if previousMode == .departure {
+                    // A reused representable must recover just as cleanly as a
+                    // newly-created Home Island scene after a timer voyage.
+                    boardingRequested = false
+                    departureStarted = false
+                    arrivalNavigatorIsWalking = false
+                    touchWalkInput = .zero
+                    keyboardWalkInput = .zero
+                    gamepadWalkInput = .zero
+                    clearPendingTouchJump()
+                    storeCachedWalkInput(.zero)
+                }
                 if !seatInteractionState.keepsNavigatorOnSeat {
                     ensureNavigatorIsWalkable()
                 }
@@ -4845,7 +4866,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
             guard let view else { return true }
             let point = touch.location(in: view)
             if gestureRecognizer === movementPanRecognizer {
-                return touch.type == .direct && isMovementControlPoint(point, in: view)
+                // Simulator mouse drags and a real iPad trackpad arrive as an
+                // indirect pointer. They should drive the same invisible
+                // thumbstick instead of falling through to camera orbit.
+                let supportsMovement = touch.type == .direct
+                    || touch.type == .indirectPointer
+                return supportsMovement && isMovementControlPoint(point, in: view)
             }
             if gestureRecognizer === runningJumpRecognizer {
                 return touch.type == .direct
@@ -4856,8 +4882,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     && !hasExploreInteractiveTarget(at: point)
             }
             if gestureRecognizer === orbitPanRecognizer,
-               owner.mode == .explore,
-               touch.type == .direct {
+               owner.mode == .explore {
                 return !isMovementControlPoint(point, in: view)
             }
             if gestureRecognizer === pinchRecognizer,
@@ -4875,8 +4900,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 return owner.mode == .edit || owner.mode == .camera
             }
             if gestureRecognizer === doubleTapRecognizer,
-               owner.mode == .explore,
-               touch.type == .direct {
+               owner.mode == .explore {
                 return !isMovementControlPoint(point, in: view)
             }
             return true
