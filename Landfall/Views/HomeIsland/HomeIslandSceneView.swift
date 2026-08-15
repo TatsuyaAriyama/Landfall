@@ -1,6 +1,7 @@
 import SceneKit
 import SwiftUI
 import UIKit
+import simd
 
 /// 「自分の島」のカメラ操作バーからSceneKitへ送る一回限りの指示。
 enum HomeIslandCameraAction: Equatable {
@@ -34,13 +35,6 @@ enum HomeIslandMode: Equatable {
     case edit
     case camera
     case departure
-}
-
-struct HomeIslandWalkInput: Equatable {
-    var x: Float = 0
-    var forward: Float = 0
-
-    static let zero = HomeIslandWalkInput()
 }
 
 /// A network-neutral snapshot of one navigator in a shared Home Island scene.
@@ -94,10 +88,13 @@ struct HomeIslandRemotePlayerState: Identifiable, Equatable, Sendable {
 /// UIKeyCommandの単発入力ではなく押下状態を毎フレーム渡すため、斜め移動も滑らかに扱える。
 private final class HomeIslandInteractiveSceneView: SCNView {
     var keyboardMovementHandler: ((HomeIslandWalkInput, TimeInterval) -> Void)?
+    var gamepadMovementHandler: ((HomeIslandWalkInput, TimeInterval) -> Void)?
+    var gamepadLookHandler: ((_ x: Float, _ y: Float, _ deltaTime: TimeInterval) -> Void)?
 
     private var heldMovementKeys: Set<UIKeyboardHIDUsage> = []
     private var keyboardDisplayLink: CADisplayLink?
     private var lastKeyboardTimestamp: CFTimeInterval?
+    private let gamepadRouter = HomeIslandGamepadInputRouter()
 
     override var canBecomeFirstResponder: Bool { true }
 
@@ -105,13 +102,26 @@ private final class HomeIslandInteractiveSceneView: SCNView {
         super.didMoveToWindow()
         if window != nil {
             becomeFirstResponder()
+            gamepadRouter.movementHandler = { [weak self] input, deltaTime in
+                self?.gamepadMovementHandler?(input, deltaTime)
+            }
+            gamepadRouter.lookHandler = { [weak self] x, y, deltaTime in
+                self?.gamepadLookHandler?(x, y, deltaTime)
+            }
+            gamepadRouter.start()
         } else {
             stopKeyboardMovement()
+            gamepadRouter.stop()
         }
     }
 
+    override func resignFirstResponder() -> Bool {
+        stopKeyboardMovement()
+        return super.resignFirstResponder()
+    }
+
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        let movementKeys = Set(presses.compactMap(\.key?.keyCode).filter(isMovementKey))
+        let movementKeys = Set(presses.compactMap(\.key?.keyCode).filter(isHandledKey))
         guard !movementKeys.isEmpty else {
             super.pressesBegan(presses, with: event)
             return
@@ -123,7 +133,7 @@ private final class HomeIslandInteractiveSceneView: SCNView {
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         releaseMovementKeys(from: presses)
         let containsOnlyMovementKeys = presses.allSatisfy {
-            $0.key.map { isMovementKey($0.keyCode) } ?? false
+            $0.key.map { isHandledKey($0.keyCode) } ?? false
         }
         if !containsOnlyMovementKeys { super.pressesEnded(presses, with: event) }
     }
@@ -141,6 +151,13 @@ private final class HomeIslandInteractiveSceneView: SCNView {
         default:
             return false
         }
+    }
+
+    private func isHandledKey(_ key: UIKeyboardHIDUsage) -> Bool {
+        isMovementKey(key)
+            || key == .keyboardLeftShift
+            || key == .keyboardRightShift
+            || key == .keyboardSpacebar
     }
 
     private func releaseMovementKeys(from presses: Set<UIPress>) {
@@ -183,9 +200,15 @@ private final class HomeIslandInteractiveSceneView: SCNView {
             || heldMovementKeys.contains(.keyboardUpArrow)
         let backward = heldMovementKeys.contains(.keyboardS)
             || heldMovementKeys.contains(.keyboardDownArrow)
+        let sprint = heldMovementKeys.contains(.keyboardLeftShift)
+            || heldMovementKeys.contains(.keyboardRightShift)
+        let jump = heldMovementKeys.contains(.keyboardSpacebar)
+        let digitalStrength: Float = sprint ? 1 : 0.72
         var input = HomeIslandWalkInput(
-            x: (right ? 1 : 0) - (left ? 1 : 0),
-            forward: (forward ? 1 : 0) - (backward ? 1 : 0)
+            x: ((right ? 1 : 0) - (left ? 1 : 0)) * digitalStrength,
+            forward: ((forward ? 1 : 0) - (backward ? 1 : 0)) * digitalStrength,
+            sprintRequested: sprint,
+            jumpRequested: jump
         )
         let magnitude = sqrt(input.x * input.x + input.forward * input.forward)
         if magnitude > 1 {
@@ -327,14 +350,22 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private let exploreOrbitLock = NSLock()
         private var pendingExploreOrbitAngles: (azimuth: Float, elevation: Float)?
         private weak var movementPanRecognizer: UIPanGestureRecognizer?
+        private weak var runningJumpRecognizer: UILongPressGestureRecognizer?
         private weak var twoFingerPanRecognizer: UIPanGestureRecognizer?
         private weak var pinchRecognizer: UIPinchGestureRecognizer?
         private weak var longPressRecognizer: UILongPressGestureRecognizer?
         private weak var doubleTapRecognizer: UITapGestureRecognizer?
         private var touchWalkInput = HomeIslandWalkInput.zero
         private var keyboardWalkInput = HomeIslandWalkInput.zero
+        private var gamepadWalkInput = HomeIslandWalkInput.zero
         private var externalWalkInput = HomeIslandWalkInput.zero
+        /// One-shot phone jump input. Kept until the renderer consumes it so a
+        /// short tap cannot disappear during a frame hitch or app-side update.
+        /// Access is protected by `walkInputLock` together with cached input.
+        private var pendingTouchJump = false
         private var movementFeedbackSent = false
+        private var runningJumpBeganAt: TimeInterval?
+        private var runningJumpBeganPoint: CGPoint?
         private var arrivalStarted = false
         private var arrivalFinished = false
         private var arrivalNavigatorIsWalking = false
@@ -345,6 +376,15 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var arrivalBoatStopPosition = SCNVector3(0, -0.35, 20.2)
         private var arrivalJettyWalkSurface: JettyWalkSurface?
         private var cachedWalkInput = HomeIslandWalkInput.zero
+        private let walkInputLock = NSLock()
+        private let locomotionTuning: HomeIslandLocomotionTuning
+        private let locomotionMotor: HomeIslandLocomotionMotor
+        private let locomotionCameraController: HomeIslandLocomotionCameraController
+        private let locomotionAudio = HomeIslandLocomotionAudio()
+        private var locomotionFrame: HomeIslandLocomotionFrame?
+        private var cameraMotion = HomeIslandCameraMotion()
+        private var lastLocomotionDeltaTime: Float = 1 / 60
+        private var lastWindIntensity: Float = 0
         private var walkingObstacles: [WalkingObstacle] = []
         private var ruinsWalkObstacles: [RuinsWalkObstacle] = []
         private var jettyWalkSurfaces: [JettyWalkSurface] = []
@@ -410,10 +450,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
             static let transferDuration: TimeInterval = 0.72
             static let deckWalkDuration: TimeInterval = 2.85
             static let jettySettleDuration: TimeInterval = 0.55
-        }
-
-        private enum NavigatorLocomotion {
-            static let maximumSpeed: Float = 2.45
         }
 
         private enum NavigatorAppearance {
@@ -777,10 +813,47 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let shoreHeight = max(baseHeight, HomeIslandMetrics.surfaceY + 0.055 * scale)
                 return flatDeck + (shoreHeight - flatDeck) * progress
             }
+
+            func normal(
+                x: Float,
+                z: Float,
+                baseHeight: (Float, Float) -> Float
+            ) -> SIMD3<Float> {
+                let epsilon: Float = 0.08
+                let left = height(
+                    x: x - epsilon,
+                    z: z,
+                    baseHeight: baseHeight(x - epsilon, z)
+                )
+                let right = height(
+                    x: x + epsilon,
+                    z: z,
+                    baseHeight: baseHeight(x + epsilon, z)
+                )
+                let near = height(
+                    x: x,
+                    z: z - epsilon,
+                    baseHeight: baseHeight(x, z - epsilon)
+                )
+                let far = height(
+                    x: x,
+                    z: z + epsilon,
+                    baseHeight: baseHeight(x, z + epsilon)
+                )
+                return simd_normalize(SIMD3<Float>(
+                    left - right,
+                    epsilon * 2,
+                    near - far
+                ))
+            }
         }
 
         init(owner: HomeIslandSceneView) {
             self.owner = owner
+            let tuning = HomeIslandLocomotionTuning.standard
+            locomotionTuning = tuning
+            locomotionMotor = HomeIslandLocomotionMotor(tuning: tuning)
+            locomotionCameraController = HomeIslandLocomotionCameraController(tuning: tuning)
         }
 
         func install(in view: SCNView) {
@@ -791,6 +864,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
             if let interactiveView = view as? HomeIslandInteractiveSceneView {
                 interactiveView.keyboardMovementHandler = { [weak self] input, deltaTime in
                     self?.handleKeyboardMovement(input, deltaTime: Float(deltaTime))
+                }
+                interactiveView.gamepadMovementHandler = { [weak self] input, deltaTime in
+                    self?.handleGamepadMovement(input, deltaTime: Float(deltaTime))
+                }
+                interactiveView.gamepadLookHandler = { [weak self] x, y, deltaTime in
+                    self?.handleGamepadLook(x: x, y: y, deltaTime: Float(deltaTime))
                 }
             }
 
@@ -818,6 +897,21 @@ struct HomeIslandSceneView: UIViewRepresentable {
             movementPan.delegate = self
             view.addGestureRecognizer(movementPan)
             movementPanRecognizer = movementPan
+
+            // A second thumb can jump while the first thumb continues to
+            // steer. Zero-duration long press gives us an independent touch
+            // stream; moving it becomes camera orbit, while a short stationary
+            // touch is consumed as a jump without adding a visible button.
+            let runningJump = UILongPressGestureRecognizer(
+                target: self,
+                action: #selector(handleRunningJumpPress(_:))
+            )
+            runningJump.minimumPressDuration = 0
+            runningJump.allowableMovement = 14
+            runningJump.cancelsTouchesInView = false
+            runningJump.delegate = self
+            view.addGestureRecognizer(runningJump)
+            runningJumpRecognizer = runningJump
 
             let twoFingerPan = UIPanGestureRecognizer(
                 target: self,
@@ -869,7 +963,15 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 lastLocalPlayerReportTime = -.infinity
             }
             externalWalkInput = owner.walkInput
-            refreshWalkInput()
+            if owner.cameraInteractionLocked {
+                touchWalkInput = .zero
+                keyboardWalkInput = .zero
+                gamepadWalkInput = .zero
+                clearPendingTouchJump()
+                storeCachedWalkInput(.zero)
+            } else {
+                refreshWalkInput()
+            }
             updateExposure()
             syncPlacements()
             syncRemotePlayers()
@@ -1993,6 +2095,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
 
             if owner.mode == .explore {
+                // Interactions win over the invisible phone controls. A boat,
+                // notice board, or prop must remain tappable wherever the
+                // camera projects it, including the lower-left thumb zone.
                 if hitFixedNoticeBoard(at: screenPoint) {
                     owner.onAssetActivated("fixed_notice_board")
                     return
@@ -2007,7 +2112,16 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 }
                 guard let placementID = hitPlacement(at: screenPoint),
                       let placement = owner.store.placements.first(where: { $0.id == placementID })
-                else { return }
+                else {
+                    // Phone-first jump: a short empty-space tap inside the
+                    // invisible left thumbstick region jumps. While the left
+                    // thumb is moving, a short right-side camera touch is
+                    // handled by `handlePan` below so running jumps need no HUD.
+                    if isMovementControlPoint(screenPoint, in: view) {
+                        triggerTouchJump()
+                    }
+                    return
+                }
                 if let interactionRadius = HomeIslandAssetCatalog.interactionRadius(
                     assetID: placement.assetID,
                     scale: placement.transform.scale
@@ -2067,6 +2181,58 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 Haptics.tap(.light)
             } else {
                 owner.store.select(nil)
+            }
+        }
+
+        private func triggerTouchJump() {
+            walkInputLock.lock()
+            pendingTouchJump = true
+            walkInputLock.unlock()
+        }
+
+        private func clearPendingTouchJump() {
+            walkInputLock.lock()
+            pendingTouchJump = false
+            walkInputLock.unlock()
+        }
+
+        private func hasExploreInteractiveTarget(at point: CGPoint) -> Bool {
+            hitFixedNoticeBoard(at: point)
+                || hitArrivalBoat(at: point)
+                || hitPlacement(at: point) != nil
+        }
+
+        @objc private func handleRunningJumpPress(
+            _ recognizer: UILongPressGestureRecognizer
+        ) {
+            guard owner.mode == .explore,
+                  !owner.cameraInteractionLocked,
+                  let view
+            else {
+                runningJumpBeganAt = nil
+                runningJumpBeganPoint = nil
+                return
+            }
+            switch recognizer.state {
+            case .began:
+                runningJumpBeganAt = CACurrentMediaTime()
+                runningJumpBeganPoint = recognizer.location(in: view)
+            case .ended:
+                let point = recognizer.location(in: view)
+                let start = runningJumpBeganPoint ?? point
+                let duration = CACurrentMediaTime() - (runningJumpBeganAt ?? 0)
+                runningJumpBeganAt = nil
+                runningJumpBeganPoint = nil
+                guard duration <= 0.24,
+                      hypot(point.x - start.x, point.y - start.y) <= 14,
+                      !hasExploreInteractiveTarget(at: point)
+                else { return }
+                triggerTouchJump()
+            case .cancelled, .failed:
+                runningJumpBeganAt = nil
+                runningJumpBeganPoint = nil
+            default:
+                break
             }
         }
 
@@ -2153,7 +2319,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
             boardingRequested = true
             touchWalkInput = .zero
             keyboardWalkInput = .zero
-            cachedWalkInput = .zero
+            gamepadWalkInput = .zero
+            storeCachedWalkInput(.zero)
             Haptics.tap(.medium)
             let onBoatBoardingStarted = owner.onBoatBoardingStarted
             DispatchQueue.main.async {
@@ -2197,6 +2364,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         /// and UIKit can track one finger in each region simultaneously.
         private func isMovementControlPoint(_ point: CGPoint, in view: UIView) -> Bool {
             guard owner.mode == .explore,
+                  !owner.cameraInteractionLocked,
                   !owner.boatCustomizationActive,
                   !boardingRequested
             else { return false }
@@ -2216,6 +2384,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         @objc private func handleMovementPan(_ recognizer: UIPanGestureRecognizer) {
             guard owner.mode == .explore,
+                  !owner.cameraInteractionLocked,
                   !owner.boatCustomizationActive,
                   !boardingRequested,
                   let view
@@ -2276,30 +2445,62 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func refreshWalkInput() {
             guard !(owner.startsMooredAtIsland && owner.locksMooredOverview),
                   owner.mode == .explore,
+                  !owner.cameraInteractionLocked,
                   !owner.boatCustomizationActive,
                   !boardingRequested
             else {
-                cachedWalkInput = .zero
+                storeCachedWalkInput(.zero)
                 return
             }
-            var input = HomeIslandWalkInput(
-                x: externalWalkInput.x + touchWalkInput.x + keyboardWalkInput.x,
-                forward: externalWalkInput.forward
-                    + touchWalkInput.forward
-                    + keyboardWalkInput.forward
-            )
+            // One primary device owns movement at a time. This prevents a
+            // resting thumb and a controller from adding into an unintended
+            // sprint, while retaining immediate fallback when either is released.
+            let sourceDeadZone = locomotionTuning.inputDeadZone
+            var input: HomeIslandWalkInput
+            if gamepadWalkInput.magnitude > sourceDeadZone {
+                input = gamepadWalkInput
+            } else if touchWalkInput.magnitude > sourceDeadZone {
+                input = touchWalkInput
+            } else if keyboardWalkInput.magnitude > sourceDeadZone {
+                input = keyboardWalkInput
+            } else {
+                input = externalWalkInput
+            }
+            // Buttons are independent from axis ownership: pressing gamepad A
+            // while steering by touch jumps without dropping the touch axis.
+            input.jumpRequested = input.jumpRequested
+                || gamepadWalkInput.jumpRequested
+                || keyboardWalkInput.jumpRequested
+                || externalWalkInput.jumpRequested
             let magnitude = sqrt(input.x * input.x + input.forward * input.forward)
             if magnitude > 1 {
                 input.x /= magnitude
                 input.forward /= magnitude
             }
+            storeCachedWalkInput(input)
+        }
+
+        private func storeCachedWalkInput(_ input: HomeIslandWalkInput) {
+            walkInputLock.lock()
             cachedWalkInput = input
+            walkInputLock.unlock()
+        }
+
+        private func currentCachedWalkInput() -> HomeIslandWalkInput {
+            walkInputLock.lock()
+            var input = cachedWalkInput
+            if pendingTouchJump {
+                input.jumpRequested = true
+                pendingTouchJump = false
+            }
+            walkInputLock.unlock()
+            return input
         }
 
         @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
             guard owner.mode != .arrival,
                   owner.mode != .departure,
-                  !(owner.mode == .camera && owner.cameraInteractionLocked),
+                  !owner.cameraInteractionLocked,
                   let view
             else { return }
             view.becomeFirstResponder()
@@ -2455,7 +2656,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         @objc private func handleTwoFingerPan(_ recognizer: UIPanGestureRecognizer) {
             guard owner.mode == .edit || owner.mode == .camera,
-                  !(owner.mode == .camera && owner.cameraInteractionLocked),
+                  !owner.cameraInteractionLocked,
                   let view,
                   let target = cameraTarget
             else { return }
@@ -2484,7 +2685,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
             guard owner.mode != .arrival,
                   owner.mode != .departure,
-                  !(owner.mode == .camera && owner.cameraInteractionLocked),
+                  !owner.cameraInteractionLocked,
                   let view,
                   let target = cameraTarget
             else { return }
@@ -2518,7 +2719,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
             guard owner.mode == .edit || owner.mode == .camera,
-                  !(owner.mode == .camera && owner.cameraInteractionLocked),
+                  !owner.cameraInteractionLocked,
                   !owner.movingSelection,
                   recognizer.state == .began,
                   let view
@@ -2538,7 +2739,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func handlePointerScroll(_ recognizer: UIPanGestureRecognizer) {
             guard owner.mode != .arrival,
                   owner.mode != .departure,
-                  !(owner.mode == .camera && owner.cameraInteractionLocked),
+                  !owner.cameraInteractionLocked,
                   let view
             else { return }
             let translation = recognizer.translation(in: view)
@@ -2558,7 +2759,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         @objc private func handleDoubleTap(_ recognizer: UITapGestureRecognizer) {
             guard owner.mode != .arrival,
                   owner.mode != .departure,
-                  !(owner.mode == .camera && owner.cameraInteractionLocked),
+                  !owner.cameraInteractionLocked,
                   recognizer.state == .ended
             else { return }
             resetCamera(animated: true)
@@ -2590,7 +2791,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         private func processCameraRequestIfNeeded() {
             guard owner.mode == .edit || owner.mode == .camera,
-                  !(owner.mode == .camera && owner.cameraInteractionLocked),
+                  !owner.cameraInteractionLocked,
                   let request = owner.cameraRequest,
                   request.id != processedCameraRequestID
             else { return }
@@ -2664,27 +2865,27 @@ struct HomeIslandSceneView: UIViewRepresentable {
         ) {
             if owner.cameraInteractionLocked {
                 keyboardWalkInput = .zero
-                cachedWalkInput = .zero
+                storeCachedWalkInput(.zero)
                 return
             }
             if owner.startsMooredAtIsland,
                owner.locksMooredOverview,
                owner.mode == .explore {
                 keyboardWalkInput = .zero
-                cachedWalkInput = .zero
+                storeCachedWalkInput(.zero)
                 return
             }
             switch owner.mode {
             case .arrival, .departure:
                 keyboardWalkInput = .zero
-                cachedWalkInput = .zero
+                storeCachedWalkInput(.zero)
             case .explore:
                 keyboardWalkInput = input
                 refreshWalkInput()
             case .edit, .camera:
                 keyboardWalkInput = .zero
-                cachedWalkInput = .zero
-                guard !(owner.mode == .camera && owner.cameraInteractionLocked)
+                storeCachedWalkInput(.zero)
+                guard !owner.cameraInteractionLocked
                 else { return }
                 guard deltaTime > 0, let target = cameraTarget else { return }
                 let speed = min(max(radius * 0.65, 5.0), 28.0)
@@ -2700,6 +2901,37 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
         }
 
+        private func handleGamepadMovement(
+            _ input: HomeIslandWalkInput,
+            deltaTime _: Float
+        ) {
+            guard owner.mode == .explore,
+                  !owner.cameraInteractionLocked,
+                  !owner.boatCustomizationActive,
+                  !boardingRequested
+            else {
+                gamepadWalkInput = .zero
+                refreshWalkInput()
+                return
+            }
+            gamepadWalkInput = input
+            refreshWalkInput()
+        }
+
+        private func handleGamepadLook(x: Float, y: Float, deltaTime: Float) {
+            guard owner.mode == .explore,
+                  !owner.cameraInteractionLocked,
+                  !owner.boatCustomizationActive,
+                  deltaTime > 0
+            else { return }
+            let dt = min(deltaTime, 0.05)
+            let response: Float = 2.25
+            queueExploreOrbit(
+                azimuth: azimuth + x * response * dt,
+                elevation: elevation - y * response * 0.72 * dt
+            )
+        }
+
         private func zoomCamera(by factor: Float) {
             radius *= factor
             updateCamera(animated: 0.18)
@@ -2708,17 +2940,24 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func updateCamera(animated duration: TimeInterval = 0) {
             constrainCamera()
             guard let camera, let target = cameraTarget?.position else { return }
-            camera.camera?.zNear = Double(max(0.012, radius * 0.002))
-            camera.camera?.zFar = Double(max(1_500, radius * 8))
+            let usesLocomotionCamera = owner.mode == .explore
+                && !owner.boatCustomizationActive
+                && !(owner.startsMooredAtIsland && owner.locksMooredOverview)
+            let renderedRadius = radius + (usesLocomotionCamera ? cameraMotion.pullback : 0)
+            camera.camera?.zNear = Double(max(0.012, renderedRadius * 0.002))
+            camera.camera?.zFar = Double(max(1_500, renderedRadius * 8))
+            if usesLocomotionCamera {
+                camera.camera?.fieldOfView = CGFloat(48 + cameraMotion.fovBoost)
+            }
             if duration > 0 {
                 SCNTransaction.begin()
                 SCNTransaction.animationDuration = UIAccessibility.isReduceMotionEnabled ? 0 : duration
                 SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             }
-            let horizontal = cos(elevation) * radius
+            let horizontal = cos(elevation) * renderedRadius
             camera.position = SCNVector3(
                 target.x + cos(azimuth) * horizontal,
-                target.y + sin(elevation) * radius,
+                target.y + sin(elevation) * renderedRadius,
                 target.z + sin(azimuth) * horizontal
             )
             camera.look(
@@ -2802,7 +3041,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             guard !arrivalStarted else { return }
             arrivalStarted = true
             renderedMode = .arrival
-            cachedWalkInput = .zero
+            storeCachedWalkInput(.zero)
 
             azimuth = 0.88
             elevation = 0.31
@@ -2899,7 +3138,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             renderedMode = owner.mode
             boardingRequested = false
             departureStarted = false
-            cachedWalkInput = .zero
+            storeCachedWalkInput(.zero)
             arrivalNavigatorIsWalking = false
             cancelStumpInteraction()
 
@@ -2946,7 +3185,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
             navigatorAnimator.pose = .idle
             arrivalNavigatorIsWalking = false
-            cachedWalkInput = .zero
+            storeCachedWalkInput(.zero)
         }
 
         private func beginLanding() {
@@ -3276,7 +3515,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func startDeparture() {
             guard !departureStarted else { return }
             departureStarted = true
-            cachedWalkInput = .zero
+            storeCachedWalkInput(.zero)
             cancelStumpInteraction()
             guard arrivalFinished,
                   let boat = arrivalBoat,
@@ -3473,13 +3712,17 @@ struct HomeIslandSceneView: UIViewRepresentable {
             case .arrival:
                 touchWalkInput = .zero
                 keyboardWalkInput = .zero
-                cachedWalkInput = .zero
+                gamepadWalkInput = .zero
+                clearPendingTouchJump()
+                storeCachedWalkInput(.zero)
+                resetLocomotionState()
                 break
             case .explore:
                 if !seatInteractionState.keepsNavigatorOnSeat {
                     ensureNavigatorIsWalkable()
                 }
                 navigatorNode?.opacity = 1
+                resetLocomotionState()
                 if previousMode == .edit || previousMode == .camera {
                     if owner.startsMooredAtIsland, owner.locksMooredOverview {
                         prepareNavigatorForEmbeddedBoarding()
@@ -3491,7 +3734,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
             case .edit:
                 touchWalkInput = .zero
                 keyboardWalkInput = .zero
-                cachedWalkInput = .zero
+                gamepadWalkInput = .zero
+                clearPendingTouchJump()
+                storeCachedWalkInput(.zero)
+                resetLocomotionState()
                 cancelStumpInteraction()
                 navigatorAnimator.pose = .idle
                 navigatorNode?.opacity = 0
@@ -3499,7 +3745,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
             case .camera:
                 touchWalkInput = .zero
                 keyboardWalkInput = .zero
-                cachedWalkInput = .zero
+                gamepadWalkInput = .zero
+                clearPendingTouchJump()
+                storeCachedWalkInput(.zero)
+                resetLocomotionState()
                 navigatorAnimator.pose = .idle
                 navigatorNode?.opacity = 1
                 if previousMode == .edit {
@@ -3511,8 +3760,43 @@ struct HomeIslandSceneView: UIViewRepresentable {
             case .departure:
                 touchWalkInput = .zero
                 keyboardWalkInput = .zero
-                cachedWalkInput = .zero
+                gamepadWalkInput = .zero
+                clearPendingTouchJump()
+                storeCachedWalkInput(.zero)
+                resetLocomotionState()
                 startDeparture()
+            }
+        }
+
+        private func resetLocomotionState() {
+            if let navigator = navigatorNode {
+                if owner.mode != .arrival,
+                   !seatInteractionState.keepsNavigatorOnSeat {
+                    navigator.position.y = groundSample(
+                        x: navigator.position.x,
+                        z: navigator.position.z
+                    ).height
+                }
+                locomotionMotor.reset(
+                    position: SIMD3<Float>(
+                        navigator.position.x,
+                        navigator.position.y,
+                        navigator.position.z
+                    ),
+                    yaw: navigator.eulerAngles.y
+                )
+                if !seatInteractionState.keepsNavigatorOnSeat {
+                    navigator.eulerAngles.x = 0
+                    navigator.eulerAngles.z = 0
+                }
+            }
+            locomotionFrame = nil
+            locomotionCameraController.reset()
+            cameraMotion = HomeIslandCameraMotion()
+            navigatorAnimator.locomotionState = nil
+            updateLocomotionWind(0)
+            if owner.mode == .explore, !owner.boatCustomizationActive {
+                camera?.camera?.fieldOfView = 48
             }
         }
 
@@ -3630,6 +3914,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func updateWalking(deltaTime: Float) -> Bool {
+            lastLocomotionDeltaTime = min(max(deltaTime, 0), 0.05)
             guard !(owner.startsMooredAtIsland && owner.locksMooredOverview),
                   owner.mode == .explore,
                   !owner.cameraInteractionLocked,
@@ -3637,112 +3922,232 @@ struct HomeIslandSceneView: UIViewRepresentable {
                   !boardingRequested,
                   let navigator = navigatorNode,
                   deltaTime > 0
-            else { return false }
+            else {
+                if let navigator = navigatorNode {
+                    if owner.mode == .explore,
+                       locomotionFrame?.isGrounded == false,
+                       !seatInteractionState.keepsNavigatorOnSeat {
+                        navigator.position.y = groundSample(
+                            x: navigator.position.x,
+                            z: navigator.position.z
+                        ).height
+                    }
+                    locomotionMotor.reset(
+                        position: SIMD3<Float>(
+                            navigator.position.x,
+                            navigator.position.y,
+                            navigator.position.z
+                        ),
+                        yaw: navigator.eulerAngles.y
+                    )
+                }
+                locomotionFrame = nil
+                navigatorAnimator.locomotionState = nil
+                cameraMotion = locomotionCameraController.update(
+                    frame: .idle(position: .zero, yaw: 0),
+                    deltaTime: deltaTime,
+                    reduceMotion: UIAccessibility.isReduceMotionEnabled
+                )
+                updateLocomotionWind(0)
+                return false
+            }
 
-            let currentWalkInput = cachedWalkInput
-            var lateral = currentWalkInput.x
-            var forwardAmount = currentWalkInput.forward
-            let magnitude = sqrt(lateral * lateral + forwardAmount * forwardAmount)
+            let currentWalkInput = currentCachedWalkInput()
+            let magnitude = currentWalkInput.magnitude
             switch seatInteractionState {
             case .seated:
                 guard magnitude > 0.12 else {
+                    settleLocomotion(at: navigator)
                     followNavigatorCamera()
                     return false
                 }
                 let direction = normalizedWalkDirection(
-                    lateral: lateral,
-                    forward: forwardAmount
+                    lateral: currentWalkInput.x,
+                    forward: currentWalkInput.forward
                 )
                 beginLeavingSeat(toward: direction)
                 followNavigatorCamera()
                 return false
             case .approaching, .settling, .standingUp, .leaving:
+                settleLocomotion(at: navigator)
                 followNavigatorCamera()
                 return false
             case .free:
                 break
             }
-            guard magnitude > 0.035 else {
-                followNavigatorCamera()
-                return false
-            }
-            if magnitude > 1 {
-                lateral /= magnitude
-                forwardAmount /= magnitude
-            }
 
-            let cameraForward = SCNVector3(-cos(azimuth), 0, -sin(azimuth))
-            let cameraRight = SCNVector3(sin(azimuth), 0, -cos(azimuth))
-            var direction = cameraForward * forwardAmount + cameraRight * lateral
-            let directionLength = sqrt(
-                direction.x * direction.x + direction.z * direction.z
+            let inputDirection = normalizedWalkDirection(
+                lateral: currentWalkInput.x,
+                forward: currentWalkInput.forward
             )
-            guard directionLength > 0.001 else { return false }
-            direction.x /= directionLength
-            direction.z /= directionLength
-
-            if CACurrentMediaTime() >= contactReentryBlockedUntil,
+            if magnitude > 0.035,
+               CACurrentMediaTime() >= contactReentryBlockedUntil,
                let seat = interactiveSeatToward(
                    navigator.position,
-                   direction: direction
+                    direction: inputDirection
                ) {
                 beginSitting(on: seat)
                 followNavigatorCamera()
                 return true
             }
 
-            let distance = min(deltaTime, 0.05)
-                * NavigatorLocomotion.maximumSpeed
-                * min(magnitude, 1)
-            let current = navigator.position
-            let candidateX = current.x + direction.x * distance
-            let candidateZ = current.z + direction.z * distance
-            var nextX = current.x
-            var nextZ = current.z
-
-            if isWalkable(x: candidateX, z: candidateZ) {
-                nextX = candidateX
-                nextZ = candidateZ
-            } else if isWalkable(x: candidateX, z: current.z) {
-                nextX = candidateX
-            } else if isWalkable(x: current.x, z: candidateZ) {
-                nextZ = candidateZ
+            if snapFacingOnNextMovement, magnitude > 0.035 {
+                let direction = normalizedWalkDirection(
+                    lateral: currentWalkInput.x,
+                    forward: currentWalkInput.forward
+                )
+                let yaw = atan2(direction.x, direction.z)
+                navigator.eulerAngles.y = yaw
+                locomotionMotor.reset(
+                    position: SIMD3<Float>(
+                        navigator.position.x,
+                        navigator.position.y,
+                        navigator.position.z
+                    ),
+                    yaw: yaw
+                )
+                snapFacingOnNextMovement = false
             }
 
-            let moved = abs(nextX - current.x) + abs(nextZ - current.z) > 0.0001
-            if moved {
-                navigator.position = SCNVector3(
-                    nextX,
-                    groundHeight(x: nextX, z: nextZ),
-                    nextZ
+            let frame = locomotionMotor.update(
+                input: currentWalkInput,
+                position: SIMD3<Float>(
+                    navigator.position.x,
+                    navigator.position.y,
+                    navigator.position.z
+                ),
+                currentYaw: navigator.eulerAngles.y,
+                cameraForward: SIMD2<Float>(-cos(azimuth), -sin(azimuth)),
+                cameraRight: SIMD2<Float>(sin(azimuth), -cos(azimuth)),
+                deltaTime: deltaTime,
+                sampleGround: { [weak self] x, z in
+                    self?.groundSample(x: x, z: z)
+                        ?? HomeIslandGroundSample(height: HomeIslandMetrics.surfaceY)
+                },
+                canOccupy: { [weak self] x, z in
+                    self?.isWalkable(x: x, z: z) ?? false
+                }
+            )
+            locomotionFrame = frame
+            navigator.position = SCNVector3(
+                frame.position.x,
+                frame.position.y,
+                frame.position.z
+            )
+            applyLocomotionOrientation(frame, to: navigator, deltaTime: deltaTime)
+            navigatorAnimator.locomotionState = makePhoenixLocomotionState(
+                frame: frame,
+                navigator: navigator
+            )
+            cameraMotion = locomotionCameraController.update(
+                frame: frame,
+                deltaTime: deltaTime,
+                reduceMotion: UIAccessibility.isReduceMotionEnabled
+            )
+            if frame.didStep {
+                addFootprintIfNeeded(frame: frame)
+                locomotionAudio.playFootstep(
+                    surface: frame.ground.surface,
+                    intensity: 0.30 + frame.normalizedSpeed * 0.70
                 )
-                let movedX = nextX - current.x
-                let movedZ = nextZ - current.z
-                let movedLength = sqrt(movedX * movedX + movedZ * movedZ)
-                let actualDirection = SCNVector3(
-                    movedX / max(movedLength, 0.0001),
-                    0,
-                    movedZ / max(movedLength, 0.0001)
-                )
-                addFootprintIfNeeded(
-                    at: navigator.position,
-                    distance: movedLength,
-                    direction: actualDirection
-                )
-                let desiredYaw = atan2(actualDirection.x, actualDirection.z)
-                if snapFacingOnNextMovement {
-                    navigator.eulerAngles.y = desiredYaw
-                    snapFacingOnNextMovement = false
-                } else {
-                    let yawDelta = atan2(
-                        sin(desiredYaw - navigator.eulerAngles.y),
-                        cos(desiredYaw - navigator.eulerAngles.y)
-                    )
-                    navigator.eulerAngles.y += yawDelta * min(deltaTime * 12, 1)
+            }
+            if frame.didLand, frame.landingImpact > 0.08 {
+                DispatchQueue.main.async {
+                    Haptics.tap(frame.landingImpact > 0.55 ? .medium : .light)
                 }
             }
+            if frame.didJump {
+                DispatchQueue.main.async {
+                    Haptics.tap(.light)
+                }
+            }
+            let windProgress = min(max((frame.normalizedSpeed - 0.56) / 0.44, 0), 1)
+            updateLocomotionWind(windProgress * windProgress * (3 - 2 * windProgress))
             followNavigatorCamera()
-            return moved
+            return frame.planarSpeed > 0.045
+        }
+
+        private func settleLocomotion(at navigator: SCNNode) {
+            let position = SIMD3<Float>(
+                navigator.position.x,
+                navigator.position.y,
+                navigator.position.z
+            )
+            locomotionMotor.reset(position: position, yaw: navigator.eulerAngles.y)
+            locomotionFrame = nil
+            navigatorAnimator.locomotionState = nil
+            cameraMotion = locomotionCameraController.update(
+                frame: .idle(position: position, yaw: navigator.eulerAngles.y),
+                deltaTime: lastLocomotionDeltaTime,
+                reduceMotion: UIAccessibility.isReduceMotionEnabled
+            )
+            updateLocomotionWind(0)
+        }
+
+        private func applyLocomotionOrientation(
+            _ frame: HomeIslandLocomotionFrame,
+            to navigator: SCNNode,
+            deltaTime: Float
+        ) {
+            navigator.eulerAngles.y = frame.facingYaw
+            let normal = frame.ground.normal
+            let forward = SIMD2<Float>(sin(frame.facingYaw), cos(frame.facingYaw))
+            let right = SIMD2<Float>(cos(frame.facingYaw), -sin(frame.facingYaw))
+            let gradient = normal.y > 0.001
+                ? SIMD2<Float>(-normal.x / normal.y, -normal.z / normal.y)
+                : .zero
+            let slopePitch = frame.isGrounded
+                ? -atan(simd_dot(gradient, forward))
+                : 0
+            let slopeRoll = frame.isGrounded
+                ? atan(simd_dot(gradient, right))
+                : 0
+            let targetPitch = min(max(slopePitch, -0.18), 0.18)
+            let targetRoll = min(max(slopeRoll, -0.18), 0.18)
+            let response = 1 - exp(-10 * min(max(deltaTime, 0), 0.05))
+            navigator.eulerAngles.x += (targetPitch - navigator.eulerAngles.x) * response
+            navigator.eulerAngles.z += (targetRoll - navigator.eulerAngles.z) * response
+        }
+
+        private func makePhoenixLocomotionState(
+            frame: HomeIslandLocomotionFrame,
+            navigator: SCNNode
+        ) -> PhoenixLocomotionAnimationState {
+            let scale = max(navigator.scale.x, 0.05)
+            let forward = SIMD2<Float>(sin(frame.facingYaw), cos(frame.facingYaw))
+            let right = SIMD2<Float>(cos(frame.facingYaw), -sin(frame.facingYaw))
+            let stride = 0.10 + frame.normalizedSpeed * 0.20
+            let swing = sin(frame.gaitPhase) * stride
+            let root = SIMD2<Float>(frame.position.x, frame.position.z)
+            let leftPoint = root - right * (0.088 * scale) - forward * swing
+            let rightPoint = root + right * (0.088 * scale) + forward * swing
+            let leftHeight = groundSample(x: leftPoint.x, z: leftPoint.y).height
+            let rightHeight = groundSample(x: rightPoint.x, z: rightPoint.y).height
+            let leftOffset = min(max((leftHeight - frame.ground.height) / scale, -0.10), 0.10)
+            let rightOffset = min(max((rightHeight - frame.ground.height) / scale, -0.10), 0.10)
+            return PhoenixLocomotionAnimationState(
+                normalizedSpeed: frame.normalizedSpeed,
+                gaitPhase: frame.gaitPhase,
+                turnIntensity: frame.turnIntensity,
+                verticalVelocity: frame.velocity.y,
+                isGrounded: frame.isGrounded,
+                landingImpact: frame.landingImpact,
+                fatigue: frame.fatigue,
+                slopePitch: navigator.eulerAngles.x,
+                slopeRoll: navigator.eulerAngles.z,
+                leftFootGroundOffset: leftOffset,
+                rightFootGroundOffset: rightOffset,
+                deckBalance: frame.ground.surface == .boat ? 1 : 0,
+                groundingOffset: frame.stepOffset / scale
+            )
+        }
+
+        private func updateLocomotionWind(_ intensity: Float) {
+            guard abs(intensity - lastWindIntensity) > 0.025
+                    || intensity == 0 && lastWindIntensity != 0
+            else { return }
+            lastWindIntensity = intensity
+            locomotionAudio.setWindIntensity(intensity)
         }
 
         private func normalizedWalkDirection(lateral: Float, forward: Float) -> SCNVector3 {
@@ -4054,27 +4459,35 @@ struct HomeIslandSceneView: UIViewRepresentable {
             navigatorAnimator.pose = .idle
         }
 
-        private func addFootprintIfNeeded(
-            at position: SCNVector3,
-            distance: Float,
-            direction: SCNVector3
-        ) {
-            distanceSinceFootprint += distance
-            let spacing: Float = 0.36
-            guard distanceSinceFootprint >= spacing else { return }
-            distanceSinceFootprint.formTruncatingRemainder(dividingBy: spacing)
-
-            let isLeft = nextFootprintIsLeft
-            nextFootprintIsLeft.toggle()
+        private func addFootprintIfNeeded(frame: HomeIslandLocomotionFrame) {
+            guard frame.ground.surface == .sand,
+                  frame.planarSpeed > 0.04
+            else { return }
+            let direction = SIMD2<Float>(frame.velocity.x, frame.velocity.z)
+                / max(frame.planarSpeed, 0.001)
+            let isLeft = frame.stepFoot == .left
             let side: Float = isLeft ? -1 : 1
             let sideOffset: Float = 0.105
+            let footprintX = frame.position.x + direction.y * sideOffset * side
+            let footprintZ = frame.position.z - direction.x * sideOffset * side
+            let sample = groundSample(x: footprintX, z: footprintZ)
+            guard sample.surface == .sand else { return }
             let footprint = HomeIslandFootprintVisual.makeNode(leftFoot: isLeft)
             footprint.position = SCNVector3(
-                position.x + direction.z * sideOffset * side,
-                groundHeight(x: position.x, z: position.z) + 0.009,
-                position.z - direction.x * sideOffset * side
+                footprintX,
+                sample.height + 0.009,
+                footprintZ
             )
-            footprint.eulerAngles.y = atan2(direction.x, direction.z)
+            let yaw = atan2(direction.x, direction.y)
+            let alignToGround = simd_quatf(
+                from: SIMD3<Float>(0, 1, 0),
+                to: sample.normal
+            )
+            let faceTravel = simd_quatf(
+                angle: yaw,
+                axis: SIMD3<Float>(0, 1, 0)
+            )
+            footprint.simdOrientation = alignToGround * faceTravel
             footprint.opacity = 0
             footprintParent.addChildNode(footprint)
             footprintNodes.append(footprint)
@@ -4130,34 +4543,104 @@ struct HomeIslandSceneView: UIViewRepresentable {
                   let navigator = navigatorNode,
                   let target = cameraTarget
             else { return }
-            target.position = SCNVector3(
-                navigator.position.x,
-                navigator.position.y + 0.72,
+            let basis = cameraGroundBasis()
+            let desired = SCNVector3(
+                navigator.position.x
+                    + cameraMotion.lookAhead.x
+                    + basis.right.x * cameraMotion.bob.x,
+                navigator.position.y + 0.72 + cameraMotion.bob.y,
                 navigator.position.z
+                    + cameraMotion.lookAhead.y
+                    + basis.right.z * cameraMotion.bob.x
+            )
+            let response = 1 - exp(
+                -locomotionTuning.cameraFollowSharpness
+                    * min(max(lastLocomotionDeltaTime, 0), 0.05)
+            )
+            target.position = SCNVector3(
+                target.position.x + (desired.x - target.position.x) * response,
+                target.position.y + (desired.y - target.position.y) * response,
+                target.position.z + (desired.z - target.position.z) * response
             )
         }
 
         private func groundHeight(x: Float, z: Float) -> Float {
-            let foundationHeight = foundationGroundHeight(x: x, z: z)
+            groundSample(x: x, z: z).height
+        }
+
+        private func groundSample(x: Float, z: Float) -> HomeIslandGroundSample {
+            let foundation = foundationGroundSample(x: x, z: z)
             if let jetty = jettyWalkSurfaces.first(where: {
                 $0.contains(x: x, z: z, playerRadius: 0.02)
             }) {
-                return jetty.height(x: x, z: z, baseHeight: foundationHeight)
-            }
-            if HomeIslandMetrics.containsGatheringDeck(x: x, z: z) {
-                return max(
-                    foundationHeight,
-                    HomeIslandMetrics.surfaceY
-                        + HomeIslandMetrics.gatheringDeckLocalTopY
-                        * HomeIslandMetrics.gatheringDeckScale
+                return HomeIslandGroundSample(
+                    height: jetty.height(x: x, z: z, baseHeight: foundation.height),
+                    normal: jetty.normal(
+                        x: x,
+                        z: z,
+                        baseHeight: { [weak self] sampleX, sampleZ in
+                            self?.foundationGroundHeight(x: sampleX, z: sampleZ)
+                                ?? HomeIslandMetrics.surfaceY
+                        }
+                    ),
+                    surface: .wood
                 )
             }
-            return foundationHeight
+            if HomeIslandMetrics.containsGatheringDeck(x: x, z: z) {
+                return HomeIslandGroundSample(
+                    height: max(
+                        foundation.height,
+                        HomeIslandMetrics.surfaceY
+                        + HomeIslandMetrics.gatheringDeckLocalTopY
+                        * HomeIslandMetrics.gatheringDeckScale
+                    ),
+                    normal: SIMD3<Float>(0, 1, 0),
+                    surface: .wood
+                )
+            }
+            return HomeIslandGroundSample(
+                height: foundation.height,
+                normal: foundation.normal,
+                surface: decorativeGroundSurface(x: x, z: z) ?? .sand
+            )
+        }
+
+        private func decorativeGroundSurface(
+            x: Float,
+            z: Float
+        ) -> HomeIslandGroundSurface? {
+            for placement in owner.store.placements.reversed() {
+                let surface: HomeIslandGroundSurface
+                switch placement.assetID {
+                case "stone_path_straight", "stone_path_curve", "stone_path_fork",
+                     "compass_rose_inlay":
+                    surface = .stone
+                case "dune_grass_patch":
+                    surface = .grass
+                default:
+                    continue
+                }
+                let dx = x - placement.transform.x
+                let dz = z - placement.transform.z
+                let radius = max(
+                    HomeIslandAssetCatalog.footprintMargin(
+                        assetID: placement.assetID,
+                        scale: placement.transform.scale
+                    ) * 0.82,
+                    0.32
+                )
+                if dx * dx + dz * dz <= radius * radius { return surface }
+            }
+            return nil
         }
 
         private func foundationGroundHeight(x: Float, z: Float) -> Float {
+            foundationGroundSample(x: x, z: z).height
+        }
+
+        private func foundationGroundSample(x: Float, z: Float) -> HomeIslandGroundSample {
             guard let scene = view?.scene, let foundationNode else {
-                return HomeIslandMetrics.surfaceY
+                return HomeIslandGroundSample(height: HomeIslandMetrics.surfaceY)
             }
             let options: [String: Any] = [
                 SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.all.rawValue,
@@ -4169,9 +4652,17 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 options: options
             )
             for hit in hits where isDescendant(hit.node, of: foundationNode) {
-                return hit.worldCoordinates.y
+                return HomeIslandGroundSample(
+                    height: hit.worldCoordinates.y,
+                    normal: SIMD3<Float>(
+                        hit.worldNormal.x,
+                        hit.worldNormal.y,
+                        hit.worldNormal.z
+                    ),
+                    surface: .sand
+                )
             }
-            return HomeIslandMetrics.surfaceY
+            return HomeIslandGroundSample(height: HomeIslandMetrics.surfaceY)
         }
 
         private func isDescendant(_ node: SCNNode, of ancestor: SCNNode) -> Bool {
@@ -4316,7 +4807,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 forKey: "uTime"
             )
 
-            let deltaTime = Float(min(max(time - (lastFrameTime ?? time), 0), 0.05))
+            // The motor substeps internally. Preserve ordinary low-frame-rate
+            // time instead of turning a hitch into slow motion; only cap long
+            // background gaps to avoid an unbounded catch-up burst.
+            let deltaTime = Float(min(max(time - (lastFrameTime ?? time), 0), 0.25))
             lastFrameTime = time
             if owner.mode == .explore {
                 applyPendingExploreOrbit()
@@ -4352,6 +4846,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let point = touch.location(in: view)
             if gestureRecognizer === movementPanRecognizer {
                 return touch.type == .direct && isMovementControlPoint(point, in: view)
+            }
+            if gestureRecognizer === runningJumpRecognizer {
+                return touch.type == .direct
+                    && owner.mode == .explore
+                    && !owner.cameraInteractionLocked
+                    && touchWalkInput.magnitude > locomotionTuning.inputDeadZone
+                    && !isMovementControlPoint(point, in: view)
+                    && !hasExploreInteractiveTarget(at: point)
             }
             if gestureRecognizer === orbitPanRecognizer,
                owner.mode == .explore,
@@ -4392,6 +4894,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     && otherGestureRecognizer === movementPanRecognizer
             )
             if isMovementAndOrbit { return true }
+            let includesRunningJump = gestureRecognizer === runningJumpRecognizer
+                || otherGestureRecognizer === runningJumpRecognizer
+            if includesRunningJump {
+                return gestureRecognizer === movementPanRecognizer
+                    || otherGestureRecognizer === movementPanRecognizer
+                    || gestureRecognizer === orbitPanRecognizer
+                    || otherGestureRecognizer === orbitPanRecognizer
+            }
             return gestureRecognizer is UIPinchGestureRecognizer
                 || otherGestureRecognizer is UIPinchGestureRecognizer
         }

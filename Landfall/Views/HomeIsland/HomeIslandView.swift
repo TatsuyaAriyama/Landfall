@@ -240,6 +240,27 @@ struct HomeIslandView: View {
         _mode = State(initialValue: startsMooredAtIsland ? .explore : .arrival)
     }
 
+    /// One source of truth for every state that temporarily owns interaction
+    /// above the island. This also keeps controller input from moving the
+    /// navigator behind sheets and full-screen presentations.
+    private var sceneInputLocked: Bool {
+        scenePhase != .active
+            || isCapturing
+            || showingHarborPanel
+            || privateChatExpanded
+            || privateChatInputFocused
+            || showingBoatCustomization
+            || showingLogbook
+            || activeInterior != nil
+            || showingTodoList
+            || showingPlayerStats
+            || showingMusicPicker
+            || showingSettings
+            || showingIslandShare
+            || showingCaptureError
+            || showingSelectionActions
+    }
+
     var body: some View {
         ZStack {
             // Keep the daylight sky outside SceneKit's HDR tone mapper. The
@@ -260,14 +281,8 @@ struct HomeIslandView: View {
                 boatBoardingRequest: externalBoatBoardingRequest ?? boatBoardingRequest,
                 mode: mode,
                 cameraExposureOffset: cameraExposureOffset,
-                cameraInteractionLocked: isCapturing
-                    || showingHarborPanel
-                    || privateChatInputFocused,
-                walkInput: showingBoatCustomization
-                    || showingHarborPanel
-                    || privateChatInputFocused
-                    ? .zero
-                    : walkInput,
+                cameraInteractionLocked: sceneInputLocked,
+                walkInput: sceneInputLocked ? .zero : walkInput,
                 onMoveCompleted: { movingSelection = false },
                 onPlacementCompleted: { _ in
                     placementAssetID = nil

@@ -612,9 +612,31 @@ enum PhoenixNavigator {
 
 // MARK: - アニメータ(Web PhoenixModel useFrame の移植)
 
+/// Continuous locomotion values supplied by an owning world. When absent, the
+/// animator preserves the legacy time-based walk used by voyage and wardrobe
+/// scenes. Home Island supplies this every frame as its procedural Blend Space.
+struct PhoenixLocomotionAnimationState: Equatable {
+    var normalizedSpeed: Float = 0
+    var gaitPhase: Float = 0
+    var turnIntensity: Float = 0
+    var verticalVelocity: Float = 0
+    var isGrounded = true
+    var landingImpact: Float = 0
+    var fatigue: Float = 0
+    var slopePitch: Float = 0
+    var slopeRoll: Float = 0
+    var leftFootGroundOffset: Float = 0
+    var rightFootGroundOffset: Float = 0
+    var deckBalance: Float = 0
+    /// Local-space contact height used to visually absorb a logical step-up or
+    /// step-down without moving the authoritative collision root.
+    var groundingOffset: Float = 0
+}
+
 final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     var pose: PhoenixPose = .idle
     var animate = true
+    var locomotionState: PhoenixLocomotionAnimationState?
 
     private var startTime: TimeInterval?
     private var lastTime: TimeInterval = 0
@@ -737,7 +759,8 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         armLx = damp(armLx, base.armLx, 6, dt)
         armLz = damp(armLz, base.armLz, 6, dt)
         lean = damp(lean, base.lean, 6, dt)
-        wind = damp(wind, base.wind, 4, dt)
+        let locomotionWind = (locomotionState?.normalizedSpeed ?? 0) * 2.1
+        wind = damp(wind, base.wind + locomotionWind, 4, dt)
         headX = damp(headX, base.headX, 6, dt)
         scan = damp(scan, base.scan, 6, dt)
         scanSpeed = damp(scanSpeed, base.scanSpeed, 6, dt)
@@ -755,24 +778,47 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         if let cape { cape.geometry = PhoenixNavigator.makeCapeGeometry(time: t, wind: wind) }
 
         let walking = pose == .walk
-        let stride: Float = 5.4
-        let step = sin(t * stride)
+        let locomotion = locomotionState
+        let speedBlend = walking
+            ? min(max(locomotion?.normalizedSpeed ?? 0.48, 0), 1)
+            : 0
+        let phase = locomotion?.gaitPhase ?? t * 5.4
+        let step = sin(phase)
+        let grounded = locomotion?.isGrounded ?? true
+        let landingImpact = locomotion?.landingImpact ?? 0
+        let fatigue = locomotion?.fatigue ?? 0
+        let turnIntensity = locomotion?.turnIntensity ?? 0
+        let deckBalance = locomotion?.deckBalance ?? 0
         let drop = sit * 0.3
 
         // Web版の接地補正。座る途中でブーツや裾が海面を割らないよう、
         // 身体全体をわずかに持ち上げる。
         if let contact {
-            contact.position.y = damp(contact.position.y, 0.015 + sit * 0.12, 12, dt)
+            contact.position.y = damp(
+                contact.position.y,
+                0.015 + sit * 0.12 + (locomotion?.groundingOffset ?? 0),
+                12,
+                dt
+            )
         }
 
         // 体: 待機は呼吸、歩行は歩調の弾み
         if let core {
             let standingBreath = sin(breathPhase) * 0.018 * breathAmp
                 * (1 - sit) * (1 - lie * 0.75)
-            core.position.y = (walking ? abs(cos(t * stride)) * 0.035 : standingBreath) - drop
-            core.eulerAngles.x = lean + sin(breathPhase + 0.9) * 0.01 * breathAmp
+            let locomotionBounce = abs(cos(phase)) * (0.020 + speedBlend * 0.032)
+            let airborneLift: Float = grounded ? 0 : 0.035
+            core.position.y = (walking ? locomotionBounce : standingBreath)
+                - drop - landingImpact * 0.085 + airborneLift
+            core.eulerAngles.x = lean
+                + speedBlend * 0.13
+                + fatigue * 0.045
+                + sin(breathPhase + 0.9) * 0.01 * (breathAmp + fatigue * 1.4)
             core.eulerAngles.y = sin(scanPhase - 0.55) * turn
-            core.eulerAngles.z = walking ? step * 0.03 : 0
+            core.eulerAngles.z = walking
+                ? step * (0.018 + speedBlend * 0.025)
+                    - turnIntensity * speedBlend * 0.055
+                : sin(breathPhase * 0.72) * deckBalance * 0.035
         }
         if let skirt {
             // 衣装は立位・座位で同じ形を保つ。座位専用の拡縮や透明化は行わず、
@@ -782,32 +828,61 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         }
         // 首: ポーズごとの上下と見渡し。
         if let head {
-            head.eulerAngles.y = sin(scanPhase) * scan
-            head.eulerAngles.x = headX
+            head.eulerAngles.y = sin(scanPhase) * scan * (1 - speedBlend * 0.72)
+            head.eulerAngles.x = headX - speedBlend * 0.035 + fatigue * 0.055
             head.eulerAngles.z = sin(breathPhase + 2.1) * 0.02 * breathAmp
         }
         // 脚: 歩行は股関節で交互に振る。座位は上腿だけを前へ倒し、膝で
         // 同じ角度を打ち消して膝下とブーツを自然に下へ垂らす。
-        let legSwing: Float = walking ? 0.55 : 0
+        let legSwing: Float = walking ? 0.30 + speedBlend * 0.50 : 0
+        let airborneTuck: Float = grounded ? 0 : 0.34
         let legSit = PhoenixNavigator.seatedRig.primaryLegPitch * sit
         let kneeSit = PhoenixNavigator.seatedRig.secondaryLegPitch * sit
         if let legR {
-            legR.position.y = 0.42 - drop
-            legR.eulerAngles.x = damp(legR.eulerAngles.x, step * legSwing + legSit, 10, dt)
+            let plantWeight = max(-step, 0)
+            let groundOffset = (locomotion?.rightFootGroundOffset ?? 0) * plantWeight
+            legR.position.x = 0.088 + deckBalance * 0.035
+            legR.position.y = 0.42 - drop + groundOffset
+            legR.eulerAngles.x = damp(
+                legR.eulerAngles.x,
+                step * legSwing + legSit - airborneTuck,
+                10 + speedBlend * 4,
+                dt
+            )
         }
         if let legL {
-            legL.position.y = 0.42 - drop
-            legL.eulerAngles.x = damp(legL.eulerAngles.x, -step * legSwing + legSit, 10, dt)
+            let plantWeight = max(step, 0)
+            let groundOffset = (locomotion?.leftFootGroundOffset ?? 0) * plantWeight
+            legL.position.x = -0.088 - deckBalance * 0.035
+            legL.position.y = 0.42 - drop + groundOffset
+            legL.eulerAngles.x = damp(
+                legL.eulerAngles.x,
+                -step * legSwing + legSit - airborneTuck,
+                10 + speedBlend * 4,
+                dt
+            )
         }
         if let kneeR {
-            kneeR.eulerAngles.x = damp(kneeR.eulerAngles.x, kneeSit, 10, dt)
+            kneeR.eulerAngles.x = damp(
+                kneeR.eulerAngles.x,
+                kneeSit + airborneTuck * 1.45 + landingImpact * 0.24,
+                10,
+                dt
+            )
         }
         if let kneeL {
-            kneeL.eulerAngles.x = damp(kneeL.eulerAngles.x, kneeSit, 10, dt)
+            kneeL.eulerAngles.x = damp(
+                kneeL.eulerAngles.x,
+                kneeSit + airborneTuck * 1.45 + landingImpact * 0.24,
+                10,
+                dt
+            )
         }
 
         // 腕: 基本角 + ポーズごとの振動
-        let armSwing: Float = walking ? -step * 0.32 : sin(breathPhase + 0.4) * 0.03 * sway
+        let armSwing: Float = walking
+            ? -step * (0.20 + speedBlend * 0.34)
+            : sin(breathPhase + 0.4) * 0.03 * (sway + deckBalance * 0.5)
         if let armR {
             armR.eulerAngles.x = armRx + armSwing
             armR.eulerAngles.z = armRz
@@ -819,8 +894,10 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         }
         // ランタン: 腕の傾きを打ち消して常にほぼ鉛直に垂れる振り子
         if let lantern {
-            lantern.eulerAngles.x = -(armRx + armSwing) + sin(t * 0.9) * (walking ? 0.2 : 0.1 * sway)
-            lantern.eulerAngles.z = sin(t * 0.7 + 0.6) * 0.12 * sway
+            lantern.eulerAngles.x = -(armRx + armSwing)
+                + sin(phase * 0.58) * (walking ? 0.14 + speedBlend * 0.20 : 0.1 * sway)
+            lantern.eulerAngles.z = sin(phase * 0.45 + 0.6)
+                * (0.10 + speedBlend * 0.16) * sway
             // Fade the hand lantern while sleeping so it cannot clip through
             // the rope bed or the navigator's resting body.
             lantern.opacity = CGFloat(1 - lie)
