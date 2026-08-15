@@ -948,6 +948,18 @@ struct PrivateIslandChatDock: View {
             if !expanded { inputFocused = false }
             onExpandedChanged(expanded)
         }
+        .onAppear {
+            // Reconcile the parent's input lock with this newly-created dock.
+            // The dock is removed while sailing, so its local state is the
+            // authoritative value when the island scene returns.
+            onExpandedChanged(isExpanded)
+            onInputFocusChanged(inputFocused)
+        }
+        .onDisappear {
+            inputFocused = false
+            onInputFocusChanged(false)
+            onExpandedChanged(false)
+        }
     }
 
     private var dockHeader: some View {

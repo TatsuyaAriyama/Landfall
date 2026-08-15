@@ -741,9 +741,13 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 // Overlap both authored walkable regions. The former values
                 // left tiny non-walkable seams at the first and last stair,
                 // which made descending feel blocked.
+                let connectorOverlap = playerRadius * 0.12
                 let connectorNearX = HomeIslandMetrics.boardingConnectorNearLocalX * scale
+                    - connectorOverlap
                 let connectorFarX = HomeIslandMetrics.boardingConnectorFarLocalX * scale
+                    + connectorOverlap
                 let connectorHalfLength = HomeIslandMetrics.boardingConnectorHalfLength * scale
+                    + connectorOverlap
                 let isOnConnector = local.x >= connectorNearX
                     && local.x <= connectorFarX
                     && abs(local.z - floatCenterZ) <= connectorHalfLength
@@ -760,9 +764,21 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let seawardEnd = HomeIslandMetrics.jettyRailSeawardEndLocalZ * scale
                 let landwardEnd = HomeIslandMetrics.jettyRailLandwardEndLocalZ * scale
                 guard local.z >= seawardEnd, local.z <= landwardEnd else { return false }
-                let isBoardingGate = local.x > 0
-                    && local.z >= HomeIslandMetrics.jettyBoardingGateSeawardLocalZ * scale
-                    && local.z <= HomeIslandMetrics.jettyBoardingGateLandwardLocalZ * scale
+                // Derive the rope opening from the same connector footprint
+                // used by walkability. The older z-only gate left a thin
+                // collision strip at either end of the sloped connector,
+                // allowing the capsule to become trapped between the ropes.
+                let gatePadding = playerRadius * 0.18
+                let connectorNearX = HomeIslandMetrics.boardingConnectorNearLocalX * scale
+                    - gatePadding
+                let connectorFarX = HomeIslandMetrics.boardingConnectorFarLocalX * scale
+                    + gatePadding
+                let connectorCenterZ = HomeIslandMetrics.boardingFloatCenterLocalZ * scale
+                let connectorHalfLength = HomeIslandMetrics.boardingConnectorHalfLength * scale
+                    + gatePadding
+                let isBoardingGate = local.x >= connectorNearX
+                    && local.x <= connectorFarX
+                    && abs(local.z - connectorCenterZ) <= connectorHalfLength
                 if isBoardingGate { return false }
                 let railCenter = HomeIslandMetrics.jettyRailCenterLocalX * scale
                 let railClearance = 0.055 * scale + playerRadius * 0.24
@@ -3880,10 +3896,46 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func ensureNavigatorIsWalkable() {
-            guard let navigator = navigatorNode,
-                  !isWalkable(x: navigator.position.x, z: navigator.position.z)
-            else { return }
+            guard let navigator = navigatorNode else { return }
+            recoverNavigatorFromInvalidPositionIfNeeded(navigator)
+        }
+
+        /// Placement migrations and authored collision changes must never leave
+        /// the navigator inside an invalid capsule where every movement candidate
+        /// is rejected. Prefer a tiny local correction; only fall back to the
+        /// island landing point when no nearby escape exists.
+        @discardableResult
+        private func recoverNavigatorFromInvalidPositionIfNeeded(_ navigator: SCNNode) -> Bool {
+            let origin = navigator.position
+            guard !isWalkable(x: origin.x, z: origin.z) else { return false }
+
+            let directionCount = 24
+            let radii: [Float] = [0.05, 0.10, 0.16, 0.24, 0.34, 0.48, 0.68]
+            for radius in radii {
+                for index in 0..<directionCount {
+                    let angle = Float(index) / Float(directionCount) * 2 * .pi
+                    let x = origin.x + cos(angle) * radius
+                    let z = origin.z + sin(angle) * radius
+                    guard isWalkable(x: x, z: z) else { continue }
+                    navigator.position = SCNVector3(x, groundHeight(x: x, z: z), z)
+                    locomotionMotor.reset(
+                        position: SIMD3<Float>(x, navigator.position.y, z),
+                        yaw: navigator.eulerAngles.y
+                    )
+                    return true
+                }
+            }
+
             navigator.position = safestLandingPosition()
+            locomotionMotor.reset(
+                position: SIMD3<Float>(
+                    navigator.position.x,
+                    navigator.position.y,
+                    navigator.position.z
+                ),
+                yaw: navigator.eulerAngles.y
+            )
+            return true
         }
 
         private func isWalkable(x: Float, z: Float) -> Bool {
@@ -3972,6 +4024,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 updateLocomotionWind(0)
                 return false
             }
+
+            recoverNavigatorFromInvalidPositionIfNeeded(navigator)
 
             let currentWalkInput = currentCachedWalkInput()
             let magnitude = currentWalkInput.magnitude

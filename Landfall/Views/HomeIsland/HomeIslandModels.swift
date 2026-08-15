@@ -36,7 +36,10 @@ enum HomeIslandMetrics {
     static let boardingConnectorNearLocalX: Float = 0.35
     static let boardingConnectorFarLocalX: Float = 1.72
     static let boardingConnectorHalfLength: Float = 0.60
-    static let arrivalJettyTransferLocalX: Float = 2.70
+    // Keep the boarding point comfortably inside the low float's walkable
+    // footprint. 2.70 sat just beyond the capsule-safe edge and could spawn
+    // the navigator in an invalid position beside the rope posts.
+    static let arrivalJettyTransferLocalX: Float = 2.58
     static let arrivalJettyTransferLocalZ: Float = -4.17
     static let arrivalJettyIslandLocalZ: Float = 1.50
     // The reserved corridor includes both the permanent jetty and the

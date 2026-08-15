@@ -583,7 +583,15 @@ struct HomeIslandView: View {
             replaceGuestSnapshot(multiplayerSession?.snapshot)
         }
         .onChange(of: mode) { _, value in
-            if value != .explore { walkInput = .zero }
+            if value != .explore {
+                walkInput = .zero
+                // The chat dock leaves the hierarchy during arrival/departure.
+                // Clear its transient ownership here as well as in the dock's
+                // lifecycle so a stale focus callback can never lock movement
+                // after returning from a voyage.
+                privateChatExpanded = false
+                privateChatInputFocused = false
+            }
         }
         .onChange(of: noticeBoardRequestID) { _, requestID in
             guard requestID != nil else { return }
@@ -1393,6 +1401,8 @@ struct HomeIslandView: View {
 
     private func beginDeparture() {
         guard mode == .explore else { return }
+        privateChatExpanded = false
+        privateChatInputFocused = false
         showingBoatCustomization = false
         placementAssetID = nil
         movingSelection = false
