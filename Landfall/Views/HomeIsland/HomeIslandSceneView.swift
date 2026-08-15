@@ -510,6 +510,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
             static let tableForwardInset: Float = 0.10
             /// small_stump.blend の切断面。苔や年輪の装飾上端は座面に含めない。
             static let stumpCutSurfaceLocalY: Float = 0.605
+            /// 切断面の半径。座る位置は中心ではなく、入ってきた側の縁から
+            /// 少し内側に置き、腰は木の上、脚は外へ下ろせるようにする。
+            static let stumpCutRadiusLocal: Float = 0.326
+            static let stumpSeatRimInsetLocal: Float = 0.085
+            static let stumpApproachClearance: Float = 0.05
             /// 丸い切り株では衣装下端をわずかに木へ沈め、接触感を出す。
             static let stumpContactInset: Float = 0.05
         }
@@ -542,6 +547,24 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         + NavigatorSeatMetrics.surfaceClearance
                         - NavigatorSeatMetrics.stumpContactInset,
                     transform.z
+                )
+            }
+
+            func seatPosition(
+                approachingAlong direction: SCNVector3,
+                rootToSeatSurface: Float
+            ) -> SCNVector3 {
+                let base = seatPosition(rootToSeatSurface: rootToSeatSurface)
+                let safeScale = max(transform.scale, 0.05)
+                let rimOffset = max(
+                    0,
+                    (NavigatorSeatMetrics.stumpCutRadiusLocal
+                        - NavigatorSeatMetrics.stumpSeatRimInsetLocal) * safeScale
+                )
+                return SCNVector3(
+                    base.x - direction.x * rimOffset,
+                    base.y,
+                    base.z - direction.z * rimOffset
                 )
             }
 
@@ -1798,9 +1821,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     )
                 }
                 if let stump = stumpSeats.first(where: { $0.address == address }) {
-                    return stump.seatPosition(
+                    let seat = stump.seatPosition(
                         rootToSeatSurface: navigatorRootToSeatSurface
                     )
+                    return SCNVector3(state.x, seat.y, state.z)
                 }
             }
             return SCNVector3(
@@ -4460,24 +4484,41 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 guard distance > 0.001, distance <= stump.triggerRadius else { return nil }
                 let alignment = (dx * direction.x + dz * direction.z) / distance
                 guard alignment >= 0.78 else { return nil }
+                let towardStump = SCNVector3(dx / distance, 0, dz / distance)
+                let approachRadius = stump.obstacleRadius
+                    + NavigatorCollision.radius
+                    + NavigatorSeatMetrics.stumpApproachClearance
+                let approachX = stumpCenter.x - towardStump.x * approachRadius
+                let approachZ = stumpCenter.z - towardStump.z * approachRadius
                 return (
                     InteractiveSeat(
                         address: stump.address,
                         motion: .sit,
-                        // A stump's contact point is its authored cut-surface
-                        // centre. Collision radius and chair sockets must never
-                        // move the navigator away from that point.
+                        // Enter from the near side, then sit just inside the
+                        // authored cut-surface rim. This avoids snapping across
+                        // the trunk while keeping the navigator on the wood.
                         seatPosition: stump.seatPosition(
+                            approachingAlong: towardStump,
                             rootToSeatSurface: navigatorRootToSeatSurface
                         ),
-                        approachPosition: nil,
+                        approachPosition: SCNVector3(
+                            approachX,
+                            groundHeight(x: approachX, z: approachZ),
+                            approachZ
+                        ),
                         obstacleCenter: SCNVector3(
                             stumpCenter.x,
                             HomeIslandMetrics.surfaceY,
                             stumpCenter.z
                         ),
                         obstacleRadius: stump.obstacleRadius,
-                        facingDirection: direction
+                        // Turn before lowering so the legs hang toward the side
+                        // the navigator approached from.
+                        facingDirection: SCNVector3(
+                            -towardStump.x,
+                            0,
+                            -towardStump.z
+                        )
                     ),
                     distance
                 )
@@ -4581,19 +4622,58 @@ struct HomeIslandSceneView: UIViewRepresentable {
             navigator.removeAction(forKey: "seat-transition")
             let targetYaw = atan2(seat.facingDirection.x, seat.facingDirection.z)
             let targetRoll = seat.motion == .lie ? NavigatorSleepMetrics.roll : 0
-            let approach = SCNAction.group([
-                .move(to: seat.seatPosition, duration: 0.42),
+            let approachPosition = seat.approachPosition ?? navigator.position
+            let approachDX = approachPosition.x - navigator.position.x
+            let approachDZ = approachPosition.z - navigator.position.z
+            let approachDistance = sqrt(
+                approachDX * approachDX + approachDZ * approachDZ
+            )
+            let approachDuration = UIAccessibility.isReduceMotionEnabled
+                ? 0
+                : min(0.58, max(0.10, TimeInterval(approachDistance / 1.55)))
+            let approachYaw = approachDistance > 0.001
+                ? atan2(approachDX, approachDZ)
+                : navigator.eulerAngles.y
+            let walkToContact = SCNAction.group([
+                .move(to: approachPosition, duration: approachDuration),
+                .rotateTo(
+                    x: 0,
+                    y: CGFloat(approachYaw),
+                    z: 0,
+                    duration: min(approachDuration, 0.28),
+                    usesShortestUnitArc: true
+                ),
+            ])
+            walkToContact.timingMode = .easeInEaseOut
+            let turnBeforeLowering = SCNAction.rotateTo(
+                x: 0,
+                y: CGFloat(targetYaw),
+                z: 0,
+                duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.24,
+                usesShortestUnitArc: true
+            )
+            turnBeforeLowering.timingMode = .easeInEaseOut
+            let lowerOntoSeat = SCNAction.group([
+                .move(
+                    to: seat.seatPosition,
+                    duration: UIAccessibility.isReduceMotionEnabled
+                        ? 0
+                        : (seat.motion == .lie ? 0.62 : 0.50)
+                ),
                 .rotateTo(
                     x: 0,
                     y: CGFloat(targetYaw),
                     z: CGFloat(targetRoll),
-                    duration: seat.motion == .lie ? 0.52 : 0.30,
+                    duration: UIAccessibility.isReduceMotionEnabled
+                        ? 0
+                        : (seat.motion == .lie ? 0.52 : 0.30),
                     usesShortestUnitArc: true
                 ),
             ])
-            approach.timingMode = .easeInEaseOut
+            lowerOntoSeat.timingMode = .easeInEaseOut
             let settle = SCNAction.sequence([
-                approach,
+                walkToContact,
+                turnBeforeLowering,
                 .run { [weak self] _ in
                     DispatchQueue.main.async {
                         guard let self,
@@ -4602,7 +4682,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         self.seatInteractionState = .settling(seat)
                     }
                 },
-                .wait(duration: seat.motion == .lie ? 0.62 : 0.52),
+                .wait(duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.03),
+                lowerOntoSeat,
+                .wait(duration: seat.motion == .lie ? 0.22 : 0.18),
                 .run { [weak self] _ in
                     DispatchQueue.main.async {
                         guard let self,
