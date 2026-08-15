@@ -538,7 +538,7 @@ struct HomeVoyageTimerView: View {
             .padding(.horizontal, 12)
             .frame(height: 28)
 
-            ForEach(HomeVoyageSound.allCases) { sound in
+            ForEach(HomeVoyageSound.selectableSounds) { sound in
                 Button {
                     selectSound(sound)
                 } label: {
@@ -583,7 +583,7 @@ struct HomeVoyageTimerView: View {
                 }
                 .buttonStyle(.plain)
 
-                if sound != HomeVoyageSound.allCases.last {
+                if sound != HomeVoyageSound.selectableSounds.last {
                     Rectangle()
                         .fill(timerGlassInk.opacity(0.09))
                         .frame(height: 1)
@@ -737,9 +737,6 @@ struct HomeVoyageTimerView: View {
         case .harborMinuet: LF.text("Harbor Minuet")
         case .beaconRondo: LF.text("Beacon Rondo")
         case .celestialNocturne: LF.text("Celestial Navigation Nocturne")
-        case .approachingEvolution: LF.text("Approaching Evolution")
-        case .harborAndante: LF.text("Harbor Andante")
-        case .leewardCove: LF.text("Leeward Cove")
         }
     }
 

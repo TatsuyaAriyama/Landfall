@@ -8,14 +8,8 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
     static let shared = HomeBackgroundMusic()
     static let enabledKey = "home.backgroundMusicEnabled"
     static let selectedTrackKey = "home.backgroundMusicTrack"
-    static let tracks: [HomeVoyageSound] = [
-        .harborMinuet,
-        .beaconRondo,
-        .celestialNocturne,
-        .approachingEvolution,
-        .harborAndante,
-        .leewardCove,
-    ]
+    static let legacyWavePreferenceMigratedKey = "home.audioSelectionV2Migrated"
+    static let tracks = HomeVoyageSound.selectableSounds
 
     @Published private(set) var isPlaying = false
     @Published private(set) var playbackFailed = false
@@ -27,13 +21,15 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
     private var currentTrackIndex: Int
     private var requestedTrack: HomeVoyageSound
     private var playbackRequested = false
+    private var waveSubscriptions: Set<AnyCancellable> = []
 
     private override init() {
         let selected = Self.savedTrack
         currentTrack = selected
         requestedTrack = selected
-        currentTrackIndex = Self.tracks.firstIndex(of: selected) ?? 0
+        currentTrackIndex = HomeVoyageSound.musicTracks.firstIndex(of: selected) ?? 0
         super.init()
+        observeWavePlayback()
     }
 
     var playbackProgress: Double {
@@ -49,7 +45,7 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
         player?.duration ?? 0
     }
 
-    /// ホームのオリジナルテーマ6曲を固定順で繰り返す。
+    /// 選択した波音、またはオリジナルテーマ3曲を再生する。
     func play() {
         playbackRequested = true
         fadeTask?.cancel()
@@ -60,10 +56,22 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
         if selected != requestedTrack {
             requestedTrack = selected
             currentTrack = selected
-            currentTrackIndex = Self.tracks.firstIndex(of: selected) ?? 0
+            currentTrackIndex = HomeVoyageSound.musicTracks.firstIndex(of: selected) ?? 0
             player?.stop()
             player = nil
         }
+
+        if selected == .waves {
+            player?.stop()
+            player = nil
+            currentTrack = .waves
+            HomeWaveAmbience.shared.play()
+            isPlaying = HomeWaveAmbience.shared.isPlaying
+            playbackFailed = HomeWaveAmbience.shared.playbackFailed
+            return
+        }
+
+        HomeWaveAmbience.shared.stop()
 
         do {
             let session = AVAudioSession.sharedInstance()
@@ -93,6 +101,12 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
     func stop() {
         playbackRequested = false
         fadeTask?.cancel()
+        if requestedTrack == .waves {
+            HomeWaveAmbience.shared.stop()
+            isPlaying = false
+            playbackFailed = false
+            return
+        }
         guard let player, player.isPlaying else {
             isPlaying = false
             return
@@ -116,7 +130,7 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
     }
 
     private func startCurrentTrack(fadeDuration: TimeInterval) throws {
-        let track = Self.tracks[currentTrackIndex]
+        let track = HomeVoyageSound.musicTracks[currentTrackIndex]
         let resourceName = track.rawValue
         guard let url = Bundle.main.url(
             forResource: resourceName,
@@ -149,7 +163,7 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
               let player,
               ObjectIdentifier(player) == playerID else { return }
 
-        currentTrackIndex = (currentTrackIndex + 1) % Self.tracks.count
+        currentTrackIndex = (currentTrackIndex + 1) % HomeVoyageSound.musicTracks.count
         self.player = nil
         do {
             try startCurrentTrack(fadeDuration: 1.35)
@@ -160,10 +174,23 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
     }
 
     private static var savedTrack: HomeVoyageSound {
-        guard let rawValue = UserDefaults.standard.string(forKey: selectedTrackKey),
-              let track = HomeVoyageSound(rawValue: rawValue),
-              tracks.contains(track)
-        else { return .harborMinuet }
-        return track
+        let rawValue = UserDefaults.standard.string(forKey: selectedTrackKey)
+            ?? HomeVoyageSound.harborMinuet.rawValue
+        let track = HomeVoyageSound.resolve(rawValue)
+        return tracks.contains(track) ? track : .harborMinuet
+    }
+
+    private func observeWavePlayback() {
+        HomeWaveAmbience.shared.$isPlaying
+            .combineLatest(HomeWaveAmbience.shared.$playbackFailed)
+            .sink { [weak self] isPlaying, playbackFailed in
+                guard let self,
+                      self.playbackRequested,
+                      self.requestedTrack == .waves else { return }
+                self.currentTrack = .waves
+                self.isPlaying = isPlaying
+                self.playbackFailed = playbackFailed
+            }
+            .store(in: &waveSubscriptions)
     }
 }

@@ -69,7 +69,6 @@ struct SettingsView: View {
     // These preferences are edited from Home's dedicated music item. Settings
     // still reads them to restore audio after replaying the opening story.
     @AppStorage(HomeBackgroundMusic.enabledKey) private var homeMusicEnabled = false
-    @AppStorage(HomeWaveAmbience.enabledKey) private var homeWavesEnabled = true
     @Query private var sessions: [StudySession]
     @Query private var destinations: [Destination]
     @State private var current: AppIconOption = .harbor
@@ -465,7 +464,6 @@ struct SettingsView: View {
             return
         }
         if homeMusicEnabled { HomeBackgroundMusic.shared.play() }
-        if homeWavesEnabled { HomeWaveAmbience.shared.play() }
     }
 
     // MARK: - Feedback

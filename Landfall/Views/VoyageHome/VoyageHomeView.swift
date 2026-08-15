@@ -84,7 +84,6 @@ struct VoyageHomeView: View {
     private var timerSoundMode = HomeVoyageSound.initialTimerSound.rawValue
     @AppStorage(StudyTimer.breakStartedAtKey, store: StudyTimer.defaults) private var timerBreakStartedAt: Double = 0
     @AppStorage(HomeBackgroundMusic.enabledKey) private var homeMusicEnabled = false
-    @AppStorage(HomeWaveAmbience.enabledKey) private var homeWavesEnabled = true
     @AppStorage("home.island.shipInteractionSeen") private var shipInteractionSeen = false
     @StateObject private var sailAnimator = SailAnimator.shared
     @StateObject private var router = DeepLinkRouter.shared
@@ -671,7 +670,6 @@ struct VoyageHomeView: View {
             return
         }
         if homeMusicEnabled { HomeBackgroundMusic.shared.play() }
-        if homeWavesEnabled { HomeWaveAmbience.shared.play() }
     }
 
     private func closeDestinationEditor() {

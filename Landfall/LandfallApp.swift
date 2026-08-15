@@ -279,6 +279,7 @@ struct ContentView: View {
         // アプリ内の言語設定を全体に反映(端末言語に関わらず切替可能)。
         .environment(\.locale, (AppLanguage(rawValue: appLanguage) ?? .system).locale)
         .onAppear {
+            migrateHomeAudioSelectionIfNeeded()
             updateHomeAudio()
             #if DEBUG
             // 動作確認用: LANDFALL_LANG=en/ja/system でアプリ内言語を固定できる。
@@ -371,11 +372,36 @@ struct ContentView: View {
         lastTimerResting = nil
         HomeVoyageAudio.shared.stop()
         let shouldPlayHomeAudio = scenePhase == .active
-        if shouldPlayHomeAudio && homeMusicEnabled { HomeBackgroundMusic.shared.play() }
-        else { HomeBackgroundMusic.shared.stop() }
+        if shouldPlayHomeAudio && homeMusicEnabled {
+            HomeBackgroundMusic.shared.play()
+        } else {
+            HomeBackgroundMusic.shared.stop()
+            HomeWaveAmbience.shared.stop()
+        }
+    }
 
-        if shouldPlayHomeAudio && homeWavesEnabled { HomeWaveAmbience.shared.play() }
-        else { HomeWaveAmbience.shared.stop() }
+    /// 従来の「波音+別BGM」設定を、4択の単一音源へ一度だけ移行する。
+    private func migrateHomeAudioSelectionIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: HomeBackgroundMusic.legacyWavePreferenceMigratedKey) else {
+            let resolved = HomeVoyageSound.resolve(homeMusicTrack)
+            if HomeBackgroundMusic.tracks.contains(resolved), resolved.rawValue != homeMusicTrack {
+                homeMusicTrack = resolved.rawValue
+            }
+            return
+        }
+
+        if !homeMusicEnabled, homeWavesEnabled {
+            homeMusicTrack = HomeVoyageSound.waves.rawValue
+            homeMusicEnabled = true
+        } else {
+            let resolved = HomeVoyageSound.resolve(homeMusicTrack)
+            homeMusicTrack = HomeBackgroundMusic.tracks.contains(resolved)
+                ? resolved.rawValue
+                : HomeVoyageSound.harborMinuet.rawValue
+        }
+        homeWavesEnabled = false
+        defaults.set(true, forKey: HomeBackgroundMusic.legacyWavePreferenceMigratedKey)
     }
 
 }
