@@ -193,7 +193,10 @@ def build_harbor_gathering_deck() -> None:
     root = kit.make_root("harbor_gathering_deck", "Harbor_Gathering_Deck", "large")
     objects: list[bpy.types.Object] = []
     mats = harbor_materials("GatheringDeck")
-    for index in range(22):
+    # Continue the floor beneath the seaward council chair. The extra four
+    # planks finish just behind its backrest instead of leaving the seat and
+    # rear leg suspended past the deck edge.
+    for index in range(26):
         y = -1.48 + index * 0.142
         inset = 0.18 * abs(y) / 1.55
         kit.add_box(
@@ -206,7 +209,7 @@ def build_harbor_gathering_deck() -> None:
             rotation=(0, 0, math.radians((index % 5 - 2) * 0.18)),
             bevel=0.016,
         )
-    for y in (-1.30, 0, 1.30):
+    for y in (-1.30, 0, 1.30, 1.98):
         kit.add_box(
             f"Commons_Underbeam_{y:+.1f}",
             (0, y, 0.03),

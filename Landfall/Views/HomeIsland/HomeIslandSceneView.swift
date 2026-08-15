@@ -549,22 +549,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 max(0.92, obstacleRadius + 0.47)
             }
 
-            /// Keep the original stump-specific contact point: the navigator
-            /// sits toward the far rim, so their legs hang beside the trunk
-            /// instead of intersecting the cut surface.
-            func seatPosition(
-                facing direction: SCNVector3,
-                rootToSeatSurface: Float
-            ) -> SCNVector3 {
-                let edgeOffset = max(0.12, obstacleRadius - 0.26)
-                let base = seatPosition(rootToSeatSurface: rootToSeatSurface)
-                return SCNVector3(
-                    base.x + direction.x * edgeOffset,
-                    base.y,
-                    base.z + direction.z * edgeOffset
-                )
-            }
-
             var address: HomeIslandSeatAddress {
                 HomeIslandSeatAddress(placementID: id, slotID: "stump")
             }
@@ -1814,10 +1798,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     )
                 }
                 if let stump = stumpSeats.first(where: { $0.address == address }) {
-                    let seat = stump.seatPosition(
+                    return stump.seatPosition(
                         rootToSeatSurface: navigatorRootToSeatSurface
                     )
-                    return SCNVector3(state.x, seat.y, state.z)
                 }
             }
             return SCNVector3(
@@ -4481,10 +4464,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     InteractiveSeat(
                         address: stump.address,
                         motion: .sit,
-                        // Stumps use their own authored cut-surface height and
-                        // rim offset; chair socket clearances must not leak in.
+                        // A stump's contact point is its authored cut-surface
+                        // centre. Collision radius and chair sockets must never
+                        // move the navigator away from that point.
                         seatPosition: stump.seatPosition(
-                            facing: direction,
                             rootToSeatSurface: navigatorRootToSeatSurface
                         ),
                         approachPosition: nil,

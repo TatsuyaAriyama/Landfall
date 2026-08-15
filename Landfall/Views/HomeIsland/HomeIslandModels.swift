@@ -100,9 +100,12 @@ enum HomeIslandMetrics {
 
     static func containsGatheringDeck(x: Float, z: Float) -> Bool {
         let dx = abs(x - gatheringDeckPosition.x)
-        let dz = abs(z - gatheringDeckPosition.z)
+        let relativeZ = z - gatheringDeckPosition.z
         return dx <= 2.90 * gatheringDeckScale
-            && dz <= 1.57 * gatheringDeckScale
+            // Blender's positive Y becomes SceneKit's negative Z. Match the
+            // four added planks beneath the seaward council-chair backrest.
+            && relativeZ >= -2.15 * gatheringDeckScale
+            && relativeZ <= 1.57 * gatheringDeckScale
     }
 
     static func containsWalkableSand(x: Float, z: Float, margin: Float) -> Bool {
