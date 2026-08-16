@@ -20,6 +20,8 @@ final class SyncService {
     private var uid: String? { Auth.auth().currentUser?.uid }
 
     private var listeners: [ListenerRegistration] = []
+    private var gameDataPreparation: Task<Void, Never>?
+    private var gameDataPreparationUID: String?
 
     // MARK: - Push / delete (fire-and-forget)
 
@@ -101,7 +103,9 @@ final class SyncService {
     /// サインイン直後と前景復帰で呼ぶ。初回だけローカルをまとめて push し、
     /// 以降はリスナーで追加・編集・削除をリアルタイムに受信する。多重呼び出しに耐える。
     func performInitialSync(context: ModelContext) async {
-        guard uid != nil else { return }
+        guard let currentUID = uid else { return }
+        await prepareAccountGameData(for: currentUID)
+        guard uid == currentUID else { return }
         migrationPushIfNeeded(context: context)
         startListening(context: context)
     }
@@ -110,6 +114,260 @@ final class SyncService {
     func stopSync() {
         listeners.forEach { $0.remove() }
         listeners.removeAll()
+        gameDataPreparation?.cancel()
+        gameDataPreparation = nil
+        gameDataPreparationUID = nil
+    }
+
+    // MARK: - Player card / Home Island
+
+    /// Saves the private, account-owned copy before public harbor member cards
+    /// are updated. A durable pending bit prevents a failed/offline write from
+    /// being replaced by an older server copy at the next launch.
+    func pushPlayerProfile() async {
+        guard let uid else { return }
+        let now = max(PlayerProfile.updatedAt, Date())
+        if PlayerProfile.updatedAt == .distantPast {
+            PlayerProfile.save(
+                name: PlayerProfile.name,
+                styleToken: PlayerProfile.styleToken,
+                symbolToken: PlayerProfile.symbolToken,
+                resolve: PlayerProfile.resolve,
+                updatedAt: now
+            )
+        }
+        UserDefaults.standard.set(true, forKey: profilePendingKey(uid))
+        // Do not await server acknowledgement: Firestore persists the write
+        // locally and replays it after reconnection. Awaiting here would leave
+        // the editor's Save button spinning forever while offline.
+        let document = profileDocument(uid)
+        let payload = profilePayload()
+        Task { try? await document.setData(payload, merge: false) }
+    }
+
+    func pushHomeIslandSnapshot(_ snapshot: HomeIslandSnapshot) async {
+        guard let uid,
+              snapshot.ownerKey == HomeIslandPersistence.ownerKey(for: "firebase:\(uid)")
+        else { return }
+        UserDefaults.standard.set(true, forKey: islandPendingKey(uid))
+        let document = islandDocument(uid)
+        let payload = islandPayload(snapshot)
+        Task { try? await document.setData(payload, merge: false) }
+    }
+
+    private func prepareAccountGameData(for uid: String) async {
+        if gameDataPreparationUID == uid, let gameDataPreparation {
+            await gameDataPreparation.value
+            return
+        }
+
+        gameDataPreparation?.cancel()
+        gameDataPreparationUID = uid
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.resolveInitialProfile(for: uid)
+            guard !Task.isCancelled, self.uid == uid else { return }
+            await self.resolveInitialIsland(for: uid)
+        }
+        gameDataPreparation = task
+        await task.value
+        if gameDataPreparationUID == uid {
+            gameDataPreparation = nil
+            gameDataPreparationUID = nil
+        }
+    }
+
+    private func resolveInitialProfile(for uid: String) async {
+        if UserDefaults.standard.bool(forKey: profilePendingKey(uid)) {
+            await pushPlayerProfile()
+            return
+        }
+        do {
+            let document = try await profileDocument(uid).getDocument(source: .server)
+            guard self.uid == uid, !Task.isCancelled else { return }
+            if document.exists, let remote = decodeProfile(document.data()) {
+                if remote.updatedAt >= PlayerProfile.updatedAt {
+                    applyProfile(remote)
+                } else {
+                    await pushPlayerProfile()
+                }
+            } else {
+                // One-time upgrade migration: the old local-only player card
+                // is uploaded only after the server confirms no backup exists.
+                await pushPlayerProfile()
+            }
+        } catch {
+            // Never interpret network/auth failure as "missing". The cached
+            // card stays usable and a foreground retry will resolve the server.
+        }
+    }
+
+    private func resolveInitialIsland(for uid: String) async {
+        let ownerKey = HomeIslandPersistence.ownerKey(for: "firebase:\(uid)")
+        let local = HomeIslandPersistence.load(ownerKey: ownerKey)
+        if UserDefaults.standard.bool(forKey: islandPendingKey(uid)) {
+            await pushHomeIslandSnapshot(local)
+            return
+        }
+        do {
+            let document = try await islandDocument(uid).getDocument(source: .server)
+            guard self.uid == uid, !Task.isCancelled else { return }
+            if document.exists, let remote = decodeIsland(document.data(), uid: uid) {
+                if remote.updatedAt > local.updatedAt {
+                    applyIsland(remote)
+                } else if local.updatedAt > remote.updatedAt {
+                    await pushHomeIslandSnapshot(local)
+                }
+            } else {
+                // The empty island is also a valid snapshot. Creating the
+                // document now makes subsequent devices deterministic.
+                await pushHomeIslandSnapshot(local)
+            }
+        } catch {
+            // Keep local authoring available; importantly, do not overwrite a
+            // possibly existing remote island when the lookup itself failed.
+        }
+    }
+
+    private func profilePayload() -> [String: Any] {
+        var payload: [String: Any] = [
+            "schemaVersion": 1,
+            "name": PlayerProfile.name,
+            "styleToken": TileStyle.from(PlayerProfile.styleToken).rawValue,
+            "symbolToken": TileSymbol.from(PlayerProfile.symbolToken).rawValue,
+            "resolve": String(PlayerProfile.resolve.prefix(60)),
+            "updatedAt": FieldValue.serverTimestamp(),
+        ]
+        if !PlayerProfile.sinceDay.isEmpty {
+            payload["sinceDay"] = PlayerProfile.sinceDay
+        }
+        return payload
+    }
+
+    private struct RemoteProfile {
+        let name: String
+        let styleToken: String
+        let symbolToken: String
+        let resolve: String
+        let sinceDay: String
+        let updatedAt: Date
+    }
+
+    private func decodeProfile(_ data: [String: Any]?) -> RemoteProfile? {
+        guard let data,
+              (data["schemaVersion"] as? NSNumber)?.intValue == 1,
+              let rawName = data["name"] as? String,
+              let rawStyle = data["styleToken"] as? String,
+              let style = TileStyle(rawValue: rawStyle),
+              let rawSymbol = data["symbolToken"] as? String,
+              let symbol = TileSymbol(rawValue: rawSymbol),
+              let rawResolve = data["resolve"] as? String,
+              let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue()
+        else { return nil }
+        let since = data["sinceDay"] as? String ?? ""
+        return RemoteProfile(
+            name: PlayerProfile.normalizedName(rawName),
+            styleToken: style.rawValue,
+            symbolToken: symbol.rawValue,
+            resolve: String(rawResolve.prefix(60)),
+            sinceDay: PlayerProfile.sinceDayFormatter.date(from: since) == nil ? "" : since,
+            updatedAt: updatedAt
+        )
+    }
+
+    private func applyProfile(_ remote: RemoteProfile, forceTimestampReconciliation: Bool = false) {
+        guard forceTimestampReconciliation || remote.updatedAt >= PlayerProfile.updatedAt else {
+            return
+        }
+        PlayerProfile.save(
+            name: remote.name,
+            styleToken: remote.styleToken,
+            symbolToken: remote.symbolToken,
+            resolve: remote.resolve,
+            updatedAt: remote.updatedAt
+        )
+        if remote.sinceDay.isEmpty {
+            UserDefaults.standard.removeObject(forKey: PlayerProfile.sinceDayKey)
+        } else {
+            UserDefaults.standard.set(remote.sinceDay, forKey: PlayerProfile.sinceDayKey)
+        }
+        Task {
+            await PrivateIslandService.shared.publishProfileToJoinedIslands()
+            await PublicHarborService.shared.syncProfile()
+        }
+    }
+
+    private func islandPayload(_ snapshot: HomeIslandSnapshot) -> [String: Any] {
+        let placements: [[String: Any]] = HomeIslandPersistence
+            .sanitizedForAccountSync(snapshot.placements)
+            .map { placement in
+                [
+                    "id": placement.id.uuidString,
+                    "assetID": placement.assetID,
+                    "x": Double(placement.transform.x),
+                    "z": Double(placement.transform.z),
+                    "yaw": Double(placement.transform.yaw),
+                    "scale": Double(placement.transform.scale),
+                ]
+            }
+        return [
+            "schemaVersion": 1,
+            "placements": placements,
+            "updatedAt": FieldValue.serverTimestamp(),
+        ]
+    }
+
+    private func decodeIsland(_ data: [String: Any]?, uid: String) -> HomeIslandSnapshot? {
+        guard let data,
+              (data["schemaVersion"] as? NSNumber)?.intValue == 1,
+              let rawPlacements = data["placements"] as? [[String: Any]],
+              rawPlacements.count <= HomeIslandMetrics.maximumPlacements,
+              let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue()
+        else { return nil }
+
+        let placements = rawPlacements.compactMap { raw -> HomeIslandPlacement? in
+            guard let idValue = raw["id"] as? String,
+                  let id = UUID(uuidString: idValue),
+                  let assetID = raw["assetID"] as? String,
+                  let x = (raw["x"] as? NSNumber)?.floatValue,
+                  let z = (raw["z"] as? NSNumber)?.floatValue,
+                  let yaw = (raw["yaw"] as? NSNumber)?.floatValue,
+                  let scale = (raw["scale"] as? NSNumber)?.floatValue
+            else { return nil }
+            return HomeIslandPlacement(
+                id: id,
+                assetID: assetID,
+                transform: HomeIslandTransform(x: x, z: z, yaw: yaw, scale: scale)
+            )
+        }
+        return HomeIslandSnapshot(
+            ownerKey: HomeIslandPersistence.ownerKey(for: "firebase:\(uid)"),
+            updatedAt: updatedAt,
+            placements: HomeIslandPersistence.sanitizedForAccountSync(placements)
+        )
+    }
+
+    private func applyIsland(_ remote: HomeIslandSnapshot) {
+        let local = HomeIslandPersistence.load(ownerKey: remote.ownerKey)
+        guard remote.updatedAt > local.updatedAt else { return }
+        persistIsland(remote)
+    }
+
+    private func persistIsland(_ remote: HomeIslandSnapshot) {
+        do {
+            try HomeIslandPersistence.save(snapshot: remote)
+            NotificationCenter.default.post(name: .homeIslandDidChange, object: remote.ownerKey)
+        } catch {
+            // Keep the previous verified primary/recovery pair intact.
+        }
+    }
+
+    private func profilePendingKey(_ uid: String) -> String {
+        "accountGameData.profilePending.\(uid)"
+    }
+
+    private func islandPendingKey(_ uid: String) -> String {
+        "accountGameData.islandPending.\(uid)"
     }
 
     /// v1.0→v1.1 の移行(および新規サインイン)で、この uid につき一度だけローカルを push する。
@@ -127,6 +385,53 @@ final class SyncService {
 
     private func startListening(context: ModelContext) {
         guard let uid, listeners.isEmpty else { return }
+        listeners.append(profileDocument(uid).addSnapshotListener(includeMetadataChanges: true) {
+            [weak self] snapshot, _ in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.uid == uid,
+                      let snapshot,
+                      snapshot.exists,
+                      !snapshot.metadata.hasPendingWrites,
+                      let remote = self.decodeProfile(snapshot.data())
+                else { return }
+                let wasPending = UserDefaults.standard.bool(
+                    forKey: self.profilePendingKey(uid)
+                )
+                UserDefaults.standard.set(false, forKey: self.profilePendingKey(uid))
+                let matchesLocal = remote.name == PlayerProfile.name
+                    && remote.styleToken == TileStyle.from(PlayerProfile.styleToken).rawValue
+                    && remote.symbolToken == TileSymbol.from(PlayerProfile.symbolToken).rawValue
+                    && remote.resolve == String(PlayerProfile.resolve.prefix(60))
+                    && remote.sinceDay == PlayerProfile.sinceDay
+                self.applyProfile(
+                    remote,
+                    forceTimestampReconciliation: wasPending && matchesLocal
+                )
+            }
+        })
+        listeners.append(islandDocument(uid).addSnapshotListener(includeMetadataChanges: true) {
+            [weak self] snapshot, _ in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.uid == uid,
+                      let snapshot,
+                      snapshot.exists,
+                      !snapshot.metadata.hasPendingWrites,
+                      let remote = self.decodeIsland(snapshot.data(), uid: uid)
+                else { return }
+                let wasPending = UserDefaults.standard.bool(
+                    forKey: self.islandPendingKey(uid)
+                )
+                UserDefaults.standard.set(false, forKey: self.islandPendingKey(uid))
+                let local = HomeIslandPersistence.load(ownerKey: remote.ownerKey)
+                if wasPending && remote.placements == local.placements {
+                    self.persistIsland(remote)
+                } else {
+                    self.applyIsland(remote)
+                }
+            }
+        })
         listeners.append(itemsCollection(uid).addSnapshotListener { [weak self] snap, _ in
             guard let self, let snap else { return }
             MainActor.assumeIsolated { self.applyItems(snap, context: context) }
@@ -327,6 +632,12 @@ final class SyncService {
     }
     private func destinationsCollection(_ uid: String) -> CollectionReference {
         db.collection("users").document(uid).collection("destinations")
+    }
+    private func profileDocument(_ uid: String) -> DocumentReference {
+        db.collection("users").document(uid).collection("gameData").document("profile")
+    }
+    private func islandDocument(_ uid: String) -> DocumentReference {
+        db.collection("users").document(uid).collection("gameData").document("homeIsland")
     }
 
     private static let dayFormatter: DateFormatter = {

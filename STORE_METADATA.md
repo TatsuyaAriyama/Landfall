@@ -81,6 +81,24 @@ KeelMiraは、集中した時間を3Dの航海として残す作業・学習タ�
 
 ## What's New
 
+### v1.5
+- EN:
+```
+Your identity and island now travel with your account.
+
+• Player name, icon, and resolve are restored across app updates and devices.
+• Your Home Island layout is backed up and synchronized securely.
+• Offline edits are kept locally and uploaded when connectivity returns.
+```
+- JA:
+```
+プレイヤーの個性と島を、アカウントとともに持ち運べるようにしました。
+
+・プレイヤー名、アイコン、決意をアプリ更新後や別の端末で復元します。
+・自分の島の配置を安全にバックアップし、端末間で同期します。
+・オフライン中の編集も端末に保持し、通信復帰後に送信します。
+```
+
 ### v1.4
 - EN:
 ```
@@ -154,7 +172,7 @@ KeelMiraの航海体験を新しくしました。
   1. **Contact Info → Email Address**(Apple/Google サインイン)
   2. **Contact Info → Name**(表示名・プレイヤー名)
   3. **Identifiers → User ID**(Firebase UID)
-  4. **User Content → Other User Content**(学習記録・ひとこと・港のチャット/共同タイマー・任意の改善案)
+  4. **User Content → Other User Content**(学習記録・ひとこと・プレイヤーカード・島の配置・港のチャット/共同タイマー・任意の改善案)
   5. **User Content → Photos or Videos**(利用者が公開誌へ明示的に送る写真)
   6. **Identifiers → Device ID**(改善案の連投防止に使う、アプリ設置ごとのランダムID)
   7. **Diagnostics → Other Diagnostic Data**(改善案に自動添付するアプリ/ビルド/iOSバージョンと言語)

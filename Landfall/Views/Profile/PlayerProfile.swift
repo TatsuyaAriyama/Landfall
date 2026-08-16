@@ -2,13 +2,15 @@ import SwiftData
 import SwiftUI
 
 /// プレイヤープロフィール。名前・アイコン(配色×シンボル)・決意のひとこと。
-/// ローカル先行(UserDefaults)。港に入っているときだけメンバー情報として共有される。
+/// UserDefaults はオフライン用の端末キャッシュ。サインイン中は SyncService が
+/// users/{uid}/gameData/profile を正として復元・端末間同期する。
 enum PlayerProfile {
     static let nameKey = "player.name"
     static let styleKey = "player.style"
     static let symbolKey = "player.symbol"
     static let resolveKey = "player.resolve"
     static let sinceDayKey = "player.sinceDay"
+    static let updatedAtKey = "player.updatedAt"
     /// モバイルの島HUD・共有カード・港で省略されにくい表示名上限。
     /// SwiftのCharacter単位なので、結合文字や絵文字もプレイヤーが見る1文字として数える。
     static let nameCharacterLimit = 12
@@ -43,6 +45,29 @@ enum PlayerProfile {
     static var resolve: String {
         UserDefaults.standard.string(forKey: resolveKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
+
+    static func save(
+        name: String,
+        styleToken: String,
+        symbolToken: String,
+        resolve: String,
+        updatedAt: Date = Date()
+    ) {
+        let defaults = UserDefaults.standard
+        defaults.set(normalizedName(name), forKey: nameKey)
+        defaults.set(TileStyle.from(styleToken).rawValue, forKey: styleKey)
+        defaults.set(TileSymbol.from(symbolToken).rawValue, forKey: symbolKey)
+        defaults.set(
+            String(resolve.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60)),
+            forKey: resolveKey
+        )
+        defaults.set(updatedAt.timeIntervalSince1970, forKey: updatedAtKey)
+    }
+
+    static var updatedAt: Date {
+        let value = UserDefaults.standard.double(forKey: updatedAtKey)
+        return value > 0 ? Date(timeIntervalSince1970: value) : .distantPast
     }
 
     /// このサービスを使い始めた日(yyyy-MM-dd)。まだ分からなければ空。
@@ -82,7 +107,7 @@ enum PlayerProfile {
 
     static func reset() {
         let defaults = UserDefaults.standard
-        for key in [nameKey, styleKey, symbolKey, resolveKey, sinceDayKey] {
+        for key in [nameKey, styleKey, symbolKey, resolveKey, sinceDayKey, updatedAtKey] {
             defaults.removeObject(forKey: key)
         }
     }
@@ -183,9 +208,9 @@ struct ProfileEditorSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var name = PlayerProfile.name
-    @AppStorage(PlayerProfile.styleKey) private var styleToken = TileStyle.midnight.rawValue
-    @AppStorage(PlayerProfile.symbolKey) private var symbolToken = TileSymbol.phoenix.rawValue
-    @AppStorage(PlayerProfile.resolveKey) private var resolve = ""
+    @State private var styleToken = PlayerProfile.styleToken
+    @State private var symbolToken = PlayerProfile.symbolToken
+    @State private var resolve = PlayerProfile.resolve
     @State private var working = false
 
     var body: some View {
@@ -324,10 +349,16 @@ struct ProfileEditorSheet: View {
                     Task {
                         working = true
                         // 上限はここでのみ適用(打鍵中に書き戻すとIME変換が壊れるため)。
-                        name = PlayerProfile.normalizedName(name)
-                        UserDefaults.standard.set(name, forKey: PlayerProfile.nameKey)
-                        if resolve.count > 60 { resolve = String(resolve.prefix(60)) }
-                        // 新プライベート島とパブリックのカードだけを更新する。
+                        PlayerProfile.save(
+                            name: name,
+                            styleToken: styleToken,
+                            symbolToken: symbolToken,
+                            resolve: resolve
+                        )
+                        name = PlayerProfile.name
+                        resolve = PlayerProfile.resolve
+                        // 本人用バックアップを先に更新し、その後に港の公開カードへ反映する。
+                        await SyncService.shared.pushPlayerProfile()
                         await PrivateIslandService.shared.publishProfileToJoinedIslands()
                         await PublicHarborService.shared.syncProfile()
                         Haptics.success()

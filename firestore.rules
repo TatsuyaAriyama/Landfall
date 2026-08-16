@@ -49,6 +49,67 @@ service cloud.firestore {
     // 航海証(entitlements)だけはStripe Webhook / App Store検証の管理SDK専用。
     // 広い users/{uid}/** 許可を残すと、クライアントがactive=trueを書けてしまうため、
     // 本人が編集できる既存コレクションを明示する。
+    match /users/{userId}/gameData/profile {
+      function ownsGameData() {
+        return request.auth != null && request.auth.uid == userId;
+      }
+
+      function validProfileBackup() {
+        return request.resource.data.keys().hasOnly([
+            'schemaVersion', 'name', 'styleToken', 'symbolToken',
+            'resolve', 'sinceDay', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'schemaVersion', 'name', 'styleToken', 'symbolToken',
+            'resolve', 'updatedAt'
+          ])
+          && request.resource.data.schemaVersion == 1
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 12
+          && request.resource.data.styleToken in [
+            'midnight', 'coral', 'ink', 'seaGreen', 'violet', 'sunYellow',
+            'harbor', 'sand', 'ember', 'rust', 'lavender', 'sunrise'
+          ]
+          && request.resource.data.symbolToken in [
+            'anchor', 'compass', 'wheel', 'lighthouse', 'island', 'phoenix',
+            'book', 'pen', 'sailboat', 'attire'
+          ]
+          && request.resource.data.resolve is string
+          && request.resource.data.resolve.size() <= 60
+          && (!('sinceDay' in request.resource.data)
+            || (request.resource.data.sinceDay is string
+              && request.resource.data.sinceDay.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')))
+          && request.resource.data.updatedAt == request.time;
+      }
+
+      allow read: if ownsGameData();
+      allow create, update: if ownsGameData() && validProfileBackup();
+      allow delete: if false;
+    }
+
+    match /users/{userId}/gameData/homeIsland {
+      function ownsGameData() {
+        return request.auth != null && request.auth.uid == userId;
+      }
+
+      function validHomeIslandBackup() {
+        return request.resource.data.keys().hasOnly([
+            'schemaVersion', 'placements', 'updatedAt'
+          ])
+          && request.resource.data.keys().hasAll([
+            'schemaVersion', 'placements', 'updatedAt'
+          ])
+          && request.resource.data.schemaVersion == 1
+          && request.resource.data.placements is list
+          && request.resource.data.placements.size() <= 120
+          && request.resource.data.updatedAt == request.time;
+      }
+
+      allow read: if ownsGameData();
+      allow create, update: if ownsGameData() && validHomeIslandBackup();
+      allow delete: if false;
+    }
+
     match /users/{userId}/{collectionId}/{documentId} {
       allow read, write: if request.auth != null
         && request.auth.uid == userId

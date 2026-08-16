@@ -867,6 +867,14 @@ enum HomeIslandPersistence {
         return result
     }
 
+    /// The account backup uses the same allow-list, transform bounds and
+    /// per-asset limits as local persistence and multiplayer snapshots.
+    static func sanitizedForAccountSync(
+        _ placements: [HomeIslandPlacement]
+    ) -> [HomeIslandPlacement] {
+        sanitized(placements)
+    }
+
     static func load(ownerKey: String) -> HomeIslandSnapshot {
         guard let document = loadDocument(ownerKey: ownerKey) else {
             return HomeIslandSnapshot(ownerKey: ownerKey, updatedAt: .distantPast, placements: [])
@@ -890,23 +898,40 @@ enum HomeIslandPersistence {
     @discardableResult
     static func save(ownerKey: String, placements: [HomeIslandPlacement]) throws -> Date {
         let date = Date()
+        try save(
+            snapshot: HomeIslandSnapshot(
+                ownerKey: ownerKey,
+                updatedAt: date,
+                placements: placements
+            )
+        )
+        return date
+    }
+
+    /// Writes an already timestamped cloud snapshot without inventing a newer
+    /// local edit. This prevents a download -> upload loop between devices.
+    static func save(snapshot: HomeIslandSnapshot) throws {
         let document = Document(
-            ownerKey: ownerKey,
-            updatedAt: date,
-            placements: sanitized(placements)
+            version: snapshot.schemaVersion,
+            ownerKey: snapshot.ownerKey,
+            updatedAt: snapshot.updatedAt,
+            placements: sanitized(snapshot.placements)
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         let data = try encoder.encode(document)
-        let directory = directoryURL(ownerKey: ownerKey)
+        let directory = directoryURL(ownerKey: snapshot.ownerKey)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try writeAndVerify(
             data,
-            to: recoveryFileURL(ownerKey: ownerKey),
-            ownerKey: ownerKey
+            to: recoveryFileURL(ownerKey: snapshot.ownerKey),
+            ownerKey: snapshot.ownerKey
         )
-        try writeAndVerify(data, to: fileURL(ownerKey: ownerKey), ownerKey: ownerKey)
-        return date
+        try writeAndVerify(
+            data,
+            to: fileURL(ownerKey: snapshot.ownerKey),
+            ownerKey: snapshot.ownerKey
+        )
     }
 }
 
@@ -1340,6 +1365,25 @@ final class HomeIslandStore: ObservableObject {
         return true
     }
 
+    /// Pulls a newer cloud-restored snapshot from the account-scoped local
+    /// file into the live editor without recreating the whole island screen.
+    @discardableResult
+    func reloadLocalSnapshotIfNewer() -> Bool {
+        guard !isReadOnly else { return false }
+        let snapshot = HomeIslandPersistence.load(ownerKey: ownerKey)
+        let currentDate = lastSavedAt ?? .distantPast
+        guard snapshot.updatedAt > currentDate else { return false }
+        placements = snapshot.placements
+        selectedID = nil
+        undoStack.removeAll(keepingCapacity: true)
+        redoStack.removeAll(keepingCapacity: true)
+        snapshotSchemaVersion = snapshot.schemaVersion
+        lastSavedAt = snapshot.updatedAt
+        lastSaveSucceeded = true
+        lastSaveError = nil
+        return true
+    }
+
     func save() {
         guard !isReadOnly else { return }
         do {
@@ -1350,6 +1394,8 @@ final class HomeIslandStore: ObservableObject {
             lastSaveSucceeded = true
             lastSaveError = nil
             NotificationCenter.default.post(name: .homeIslandDidChange, object: ownerKey)
+            let snapshot = self.snapshot
+            Task { await SyncService.shared.pushHomeIslandSnapshot(snapshot) }
         } catch {
             lastSaveSucceeded = false
             lastSaveError = error.localizedDescription

@@ -625,6 +625,12 @@ struct HomeIslandView: View {
             placementAssetID = nil
             lockedAssetID = nil
         }
+        .onReceive(NotificationCenter.default.publisher(for: .homeIslandDidChange)) { note in
+            guard multiplayerSession == nil,
+                  note.object as? String == store.ownerKey
+            else { return }
+            _ = store.reloadLocalSnapshotIfNewer()
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background, !store.lastSaveSucceeded {
                 store.save()
