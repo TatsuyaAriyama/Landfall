@@ -773,6 +773,12 @@ service cloud.firestore {
         return slug in ['language', 'certification', 'student', 'reading', 'making'];
       }
 
+      function isBanned(memberId) {
+        return exists(
+          /databases/$(database)/documents/publicHarborBans/$(slug)/users/$(memberId)
+        );
+      }
+
       // メンバーのプレイヤーカード。
       match /members/{memberId} {
         allow read: if request.auth != null;
@@ -781,6 +787,7 @@ service cloud.firestore {
         allow create, update: if request.auth != null
           && request.auth.uid == memberId
           && validSlug()
+          && !isBanned(memberId)
           && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'sinceDay', 'joinedAt', 'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag'])
           && request.resource.data.displayName is string
           && request.resource.data.displayName.size() <= 60
@@ -818,6 +825,7 @@ service cloud.firestore {
           allow create, update: if request.auth != null
             && request.auth.uid == memberId
             && validSlug()
+            && !isBanned(memberId)
             && request.resource.data.keys().hasOnly(['days', 'sessions', 'updatedAt'])
             && request.resource.data.days is list
             && request.resource.data.days.size() <= 31
