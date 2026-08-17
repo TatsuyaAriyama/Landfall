@@ -205,6 +205,13 @@ struct PlayerCardView: View {
 /// 保存でローカルに書き、参加中の全港へも反映する。
 struct ProfileEditorSheet: View {
     var onSaved: () -> Void = {}
+    /// Rendered inside the island's floating player panel: the form keeps its
+    /// full content but drops the sheet-sized header and paper background so it
+    /// fits a small card.
+    var compact = false
+    /// Supplied when the editor is embedded rather than presented, because an
+    /// embedded view has no presentation to dismiss.
+    var onClose: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var name = PlayerProfile.name
@@ -215,13 +222,34 @@ struct ProfileEditorSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            LFBackHeader(title: "Player card") { dismiss() }
-                .padding(.horizontal, LFMetrics.cardPadding)
-                .padding(.vertical, 6)
+            if compact {
+                HStack(spacing: 8) {
+                    Button(action: close) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(LFColor.ink.opacity(0.62))
+                            .frame(width: 26, height: 26)
+                            .background(LFColor.ink.opacity(0.06), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Back"))
 
-            Rectangle()
-                .fill(LFColor.ink.opacity(0.08))
-                .frame(height: 1)
+                    Text("Player card")
+                        .font(LFFont.label(10))
+                        .tracking(1.1)
+                        .foregroundStyle(LFColor.ink.opacity(0.62))
+                    Spacer(minLength: 0)
+                }
+                .padding(.bottom, 8)
+            } else {
+                LFBackHeader(title: "Player card") { close() }
+                    .padding(.horizontal, LFMetrics.cardPadding)
+                    .padding(.vertical, 6)
+
+                Rectangle()
+                    .fill(LFColor.ink.opacity(0.08))
+                    .frame(height: 1)
+            }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -363,7 +391,7 @@ struct ProfileEditorSheet: View {
                         await PublicHarborService.shared.syncProfile()
                         Haptics.success()
                         onSaved()
-                        dismiss()
+                        close()
                     }
                 } label: {
                     Text("Save this card")
@@ -379,10 +407,20 @@ struct ProfileEditorSheet: View {
                 .opacity(working ? 0.45 : 1)
                 .padding(.top, 32)
                 }
-                .padding(LFMetrics.cardPadding)
+                .padding(compact ? 0 : LFMetrics.cardPadding)
             }
+            .frame(maxHeight: compact ? 380 : .infinity)
+            .scrollBounceBehavior(compact ? .basedOnSize : .automatic)
         }
-        .background(LFColor.paper)
+        .background(compact ? Color.clear : LFColor.paper)
+    }
+
+    private func close() {
+        if let onClose {
+            onClose()
+        } else {
+            dismiss()
+        }
     }
 
     private func sectionLabel(_ text: LocalizedStringKey) -> some View {

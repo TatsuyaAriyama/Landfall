@@ -17,6 +17,10 @@ final class AuthService: ObservableObject {
     )
 
     @Published private(set) var user: User?
+    /// Firebase restores a saved session asynchronously. Until its first
+    /// callback lands, "no user" means "not known yet" rather than "signed
+    /// out" — routing on it directly is what made sign-in flash at launch.
+    @Published private(set) var hasResolvedInitialAuthState = false
     @Published private(set) var isSimulatorPreviewing = false
     @Published private(set) var isUsingLocalMode: Bool
     @Published var errorMessage: String?
@@ -50,12 +54,25 @@ final class AuthService: ObservableObject {
 
     private init() {
         isUsingLocalMode = UserDefaults.standard.bool(forKey: Self.localModeKey)
+        // A session already restored from the keychain is available right away;
+        // taking it here means a returning player never sees a launch gap.
+        user = Auth.auth().currentUser
+        hasResolvedInitialAuthState = user != nil || isUsingLocalMode
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
-            self?.user = user
+            guard let self else { return }
+            self.user = user
+            self.hasResolvedInitialAuthState = true
             if user != nil {
-                self?.setLocalMode(false)
+                self.setLocalMode(false)
             }
         }
+    }
+
+    /// Safety valve for the launch screen: if Firebase never reports a state
+    /// (no network on a cold, signed-out start), stop waiting and show sign-in.
+    func resolveInitialAuthStateIfPending() {
+        guard !hasResolvedInitialAuthState else { return }
+        hasResolvedInitialAuthState = true
     }
 
     // MARK: - Apple

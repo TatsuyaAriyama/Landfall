@@ -28,10 +28,6 @@ struct VoyageHomeView: View {
     @State private var sharingToday = false
     @State private var creatingItem = false
     @State private var editingItem: StudyItem?
-    @State private var editingDestination = false
-    @State private var destinationSceneReady = false
-    @State private var destinationWorldTapToken = 0
-    @State private var destinationDraftSteps: [DestinationStep]?
     @State private var draggedItemID: UUID?
     @State private var lastDragTargetID: UUID?
     @State private var manifestItemOrder: [UUID] = []
@@ -45,7 +41,6 @@ struct VoyageHomeView: View {
     @State private var manifestSuppressTapItemID: UUID?
     @State private var manifestEditing = false
     @State private var celebrating: Destination?
-    @State private var pendingWorldLanding: Destination?
     @State private var pendingLandingDestination: Destination?
     @State private var pendingCompleteDestination: Destination?
     @State private var pendingDelete: StudySession?
@@ -116,33 +111,6 @@ struct VoyageHomeView: View {
         destinations.first { $0.achievedAt == nil }
     }
 
-    private var destinationRatio: Double {
-        #if DEBUG
-        if let raw = ProcessInfo.processInfo.environment["LANDFALL_HOME_PROGRESS"],
-           let value = Double(raw) {
-            return min(1, max(0, value))
-        }
-        #endif
-        return activeDestination?.progress(sessions: sessions, now: now).ratio ?? 0
-    }
-
-    /// エディタ内の未保存ステップも3D航路へ即時反映する。一覧表示中は保存済みを使う。
-    private var destinationSceneSteps: [VoyageStep] {
-#if DEBUG
-        // 中継島の遠近・密度を、保存データを壊さず確認するためのビジュアルQA用。
-        if let raw = ProcessInfo.processInfo.environment["LANDFALL_HOME_STEP_COUNT"],
-           let count = Int(raw), count > 0 {
-            return (0..<min(count, Destination.maxSteps)).map { index in
-                VoyageStep(doneAt: index < count / 2 ? Date() : nil)
-            }
-        }
-#endif
-        let source = editingDestination
-            ? (destinationDraftSteps ?? activeDestination?.steps ?? [])
-            : (activeDestination?.steps ?? [])
-        return source.prefix(Destination.maxSteps).map { VoyageStep(doneAt: $0.doneAt) }
-    }
-
     private var todaySessions: [StudySession] {
         sessions
             .filter { Calendar.current.isDate($0.date, inSameDayAs: now) }
@@ -203,19 +171,18 @@ struct VoyageHomeView: View {
                             multiplayerSession: hostedPrivateIsland.multiplayerSession,
                             onPrivateIslandSelected: presentPrivateIsland,
                             onDepartureCompleted: finishIslandDeparture,
-                            onBoardingRejected: cancelIslandDeparture
+                            onBoardingRejected: cancelIslandDeparture,
+                            onDestinationLandfall: { destination in
+                                pendingLandingDestination = destination
+                            }
                         )
                         .id("\(auth.homeIslandOwnerID)-\(homeIslandSceneGeneration.uuidString)")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .allowsHitTesting(
-                            !showingWorkManifest
-                                && !editingDestination
-                                && pendingIslandLaunchItem == nil
+                            !showingWorkManifest && pendingIslandLaunchItem == nil
                         )
                         .accessibilityHidden(
-                            showingWorkManifest
-                                || editingDestination
-                                || pendingIslandLaunchItem != nil
+                            showingWorkManifest || pendingIslandLaunchItem != nil
                         )
                     } else {
                         Color(hex: timeOfDay.palette.sky)
@@ -224,7 +191,6 @@ struct VoyageHomeView: View {
 
                     if showingHarborCoach,
                        !showingWorkManifest,
-                       !editingDestination,
                        presentedRoute == nil,
                        !timerWorldActive {
                         harborCoach
@@ -234,7 +200,6 @@ struct VoyageHomeView: View {
                     }
 
                     if showingWorkManifest,
-                       !editingDestination,
                        presentedRoute == nil,
                        !timerWorldActive {
                         workManifest(
@@ -256,23 +221,6 @@ struct VoyageHomeView: View {
                                     .combined(with: .opacity)
                             )
                             .zIndex(12)
-                    }
-
-                    if editingDestination {
-                        VoyageWorldView(
-                            existing: activeDestination,
-                            sessions: sessions,
-                            usesHomeWorld: false,
-                            homeWorldReady: true,
-                            homeWorldTapToken: destinationWorldTapToken,
-                            onRequestClose: closeDestinationEditor,
-                            onStepsChange: { destinationDraftSteps = $0 },
-                            onLand: { landed in
-                                closeDestinationEditor()
-                                celebrating = landed
-                            }
-                        )
-                        .zIndex(30)
                     }
 
                     if let item = timerVoyageItem {
@@ -603,9 +551,6 @@ struct VoyageHomeView: View {
                 menuOpen = false
                 presentedRoute = .island
             }
-            if ProcessInfo.processInfo.environment["LANDFALL_EDIT_DEST"] != nil {
-                beginDestinationEditing()
-            }
             #endif
         }
         .task(id: auth.user?.uid) {
@@ -672,12 +617,6 @@ struct VoyageHomeView: View {
         if homeMusicEnabled { HomeBackgroundMusic.shared.play() }
     }
 
-    private func closeDestinationEditor() {
-        destinationSceneReady = false
-        editingDestination = false
-        destinationDraftSteps = nil
-    }
-
     /// A UIKit presentation must be fully dismissed before another full-screen
     /// world is attached. Queueing also keeps each room's listeners and
     /// StateObjects scoped to exactly one visit.
@@ -732,13 +671,6 @@ struct VoyageHomeView: View {
         }
     }
 
-    private func beginDestinationEditing() {
-        showingWorkManifest = false
-        destinationDraftSteps = activeDestination?.steps ?? []
-        destinationSceneReady = true
-        editingDestination = true
-    }
-
     private func openWorkManifest() {
         guard pendingIslandLaunchItem == nil, !showingWorkManifest else { return }
         shipInteractionSeen = true
@@ -781,7 +713,7 @@ struct VoyageHomeView: View {
     }
 
     private func activateHarborHotspot(_ hotspot: HomeHarborHotspot) {
-        guard !editingDestination, !timerWorldActive else { return }
+        guard !timerWorldActive else { return }
         shipInteractionSeen = true
         withAnimation(.easeOut(duration: 0.20)) {
             showingHarborCoach = false
@@ -792,8 +724,8 @@ struct VoyageHomeView: View {
         case .work:
             openWorkManifest()
         case .destination:
+            // 目的地は自分の島のHUDから決める。ここでは何も開かない。
             showingWorkManifest = false
-            beginDestinationEditing()
         case .logbook:
             showingWorkManifest = false
             presentedRoute = .logbook
@@ -984,171 +916,6 @@ struct VoyageHomeView: View {
         // 記録行そのものは上へスクロールして初めて見える位置へ送る。
         let proposed = geometry.size.height * (geometry.size.width < 600 ? 0.58 : 0.54)
         return min(550, max(390, proposed))
-    }
-
-    /// ホームの航海映像そのものを目的地の入口にする。
-    /// 独立カードは置かず、映像を押すとその構図から没入エディタへ移る。
-    private func destinationSceneEntry(height: CGFloat) -> some View {
-        ZStack(alignment: .bottom) {
-            Button {
-                Haptics.tap(.light)
-                beginDestinationEditing()
-            } label: {
-                Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Destinations"))
-            .accessibilityValue(Text(destinationSceneAccessibilityValue))
-            .accessibilityHint(Text("Tap to edit the destination."))
-
-            HStack(alignment: .bottom, spacing: 12) {
-                destinationSceneCaption
-                    .allowsHitTesting(false)
-
-                Spacer(minLength: 8)
-
-                if let destination = activeDestination {
-                    if !destination.manual || destination.manualDone {
-                        Button {
-                            pendingLandingDestination = destination
-                        } label: {
-                            Text("Go ashore")
-                                .font(LFFont.copy(13))
-                                .foregroundStyle(LFColor.inkFixed)
-                                .padding(.horizontal, 18)
-                                .frame(minHeight: 38)
-                                .background(LFColor.harborSand, in: Capsule())
-                        }
-                        .buttonStyle(LFPressableButtonStyle())
-                    } else {
-                        Button {
-                            pendingCompleteDestination = destination
-                        } label: {
-                            Text("Mark complete")
-                                .font(LFFont.copy(13))
-                                .foregroundStyle(palette.inkColor)
-                                .padding(.horizontal, 16)
-                                .frame(minHeight: 38)
-                                .background(
-                                    palette.glassColor.opacity(0.76),
-                                    in: Capsule()
-                                )
-                                .overlay(
-                                    Capsule()
-                                        .stroke(palette.inkColor.opacity(0.26), lineWidth: 1)
-                                )
-                        }
-                        .buttonStyle(LFPressableButtonStyle())
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
-        }
-        .frame(height: height)
-        .accessibilityElement(children: .contain)
-    }
-
-    @ViewBuilder
-    private var destinationSceneCaption: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Destinations")
-                .font(LFFont.label(10))
-                .tracking(1)
-                .foregroundStyle(palette.inkColor.opacity(0.68))
-
-            if let destination = activeDestination {
-                Text(verbatim: destination.name)
-                    .font(LFFont.copy(18))
-                    .foregroundStyle(palette.inkColor)
-                    .lineLimit(1)
-
-                Text(destinationSceneProgress(destination))
-                    .font(LFFont.label(11))
-                    .foregroundStyle(palette.inkColor.opacity(0.68))
-                    .lineLimit(1)
-            } else {
-                Text("Set a destination.")
-                    .font(LFFont.copy(17))
-                    .foregroundStyle(palette.inkColor)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(
-            palette.glassColor.opacity(0.92),
-            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .stroke(LFColor.harborSand.opacity(0.28), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.12), radius: 8, y: 3)
-    }
-
-    private var destinationSceneAccessibilityValue: String {
-        guard let destination = activeDestination else {
-            return LF.text("Set a destination.")
-        }
-        return "\(destination.name)、\(destinationSceneProgress(destination))"
-    }
-
-    private func destinationSceneProgress(_ destination: Destination) -> String {
-        let progress = destination.progress(sessions: sessions, now: now)
-        if progress.reached {
-            return LF.text("Ready to go ashore")
-        }
-        if let next = destination.nextStepName {
-            return LF.format("Next: %@", next)
-        }
-        if let total = progress.stepsTotal {
-            return "\(progress.stepsDone ?? 0) / \(total)"
-        }
-        if let minutes = progress.remainingMinutes {
-            if minutes < 60 {
-                return LF.format("%lld minutes left", Int64(minutes))
-            }
-            let hours = minutes / 60
-            let remainder = minutes % 60
-            if remainder == 0 {
-                return LF.format("%lld hours left", Int64(hours))
-            }
-            return LF.format(
-                "%lld hours %lld minutes left",
-                Int64(hours),
-                Int64(remainder)
-            )
-        }
-        if let seconds = progress.remainingSeconds {
-            let minutes = max(0, Int(ceil(seconds / 60)))
-            if minutes < 24 * 60 {
-                return destinationRemainingMinutes(minutes)
-            }
-            let days = Int(ceil(seconds / 86_400))
-            return LF.format("%lld days left", Int64(days))
-        }
-        if let days = progress.remainingDays {
-            return LF.format("%lld days left", Int64(days))
-        }
-        return ""
-    }
-
-    private func destinationRemainingMinutes(_ minutes: Int) -> String {
-        if minutes < 60 {
-            return LF.format("%lld minutes left", Int64(minutes))
-        }
-        let hours = minutes / 60
-        let remainder = minutes % 60
-        if remainder == 0 {
-            return LF.format("%lld hours left", Int64(hours))
-        }
-        return LF.format(
-            "%lld hours %lld minutes left",
-            Int64(hours),
-            Int64(remainder)
-        )
     }
 
     // MARK: - 上部固定UI
@@ -2306,6 +2073,7 @@ private struct VoyageHomeIslandSceneHost: View {
     let onPrivateIslandSelected: (PrivateIslandRoom) -> Void
     let onDepartureCompleted: () -> Void
     let onBoardingRejected: () -> Void
+    let onDestinationLandfall: (Destination) -> Void
 
     var body: some View {
         HomeIslandView(
@@ -2318,6 +2086,8 @@ private struct VoyageHomeIslandSceneHost: View {
             onBoatSelected: onBoatSelected,
             onDepartureCompleted: onDepartureCompleted,
             onBoardingRejected: onBoardingRejected,
+            showsDestination: true,
+            onDestinationLandfall: onDestinationLandfall,
             multiplayerSession: multiplayerSession,
             onPrivateIslandSelected: onPrivateIslandSelected
         )

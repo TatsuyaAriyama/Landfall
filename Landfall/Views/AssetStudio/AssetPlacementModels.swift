@@ -57,6 +57,7 @@ enum Asset3DCatalog {
         "island_base",
         "home_island_foundation",
         "small_tree",
+        "conifer_tree",
         "small_lake",
         "weathered_cottage",
         "weathered_lighthouse",
@@ -84,6 +85,14 @@ enum Asset3DCatalog {
         "supply_barrels",
         "compass_rose_inlay",
         "dune_grass_patch",
+        "rose_bush_white",
+        "rose_bush_red",
+        "rose_bush_yellow",
+        "hibiscus_bush_red",
+        "hibiscus_bush_pink",
+        "hibiscus_bush_orange",
+        "council_table",
+        "council_chair",
         "landfall_boat",
         "navigator_main",
     ]
@@ -115,7 +124,8 @@ enum Asset3DCatalog {
         switch resourceName {
         case "island_base": return String(localized: "Island Foundation")
         case "home_island_foundation": return String(localized: "Home Island Foundation")
-        case "small_tree": return String(localized: "Small Tree")
+        case "small_tree": return String(localized: "Broadleaf Tree")
+        case "conifer_tree": return String(localized: "Conifer")
         case "small_lake": return String(localized: "Small Lake")
         case "weathered_cottage": return String(localized: "Weathered Cottage")
         case "weathered_lighthouse": return String(localized: "Stone Lighthouse")
@@ -143,6 +153,14 @@ enum Asset3DCatalog {
         case "supply_barrels": return String(localized: "Supply Barrels")
         case "compass_rose_inlay": return String(localized: "Compass Rose Inlay")
         case "dune_grass_patch": return String(localized: "Dune Grass Patch")
+        case "rose_bush_white": return String(localized: "White Roses")
+        case "rose_bush_red": return String(localized: "Red Roses")
+        case "rose_bush_yellow": return String(localized: "Yellow Roses")
+        case "hibiscus_bush_red": return String(localized: "Red Hibiscus")
+        case "hibiscus_bush_pink": return String(localized: "Pink Hibiscus")
+        case "hibiscus_bush_orange": return String(localized: "Orange Hibiscus")
+        case "council_table": return String(localized: "Council Table")
+        case "council_chair": return String(localized: "Council Chair")
         case "landfall_boat": return "Landfall Boat"
         case "navigator_main": return "Navigator"
         default:

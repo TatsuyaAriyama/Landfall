@@ -1,3 +1,5 @@
+import Combine
+import Metal
 import SwiftUI
 import SwiftData
 import SceneKit
@@ -39,8 +41,10 @@ private enum HomeIslandAssetCategory: String, CaseIterable, Identifiable {
         case .all:
             true
         case .nature:
-            ["small_tree", "small_stump", "small_rock", "small_lake", "coastal_rocks",
-             "dune_grass_patch"]
+            ["small_tree", "conifer_tree", "small_stump", "small_rock", "small_lake",
+             "coastal_rocks", "dune_grass_patch",
+             "rose_bush_white", "rose_bush_red", "rose_bush_yellow",
+             "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange"]
                 .contains(assetID)
         case .structures:
             ["weathered_cottage", "small_lighthouse", "weathered_lighthouse",
@@ -57,7 +61,8 @@ private enum HomeIslandAssetCategory: String, CaseIterable, Identifiable {
              "compass_rose_inlay"]
                 .contains(assetID)
         case .furniture:
-            ["wooden_desk", "wooden_chair", "driftwood_bench", "navigator_hammock"]
+            ["wooden_desk", "wooden_chair", "council_table", "council_chair",
+             "driftwood_bench", "navigator_hammock"]
                 .contains(assetID)
         }
     }
@@ -147,7 +152,9 @@ struct HomeIslandView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \StudySession.date) private var studySessions: [StudySession]
+    @Query private var destinations: [Destination]
     @ObservedObject private var homeMusic = HomeBackgroundMusic.shared
     @StateObject private var store: HomeIslandStore
     @State private var placementAssetID: String?
@@ -178,22 +185,37 @@ struct HomeIslandView: View {
     @State private var transientNotice: String?
     @State private var isDismissingAfterDeparture = false
     @State private var isNavigatorOnArrivalJetty = false
+    @State private var isNavigatorNearNoticeBoard = false
     @State private var showingBoatCustomization = false
     @State private var selectedBoatSailID = BoatCustomization.selectedSailID
     @State private var showingTodoList = false
-    @State private var todoItems = HomeIslandTodoPersistence.load()
+    @StateObject private var todoStore = HomeIslandTodoStore.shared
     @State private var showingPlayerStats = false
     @State private var showingMusicPicker = false
     @State private var showingSettings = false
     @State private var showingHarborPanel = false
     @State private var privateChatExpanded = false
     @State private var privateChatInputFocused = false
+    /// 目的地の残り時間だけを刻む時計。島の距離と期日表示をそっと進める。
+    @State private var destinationClock = Date()
+    @State private var showingDestinationSetup = false
+    @State private var destinationNameDraft = ""
+    @State private var destinationDateDraft = Date()
+    @FocusState private var destinationNameFocused: Bool
     @AppStorage(PlayerProfile.nameKey) private var playerName = ""
     @AppStorage(PlayerProfile.styleKey) private var playerStyleToken = TileStyle.midnight.rawValue
     @AppStorage(PlayerProfile.symbolKey) private var playerSymbolToken = TileSymbol.phoenix.rawValue
     @AppStorage(HomeBackgroundMusic.enabledKey) private var homeMusicEnabled = false
     @AppStorage(HomeBackgroundMusic.selectedTrackKey)
     private var homeMusicTrack = HomeVoyageSound.harborMinuet.rawValue
+
+    /// 期日の目的地は残り一週間から少しずつ近づく。分ごとで十分に足りる。
+    private let destinationMinuteClock = Timer.publish(
+        every: 60,
+        tolerance: 5,
+        on: .main,
+        in: .common
+    ).autoconnect()
 
     private let assets = HomeIslandAssetCatalog.available()
     private let levelProgress: PlayerLevelProgress
@@ -206,6 +228,10 @@ struct HomeIslandView: View {
     private let onEmbeddedBoardingRejected: () -> Void
     private let multiplayerSession: HomeIslandMultiplayerSession?
     private let onPrivateIslandSelected: (PrivateIslandRoom) -> Void
+    /// ホームとして見せている島だけが、沖の目的地と、その設定の入口を持つ。
+    private let showsDestination: Bool
+    /// 上陸の確認と着岸演出は、これまでどおりホーム側が持つ。
+    private let onDestinationLandfall: ((Destination) -> Void)?
 
     init(
         ownerID: String,
@@ -217,10 +243,14 @@ struct HomeIslandView: View {
         onBoatSelected: @escaping () -> Void = {},
         onDepartureCompleted: (() -> Void)? = nil,
         onBoardingRejected: @escaping () -> Void = {},
+        showsDestination: Bool = false,
+        onDestinationLandfall: ((Destination) -> Void)? = nil,
         multiplayerSession: HomeIslandMultiplayerSession? = nil,
         onPrivateIslandSelected: @escaping (PrivateIslandRoom) -> Void = { _ in }
     ) {
         self.levelProgress = levelProgress
+        self.showsDestination = showsDestination
+        self.onDestinationLandfall = onDestinationLandfall
         self.startsMooredAtIsland = startsMooredAtIsland
         self.boatTapOpensSelection = boatTapOpensSelection
         externalBoatBoardingRequest = boardingRequest
@@ -251,6 +281,7 @@ struct HomeIslandView: View {
             || privateChatExpanded
             || privateChatInputFocused
             || showingBoatCustomization
+            || showingDestinationSetup
             || showingLogbook
             || activeInterior != nil
             || showingTodoList
@@ -343,6 +374,11 @@ struct HomeIslandView: View {
                         isNavigatorOnArrivalJetty = isOnJetty
                     }
                 },
+                onNoticeBoardProximityChanged: { isNear in
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        isNavigatorNearNoticeBoard = isNear
+                    }
+                },
                 onBoatBoardingStarted: {
                     beginDeparture()
                 },
@@ -357,6 +393,8 @@ struct HomeIslandView: View {
                 boatTapOpensSelection: boatTapOpensSelection,
                 boatCustomizationActive: showingBoatCustomization,
                 boatAppearanceID: selectedBoatSailID,
+                destinationBearing: destinationBearing,
+                destinationGazeActive: showingDestinationSetup,
                 onBoatSelected: onBoatSelected,
                 remotePlayers: multiplayerRemotePlayers,
                 localPlayerID: multiplayerSession?.currentUserID,
@@ -395,7 +433,7 @@ struct HomeIslandView: View {
                 }
             }
 
-            if showingBoatCustomization {
+            if showingBoatCustomization || showingDestinationSetup {
                 Color.clear
                     .contentShape(Rectangle())
                     .ignoresSafeArea()
@@ -404,6 +442,7 @@ struct HomeIslandView: View {
 
             if mode == .explore,
                !showingBoatCustomization,
+               !showingDestinationSetup,
                !showingHarborPanel {
                 HomeIslandClockHUD()
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
@@ -415,6 +454,7 @@ struct HomeIslandView: View {
 
             if mode == .explore,
                !showingBoatCustomization,
+               !showingDestinationSetup,
                !showingHarborPanel,
                !privateChatExpanded,
                homeMusic.isPlaying {
@@ -429,6 +469,7 @@ struct HomeIslandView: View {
             if let multiplayerSession,
                mode == .explore,
                !showingBoatCustomization,
+               !showingDestinationSetup,
                !showingHarborPanel {
                 PrivateIslandChatDock(
                     islandName: multiplayerSession.room.name,
@@ -453,7 +494,7 @@ struct HomeIslandView: View {
 
             if mode != .departure, !showingHarborPanel {
                 VStack(spacing: 0) {
-                    if mode != .camera {
+                    if mode != .camera, !showingDestinationSetup {
                         if showingBoatCustomization {
                             boatCustomizationTopBar
                         } else {
@@ -462,11 +503,15 @@ struct HomeIslandView: View {
                     }
                     if mode == .explore,
                        multiplayerSession?.isReadOnly != true,
-                       !showingBoatCustomization {
-                        voyageNoticeBoardShortcut
+                       !showingBoatCustomization,
+                       !showingDestinationSetup,
+                       showsDestination {
+                        destinationShortcut
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, compactTopHUD ? 8 : 12)
                             .padding(.top, 8)
                     }
-                    if showingBoatCustomization {
+                    if showingBoatCustomization || showingDestinationSetup {
                         EmptyView()
                     } else if mode != .camera, !store.lastSaveSucceeded {
                         saveFailureHint
@@ -490,6 +535,19 @@ struct HomeIslandView: View {
                             )
                         )
                         .padding(.top, 10)
+                    } else if mode == .explore,
+                              isNavigatorNearNoticeBoard,
+                              multiplayerSession?.isReadOnly != true,
+                              !showingBoatCustomization,
+                              !showingDestinationSetup {
+                        // The harbors used to sit behind a permanent HUD button.
+                        // Standing beside the board is the cue now, so the hint
+                        // only appears where tapping it actually works.
+                        noticePill(
+                            symbol: "signpost.right.and.left.fill",
+                            text: String(localized: "Tap the notice board to check it")
+                        )
+                        .padding(.top, 10)
                     }
 
                     Spacer(minLength: mode == .edit || mode == .camera ? 72 : 24)
@@ -497,6 +555,10 @@ struct HomeIslandView: View {
                     if mode == .explore {
                         if showingBoatCustomization {
                             boatCustomizationDock
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        } else if showingDestinationSetup {
+                            destinationSetupDock
+                                .padding(.bottom, 8)
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     } else if mode == .edit {
@@ -567,6 +629,7 @@ struct HomeIslandView: View {
         .animation(.easeOut(duration: 0.18), value: placementAssetID)
         .animation(.easeOut(duration: 0.22), value: mode)
         .animation(.easeOut(duration: 0.22), value: showingBoatCustomization)
+        .animation(.easeOut(duration: 0.22), value: showingDestinationSetup)
         .onChange(of: placementAssetID) { _, value in
             if value != nil {
                 movingSelection = false
@@ -635,6 +698,16 @@ struct HomeIslandView: View {
             if phase == .background, !store.lastSaveSucceeded {
                 store.save()
             }
+            if phase == .active {
+                destinationClock = Date()
+            }
+        }
+        .onReceive(destinationMinuteClock) { tick in
+            guard scenePhase == .active, activeDestination != nil else { return }
+            destinationClock = tick
+        }
+        .overlay(alignment: .topTrailing) {
+            homeUtilityPanel
         }
         .fullScreenCover(isPresented: $showingLogbook) {
             LogbookView()
@@ -649,41 +722,6 @@ struct HomeIslandView: View {
                 .onAppear {
                     publishInteriorPresence(scene: "interior:\(interior.rawValue)")
                 }
-        }
-        .sheet(isPresented: adaptivePresentation($showingTodoList, onPad: false)) {
-            HomeIslandTodoListView(items: $todoItems)
-                .presentationDetents(homeUtilitySheetDetents)
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.ultraThinMaterial)
-        }
-        .fullScreenCover(isPresented: adaptivePresentation($showingTodoList, onPad: true)) {
-            HomeIslandTodoListView(items: $todoItems)
-        }
-        .sheet(isPresented: adaptivePresentation($showingPlayerStats, onPad: false)) {
-            HomeIslandPlayerStatsView(sessions: studySessions)
-                .presentationDetents(homeUtilitySheetDetents)
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.ultraThinMaterial)
-        }
-        .fullScreenCover(isPresented: adaptivePresentation($showingPlayerStats, onPad: true)) {
-            HomeIslandPlayerStatsView(sessions: studySessions)
-        }
-        .sheet(isPresented: adaptivePresentation($showingMusicPicker, onPad: false)) {
-            HomeIslandMusicPanel(
-                isEnabled: $homeMusicEnabled,
-                selectedTrackID: $homeMusicTrack,
-                music: homeMusic
-            )
-            .presentationDetents(homeUtilitySheetDetents)
-            .presentationDragIndicator(.visible)
-            .presentationBackground(.ultraThinMaterial)
-        }
-        .fullScreenCover(isPresented: adaptivePresentation($showingMusicPicker, onPad: true)) {
-            HomeIslandMusicPanel(
-                isEnabled: $homeMusicEnabled,
-                selectedTrackID: $homeMusicTrack,
-                music: homeMusic
-            )
         }
         .fullScreenCover(isPresented: $showingIslandShare) {
             if let islandShareImage {
@@ -741,8 +779,7 @@ struct HomeIslandView: View {
         HStack(spacing: compactTopHUD ? 4 : 8) {
             Button {
                 walkInput = .zero
-                showingPlayerStats = true
-                Haptics.tap(.light)
+                openUtility(.player)
             } label: {
                 playerCardHUD
             }
@@ -811,8 +848,7 @@ struct HomeIslandView: View {
 
                     Button {
                         walkInput = .zero
-                        showingTodoList = true
-                        Haptics.tap(.light)
+                        openUtility(.todo)
                     } label: {
                         Image(systemName: "checklist")
                             .font(.system(size: 16, weight: .semibold))
@@ -824,8 +860,7 @@ struct HomeIslandView: View {
 
                     Button {
                         walkInput = .zero
-                        showingMusicPicker = true
-                        Haptics.tap(.light)
+                        openUtility(.music)
                     } label: {
                         ZStack(alignment: .topTrailing) {
                             Image(systemName: "music.note")
@@ -927,35 +962,313 @@ struct HomeIslandView: View {
         .safeAreaPadding(.top, 8)
     }
 
-    private var voyageNoticeBoardShortcut: some View {
-        Button(action: openVoyageNoticeBoard) {
+    /// いま向かっている目的地。プレイヤーカードの真下に置き、決めてあれば
+    /// 名前と期日だけを小さく出す。押すと、この島から沖の目的地を見つめる。
+    private var destinationShortcut: some View {
+        Button {
+            enterDestinationSetup()
+        } label: {
             HStack(spacing: 9) {
-                Image(systemName: "signpost.right.and.left.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(Color(uiColor: VoyageSceneKit.returnOrange))
+                Image(systemName: "mountain.2.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(LFColor.harborTeal)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Voyage Notice Board")
+                if let destination = activeDestination {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(verbatim: destination.name)
+                            .font(LFFont.copy(12))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+
+                        Text(verbatim: destinationSubtitle)
+                            .font(LFFont.label(8))
+                            .foregroundStyle(homeGlassInk.opacity(0.58))
+                            .lineLimit(1)
+                    }
+                } else {
+                    Text("Set a destination")
                         .font(LFFont.copy(12))
-                    Text("Public harbors · Private islands")
-                        .font(LFFont.label(8))
-                        .foregroundStyle(homeGlassInk.opacity(0.58))
+                        .lineLimit(1)
                 }
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(homeGlassInk.opacity(0.40))
             }
             .foregroundStyle(homeGlassInk)
             .padding(.horizontal, 13)
-            .frame(minHeight: 44)
+            .frame(minHeight: 40)
+            .frame(maxWidth: destinationShortcutMaxWidth, alignment: .leading)
             .background(homeGlassBackground, in: Capsule())
             .overlay(Capsule().stroke(homeGlassInk.opacity(0.12), lineWidth: 1))
             .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
             .contentShape(Capsule())
         }
         .buttonStyle(LFPressableButtonStyle())
-        .accessibilityHint(Text("Open public harbors and private islands"))
+        .accessibilityLabel(Text("Destinations"))
+        .accessibilityValue(
+            Text(
+                verbatim: activeDestination.map { "\($0.name)、\(destinationSubtitle)" }
+                    ?? LF.text("Set a destination")
+            )
+        )
+        .accessibilityHint(Text("Tap to edit the destination."))
+    }
+
+    /// 名前が長くても、島の景色を横切る帯にはしない。
+    private var destinationShortcutMaxWidth: CGFloat {
+        compactTopHUD ? 208 : 260
+    }
+
+    private var activeDestination: Destination? {
+        destinations.first { $0.achievedAt == nil }
+    }
+
+    /// 期日を決めた目的地は「7月14日まで」。着いていれば上陸できると出す。
+    private var destinationSubtitle: String {
+        guard let destination = activeDestination else { return "" }
+        let progress = destination.progress(sessions: studySessions, now: destinationClock)
+        if progress.reached {
+            return LF.text("Ready to go ashore")
+        }
+        if let targetDate = destination.targetDate {
+            return LF.format("Due %@", LF.dayMonth(targetDate))
+        }
+        if let days = progress.remainingDays {
+            return LF.format("%lld days left", Int64(days))
+        }
+        return ""
+    }
+
+    /// 目的地はこの島の主のもの。他の航海士の島を訪ねている間は沖に出さない。
+    /// 設定中は、まだ保存していない期日の島も同じ沖に見せる。
+    private var destinationBearing: HomeIslandDestinationBearing? {
+        guard showsDestination, multiplayerSession?.isReadOnly != true else { return nil }
+        if showingDestinationSetup {
+            return HomeIslandDestinationBearing(
+                name: destinationNameDraft,
+                progressRatio: HomeIslandView.destinationRatio(
+                    deadline: destinationDraftDeadline,
+                    now: destinationClock
+                )
+            )
+        }
+        guard let destination = activeDestination else { return nil }
+        return HomeIslandDestinationBearing(
+            name: destination.name,
+            progressRatio: destination.progress(
+                sessions: studySessions,
+                now: destinationClock
+            ).ratio
+        )
+    }
+
+    /// 下書きの期日の締切(その日いっぱい)。Destination.deadline と同じ解釈。
+    private var destinationDraftDeadline: Date {
+        let start = Calendar.current.startOfDay(for: destinationDateDraft)
+        return Calendar.current.date(
+            byAdding: DateComponents(day: 1, nanosecond: -1),
+            to: start
+        ) ?? destinationDateDraft
+    }
+
+    /// 期日目標の近さ。残り一週間から少しずつ近づく(Destination.progress と同値)。
+    private static func destinationRatio(deadline: Date, now: Date) -> Double {
+        let remaining = max(0, deadline.timeIntervalSince(now))
+        let approachWindow: TimeInterval = 7 * 86_400
+        return min(1, max(0, 1 - remaining / approachWindow))
+    }
+
+    private var destinationDraftIsValid: Bool {
+        !destinationNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && destinationDraftDeadline > destinationClock
+    }
+
+    private func enterDestinationSetup() {
+        walkInput = .zero
+        let existing = activeDestination
+        destinationNameDraft = existing?.name ?? ""
+        destinationDateDraft = existing?.targetDate
+            ?? Calendar.current.date(byAdding: .day, value: 30, to: Date())
+            ?? Date()
+        destinationClock = Date()
+        withAnimation(.easeOut(duration: 0.24)) {
+            showingDestinationSetup = true
+        }
+        Haptics.tap(.light)
+    }
+
+    private func closeDestinationSetup() {
+        destinationNameFocused = false
+        withAnimation(.easeOut(duration: 0.22)) {
+            showingDestinationSetup = false
+        }
+        walkInput = .zero
+    }
+
+    /// 名前と期日だけを刻む。ステップも累計時間も持たせない。
+    private func saveDestination() {
+        guard destinationDraftIsValid else { return }
+        let name = String(
+            destinationNameDraft
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .prefix(60)
+        )
+        let destination: Destination
+        if let existing = activeDestination {
+            destination = existing
+        } else {
+            destination = Destination(name: name)
+            modelContext.insert(destination)
+        }
+        destination.name = name
+        destination.targetDate = destinationDateDraft
+        destination.targetHasTime = false
+        destination.steps = []
+        destination.targetMinutes = nil
+        destination.manual = false
+        destination.manualDone = false
+        destination.updatedAt = Date()
+        try? modelContext.save()
+        SyncService.shared.push(destination)
+        Haptics.success()
+        closeDestinationSetup()
+    }
+
+    private func deleteDestination() {
+        guard let destination = activeDestination else { return }
+        SyncService.shared.delete(destination)
+        modelContext.delete(destination)
+        try? modelContext.save()
+        Haptics.tap(.medium)
+        closeDestinationSetup()
+    }
+
+    /// 上陸は今までどおり、ホーム側の確認と着岸演出にそのまま渡す。
+    private func requestDestinationLandfall() {
+        guard let destination = activeDestination else { return }
+        closeDestinationSetup()
+        onDestinationLandfall?(destination)
+    }
+
+    /// 沖の目的地を見つめながら、名前と期日だけを決める面。
+    private var destinationSetupDock: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "mountain.2.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+
+                Text("Destinations")
+                    .font(LFFont.label(11))
+                    .tracking(0.8)
+                    .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+
+                Spacer(minLength: 8)
+
+                Button {
+                    closeDestinationSetup()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(LFPressableButtonStyle())
+                .accessibilityLabel(Text("Close"))
+            }
+
+            TextField(
+                "e.g. TOEIC, finish the book",
+                text: $destinationNameDraft
+            )
+            .font(LFFont.copy(16))
+            .foregroundStyle(.white)
+            .tint(Color(uiColor: VoyageSceneKit.returnOrange))
+            .focused($destinationNameFocused)
+            .textInputAutocapitalization(.never)
+            .submitLabel(.done)
+            .onSubmit { destinationNameFocused = false }
+            .padding(.horizontal, 14)
+            .frame(height: 46)
+            .background(.white.opacity(0.10), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
+            .accessibilityLabel(Text("Island name"))
+
+            DatePicker(
+                selection: $destinationDateDraft,
+                in: Date()...,
+                displayedComponents: .date
+            ) {
+                Text("Target date")
+                    .font(LFFont.copy(14))
+                    .foregroundStyle(.white.opacity(0.86))
+            }
+            .datePickerStyle(.compact)
+            .tint(Color(uiColor: VoyageSceneKit.returnOrange))
+            .foregroundStyle(.white)
+
+            Text("The island waits beyond the horizon until the final week. Over those last seven days, it draws closer day by day.")
+                .font(LFFont.label(10))
+                .foregroundStyle(.white.opacity(0.52))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                saveDestination()
+            } label: {
+                Text("Save")
+                    .font(LFFont.copy(15))
+                    .foregroundStyle(LFColor.inkFixed)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .background(
+                        Color(uiColor: VoyageSceneKit.returnOrange)
+                            .opacity(destinationDraftIsValid ? 1 : 0.36),
+                        in: Capsule()
+                    )
+            }
+            .buttonStyle(LFPressableButtonStyle())
+            .disabled(!destinationDraftIsValid)
+
+            if activeDestination != nil {
+                HStack(spacing: 10) {
+                    Button {
+                        requestDestinationLandfall()
+                    } label: {
+                        Text("Go ashore")
+                            .font(LFFont.copy(13))
+                            .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 42)
+                            .background(.white.opacity(0.10), in: Capsule())
+                            .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
+                    }
+                    .buttonStyle(LFPressableButtonStyle())
+
+                    Button(role: .destructive) {
+                        deleteDestination()
+                    } label: {
+                        Text("Delete")
+                            .font(LFFont.copy(13))
+                            .foregroundStyle(Color(uiColor: VoyageSceneKit.returnOrange))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 42)
+                            .background(.white.opacity(0.10), in: Capsule())
+                            .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
+                    }
+                    .buttonStyle(LFPressableButtonStyle())
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: 440)
+        .background(hudBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(.white.opacity(0.14), lineWidth: 1)
+        )
+        // 面の余白を叩いた指が、後ろの島まで抜けてカメラを動かさないように。
+        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(.horizontal, 12)
+        .accessibilityElement(children: .contain)
     }
 
     private func openVoyageNoticeBoard() {
@@ -1055,6 +1368,24 @@ struct HomeIslandView: View {
         horizontalSizeClass == .compact
     }
 
+    /// The catalog has grown past thirty props, several of which differ only by
+    /// flower colour. Tiles are sized so the model and its full name are both
+    /// legible rather than fitting the most items on screen; iPad gets the
+    /// roomier size because the shelf spans the whole width there.
+    private var assetTileSide: CGFloat {
+        compactTopHUD ? 88 : 100
+    }
+
+    /// A little taller than it is wide: the extra room is what lets a long name
+    /// like "オレンジのハイビスカス" wrap onto a second line instead of eliding.
+    private var assetTileHeight: CGFloat {
+        assetTileSide + 10
+    }
+
+    private var assetThumbnailSide: CGFloat {
+        compactTopHUD ? 54 : 62
+    }
+
     /// Keep the clock visible while chat is open. On compact layouts the chat
     /// spans the screen, so lift the clock above it; iPad keeps the clock on
     /// the left and the chat dock on the right.
@@ -1066,30 +1397,139 @@ struct HomeIslandView: View {
         return 316
     }
 
-    /// A medium detent is useful on iPhone because the island remains visible
-    /// behind the utility panel. iPad uses full-screen covers below instead of
-    /// UIKit's centered form sheet, which otherwise clips the beginning/end of
-    /// these longer Home utilities.
-    private var homeUtilitySheetDetents: Set<PresentationDetent> {
-        [.medium, .large]
+    /// ToDo, music and the player card are glances, not destinations. They open
+    /// as one small floating panel over the island instead of a sheet or a
+    /// full-screen cover, so the island — and any walk in progress — stays
+    /// visible behind them.
+    private enum HomeUtility {
+        case todo
+        case music
+        case player
     }
 
-    private var usesFullScreenHomeUtilities: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad
+    private var activeUtility: HomeUtility? {
+        if showingTodoList { return .todo }
+        if showingMusicPicker { return .music }
+        if showingPlayerStats { return .player }
+        return nil
     }
 
-    private func adaptivePresentation(
-        _ source: Binding<Bool>,
-        onPad: Bool
-    ) -> Binding<Bool> {
-        Binding(
-            get: {
-                source.wrappedValue && usesFullScreenHomeUtilities == onPad
-            },
-            set: { isPresented in
-                if !isPresented { source.wrappedValue = false }
+    private func openUtility(_ utility: HomeUtility) {
+        let alreadyOpen = activeUtility == utility
+        withAnimation(.spring(response: 0.30, dampingFraction: 0.86)) {
+            showingTodoList = !alreadyOpen && utility == .todo
+            showingMusicPicker = !alreadyOpen && utility == .music
+            showingPlayerStats = !alreadyOpen && utility == .player
+        }
+        Haptics.tap(.light)
+    }
+
+    private func closeUtilityPanel() {
+        withAnimation(.spring(response: 0.30, dampingFraction: 0.86)) {
+            showingTodoList = false
+            showingMusicPicker = false
+            showingPlayerStats = false
+        }
+    }
+
+    private var utilityPanelWidth: CGFloat {
+        compactTopHUD ? 300 : 340
+    }
+
+    @ViewBuilder
+    private var homeUtilityPanel: some View {
+        if let utility = activeUtility {
+            ZStack(alignment: .topTrailing) {
+                // A transparent catcher, not a dimming scrim: tapping the world
+                // closes the panel without the island ever being covered.
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { closeUtilityPanel() }
+
+                VStack(spacing: 0) {
+                    HStack(spacing: 8) {
+                        Image(systemName: utilitySymbol(utility))
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(utilityInk.opacity(0.62))
+                        Text(utilityTitle(utility))
+                            .font(LFFont.label(10))
+                            .tracking(1.1)
+                            .foregroundStyle(utilityInk.opacity(0.72))
+                        Spacer(minLength: 8)
+                        Button {
+                            closeUtilityPanel()
+                            Haptics.tap(.light)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(utilityInk.opacity(0.6))
+                                .frame(width: 26, height: 26)
+                                .background(utilityInk.opacity(0.06), in: Circle())
+                        }
+                        .buttonStyle(LFPressableButtonStyle())
+                        .accessibilityLabel(Text("Close"))
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 38)
+
+                    Rectangle()
+                        .fill(utilityInk.opacity(0.10))
+                        .frame(height: 1)
+
+                    Group {
+                        switch utility {
+                        case .todo:
+                            HomeIslandTodoCompactList(store: todoStore, ink: utilityInk)
+                        case .music:
+                            HomeIslandMusicPanel(
+                                isEnabled: $homeMusicEnabled,
+                                selectedTrackID: $homeMusicTrack,
+                                music: homeMusic,
+                                compact: true
+                            )
+                        case .player:
+                            HomeIslandPlayerStatsView(sessions: studySessions, compact: true)
+                        }
+                    }
+                    .padding(10)
+                }
+                .frame(width: utilityPanelWidth)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(.regularMaterial)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(utilityInk.opacity(0.12), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+                .padding(.trailing, compactTopHUD ? 8 : 12)
+                .padding(.top, 62)
+                .transition(.scale(scale: 0.94, anchor: .topTrailing).combined(with: .opacity))
+                .environment(\.colorScheme, .light)
             }
-        )
+        }
+    }
+
+    private var utilityInk: Color {
+        Color(uiColor: VoyageSceneKit.nightBG)
+    }
+
+    private func utilityTitle(_ utility: HomeUtility) -> LocalizedStringKey {
+        switch utility {
+        case .todo: "ToDo"
+        case .music: "Music"
+        case .player: "Player"
+        }
+    }
+
+    private func utilitySymbol(_ utility: HomeUtility) -> String {
+        switch utility {
+        case .todo: "checklist"
+        case .music: "music.note"
+        case .player: "person.crop.circle"
+        }
     }
 
     private var playerCardWidth: CGFloat {
@@ -1440,6 +1880,7 @@ struct HomeIslandView: View {
         privateChatExpanded = false
         privateChatInputFocused = false
         showingBoatCustomization = false
+        showingDestinationSetup = false
         placementAssetID = nil
         movingSelection = false
         showingSizeControls = false
@@ -1472,6 +1913,7 @@ struct HomeIslandView: View {
     private func enterEditMode() {
         guard canEditIsland else { return }
         showingBoatCustomization = false
+        showingDestinationSetup = false
         walkInput = .zero
         withAnimation(.easeOut(duration: 0.22)) {
             mode = .edit
@@ -1481,6 +1923,7 @@ struct HomeIslandView: View {
 
     private func enterCameraMode() {
         showingBoatCustomization = false
+        showingDestinationSetup = false
         isCapturing = false
         captureRequest = nil
         cameraExposureOffset = 0.18
@@ -1576,6 +2019,7 @@ struct HomeIslandView: View {
 
     private func enterExploreMode() {
         showingBoatCustomization = false
+        showingDestinationSetup = false
         placementAssetID = nil
         movingSelection = false
         showingSizeControls = false
@@ -1877,12 +2321,18 @@ struct HomeIslandView: View {
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+                // Lazy: a tile's thumbnail is rendered from its USDZ the first
+                // time it appears, so opening build mode only pays for the few
+                // tiles on screen instead of the whole catalog.
+                LazyHStack(spacing: 10) {
                     ForEach(visibleAssets) { asset in
                         assetButton(asset)
                     }
                 }
             }
+            // A lazy stack has no intrinsic height, so without this the shelf
+            // grew to fill the screen and painted its backdrop over the island.
+            .frame(height: assetTileHeight)
         }
         .padding(.horizontal, 13)
         .padding(.top, 10)
@@ -1935,8 +2385,8 @@ struct HomeIslandView: View {
                         fallbackSymbol: asset.symbolName
                     )
                         .opacity(canPlace ? 1 : 0.38)
-                        .frame(width: 46, height: 46)
-                        .background(.white.opacity(selected ? 0.13 : 0.055), in: RoundedRectangle(cornerRadius: 12))
+                        .frame(width: assetThumbnailSide, height: assetThumbnailSide)
+                        .background(.white.opacity(selected ? 0.13 : 0.055), in: RoundedRectangle(cornerRadius: 14))
                     if !unlocked {
                         Image(systemName: "lock.fill")
                             .font(.system(size: 8, weight: .bold))
@@ -1954,13 +2404,14 @@ struct HomeIslandView: View {
                     }
                 }
                 Text(verbatim: asset.title)
-                    .font(LFFont.label(9))
+                    .font(LFFont.label(10))
                     .foregroundStyle(.white.opacity(canPlace ? (selected ? 1 : 0.72) : 0.34))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.78)
             }
             .padding(6)
-            .frame(width: 72, height: 72)
+            .frame(width: assetTileSide, height: assetTileHeight)
             .background(
                 selected ? Color(uiColor: VoyageSceneKit.ember).opacity(0.24) : .white.opacity(canPlace ? 0.045 : 0.018),
                 in: RoundedRectangle(cornerRadius: 15)
@@ -2066,8 +2517,43 @@ private struct HomeIslandPlayerStatsView: View {
     @State private var showingProfileEditor = false
 
     let sessions: [StudySession]
+    /// Rendered inside a floating island panel: no navigation chrome, no
+    /// full-screen background — the panel owns both.
+    var compact = false
 
     var body: some View {
+        if compact {
+            compactBody
+        } else {
+            fullBody
+        }
+    }
+
+    @ViewBuilder
+    private var compactBody: some View {
+        if showingProfileEditor {
+            // Editing swaps the panel's content instead of covering the island.
+            ProfileEditorSheet(compact: true) {
+                withAnimation(.easeOut(duration: 0.20)) {
+                    showingProfileEditor = false
+                }
+            }
+            .transition(.opacity)
+        } else {
+            ScrollView {
+                VStack(spacing: 12) {
+                    playerSummary
+                    metricRow
+                    weeklyChart
+                }
+            }
+            .frame(maxHeight: 360)
+            .scrollBounceBehavior(.basedOnSize)
+            .transition(.opacity)
+        }
+    }
+
+    private var fullBody: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
@@ -2116,7 +2602,9 @@ private struct HomeIslandPlayerStatsView: View {
             Spacer(minLength: 8)
 
             Button {
-                showingProfileEditor = true
+                withAnimation(.easeOut(duration: 0.20)) {
+                    showingProfileEditor = true
+                }
                 Haptics.tap(.light)
             } label: {
                 Image(systemName: "pencil")
@@ -2327,8 +2815,34 @@ private struct HomeIslandMusicPanel: View {
     @Binding var selectedTrackID: String
     @ObservedObject var music: HomeBackgroundMusic
     @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    /// Rendered inside a floating island panel: no navigation chrome, no
+    /// full-screen background — the panel owns both.
+    var compact = false
 
     var body: some View {
+        if compact {
+            compactBody
+        } else {
+            fullBody
+        }
+    }
+
+    private var compactBody: some View {
+        ScrollView {
+            VStack(spacing: 10) {
+                playbackCard
+                VStack(spacing: 3) {
+                    ForEach(HomeBackgroundMusic.tracks) { track in
+                        trackRow(track)
+                    }
+                }
+            }
+        }
+        .frame(maxHeight: 340)
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
+    private var fullBody: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
@@ -2749,168 +3263,6 @@ private struct HomeIslandClockHUD: View {
     }()
 }
 
-private struct HomeIslandTodoItem: Codable, Equatable, Identifiable {
-    let id: UUID
-    var title: String
-    var isCompleted: Bool
-    let createdAt: Date
-
-    init(title: String) {
-        id = UUID()
-        self.title = title
-        isCompleted = false
-        createdAt = .now
-    }
-}
-
-private enum HomeIslandTodoPersistence {
-    private static let storageKey = "homeIsland.todoItems.v1"
-
-    static func load() -> [HomeIslandTodoItem] {
-        guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let items = try? JSONDecoder().decode([HomeIslandTodoItem].self, from: data)
-        else { return [] }
-        return items
-    }
-
-    static func save(_ items: [HomeIslandTodoItem]) {
-        guard let data = try? JSONEncoder().encode(items) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
-    }
-}
-
-private struct HomeIslandTodoListView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Binding var items: [HomeIslandTodoItem]
-    @State private var draft = ""
-    @FocusState private var draftFocused: Bool
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                HStack(spacing: 10) {
-                    TextField("Add a task", text: $draft)
-                        .font(LFFont.copy(14))
-                        .foregroundStyle(panelInk)
-                        .tint(panelInk)
-                        .textInputAutocapitalization(.sentences)
-                        .submitLabel(.done)
-                        .focused($draftFocused)
-                        .onSubmit(addDraft)
-
-                    Button(action: addDraft) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 42, height: 42)
-                            .background(panelInk, in: Circle())
-                    }
-                    .buttonStyle(LFPressableButtonStyle())
-                    .disabled(trimmedDraft.isEmpty)
-                    .opacity(trimmedDraft.isEmpty ? 0.45 : 1)
-                    .accessibilityLabel(Text("Add"))
-                }
-                .padding(.leading, 14)
-                .padding(.trailing, 10)
-                .frame(minHeight: 54)
-                .background(Color.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 17))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 17)
-                        .stroke(panelInk.opacity(0.12), lineWidth: 1)
-                )
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 10)
-
-                if items.isEmpty {
-                    ContentUnavailableView(
-                        "No tasks yet",
-                        systemImage: "checklist",
-                        description: Text("Add a task for your next voyage.")
-                    )
-                    .foregroundStyle(panelInk.opacity(0.72))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List {
-                        ForEach($items) { $item in
-                            Button {
-                                item.isCompleted.toggle()
-                                Haptics.tap(.light)
-                            } label: {
-                                HStack(spacing: 12) {
-                                    Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
-                                        .font(.system(size: 20, weight: .medium))
-                                        .foregroundStyle(
-                                            item.isCompleted
-                                                ? panelInk
-                                                : panelInk.opacity(0.42)
-                                        )
-
-                                    Text(verbatim: item.title)
-                                        .font(LFFont.copy(14))
-                                        .foregroundStyle(panelInk.opacity(item.isCompleted ? 0.42 : 0.92))
-                                        .strikethrough(item.isCompleted, color: panelInk.opacity(0.36))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .multilineTextAlignment(.leading)
-                                }
-                                .frame(minHeight: 42)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .listRowBackground(Color.white.opacity(0.52))
-                            .listRowSeparatorTint(panelInk.opacity(0.09))
-                            .swipeActions(edge: .trailing) {
-                                Button(role: .destructive) {
-                                    items.removeAll { $0.id == item.id }
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                            .accessibilityValue(Text(item.isCompleted ? "Completed" : "Not completed"))
-                        }
-                    }
-                    .listStyle(.plain)
-                    .scrollContentBackground(.hidden)
-                }
-            }
-            .background(panelGlass.ignoresSafeArea())
-            .navigationTitle(Text("ToDo"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Close") { dismiss() }
-                        .foregroundStyle(panelInk)
-                }
-            }
-        }
-        .preferredColorScheme(.light)
-        .onChange(of: items) { _, value in
-            HomeIslandTodoPersistence.save(value)
-        }
-    }
-
-    private var trimmedDraft: String {
-        draft.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var panelGlass: Color {
-        Color.white.opacity(0.86)
-    }
-
-    private var panelInk: Color {
-        Color(uiColor: VoyageSceneKit.nightBG)
-    }
-
-    private func addDraft() {
-        let title = trimmedDraft
-        guard !title.isEmpty else { return }
-        items.insert(HomeIslandTodoItem(title: title), at: 0)
-        draft = ""
-        draftFocused = true
-        Haptics.tap(.light)
-    }
-}
-
 private struct HomeIslandAssetThumbnail: View {
     let assetID: String
     let fallbackSymbol: String
@@ -2940,15 +3292,66 @@ private struct HomeIslandAssetThumbnail: View {
 @MainActor
 private enum HomeIslandAssetThumbnailRenderer {
     private static var cache: [String: UIImage] = [:]
+    /// Bump when the render setup changes so stale thumbnails are re-rendered.
+    private static let diskCacheVersion = 1
+    private static let side: CGFloat = 96
+
+    /// Building a Metal renderer costs more than the snapshot itself, so the
+    /// whole catalog shares one.
+    private static let renderer: SCNRenderer = {
+        let renderer = SCNRenderer(device: MTLCreateSystemDefaultDevice(), options: nil)
+        renderer.autoenablesDefaultLighting = false
+        return renderer
+    }()
+
+    private static var diskCacheDirectory: URL? = {
+        guard let base = FileManager.default.urls(
+            for: .cachesDirectory,
+            in: .userDomainMask
+        ).first else { return nil }
+        let directory = base.appendingPathComponent(
+            "HomeIslandAssetThumbnails/v\(diskCacheVersion)",
+            isDirectory: true
+        )
+        try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        return directory
+    }()
 
     static func image(for assetID: String) async -> UIImage? {
         if let cached = cache[assetID] { return cached }
+        if let stored = loadFromDisk(assetID: assetID) {
+            cache[assetID] = stored
+            return stored
+        }
+        // Loading the USDZ and snapshotting it are the expensive half. Yield
+        // first so the palette can appear with its symbols already laid out.
         await Task.yield()
         guard let model = AssetPlacementRuntime.makeAssetNode(resourceName: assetID),
               let image = render(model: model)
         else { return nil }
         cache[assetID] = image
+        storeOnDisk(image: image, assetID: assetID)
         return image
+    }
+
+    private static func diskURL(assetID: String) -> URL? {
+        guard !assetID.contains("/") else { return nil }
+        return diskCacheDirectory?.appendingPathComponent("\(assetID).png")
+    }
+
+    private static func loadFromDisk(assetID: String) -> UIImage? {
+        guard let url = diskURL(assetID: assetID),
+              let data = try? Data(contentsOf: url)
+        else { return nil }
+        return UIImage(data: data)
+    }
+
+    private static func storeOnDisk(image: UIImage, assetID: String) {
+        guard let url = diskURL(assetID: assetID), let data = image.pngData() else { return }
+        try? data.write(to: url, options: .atomic)
     }
 
     private static func render(model: SCNNode) -> UIImage? {
@@ -3001,14 +3404,14 @@ private enum HomeIslandAssetThumbnailRenderer {
         ambientNode.light = ambient
         scene.rootNode.addChildNode(ambientNode)
 
-        let renderer = SCNRenderer(device: nil, options: nil)
         renderer.scene = scene
         renderer.pointOfView = cameraNode
-        renderer.autoenablesDefaultLighting = false
-        return renderer.snapshot(
+        let image = renderer.snapshot(
             atTime: 0,
-            with: CGSize(width: 96, height: 96),
-            antialiasingMode: .multisampling4X
+            with: CGSize(width: side, height: side),
+            antialiasingMode: .multisampling2X
         )
+        renderer.scene = nil
+        return image
     }
 }

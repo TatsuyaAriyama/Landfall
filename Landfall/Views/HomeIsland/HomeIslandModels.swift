@@ -11,10 +11,14 @@ extension Notification.Name {
 enum HomeIslandMetrics {
     static let foundationResourceName = "home_island_foundation"
     static let surfaceY: Float = 0.62
-    // Placement remains slightly inset; walking uses the authored irregular
-    // shoreline below and can approach every safe section of the sand lip.
-    static let buildableRadiusX: Float = 12.42
-    static let buildableRadiusZ: Float = 8.55
+    // Placement follows the same authored shoreline that walking uses, so a
+    // prop can sit on the last hand's width of sand. Only this lip is kept
+    // clear, and only so an anchor never lands in the water.
+    static let placementEdgeLip: Float = 0.10
+    /// The most a prop's own size may pull it back from the shoreline. Large
+    /// scenery still needs a little breathing room, but nothing is pushed as
+    /// far inland as its full placement footprint once did.
+    static let placementEdgeSizeInsetLimit: Float = 0.30
     static let maximumPlacements = 120
     static let arrivalJettyScale: Float = 0.72
     static let arrivalJettyYaw: Float = .pi
@@ -50,14 +54,6 @@ enum HomeIslandMetrics {
     static let arrivalJettyReservedHalfWidth: Float = 4.90
     static let arrivalJettyReservedNearZ: Float = 5.00
     static let arrivalJettyReservedFarZ: Float = 16.80
-    // Keep the social furniture on the camera-right side of the island. The
-    // central x = 0 corridor remains an unobstructed continuation of the pier.
-    static let gatheringDeckPosition = (x: Float(-3.25), z: Float(6.75))
-    static let gatheringDeckScale: Float = 0.90
-    static let gatheringDeckLocalTopY: Float = 0.195
-    static let councilTablePosition = (x: Float(-2.65), z: Float(6.35))
-    static let councilTableScale: Float = 0.72
-    static let councilTableSeatID = UUID(uuidString: "A184B6C1-4B58-44F0-A000-000000000001")!
     static let welcomeBeaconPositions = [
         (x: Float(-0.98), z: Float(8.05)),
         (x: Float(0.98), z: Float(8.05)),
@@ -73,6 +69,41 @@ enum HomeIslandMetrics {
     static let fixedNoticeBoardScale: Float = 0.78
     static let fixedNoticeBoardObstacleRadius: Float = 0.63
     static let fixedNoticeBoardPlacementRadius: Float = 0.68
+
+    // MARK: - 目的地の島
+    // 桟橋の正面(+Z)のはるか沖に、いま向かっている島を置く。孤立した飾りではなく
+    // 「この島から見える目的地」。数値は Web / Android へそのまま写せるよう、
+    // 描画側ではなくここへ集約する。
+    /// 桟橋は x = 0 の海岸にあり、その真正面が +Z。島も同じ線上に置く。
+    static let destinationIslandBearingX: Float = 0
+    /// 進捗0のときの距離。海(HomeIslandOceanEffects の 180×180)の縁は z=90 で、
+    /// そこから先は水が無い。島の向こうに海が残る位置まで手前に置かないと、
+    /// 水平線の上へ乗り上げて「空に浮かぶ島」に見えてしまう。
+    static let destinationIslandFarDistance: Float = 62
+    /// 進捗1(着岸できる)のときの距離。霧を抜け、形がはっきり読める。
+    static let destinationIslandNearDistance: Float = 34
+    /// 遠景でも「島」として読める大きさ。VoyageSceneKit.makeIsland の半径3.4基準。
+    static let destinationIslandScale: Float = 2.75
+    /// My Island の海面(HomeIslandOceanEffects.Layout.homeIsland.surfaceY)。
+    static let seaSurfaceY: Float = -0.55
+    /// 島の吃水線。海面より 1.45 沈め、台座の底面と浜の裏側を水面下へ隠す。
+    /// 浅いと岩盤の縁が海の上に残って浮遊物に見え、深すぎると浜ごと沈んで
+    /// 峰だけの岩礁になる。浜が波打ち際に接する、この深さが島に見える。
+    static let destinationIslandWaterlineY: Float = seaSurfaceY - 1.45
+    /// 目的地の島は -X 側を「正面」として作られている(航海中の世界では船が -X にいる)。
+    /// こちらは島の -Z 側から見るので、その分だけ回して同じ面を見せる。
+    static let destinationIslandYaw: Float = -.pi / 2
+
+    /// 進捗で近づく距離。Web `homeDestinationDistance` と同じ曲線(pow 2.15)で、
+    /// 序盤はほとんど動かず、終盤にはっきり近づく。
+    static func destinationIslandDistance(progressRatio: Double) -> Float {
+        let progress = Float(min(1, max(0, progressRatio)))
+        let far = destinationIslandFarDistance
+        let near = destinationIslandNearDistance
+        if progress <= 0 { return far }
+        if progress >= 1 { return near }
+        return far + (near - far) * pow(progress, 2.15)
+    }
 
     private static let foundationRadiusX: Float = 13.10
     private static let foundationRadiusZ: Float = 9.10
@@ -98,20 +129,6 @@ enum HomeIslandMetrics {
         sandEdgePoint(angle: -.pi / 2)
     }
 
-    static func containsGatheringDeck(
-        x: Float,
-        z: Float,
-        margin: Float = 0
-    ) -> Bool {
-        let dx = abs(x - gatheringDeckPosition.x)
-        let relativeZ = z - gatheringDeckPosition.z
-        return dx <= 2.90 * gatheringDeckScale + margin
-            // Blender's positive Y becomes SceneKit's negative Z. Match the
-            // four added planks beneath the seaward council-chair backrest.
-            && relativeZ >= -2.15 * gatheringDeckScale - margin
-            && relativeZ <= 1.57 * gatheringDeckScale + margin
-    }
-
     static func containsWalkableSand(x: Float, z: Float, margin: Float) -> Bool {
         let angle = atan2(-z / foundationRadiusZ, x / foundationRadiusX)
         let edge = sandEdgePoint(angle: angle)
@@ -120,23 +137,29 @@ enum HomeIslandMetrics {
         return distance <= max(0, edgeDistance - margin)
     }
 
+    /// How far inside the authored shoreline a prop's anchor may sit.
+    private static func placementEdgeInset(footprintMargin: Float) -> Float {
+        placementEdgeLip + min(footprintMargin * 0.22, placementEdgeSizeInsetLimit)
+    }
+
     static func clampedPosition(
         x: Float,
         z: Float,
         footprintMargin: Float = 0
     ) -> (x: Float, z: Float) {
-        let radiusX = max(0.5, buildableRadiusX - footprintMargin)
-        let radiusZ = max(0.5, buildableRadiusZ - footprintMargin)
-        let normalized = (x * x) / (radiusX * radiusX)
-            + (z * z) / (radiusZ * radiusZ)
-        guard normalized > 1 else { return (x, z) }
-        let scale = 1 / sqrt(normalized)
+        let distance = sqrt(x * x + z * z)
+        guard distance > 0.0001 else { return (x, z) }
+        let angle = atan2(-z / foundationRadiusZ, x / foundationRadiusX)
+        let edge = sandEdgePoint(angle: angle)
+        let edgeDistance = sqrt(edge.x * edge.x + edge.z * edge.z)
+        let limit = max(0.5, edgeDistance - placementEdgeInset(footprintMargin: footprintMargin))
+        guard distance > limit else { return (x, z) }
+        let scale = limit / distance
         return (x * scale, z * scale)
     }
 
     static func contains(x: Float, z: Float) -> Bool {
-        (x * x) / (buildableRadiusX * buildableRadiusX)
-            + (z * z) / (buildableRadiusZ * buildableRadiusZ) <= 1
+        containsWalkableSand(x: x, z: z, margin: placementEdgeLip)
     }
 
     /// A jetty is authored along local Z: positive Z is the low shore ramp and
@@ -233,8 +256,6 @@ enum HomeIslandAssetCatalog {
         "voyage_notice_board",
         "wooden_jetty",
         "harbor_boarding_float",
-        "harbor_gathering_deck",
-        "harbor_council_table",
         "harbor_welcome_beacon",
     ]
 
@@ -279,11 +300,15 @@ enum HomeIslandAssetCatalog {
         ),
     ]
 
-    private static let harborCouncilTableSeatSlots = [
-        HomeIslandContactSlotDefinition(id: "north", motion: .sit, seatNodeName: "SeatSocket_North", approachNodeName: "SeatApproach_North", facesAwayFromApproach: true),
-        HomeIslandContactSlotDefinition(id: "east", motion: .sit, seatNodeName: "SeatSocket_East", approachNodeName: "SeatApproach_East", facesAwayFromApproach: true),
-        HomeIslandContactSlotDefinition(id: "south", motion: .sit, seatNodeName: "SeatSocket_South", approachNodeName: "SeatApproach_South", facesAwayFromApproach: true),
-        HomeIslandContactSlotDefinition(id: "west", motion: .sit, seatNodeName: "SeatSocket_West", approachNodeName: "SeatApproach_West", facesAwayFromApproach: true),
+    /// The council chair is a single seat the player positions themselves, so
+    /// the navigator walks in from the front and sits with the backrest behind.
+    private static let councilChairSeatSlots = [
+        HomeIslandContactSlotDefinition(
+            id: "seat",
+            motion: .sit,
+            seatNodeName: "SeatSocket_Seat",
+            approachNodeName: "SeatApproach_Seat"
+        ),
     ]
 
     static func contactSlots(for assetID: String) -> [HomeIslandContactSlotDefinition] {
@@ -294,8 +319,8 @@ enum HomeIslandAssetCatalog {
             driftwoodBenchSeatSlots
         case "navigator_hammock":
             navigatorHammockContactSlots
-        case "harbor_council_table":
-            harborCouncilTableSeatSlots
+        case "council_chair":
+            councilChairSeatSlots
         default:
             []
         }
@@ -315,7 +340,11 @@ enum HomeIslandAssetCatalog {
     private static let calibratedScaleAssetIDs: Set<String> = [
         "small_tree",
         "small_stump",
-        "small_rock"
+        "small_rock",
+        // Both shipped far too large for the navigator; resize the ones already
+        // placed rather than leaving giant furniture on existing islands.
+        "wooden_desk",
+        "wooden_chair"
     ]
 
     /// Only these operator-approved assets can enter player-authored islands.
@@ -324,10 +353,18 @@ enum HomeIslandAssetCatalog {
     static let approved: [HomeIslandAsset] = [
         HomeIslandAsset(
             id: "small_tree",
-            title: String(localized: "Small Tree"),
+            title: String(localized: "Broadleaf Tree"),
             symbolName: "tree.fill",
             defaultScale: 1.32,
             footprintMargin: 0.38,
+            unlockLevel: 1
+        ),
+        HomeIslandAsset(
+            id: "conifer_tree",
+            title: String(localized: "Conifer"),
+            symbolName: "tree.fill",
+            defaultScale: 1.20,
+            footprintMargin: 0.40,
             unlockLevel: 1
         ),
         HomeIslandAsset(
@@ -336,7 +373,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "tree.fill",
             defaultScale: 0.76,
             footprintMargin: 0.60,
-            unlockLevel: 1
+            unlockLevel: 4
         ),
         HomeIslandAsset(
             id: "small_lighthouse",
@@ -344,7 +381,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "light.beacon.max.fill",
             defaultScale: 0.72,
             footprintMargin: 0.68,
-            unlockLevel: 2
+            unlockLevel: 4
         ),
         HomeIslandAsset(
             id: "small_rock",
@@ -360,7 +397,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "house.fill",
             defaultScale: 0.78,
             footprintMargin: 0.92,
-            unlockLevel: 3
+            unlockLevel: 4
         ),
         HomeIslandAsset(
             id: "weathered_crate",
@@ -400,7 +437,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "drop.fill",
             defaultScale: 0.76,
             footprintMargin: 1.14,
-            unlockLevel: 9
+            unlockLevel: 7
         ),
         HomeIslandAsset(
             id: "voyage_flagpole",
@@ -408,7 +445,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "flag.fill",
             defaultScale: 0.72,
             footprintMargin: 1.10,
-            unlockLevel: 10
+            unlockLevel: 8
         ),
         HomeIslandAsset(
             id: "cliff_lookout",
@@ -416,7 +453,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "binoculars.fill",
             defaultScale: 0.72,
             footprintMargin: 1.90,
-            unlockLevel: 11
+            unlockLevel: 9
         ),
         HomeIslandAsset(
             id: "mossy_ruins",
@@ -424,7 +461,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "building.columns.fill",
             defaultScale: 0.70,
             footprintMargin: 1.62,
-            unlockLevel: 12
+            unlockLevel: 10
         ),
         HomeIslandAsset(
             id: "stone_path_straight",
@@ -432,7 +469,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "square.grid.3x3.fill",
             defaultScale: 0.78,
             footprintMargin: 1.50,
-            unlockLevel: 13
+            unlockLevel: 12
         ),
         HomeIslandAsset(
             id: "stone_path_curve",
@@ -440,7 +477,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "square.grid.3x3.fill",
             defaultScale: 0.78,
             footprintMargin: 1.62,
-            unlockLevel: 13
+            unlockLevel: 12
         ),
         HomeIslandAsset(
             id: "stone_path_fork",
@@ -448,7 +485,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "square.grid.3x3.fill",
             defaultScale: 0.78,
             footprintMargin: 1.60,
-            unlockLevel: 13
+            unlockLevel: 12
         ),
         HomeIslandAsset(
             id: "coastal_rocks",
@@ -456,7 +493,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "mountain.2.fill",
             defaultScale: 0.72,
             footprintMargin: 1.90,
-            unlockLevel: 14
+            unlockLevel: 13
         ),
         HomeIslandAsset(
             id: "navigator_tent",
@@ -470,17 +507,21 @@ enum HomeIslandAssetCatalog {
             id: "wooden_desk",
             title: String(localized: "Wooden Desk"),
             symbolName: "table.furniture.fill",
-            defaultScale: 0.82,
-            footprintMargin: 1.08,
+            // Calibrated against the seated navigator: the council chair's seat
+            // socket sits 0.42 above ground, so a desk top belongs near 0.67.
+            defaultScale: 0.53,
+            footprintMargin: 0.70,
             unlockLevel: 4
         ),
         HomeIslandAsset(
             id: "wooden_chair",
             title: String(localized: "Wooden Chair"),
             symbolName: "chair.fill",
-            defaultScale: 0.82,
-            footprintMargin: 0.70,
-            unlockLevel: 3
+            // Its authored seat is 0.89 tall, which the navigator could not sit
+            // on at the old scale. 0.47 lands the seat with the council chair.
+            defaultScale: 0.47,
+            footprintMargin: 0.42,
+            unlockLevel: 4
         ),
         HomeIslandAsset(
             id: "harbor_lantern_post",
@@ -496,7 +537,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "chair.fill",
             defaultScale: 0.62,
             footprintMargin: 1.08,
-            unlockLevel: 5
+            unlockLevel: 3
         ),
         HomeIslandAsset(
             id: "weathered_anchor",
@@ -544,7 +585,7 @@ enum HomeIslandAssetCatalog {
             symbolName: "location.north.circle.fill",
             defaultScale: 0.78,
             footprintMargin: 1.18,
-            unlockLevel: 12
+            unlockLevel: 11
         ),
         HomeIslandAsset(
             id: "dune_grass_patch",
@@ -552,6 +593,70 @@ enum HomeIslandAssetCatalog {
             symbolName: "leaf.fill",
             defaultScale: 0.82,
             footprintMargin: 0.78,
+            unlockLevel: 4
+        ),
+        HomeIslandAsset(
+            id: "rose_bush_white",
+            title: String(localized: "White Roses"),
+            symbolName: "camera.macro",
+            defaultScale: 1.00,
+            footprintMargin: 0.42,
+            unlockLevel: 4
+        ),
+        HomeIslandAsset(
+            id: "rose_bush_red",
+            title: String(localized: "Red Roses"),
+            symbolName: "camera.macro",
+            defaultScale: 1.00,
+            footprintMargin: 0.42,
+            unlockLevel: 4
+        ),
+        HomeIslandAsset(
+            id: "rose_bush_yellow",
+            title: String(localized: "Yellow Roses"),
+            symbolName: "camera.macro",
+            defaultScale: 1.00,
+            footprintMargin: 0.42,
+            unlockLevel: 4
+        ),
+        HomeIslandAsset(
+            id: "hibiscus_bush_red",
+            title: String(localized: "Red Hibiscus"),
+            symbolName: "camera.macro",
+            defaultScale: 1.00,
+            footprintMargin: 0.42,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "hibiscus_bush_pink",
+            title: String(localized: "Pink Hibiscus"),
+            symbolName: "camera.macro",
+            defaultScale: 1.00,
+            footprintMargin: 0.42,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "council_table",
+            title: String(localized: "Council Table"),
+            symbolName: "table.furniture.fill",
+            defaultScale: 0.72,
+            footprintMargin: 0.92,
+            unlockLevel: 3
+        ),
+        HomeIslandAsset(
+            id: "council_chair",
+            title: String(localized: "Council Chair"),
+            symbolName: "chair.fill",
+            defaultScale: 0.72,
+            footprintMargin: 0.62,
+            unlockLevel: 3
+        ),
+        HomeIslandAsset(
+            id: "hibiscus_bush_orange",
+            title: String(localized: "Orange Hibiscus"),
+            symbolName: "camera.macro",
+            defaultScale: 1.00,
+            footprintMargin: 0.42,
             unlockLevel: 2
         ),
     ]
@@ -604,7 +709,9 @@ enum HomeIslandAssetCatalog {
     /// repeated more freely so players can shape a convincing island edge.
     static func placementLimit(for assetID: String) -> Int {
         switch assetID {
-        case "small_stump", "small_rock", "small_tree":
+        case "small_stump", "small_rock", "small_tree", "conifer_tree",
+             "rose_bush_white", "rose_bush_red", "rose_bush_yellow",
+             "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange":
             10
         default:
             3
@@ -674,7 +781,15 @@ enum HomeIslandAssetCatalog {
              "stone_path_curve",
              "stone_path_fork",
              "compass_rose_inlay",
-             "dune_grass_patch":
+             "dune_grass_patch",
+             // Flowers are planting, not scenery: the navigator walks through a
+             // bed of roses exactly as if it were open ground.
+             "rose_bush_white",
+             "rose_bush_red",
+             "rose_bush_yellow",
+             "hibiscus_bush_red",
+             "hibiscus_bush_pink",
+             "hibiscus_bush_orange":
             false
         default:
             true
@@ -697,14 +812,22 @@ enum HomeIslandAssetCatalog {
     /// A compact gameplay collision profile. Paths remain deliberately
     /// traversable and may sit beneath furniture or scenery; jetties only need
     /// separation from other jetties because their landward end touches sand.
+    ///
+    /// Deliberately much tighter than the authored footprint. The footprint
+    /// describes the space a prop wants to look good in; this is only the space
+    /// two props may not share, so islands can be arranged densely.
     static func placementCollisionRadius(assetID: String, scale: Float) -> Float {
-        max(0.24, footprintMargin(assetID: assetID, scale: scale) * 0.68)
+        max(0.16, footprintMargin(assetID: assetID, scale: scale) * 0.38)
     }
 
+    /// Planting is free-form: flowers and grass may overlap each other and any
+    /// other prop, which is how a believable bed or border gets made.
     static func participatesInPlacementCollision(assetID: String) -> Bool {
         switch assetID {
         case "stone_path_straight", "stone_path_curve", "stone_path_fork",
-             "compass_rose_inlay", "dune_grass_patch":
+             "compass_rose_inlay", "dune_grass_patch",
+             "rose_bush_white", "rose_bush_red", "rose_bush_yellow",
+             "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange":
             false
         default:
             true
@@ -1304,16 +1427,6 @@ final class HomeIslandStore: ObservableObject {
         if abs(transform.x) <= HomeIslandMetrics.arrivalJettyReservedHalfWidth + candidateRadius,
            transform.z >= HomeIslandMetrics.arrivalJettyReservedNearZ - candidateRadius,
            transform.z <= HomeIslandMetrics.arrivalJettyReservedFarZ + candidateRadius {
-            return false
-        }
-
-        // The shared deck reaches slightly beyond the jetty reservation on its
-        // outer edge. Reserve its full authored footprint for solid props too.
-        if HomeIslandMetrics.containsGatheringDeck(
-            x: transform.x,
-            z: transform.z,
-            margin: candidateRadius
-        ) {
             return false
         }
 

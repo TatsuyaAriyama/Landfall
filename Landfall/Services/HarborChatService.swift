@@ -60,6 +60,7 @@ final class HarborChatService: ObservableObject {
     @Published private(set) var messages: [ChatMessage] = []
     /// 自分がブロックした相手。チャット表示から除く。
     @Published private(set) var blocked: Set<String> = []
+    private var blockedOwnerUID: String?
 
     private var listener: ListenerRegistration?
     private var db: Firestore { Firestore.firestore() }
@@ -304,10 +305,21 @@ private enum ChatSafety {
             return
         }
         #endif
-        guard let uid else { blocked = []; return }
+        guard let uid else {
+            blocked = []
+            blockedOwnerUID = nil
+            return
+        }
+        if blockedOwnerUID != uid {
+            // Never carry hidden-sailor state from the previous signed-in account.
+            blocked = []
+            blockedOwnerUID = uid
+        }
         guard let snap = try? await db.collection("users").document(uid)
             .collection("blocks").getDocuments() else { return }
+        guard self.uid == uid else { return }
         blocked = Set(snap.documents.map(\.documentID))
+        blockedOwnerUID = uid
     }
 
     func block(_ targetUid: String) async throws {
@@ -325,6 +337,7 @@ private enum ChatSafety {
         try await db.collection("users").document(uid).collection("blocks")
             .document(targetUid).setData(["createdAt": FieldValue.serverTimestamp()])
         guard self.uid == uid else { return }
+        blockedOwnerUID = uid
         blocked.insert(targetUid)
     }
 
@@ -341,6 +354,7 @@ private enum ChatSafety {
         try await db.collection("users").document(uid).collection("blocks")
             .document(targetUid).delete()
         guard self.uid == uid else { return }
+        blockedOwnerUID = uid
         blocked.remove(targetUid)
     }
 

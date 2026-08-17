@@ -3,6 +3,43 @@ import FirebaseFirestore
 import Foundation
 import SwiftData
 
+struct PublicHarborMonthDetail {
+    let days: Set<Int>
+    let sessions: [SharedSession]
+}
+
+/// Keeps Firestore's live listener private to the service while giving SwiftUI
+/// an explicit lifetime to cancel when the selected sailor or month changes.
+final class PublicHarborMonthSubscription {
+    private var registration: ListenerRegistration?
+
+    init(_ registration: ListenerRegistration) {
+        self.registration = registration
+    }
+
+    func cancel() {
+        registration?.remove()
+        registration = nil
+    }
+
+    deinit { cancel() }
+}
+
+final class PublicHarborMembersSubscription {
+    private var registration: ListenerRegistration?
+
+    init(_ registration: ListenerRegistration) {
+        self.registration = registration
+    }
+
+    func cancel() {
+        registration?.remove()
+        registration = nil
+    }
+
+    deinit { cancel() }
+}
+
 /// パブリックの港。参加すると、名前・アイコン・作業記録がその港に表示される。
 /// 記録は月ごとに積み上がって残り、**書いた本人だけ**が消せる(ルールで強制)。
 /// 退港すると自分の共有分(プロフィール+全記録)が消える。
@@ -22,6 +59,14 @@ final class PublicHarborService: ObservableObject {
     private static let joinedCacheKey = "publicHarbor.joined"
     private var db: Firestore { Firestore.firestore() }
     private var uid: String? { Auth.auth().currentUser?.uid }
+    private struct PendingMonthPublish {
+        let uid: String
+        let slugs: Set<String>
+        let docID: String
+        let data: [String: Any]
+    }
+    private var pendingMonthPublish: PendingMonthPublish?
+    private var monthPublishTask: Task<Void, Never>?
 
     private func memberRef(slug: String, uid: String) -> DocumentReference {
         db.collection("publicHarbors").document(slug)
@@ -73,6 +118,7 @@ final class PublicHarborService: ObservableObject {
     /// 消せるのは本人だけ(ルールで強制)。
     func leave(_ slug: String) async throws {
         guard let uid else { throw RoomError.notSignedIn }
+        await stopMonthPublishing(for: slug)
         try await deleteMembership(slug: slug, uid: uid)
 
         // While the request was in flight another account may have signed in. Do not mutate that
@@ -85,6 +131,10 @@ final class PublicHarborService: ObservableObject {
     /// アカウント削除時: 全パブリック港から自分の痕跡を消す。
     func leaveAll() async throws {
         guard let uid else { throw RoomError.notSignedIn }
+        pendingMonthPublish = nil
+        monthPublishTask?.cancel()
+        await monthPublishTask?.value
+        monthPublishTask = nil
         var deletedSlugs = Set<String>()
         var firstError: Error?
 
@@ -140,40 +190,150 @@ final class PublicHarborService: ObservableObject {
 
     func resetLocalState() {
         joined = []
+        pendingMonthPublish = nil
+        monthPublishTask?.cancel()
+        monthPublishTask = nil
         UserDefaults.standard.removeObject(forKey: Self.joinedCacheKey)
     }
 
     // MARK: - 記録の公開(自分の分だけ)
 
     /// 当月の記録を参加中の全パブリック港に書く。記録の保存・編集・削除のたびに呼ばれる。
-    /// 月のドキュメントは上書き型なので、ローカルでの削除もそのまま反映される
-    /// (=本人の操作だけがデータを変える)。
+    /// 月のドキュメントは上書き型なので、ローカルでの削除もそのまま反映される。
+    /// 書き込みは必ず直列化し、保存が続いた場合は最後の全量をもう一度送る。
+    /// これにより古い3件時点のリクエストが新しい全件の後から到着して巻き戻す競合を防ぐ。
     func publishCurrentMonth(context: ModelContext) {
         guard let uid, !joined.isEmpty else { return }
         guard let payload = RoomService.monthPayload(context: context) else { return }
-        for slug in joined {
-            memberRef(slug: slug, uid: uid)
-                .collection("months").document(payload.docID)
-                .setData(payload.data)
+        pendingMonthPublish = PendingMonthPublish(
+            uid: uid,
+            slugs: joined,
+            docID: payload.docID,
+            data: payload.data
+        )
+        guard monthPublishTask == nil else { return }
+        monthPublishTask = Task { await drainMonthPublishes() }
+    }
+
+    private func drainMonthPublishes() async {
+        var encounteredError = false
+        while !Task.isCancelled, let publish = pendingMonthPublish {
+            pendingMonthPublish = nil
+            guard uid == publish.uid else { continue }
+            for slug in publish.slugs.sorted() {
+                guard !Task.isCancelled, uid == publish.uid else { break }
+                do {
+                    try await memberRef(slug: slug, uid: publish.uid)
+                        .collection("months").document(publish.docID)
+                        .setData(publish.data)
+                } catch {
+                    // Keep the newest complete payload queued for one later pass. A subsequent
+                    // local or cloud-sync change replaces it with an even newer complete copy.
+                    if pendingMonthPublish == nil, uid == publish.uid {
+                        pendingMonthPublish = publish
+                    }
+                    encounteredError = true
+                    break
+                }
+            }
+            if encounteredError { break }
+        }
+        let shouldRestart = !Task.isCancelled && !encounteredError && pendingMonthPublish != nil
+        monthPublishTask = nil
+        if shouldRestart {
+            monthPublishTask = Task { await drainMonthPublishes() }
+        }
+    }
+
+    private func stopMonthPublishing(for slug: String) async {
+        monthPublishTask?.cancel()
+        await monthPublishTask?.value
+        monthPublishTask = nil
+        if let pending = pendingMonthPublish {
+            let remaining = pending.slugs.subtracting([slug])
+            pendingMonthPublish = remaining.isEmpty ? nil : PendingMonthPublish(
+                uid: pending.uid,
+                slugs: remaining,
+                docID: pending.docID,
+                data: pending.data
+            )
+        }
+        if pendingMonthPublish != nil {
+            monthPublishTask = Task { await drainMonthPublishes() }
         }
     }
 
     // MARK: - 港のメンバー
 
-    /// 在港の船乗り(プロフィール一覧)。画面を開いた時点のサーバー値を読む。
-    /// キャッシュだけを返して「最新に見える古いカード」を出さない。
-    func members(of slug: String) async throws -> [HarborMember] {
+    /// 在港の船乗り(プロフィール一覧)。60件ずつ全ページを読み、最初のページから
+    /// 画面へ渡す。以前の固定200件打ち切りを避けつつ、全件待ちで画面を止めない。
+    func members(
+        of slug: String,
+        onPage: (([HarborMember]) -> Void)? = nil
+    ) async throws -> [HarborMember] {
         guard uid != nil else { throw RoomError.notSignedIn }
-        let snapshot = try await db.collection("publicHarbors").document(slug)
+        let pageSize = 60
+        let collection = db.collection("publicHarbors").document(slug)
             .collection("members")
-            .limit(to: 200)
-            .getDocuments(source: .server)
+        var query: Query = collection
+            .order(by: FieldPath.documentID())
+            .limit(to: pageSize)
+        var documents: [QueryDocumentSnapshot] = []
+
+        // Paint a warm cache immediately when available; the authoritative server pages below
+        // replace it moments later, so speed never comes at the cost of remaining stale.
+        if let cached = try? await query.getDocuments(source: .cache), !cached.documents.isEmpty {
+            onPage?(
+                cached.documents
+                    .sorted(by: Self.memberDocumentNewestFirst)
+                    .map(Self.member)
+            )
+        }
+
+        while true {
+            let snapshot = try await query.getDocuments(source: .server)
+            documents.append(contentsOf: snapshot.documents)
+            let resolved = documents
+                .sorted(by: Self.memberDocumentNewestFirst)
+                .map(Self.member)
+            onPage?(resolved)
+            guard snapshot.documents.count == pageSize, let last = snapshot.documents.last else { break }
+            query = collection
+                .order(by: FieldPath.documentID())
+                .start(afterDocument: last)
+                .limit(to: pageSize)
+        }
 
         // order(by: joinedAt) は古いクライアントが作った joinedAt 無しのカードを
         // 結果から除外するため、全カードを読み、存在する日時でクライアント側ソートする。
-        return snapshot.documents
+        return documents
             .sorted(by: Self.memberDocumentNewestFirst)
             .map(Self.member)
+    }
+
+    /// Keeps the list current while the harbor is open. A join, departure, or player-card edit
+    /// now appears without closing the board or manually pulling to refresh.
+    func observeMembers(
+        of slug: String,
+        onChange: @escaping (Result<[HarborMember], Error>) -> Void
+    ) -> PublicHarborMembersSubscription? {
+        guard uid != nil else { return nil }
+        let registration = db.collection("publicHarbors").document(slug)
+            .collection("members")
+            .addSnapshotListener { snapshot, error in
+                Task { @MainActor in
+                    if let error {
+                        onChange(.failure(error))
+                        return
+                    }
+                    guard let snapshot else { return }
+                    let members = snapshot.documents
+                        .sorted(by: Self.memberDocumentNewestFirst)
+                        .map(Self.member)
+                    onChange(.success(members))
+                }
+            }
+        return PublicHarborMembersSubscription(registration)
     }
 
     /// 詳細を開くたびにメンバーカードを取り直す。
@@ -192,13 +352,46 @@ final class PublicHarborService: ObservableObject {
         memberID: String,
         year: Int,
         month: Int
-    ) async throws -> (days: Set<Int>, sessions: [SharedSession]) {
+    ) async throws -> PublicHarborMonthDetail {
         guard uid != nil else { throw RoomError.notSignedIn }
         let docID = String(format: "%04d-%02d", year, month)
         let document = try await memberRef(slug: slug, uid: memberID)
             .collection("months").document(docID)
             .getDocument(source: .server)
-        guard let data = document.data() else { return ([], []) }
+        return Self.monthDetail(from: document.data())
+    }
+
+    /// Streams the selected month while it is open. New sessions from another
+    /// device appear without leaving and reopening the sailor's page.
+    func observeMonthDetail(
+        slug: String,
+        memberID: String,
+        year: Int,
+        month: Int,
+        onChange: @escaping (Result<PublicHarborMonthDetail, Error>) -> Void
+    ) -> PublicHarborMonthSubscription? {
+        guard uid != nil else { return nil }
+        let docID = String(format: "%04d-%02d", year, month)
+        let registration = memberRef(slug: slug, uid: memberID)
+            .collection("months").document(docID)
+            .addSnapshotListener { document, error in
+                Task { @MainActor in
+                    if let error {
+                        onChange(.failure(error))
+                    } else if document?.metadata.isFromCache == true {
+                        // The screen has already loaded the authoritative server copy. Do not
+                        // let an older disk cache briefly replace it while the listener connects.
+                        return
+                    } else {
+                        onChange(.success(Self.monthDetail(from: document?.data())))
+                    }
+                }
+            }
+        return PublicHarborMonthSubscription(registration)
+    }
+
+    private static func monthDetail(from data: [String: Any]?) -> PublicHarborMonthDetail {
+        guard let data else { return PublicHarborMonthDetail(days: [], sessions: []) }
 
         var days = Set((data["days"] as? [Any] ?? []).compactMap(Self.integer))
         let sessions = (data["sessions"] as? [[String: Any]] ?? [])
@@ -209,10 +402,10 @@ final class PublicHarborService: ObservableObject {
                 if $0.date != nil { return true }
                 if $1.date != nil { return false }
                 return $0.day > $1.day
-            }
+        }
         // days の更新だけが欠けた旧データでも、存在する記録へ辿れるよう補完する。
         days.formUnion(sessions.map(\.day))
-        return (days, sessions)
+        return PublicHarborMonthDetail(days: days, sessions: sessions)
     }
 
     private static func member(_ document: DocumentSnapshot) -> HarborMember {

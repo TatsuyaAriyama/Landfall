@@ -110,6 +110,9 @@ struct HarborView: View {
     @State private var now = Date()
     @State private var showingPublicJournal = false
     @State private var showingVoyagePass = false
+    @State private var publicHarborPendingLeave: PublicHarbor?
+    @State private var publicHarborLeavingSlug: String?
+    @State private var publicHarborLeaveError: String?
     private let showsOceanBackground: Bool
     private let onPublicHarborSelected: ((PublicHarbor) -> Void)?
     private let onRoomSelected: ((HarborRoom) -> Void)?
@@ -225,6 +228,34 @@ struct HarborView: View {
             Button("OK", role: .cancel) { privateIslandError = nil }
         } message: {
             Text(verbatim: privateIslandError ?? "")
+        }
+        .alert(
+            "Couldn't leave this harbor.",
+            isPresented: Binding(
+                get: { publicHarborLeaveError != nil },
+                set: { if !$0 { publicHarborLeaveError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { publicHarborLeaveError = nil }
+        } message: {
+            Text(verbatim: publicHarborLeaveError ?? "")
+        }
+        .confirmationDialog(
+            "Leave this harbor?",
+            isPresented: Binding(
+                get: { publicHarborPendingLeave != nil },
+                set: { if !$0 { publicHarborPendingLeave = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: publicHarborPendingLeave
+        ) { harbor in
+            Button("Leave this harbor", role: .destructive) {
+                publicHarborPendingLeave = nil
+                leavePublicHarbor(harbor)
+            }
+            Button("Cancel", role: .cancel) { publicHarborPendingLeave = nil }
+        } message: { _ in
+            Text("Your name and shared records will be removed from this harbor. You can rejoin anytime.")
         }
         .confirmationDialog(
             "Close this private island?",
@@ -469,18 +500,42 @@ struct HarborView: View {
 
     @ViewBuilder
     private func publicRow(_ harbor: PublicHarbor) -> some View {
-        if let onPublicHarborSelected {
-            Button {
-                onPublicHarborSelected(harbor)
-            } label: {
-                publicRowLabel(harbor)
+        HStack(spacing: 4) {
+            if let onPublicHarborSelected {
+                Button {
+                    onPublicHarborSelected(harbor)
+                } label: {
+                    publicRowLabel(harbor)
+                }
+                .buttonStyle(.plain)
+            } else {
+                NavigationLink(value: harbor) {
+                    publicRowLabel(harbor)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
-        } else {
-            NavigationLink(value: harbor) {
-                publicRowLabel(harbor)
+
+            if publicService.joined.contains(harbor.slug) {
+                Button {
+                    guard publicHarborLeavingSlug == nil else { return }
+                    publicHarborPendingLeave = harbor
+                } label: {
+                    if publicHarborLeavingSlug == harbor.slug {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(publicListInk.opacity(0.46))
+                    } else {
+                        Text("Leave")
+                            .font(LFFont.label(10))
+                            .foregroundStyle(publicListInk.opacity(0.46))
+                    }
+                }
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .disabled(publicHarborLeavingSlug != nil)
+                .accessibilityLabel(Text("Leave this harbor"))
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -532,6 +587,21 @@ struct HarborView: View {
 
     private var publicListInk: Color {
         showsOceanBackground ? timeOfDay.palette.inkColor : LFColor.harborTeal
+    }
+
+    private func leavePublicHarbor(_ harbor: PublicHarbor) {
+        guard publicHarborLeavingSlug == nil else { return }
+        publicHarborLeavingSlug = harbor.slug
+        Task {
+            defer { publicHarborLeavingSlug = nil }
+            do {
+                try await publicService.leave(harbor.slug)
+                Haptics.tap(.light)
+            } catch {
+                publicHarborLeaveError = error.localizedDescription
+                Haptics.error()
+            }
+        }
     }
 
 }

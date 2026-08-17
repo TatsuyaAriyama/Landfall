@@ -509,7 +509,12 @@ final class SyncService {
                 if let existing = fetchSession(id, context) { context.delete(existing); changed = true }
             }
         }
-        if changed { try? context.save() }
+        if changed {
+            try? context.save()
+            // A session created or edited on another device must also refresh the public
+            // harbor snapshot. Otherwise only the device that recorded it would publish it.
+            PublicHarborService.shared.publishCurrentMonth(context: context)
+        }
     }
 
     private func applyDays(_ snap: QuerySnapshot, context: ModelContext) {

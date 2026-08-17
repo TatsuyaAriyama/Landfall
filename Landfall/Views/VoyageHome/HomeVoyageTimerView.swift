@@ -184,6 +184,8 @@ struct HomeVoyageTimerView: View {
     @State private var saving = false
     @State private var uiHidden = false
     @State private var showingSoundPicker = false
+    @State private var showingTodoList = false
+    @StateObject private var todoStore = HomeIslandTodoStore.shared
     @State private var clockNow = Date()
     @FocusState private var noteFocused: Bool
 
@@ -341,6 +343,7 @@ struct HomeVoyageTimerView: View {
     private var voyageControls: some View {
         VStack(spacing: 0) {
             timerHeader
+                .frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 18)
             recordingPanel
         }
@@ -351,51 +354,55 @@ struct HomeVoyageTimerView: View {
 
     private var timerHeader: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 9) {
+            HStack(spacing: 8) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .fill(timerGlassInk.opacity(0.07))
                     ItemTileArt(item: item)
-                        .padding(5)
+                        .padding(4)
                 }
-                .frame(width: 36, height: 36)
+                .frame(width: 28, height: 28)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
                         .stroke(timerGlassInk.opacity(0.14), lineWidth: 1)
                 )
 
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 5) {
                         Circle()
                             .fill(isVoyageResting ? LFColor.sunYellow : LFColor.returnOrange)
-                            .frame(width: 5, height: 5)
+                            .frame(width: 4, height: 4)
                         Text(statusLabel)
-                            .font(LFFont.label(9))
-                            .tracking(1.1)
+                            .font(LFFont.label(7))
+                            .tracking(1.0)
+                        // The chips no longer carry a value line, so the running
+                        // pomodoro reports its phase and countdown up here.
+                        if pomodoroPhase != nil {
+                            pomodoroDetail
+                                .font(LFFont.label(7))
+                                .tracking(0.9)
+                                .foregroundStyle(LFColor.returnOrange.opacity(0.92))
+                                .lineLimit(1)
+                        }
                     }
-                    .foregroundStyle(timerGlassInk.opacity(0.66))
+                    .foregroundStyle(timerGlassInk.opacity(0.62))
 
                     Text(item.name)
-                        .font(LFFont.copy(13))
+                        .font(LFFont.copy(12))
                         .foregroundStyle(timerGlassInk)
                         .lineLimit(1)
                 }
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 6)
 
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text("ELAPSED")
-                            .font(LFFont.label(7))
-                            .tracking(1.2)
-                            .foregroundStyle(timerGlassInk.opacity(0.48))
-                        Text(Self.clock(snapshot.elapsedSeconds(at: context.date)))
-                            .font(LFFont.copy(24))
-                            .monospacedDigit()
-                            .foregroundStyle(timerClockInk)
-                            .contentTransition(.numericText())
-                    }
+                    Text(Self.clock(snapshot.elapsedSeconds(at: context.date)))
+                        .font(LFFont.copy(19))
+                        .monospacedDigit()
+                        .foregroundStyle(timerClockInk)
+                        .contentTransition(.numericText())
                 }
+                .accessibilityLabel(Text("ELAPSED"))
 
                 if !isFirstVoyage {
                     Button {
@@ -403,27 +410,26 @@ struct HomeVoyageTimerView: View {
                         Haptics.tap(.rigid)
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(timerGlassInk)
-                            .frame(width: 32, height: 32)
+                            .frame(width: 26, height: 26)
                             .background(timerGlassInk.opacity(0.07), in: Circle())
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .accessibilityLabel(Text("Discard voyage"))
                 }
             }
-            .padding(.horizontal, 11)
-            .padding(.top, 10)
+            .padding(.horizontal, 9)
+            .padding(.top, 8)
 
             Rectangle()
                 .fill(timerGlassInk.opacity(0.12))
                 .frame(height: 1)
                 .padding(.top, 8)
 
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 commandButton(
                     title: snapshot.isResting ? "Resume voyage" : "Take a break",
-                    detail: Text(snapshot.isResting ? "RESUME" : "BREAK"),
                     systemImage: snapshot.isResting ? "play.fill" : "pause.fill",
                     active: snapshot.isResting,
                     action: toggleBreak
@@ -431,7 +437,6 @@ struct HomeVoyageTimerView: View {
 
                 commandButton(
                     title: "Pomodoro",
-                    detail: pomodoroDetail,
                     systemImage: "timer",
                     active: mode == .pomodoro,
                     action: togglePomodoro
@@ -439,7 +444,6 @@ struct HomeVoyageTimerView: View {
 
                 commandButton(
                     title: "BGM",
-                    detail: Text(soundLabel),
                     systemImage: voyageAudio.playbackFailed
                         ? "exclamationmark.triangle.fill"
                         : "music.note",
@@ -447,22 +451,51 @@ struct HomeVoyageTimerView: View {
                     action: {
                         withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
                             showingSoundPicker.toggle()
+                            if showingSoundPicker { showingTodoList = false }
                         }
                         Haptics.tap(.light)
                     }
                 )
                 .accessibilityLabel(Text(soundAccessibilityLabel))
+
+                commandButton(
+                    title: "ToDo",
+                    systemImage: "checklist",
+                    active: showingTodoList,
+                    badge: todoStore.openCount,
+                    action: {
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                            showingTodoList.toggle()
+                            if showingTodoList { showingSoundPicker = false }
+                        }
+                        Haptics.tap(.light)
+                    }
+                )
+                .accessibilityLabel(Text("ToDo list"))
             }
-            .padding(9)
+            .padding(7)
 
             if showingSoundPicker {
                 soundPicker
-                    .padding(.horizontal, 9)
-                    .padding(.bottom, 9)
+                    .padding(.horizontal, 7)
+                    .padding(.bottom, 7)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
+
+            if showingTodoList {
+                // The same list the island keeps, so a task written mid-voyage
+                // is already there when the navigator gets home.
+                HomeIslandTodoCompactList(
+                    store: todoStore,
+                    ink: timerGlassInk,
+                    maxListHeight: 196
+                )
+                .padding(.horizontal, 7)
+                .padding(.bottom, 7)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
-        .frame(maxWidth: 560)
+        .frame(maxWidth: 320)
         .background(whiteGlassBackground(cornerRadius: 17, opacity: 0.80))
         .overlay(
             RoundedRectangle(cornerRadius: 17, style: .continuous)
@@ -471,40 +504,48 @@ struct HomeVoyageTimerView: View {
         .shadow(color: timerGlassInk.opacity(0.16), radius: 13, y: 6)
     }
 
+    /// Compact command chip: an icon over a short label. The old two-line
+    /// version carried its current value as a third line, which is what made
+    /// the timer card wide enough to need the middle of the screen.
     private func commandButton(
         title: LocalizedStringKey,
-        detail: Text,
         systemImage: String,
         active: Bool,
+        badge: Int = 0,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
+            VStack(spacing: 3) {
+                ZStack(alignment: .topTrailing) {
                     Image(systemName: systemImage)
-                        .font(.system(size: 11, weight: .medium))
-                    Spacer(minLength: 2)
-                    if active {
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 22, height: 16)
+                    if badge > 0 {
+                        Text(verbatim: badge > 9 ? "9+" : "\(badge)")
+                            .font(LFFont.label(7))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 3)
+                            .frame(minWidth: 12, minHeight: 12)
+                            .background(LFColor.returnOrange, in: Capsule())
+                            .offset(x: 6, y: -5)
+                    } else if active {
                         Circle()
                             .fill(LFColor.returnOrange)
-                            .frame(width: 5, height: 5)
+                            .frame(width: 4, height: 4)
+                            .offset(x: 4, y: -2)
                     }
                 }
                 Text(title)
-                    .font(LFFont.label(10))
+                    .font(LFFont.label(8))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.74)
-                detail
-                    .font(LFFont.label(7))
-                    .tracking(0.8)
-                    .lineLimit(1)
-                    .foregroundStyle(timerGlassInk.opacity(0.52))
+                    .minimumScaleFactor(0.7)
             }
             .foregroundStyle(active ? timerGlassInk : timerGlassInk.opacity(0.74))
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 57)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
+            .frame(height: 46)
             .background(
                 active ? LFColor.returnOrange.opacity(0.10) : timerGlassInk.opacity(0.05),
                 in: RoundedRectangle(cornerRadius: 13, style: .continuous)

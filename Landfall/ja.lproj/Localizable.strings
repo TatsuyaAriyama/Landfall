@@ -28,6 +28,7 @@
 "Choose cargo and set sail" = "積荷を選んで出航";
 "Choose a work item and set sail" = "作業項目を選んで出航";
 "Tap the ship to choose a work item" = "船をタップして作業項目を選択";
+"Tap the notice board to check it" = "掲示板をタップして航海掲示板を確認";
 "Create your first work item, then load it onto the ship." = "最初の作業項目を作り、船へ積み込みましょう。";
 "Manage names, colors, symbols, and order here." = "名前・配色・シンボル・順番をここで編集できます。";
 "No work items yet." = "作業項目はまだありません。";
@@ -95,6 +96,9 @@
 "Returns" = "帰還";
 "Times quit" = "やめた回数";
 "days" = "日";
+"records" = "件";
+"Leave" = "退出";
+"All sailors in this harbor are hidden by your block list." = "この港のユーザーはブロック設定により非表示です。";
 "times" = "回";
 "%lld days" = "%lld日";
 "%lld sessions" = "%lld回";
@@ -291,7 +295,7 @@
 "Use Pause or End and record in the timer panel." = "タイマーパネルの「一時停止」または「終了して記録」を使います。";
 "Destination and records" = "目的地と記録";
 "Set a destination" = "目的地を設定する";
-"Tap the sea or destination island at the top of Home." = "ホーム上部の海または目的地の島をタップします。";
+"Tap the destination below your player card at the top left of Home." = "ホーム左上、プレイヤーカードの下の目的地をタップします。";
 "Tap the date in the top-left corner of Home." = "ホーム左上の日付をタップします。";
 "Open Logbook" = "航海誌を開く";
 "Open the top-right menu and choose Logbook." = "右上のメニューを開き、「航海誌」を選びます。";
@@ -649,6 +653,8 @@
 "Destinations" = "目的地";
 "Set a destination." = "目的地を設定しよう。";
 "Tap to edit the destination." = "タップして目的地を編集";
+"Due %@" = "%@まで";
+"The island waits beyond the horizon until the final week. Over those last seven days, it draws closer day by day." = "島は最後の一週間まで水平線の彼方で待っています。残り七日から、日ごとに少しずつ近づきます。";
 "Next: %@" = "次: %@";
 "%lld days left" = "あと%lld日";
 "%lld minutes left" = "あと%lld分";
@@ -1014,7 +1020,16 @@
 "Follow surface" = "地表に追従";
 "Snap now" = "今合わせる";
 "Island Foundation" = "島の土台";
-"Small Tree" = "小さな木";
+"Broadleaf Tree" = "広葉樹";
+"Conifer" = "針葉樹";
+"White Roses" = "白い薔薇";
+"Red Roses" = "赤い薔薇";
+"Yellow Roses" = "黄色い薔薇";
+"Red Hibiscus" = "赤いハイビスカス";
+"Pink Hibiscus" = "ピンクのハイビスカス";
+"Orange Hibiscus" = "オレンジのハイビスカス";
+"Council Table" = "円卓";
+"Council Chair" = "円卓の椅子";
 "Assets" = "アセット";
 "Details" = "詳細";
 "Move panel" = "パネルを左右に移動";

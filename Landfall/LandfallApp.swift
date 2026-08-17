@@ -120,11 +120,22 @@ struct LandfallApp: App {
                         ContentView()
                             .transition(.opacity)
                     }
+                } else if !auth.hasResolvedInitialAuthState {
+                    // Firebase has not reported yet. Hold this quiet screen for
+                    // the few frames it takes rather than flashing sign-in at a
+                    // player whose session is about to be restored.
+                    LaunchTransitionView()
+                        .transition(.opacity)
+                        .task {
+                            try? await Task.sleep(for: .seconds(2.5))
+                            auth.resolveInitialAuthStateIfPending()
+                        }
                 } else {
                     SignInView()
                         .transition(.opacity)
                 }
             }
+            .animation(.easeInOut(duration: 0.28), value: auth.hasResolvedInitialAuthState)
             .environmentObject(auth)
             // 端末言語に関わらず、最上位画面(導入・サインイン)もアプリ言語に追従。
             .environment(\.locale, (AppLanguage(rawValue: appLanguage) ?? .system).locale)

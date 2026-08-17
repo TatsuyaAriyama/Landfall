@@ -32,6 +32,7 @@ struct PublicHarborView: View {
     @State private var blockingMemberID: String?
     /// 公開コンテンツ通報はCallableの完了後だけ結果を知らせる。
     @State private var reportResult: String?
+    @State private var membersSubscription: PublicHarborMembersSubscription?
 
     private var isJoined: Bool { service.joined.contains(harbor.slug) }
     private var myUid: String? { auth.user?.uid }
@@ -119,6 +120,10 @@ struct PublicHarborView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .task { await reload() }
         .refreshable { await reload() }
+        .onDisappear {
+            membersSubscription?.cancel()
+            membersSubscription = nil
+        }
         .sheet(isPresented: $editingProfile) {
             ProfileEditorSheet {
                 needsProfile = false
@@ -233,6 +238,8 @@ struct PublicHarborView: View {
     }
 
     private func reload() async {
+        membersSubscription?.cancel()
+        membersSubscription = nil
         loaded = false
         guard auth.isSignedIn else {
             members = []
@@ -240,15 +247,39 @@ struct PublicHarborView: View {
             loaded = true
             return
         }
-        await chat.loadBlocked()
-        await service.refresh()
+        async let blockedLoad: Void = chat.loadBlocked()
+        async let membershipRefresh: Void = service.refresh()
         do {
-            members = try await service.members(of: harbor.slug)
+            members = try await service.members(of: harbor.slug) { partial in
+                members = partial
+                loadError = nil
+                loaded = true
+            }
             loadError = nil
         } catch {
             loadError = LF.text("Couldn't refresh this harbor.")
         }
         loaded = true
+        _ = await (blockedLoad, membershipRefresh)
+        startMembersObservation()
+    }
+
+    private func startMembersObservation() {
+        membersSubscription?.cancel()
+        membersSubscription = service.observeMembers(of: harbor.slug) { result in
+            switch result {
+            case .success(let latest):
+                members = latest
+                loadError = nil
+                loaded = true
+            case .failure:
+                // Preserve the last complete list. Pull to refresh exposes an explicit retry.
+                if members.isEmpty {
+                    loadError = LF.text("Couldn't refresh this harbor.")
+                    loaded = true
+                }
+            }
+        }
     }
 
     // MARK: - 見出し
@@ -347,10 +378,19 @@ struct PublicHarborView: View {
 
     @ViewBuilder
     private var membersSection: some View {
-        Text("Sailors in harbor")
-            .font(LFFont.label(showsOceanBackground ? 13 : 11))
-            .tracking(1)
-            .foregroundStyle(LFColor.ink.opacity(0.5))
+        HStack(spacing: 8) {
+            Text("Sailors in harbor")
+                .tracking(1)
+            if loaded, loadError == nil {
+                Text(verbatim: "\(visibleMembers.count)")
+                    .monospacedDigit()
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(LFColor.ink.opacity(0.07), in: Capsule())
+            }
+        }
+        .font(LFFont.label(showsOceanBackground ? 13 : 11))
+        .foregroundStyle(LFColor.ink.opacity(0.5))
 
         if !loaded {
             ProgressView()
@@ -387,6 +427,12 @@ struct PublicHarborView: View {
                 .buttonStyle(.plain)
             }
             .padding(.top, 16)
+        } else if visibleMembers.isEmpty, !members.isEmpty {
+            Text("All sailors in this harbor are hidden by your block list.")
+                .font(LFFont.copy(15))
+                .foregroundStyle(LFColor.ink.opacity(0.5))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 16)
         } else if visibleMembers.isEmpty {
             Text("No one is in this harbor yet. Be the first to drop anchor.")
                 .font(LFFont.copy(15))
@@ -563,6 +609,7 @@ struct PublicMemberProfileView: View {
     @State private var selectedDay: Int?
     @State private var loaded = false
     @State private var loadError: String?
+    @State private var monthSubscription: PublicHarborMonthSubscription?
 
     init(
         slug: String,
@@ -584,15 +631,6 @@ struct PublicMemberProfileView: View {
     private var isCurrentMonth: Bool {
         let components = Calendar.current.dateComponents([.year, .month], from: Date())
         return year == components.year && month == components.month
-    }
-
-    private var daysInMonth: Int {
-        guard let start = Calendar.current.date(
-            from: DateComponents(year: year, month: month, day: 1)
-        ), let range = Calendar.current.range(of: .day, in: .month, for: start) else {
-            return 30
-        }
-        return range.count
     }
 
     private var selectedSessions: [SharedSession] {
@@ -648,6 +686,10 @@ struct PublicMemberProfileView: View {
         .toolbarBackground(.hidden, for: .navigationBar)
         .task(id: monthID) {
             await loadSelectedMonth()
+        }
+        .onDisappear {
+            monthSubscription?.cancel()
+            monthSubscription = nil
         }
         .refreshable {
             await loadSelectedMonth()
@@ -720,39 +762,45 @@ struct PublicMemberProfileView: View {
     }
 
     private var dayGrid: some View {
-        LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 34, maximum: 48), spacing: 6)],
-            spacing: 6
-        ) {
-            ForEach(1...daysInMonth, id: \.self) { day in
-                let studied = days.contains(day)
-                Button {
-                    selectedDay = selectedDay == day ? nil : day
-                    Haptics.tap()
-                } label: {
-                    Text(verbatim: "\(day)")
-                        .font(LFFont.label(12))
-                        .monospacedDigit()
-                        .foregroundStyle(studied ? LFColor.inkFixed : LFColor.ink.opacity(0.35))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 34)
-                        .background(studied ? LFColor.seaGreen : Color.clear)
-                        .clipShape(Capsule())
-                        .overlay {
-                            if selectedDay == day {
-                                Capsule()
-                                    .stroke(LFColor.ink, lineWidth: 2)
-                                    .padding(-3)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(verbatim: "\(days.count) \(LF.text("days"))")
+                Text("·")
+                Text(verbatim: "\(sessions.count) \(LF.text("records"))")
+            }
+            .font(LFFont.label(12))
+            .foregroundStyle(LFColor.ink.opacity(0.5))
+
+            if !days.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(days.sorted(by: >), id: \.self) { day in
+                            Button {
+                                selectedDay = day
+                                Haptics.tap()
+                            } label: {
+                                Text(verbatim: LF.dayMonth(dateFor(day: day)))
+                                    .font(LFFont.label(12))
+                                    .monospacedDigit()
+                                    .foregroundStyle(
+                                        selectedDay == day ? LFColor.paper : LFColor.ink
+                                    )
+                                    .padding(.horizontal, 12)
+                                    .frame(minHeight: 34)
+                                    .background(
+                                        selectedDay == day
+                                            ? LFColor.ink : LFColor.seaGreen.opacity(0.20)
+                                    )
+                                    .clipShape(Capsule())
+                                    .padding(.vertical, 5)
+                                    .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(dayAccessibilityLabel(day: day, studied: true))
+                            .accessibilityAddTraits(selectedDay == day ? .isSelected : [])
                         }
-                        // 見た目はWeb版の34pt、タップ領域はiOS推奨の44pt。
-                        .padding(.vertical, 5)
-                        .contentShape(Rectangle())
+                    }
                 }
-                .buttonStyle(.plain)
-                .disabled(!studied)
-                .accessibilityLabel(dayAccessibilityLabel(day: day, studied: studied))
-                .accessibilityAddTraits(selectedDay == day ? .isSelected : [])
             }
         }
     }
@@ -771,8 +819,8 @@ struct PublicMemberProfileView: View {
                     .font(LFFont.label(13))
                     .tracking(1)
                     .foregroundStyle(LFColor.ink.opacity(0.5))
-                    .padding(.top, 20)
-                    .padding(.bottom, 6)
+                    .padding(.top, 10)
+                    .padding(.bottom, 2)
 
                 if selectedSessions.isEmpty {
                     Text("No records this day. Rest is part of the voyage.")
@@ -802,7 +850,7 @@ struct PublicMemberProfileView: View {
     private func publicSessionRow(_ session: SharedSession) -> some View {
         let style = TileStyle.from(session.styleToken)
         let detail = sessionDetail(session)
-        return HStack(alignment: .center, spacing: 14) {
+        return HStack(alignment: .center, spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(style.background)
@@ -813,7 +861,7 @@ struct PublicMemberProfileView: View {
                 )
                 .frame(width: 20, height: 20)
             }
-            .frame(width: 34, height: 34)
+            .frame(width: 30, height: 30)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: session.itemName ?? "—")
@@ -824,7 +872,7 @@ struct PublicMemberProfileView: View {
                     Text(verbatim: detail)
                         .font(LFFont.label(13))
                         .foregroundStyle(LFColor.ink.opacity(0.5))
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
@@ -834,12 +882,15 @@ struct PublicMemberProfileView: View {
                 .foregroundStyle(LFColor.ink.opacity(0.7))
                 .fixedSize()
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, 8)
     }
 
     private func loadSelectedMonth() async {
+        monthSubscription?.cancel()
+        monthSubscription = nil
         loaded = false
         selectedDay = nil
+        let requestedMonthID = monthID
         do {
             async let latestMember = service.member(of: slug, id: member.id)
             async let latestMonth = service.monthDetail(
@@ -858,9 +909,27 @@ struct PublicMemberProfileView: View {
                 return
             }
             member = freshMember
-            days = detail.days
-            sessions = detail.sessions
+            apply(detail)
             loadError = nil
+
+            monthSubscription = service.observeMonthDetail(
+                slug: slug,
+                memberID: member.id,
+                year: year,
+                month: month
+            ) { result in
+                guard monthID == requestedMonthID else { return }
+                switch result {
+                case .success(let latest):
+                    apply(latest)
+                    loadError = nil
+                    loaded = true
+                case .failure:
+                    // Keep the last complete server result visible. Pull to refresh remains
+                    // available, and a later listener event can recover without a false empty UI.
+                    break
+                }
+            }
         } catch {
             guard !Task.isCancelled else { return }
             days = []
@@ -868,6 +937,16 @@ struct PublicMemberProfileView: View {
             loadError = LF.text("Couldn't refresh this sailor.")
         }
         loaded = true
+    }
+
+    private func apply(_ detail: PublicHarborMonthDetail) {
+        days = detail.days
+        sessions = detail.sessions
+        if let selectedDay, detail.days.contains(selectedDay) {
+            return
+        }
+        // Open on the newest recorded day so the latest complete set is visible immediately.
+        selectedDay = detail.days.max()
     }
 
     private func retryMessage(_ message: String) -> some View {

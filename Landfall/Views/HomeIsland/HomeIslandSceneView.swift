@@ -237,6 +237,13 @@ private final class HomeIslandInteractiveSceneView: SCNView {
     }
 }
 
+/// いま向かっている目的地を、島の海の景色として描くための最小の入力。
+/// 進捗だけを渡し、距離・大きさ・向きは `HomeIslandMetrics` が決める。
+struct HomeIslandDestinationBearing: Equatable {
+    var name: String
+    var progressRatio: Double
+}
+
 /// The consumer home-island canvas.  It intentionally exposes only placement,
 /// selection and camera gestures; none of 3D Studio's terrain or transform tools
 /// are reachable from this scene.
@@ -261,6 +268,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
     var onAssetInteractionDenied: (String) -> Void
     var onArrivalCompleted: () -> Void
     var onJettyPresenceChanged: (Bool) -> Void
+    /// Reports whether the navigator stands close enough to the fixed notice
+    /// board for a tap on it to be the obvious next action.
+    var onNoticeBoardProximityChanged: (Bool) -> Void = { _ in }
     var onBoatBoardingStarted: () -> Void
     var onDepartureCompleted: () -> Void
     var onCaptured: (UUID, UIImage) -> Void
@@ -279,6 +289,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
     /// keep their existing state machines.
     var boatCustomizationActive = false
     var boatAppearanceID = BoatCustomization.selectedSailID
+    /// 桟橋の正面の沖に浮かべる目的地の島。目的地が無い間は海のままにする。
+    var destinationBearing: HomeIslandDestinationBearing?
+    /// 目的地を決めている間は、この島から沖の目的地を見つめる構図に預ける。
+    var destinationGazeActive = false
     var onBoatSelected: () -> Void = {}
     /// Other room members, already filtered for membership and staleness by
     /// the multiplayer service. The local ID is ignored if it is echoed back.
@@ -287,6 +301,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
     /// Emits a coalesced local transform while it changes. The networking layer
     /// remains responsible for write throttling and idle heartbeats.
     var onLocalPlayerStateChanged: (HomeIslandRemotePlayerState) -> Void = { _ in }
+
+    /// カメラを一時的に構図へ預けている状態(船の見た目替え / 目的地の目線)。
+    /// この間は歩行も追従カメラも止め、決めた画を保つ。
+    var cameraShowcaseActive: Bool {
+        boatCustomizationActive || destinationGazeActive
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(owner: self)
@@ -328,6 +348,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var oceanReduceMotionEnabled = UIAccessibility.isReduceMotionEnabled
         private var frozenOceanTime = HomeIslandOceanEffects.currentTime
         private weak var foundationNode: SCNNode?
+        private weak var destinationIslandNode: SCNNode?
+        private var renderedDestinationBearing: HomeIslandDestinationBearing?
+        private var renderedDestinationGaze = false
+        private var renderedGazeDistance: Float?
+        private var destinationGazeCameraSnapshot: BoatCustomizationCameraSnapshot?
         private weak var fixedNoticeBoardNode: SCNNode?
         private var fixedHarborSeatAssets: [FixedHarborSeatAsset] = []
         private var fixedHarborWalkingObstacles: [WalkingObstacle] = []
@@ -393,6 +418,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var arrivalNavigatorIsWalking = false
         private var renderedNavigatorOnArrivalJetty: Bool?
         private var reportedNavigatorOnArrivalJetty: Bool?
+        private var renderedNavigatorNearNoticeBoard: Bool?
+        private var reportedNavigatorNearNoticeBoard: Bool?
         private var boardingRequested = false
         private var departureStarted = false
         private var arrivalBoatStopPosition = SCNVector3(0, -0.35, 20.2)
@@ -1080,6 +1107,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
             syncPlacements()
             syncRemotePlayers()
             syncBoatAppearanceIfNeeded()
+            syncDestinationIslandIfNeeded()
+            syncDestinationGazeCameraIfNeeded()
             if renderedMode != owner.mode {
                 let previousMode = renderedMode
                 renderedMode = owner.mode
@@ -1101,6 +1130,79 @@ struct HomeIslandSceneView: UIViewRepresentable {
                   abs(sceneCamera.exposureOffset - target) > 0.001
             else { return }
             sceneCamera.exposureOffset = target
+        }
+
+        /// 目的地の島を、桟橋の正面の沖へ出す/しまう/近づける。
+        /// 島そのものは航海中・着岸と同じ `VoyageSceneKit.makeIsland` を使い、
+        /// どの画面から見ても同じ目的地が見えるようにする。
+        private func syncDestinationIslandIfNeeded() {
+            guard renderedDestinationBearing != owner.destinationBearing else { return }
+            let previous = renderedDestinationBearing
+            renderedDestinationBearing = owner.destinationBearing
+
+            guard let bearing = owner.destinationBearing else {
+                destinationIslandNode?.removeFromParentNode()
+                destinationIslandNode = nil
+                view?.setNeedsDisplay()
+                return
+            }
+
+            let node: SCNNode
+            if let existing = destinationIslandNode {
+                node = existing
+            } else {
+                guard let scene = view?.scene else {
+                    // シーンがまだ無い最初の更新では作れない。次の更新でやり直す。
+                    renderedDestinationBearing = previous
+                    return
+                }
+                node = makeDestinationIslandNode()
+                scene.rootNode.addChildNode(node)
+                destinationIslandNode = node
+            }
+
+            let distance = HomeIslandMetrics.destinationIslandDistance(
+                progressRatio: bearing.progressRatio
+            )
+            let position = SCNVector3(
+                HomeIslandMetrics.destinationIslandBearingX,
+                HomeIslandMetrics.destinationIslandWaterlineY,
+                distance
+            )
+            // 目的地を決めた直後や再表示のときは、その場に現れてよい。進捗で近づく
+            // ときだけ、視界の中で動いたことが分かる速さで寄せる。
+            let animates = previous != nil
+                && previous?.progressRatio != bearing.progressRatio
+                && !UIAccessibility.isReduceMotionEnabled
+            SCNTransaction.begin()
+            SCNTransaction.animationDuration = animates ? 1.6 : 0
+            SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            node.position = position
+            SCNTransaction.commit()
+            view?.setNeedsDisplay()
+        }
+
+        private func makeDestinationIslandNode() -> SCNNode {
+            let anchor = SCNNode()
+            anchor.name = "home-island-destination-island"
+            anchor.eulerAngles.y = HomeIslandMetrics.destinationIslandYaw
+
+            let scale = HomeIslandMetrics.destinationIslandScale
+            let island = VoyageSceneKit.makeIsland(
+                position: SCNVector3Zero,
+                scale: SCNVector3(scale, scale, scale),
+                // 遠景では読めない上に、島の影の範囲だけが広がる。
+                includesCustomAssets: false
+            )
+            anchor.addChildNode(island)
+
+            // 遠くの島までシャドウマップに含めると、足元の砂浜と小物の影が
+            // 一気に粗くなる。目的地は影を落とさず、光だけを受ける。
+            anchor.castsShadow = false
+            anchor.enumerateChildNodes { child, _ in
+                child.castsShadow = false
+            }
+            return anchor
         }
 
         private func syncBoatAppearanceIfNeeded() {
@@ -1186,6 +1288,88 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 fieldOfView: snapshot.fieldOfView,
                 duration: 0.40
             )
+        }
+
+        /// 目的地を決めている間だけ、この島から沖の目的地を見つめる構図に移る。
+        /// カメラは砂浜の高さから桟橋ごしに +Z を向き、島が近づくほど画角も広がる。
+        private func syncDestinationGazeCameraIfNeeded() {
+            let active = owner.destinationGazeActive && owner.mode == .explore
+            let distance = owner.destinationBearing.map {
+                HomeIslandMetrics.destinationIslandDistance(progressRatio: $0.progressRatio)
+            }
+            guard renderedDestinationGaze != active
+                || (active && renderedGazeDistance != distance)
+            else { return }
+            let wasActive = renderedDestinationGaze
+            renderedDestinationGaze = active
+            renderedGazeDistance = distance
+
+            if active {
+                guard let target = cameraTarget,
+                      let sceneCamera = camera?.camera
+                else {
+                    renderedDestinationGaze = wasActive
+                    return
+                }
+                if destinationGazeCameraSnapshot == nil {
+                    destinationGazeCameraSnapshot = BoatCustomizationCameraSnapshot(
+                        azimuth: azimuth,
+                        elevation: elevation,
+                        radius: radius,
+                        target: target.position,
+                        fieldOfView: sceneCamera.fieldOfView
+                    )
+                }
+                // 目的地がまだ無いときも、決めれば島が現れる沖を見せておく。
+                let islandDistance = distance ?? HomeIslandMetrics.destinationIslandFarDistance
+                // 桟橋の正面(-Z 側)から島の中心を見る。半径は島までの距離なので、
+                // カメラは自然と自分の島の岸に立つ。
+                azimuth = nearestEquivalentAzimuth(to: -.pi / 2)
+                elevation = DestinationGaze.elevation
+                radius = max(4, islandDistance - DestinationGaze.standoff)
+                animateBoatCustomizationCamera(
+                    targetPosition: SCNVector3(
+                        HomeIslandMetrics.destinationIslandBearingX,
+                        // 狙う高さは島の喫水ではなく海面から測る。島を沈めても
+                        // カメラの目の高さが一緒に下がって桟橋に埋もれない。
+                        HomeIslandMetrics.seaSurfaceY + DestinationGaze.aimHeight,
+                        islandDistance
+                    ),
+                    fieldOfView: DestinationGaze.fieldOfView(distance: islandDistance),
+                    duration: wasActive ? 0.9 : 0.72
+                )
+                return
+            }
+
+            guard let snapshot = destinationGazeCameraSnapshot,
+                  cameraTarget != nil
+            else { return }
+            destinationGazeCameraSnapshot = nil
+            azimuth = snapshot.azimuth
+            elevation = snapshot.elevation
+            radius = snapshot.radius
+            animateBoatCustomizationCamera(
+                targetPosition: snapshot.target,
+                fieldOfView: snapshot.fieldOfView,
+                duration: 0.44
+            )
+        }
+
+        /// 目的地を見つめる構図の数値。Web / Android へ写せるよう一箇所に置く。
+        private enum DestinationGaze {
+            /// 岸に立った目の高さ。水平線とほぼ同じ高さから島を見る。
+            static let elevation: Float = 0.03
+            /// 島の中心より手前で止める距離。カメラが自分の島の岸に来る。
+            static let standoff: Float = 6
+            /// 島の中腹を狙う高さ(海面から)。
+            static let aimHeight: Float = 3.2
+            /// 遠いほど狭く覗き、近づくほど普段の画角へ戻る。
+            static func fieldOfView(distance: Float) -> CGFloat {
+                let islandRadius: Float = 3.4 * HomeIslandMetrics.destinationIslandScale
+                let spread = 2 * atan(islandRadius / max(1, distance)) * 180 / .pi
+                // 島が横幅のおよそ4割を占める見え方に揃える。
+                return CGFloat(min(48, max(20, spread / 0.42)))
+            }
         }
 
         private func animateBoatCustomizationCamera(
@@ -1452,33 +1636,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 )
             }
 
-            addAsset(
-                "harbor_gathering_deck",
-                name: "home-island-locked-gathering-deck",
-                position: HomeIslandMetrics.gatheringDeckPosition,
-                scale: HomeIslandMetrics.gatheringDeckScale
-            )
-
-            if let table = addAsset(
-                "harbor_council_table",
-                name: "home-island-locked-council-table",
-                position: HomeIslandMetrics.councilTablePosition,
-                scale: HomeIslandMetrics.councilTableScale
-            ) {
-                let position = HomeIslandMetrics.councilTablePosition
-                fixedHarborSeatAssets.append(FixedHarborSeatAsset(
-                    id: HomeIslandMetrics.councilTableSeatID,
-                    assetID: "harbor_council_table",
-                    node: table,
-                    obstacleCenter: SCNVector3(position.x, HomeIslandMetrics.surfaceY, position.z),
-                    obstacleRadius: 0.62
-                ))
-                fixedHarborWalkingObstacles.append(WalkingObstacle(
-                    x: position.x,
-                    z: position.z,
-                    radius: 0.62
-                ))
-            }
+            // The council table and its stools are no longer authored into every
+            // island. Both now ship as placeable `council_table` / `council_chair`
+            // props the player arranges wherever they like.
 
             for (index, position) in HomeIslandMetrics.welcomeBeaconPositions.enumerated() {
                 if addAsset(
@@ -2327,7 +2487,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 screenPoint,
                 options: [.searchMode: SCNHitTestSearchMode.all.rawValue]
             )
-            let focusPoint = hits.first(where: { !isOceanNode($0.node) })?.worldCoordinates
+            // 海と、はるか沖の目的地の島は「景色」。ピントの寄せ先にすると
+            // カメラが島から遠く離れてしまうので、足元の島の中だけを狙う。
+            let focusPoint = hits.first(where: {
+                !isOceanNode($0.node) && !isDestinationIslandNode($0.node)
+            })?.worldCoordinates
                 ?? groundPoint(at: screenPoint).flatMap { point in
                     HomeIslandMetrics.contains(x: point.x, z: point.z) ? point : nil
                 }
@@ -2350,6 +2514,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 }
             }
             return false
+        }
+
+        private func isDestinationIslandNode(_ node: SCNNode) -> Bool {
+            guard let island = destinationIslandNode else { return false }
+            return isDescendant(node, of: island)
         }
 
         private func hitArrivalBoat(at point: CGPoint) -> Bool {
@@ -2450,7 +2619,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func isMovementControlPoint(_ point: CGPoint, in view: UIView) -> Bool {
             guard owner.mode == .explore,
                   !owner.cameraInteractionLocked,
-                  !owner.boatCustomizationActive,
+                  !owner.cameraShowcaseActive,
                   !boardingRequested
             else { return false }
             let bounds = view.bounds
@@ -2470,7 +2639,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         @objc private func handleMovementPan(_ recognizer: UIPanGestureRecognizer) {
             guard owner.mode == .explore,
                   !owner.cameraInteractionLocked,
-                  !owner.boatCustomizationActive,
+                  !owner.cameraShowcaseActive,
                   !boardingRequested,
                   let view
             else {
@@ -2531,7 +2700,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             guard !(owner.startsMooredAtIsland && owner.locksMooredOverview),
                   owner.mode == .explore,
                   !owner.cameraInteractionLocked,
-                  !owner.boatCustomizationActive,
+                  !owner.cameraShowcaseActive,
                   !boardingRequested
             else {
                 storeCachedWalkInput(.zero)
@@ -3108,7 +3277,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         ) {
             guard owner.mode == .explore,
                   !owner.cameraInteractionLocked,
-                  !owner.boatCustomizationActive,
+                  !owner.cameraShowcaseActive,
                   !boardingRequested
             else {
                 gamepadWalkInput = .zero
@@ -3122,7 +3291,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func handleGamepadLook(x: Float, y: Float, deltaTime: Float) {
             guard owner.mode == .explore,
                   !owner.cameraInteractionLocked,
-                  !owner.boatCustomizationActive,
+                  !owner.cameraShowcaseActive,
                   deltaTime > 0
             else { return }
             let dt = min(deltaTime, 0.05)
@@ -3142,7 +3311,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             constrainCamera()
             guard let camera, let target = cameraTarget?.position else { return }
             let usesLocomotionCamera = owner.mode == .explore
-                && !owner.boatCustomizationActive
+                && !owner.cameraShowcaseActive
                 && !(owner.startsMooredAtIsland && owner.locksMooredOverview)
             let renderedRadius = radius + (usesLocomotionCamera ? cameraMotion.pullback : 0)
             camera.camera?.zNear = Double(max(0.012, renderedRadius * 0.002))
@@ -3171,6 +3340,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         private func constrainCamera() {
             if !azimuth.isFinite { azimuth = 0.72 }
+            // 目的地の目線は、島までの距離そのものを半径に使い、水平に近い高さから
+            // 見る。歩き回るための仰角・距離・注視点の制限をここで当てると、
+            // 沖の島まで届かず、見下ろす角度になってしまう。
+            if owner.destinationGazeActive { return }
             elevation = min(max(elevation, 0.08), 1.28)
             switch owner.mode {
             case .explore:
@@ -3993,7 +4166,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             cameraMotion = HomeIslandCameraMotion()
             navigatorAnimator.locomotionState = nil
             updateLocomotionWind(0)
-            if owner.mode == .explore, !owner.boatCustomizationActive {
+            if owner.mode == .explore, !owner.cameraShowcaseActive {
                 camera?.camera?.fieldOfView = 48
             }
         }
@@ -4160,12 +4333,37 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
         }
 
+        /// Roughly an arm's length past the board's own footprint, so the hint
+        /// appears while walking up to it rather than only when touching it.
+        private static let noticeBoardProximityRadius: Float = 2.35
+
+        private func reportNoticeBoardProximityIfNeeded() {
+            let isNear: Bool
+            if let navigator = navigatorNode, fixedNoticeBoardNode?.parent != nil {
+                let dx = navigator.position.x - HomeIslandMetrics.fixedNoticeBoardPosition.x
+                let dz = navigator.position.z - HomeIslandMetrics.fixedNoticeBoardPosition.z
+                let radius = Self.noticeBoardProximityRadius
+                isNear = dx * dx + dz * dz <= radius * radius
+            } else {
+                isNear = false
+            }
+            guard renderedNavigatorNearNoticeBoard != isNear else { return }
+            renderedNavigatorNearNoticeBoard = isNear
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      self.reportedNavigatorNearNoticeBoard != isNear
+                else { return }
+                self.reportedNavigatorNearNoticeBoard = isNear
+                self.owner.onNoticeBoardProximityChanged(isNear)
+            }
+        }
+
         private func updateWalking(deltaTime: Float) -> Bool {
             lastLocomotionDeltaTime = min(max(deltaTime, 0), 0.05)
             guard !(owner.startsMooredAtIsland && owner.locksMooredOverview),
                   owner.mode == .explore,
                   !owner.cameraInteractionLocked,
-                  !owner.boatCustomizationActive,
+                  !owner.cameraShowcaseActive,
                   !boardingRequested,
                   let navigator = navigatorNode,
                   deltaTime > 0
@@ -4805,7 +5003,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         private func followNavigatorCamera() {
             guard owner.mode == .explore,
-                  !owner.boatCustomizationActive,
+                  !owner.cameraShowcaseActive,
                   let navigator = navigatorNode,
                   let target = cameraTarget
             else { return }
@@ -4856,18 +5054,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
                                 ?? HomeIslandMetrics.surfaceY
                         }
                     ),
-                    surface: .wood
-                )
-            }
-            if HomeIslandMetrics.containsGatheringDeck(x: x, z: z) {
-                return HomeIslandGroundSample(
-                    height: max(
-                        foundation.height,
-                        HomeIslandMetrics.surfaceY
-                        + HomeIslandMetrics.gatheringDeckLocalTopY
-                        * HomeIslandMetrics.gatheringDeckScale
-                    ),
-                    normal: SIMD3<Float>(0, 1, 0),
                     surface: .wood
                 )
             }
@@ -5090,7 +5276,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
             let isWalking = updateWalking(deltaTime: deltaTime)
             if owner.mode == .explore,
-               !owner.boatCustomizationActive {
+               !owner.cameraShowcaseActive {
                 // Commit orbit intent and the moving follow target as one pose.
                 // This is the single Explore-camera write for the frame.
                 updateCamera()
@@ -5109,6 +5295,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             updateRemotePlayers(deltaTime: deltaTime)
             reportLocalPlayerStateIfNeeded(at: time)
             reportNavigatorJettyPresenceIfNeeded()
+            reportNoticeBoardProximityIfNeeded()
         }
 
         func gestureRecognizer(

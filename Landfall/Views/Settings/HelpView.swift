@@ -235,7 +235,7 @@ struct HelpView: View {
                 GameGuideStep(
                     icon: .destination,
                     title: "Set a destination",
-                    detail: "Tap the sea or destination island at the top of Home."
+                    detail: "Tap the destination below your player card at the top left of Home."
                 )
                 GameGuideStep(
                     icon: .date,
