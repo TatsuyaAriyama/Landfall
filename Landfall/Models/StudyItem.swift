@@ -51,15 +51,25 @@ final class StudySession {
     /// 作業の開始日時。日への帰属はこの日付で決まる。
     var date: Date
     var minutes: Int
+    /// 分に収まらない端数(0...59)。集計は従来どおり分で行い、実測の秒はここへ
+    /// 残す。既定値付きなので、この列を持たない旧ストアからも軽量移行できる。
+    var extraSeconds: Int = 0
     var note: String?
     var item: StudyItem?
     /// 端末間の競合解決(Last-Write-Wins)に使う最終更新時刻。
     var updatedAt: Date = Date.distantPast
 
-    init(date: Date, minutes: Int, note: String? = nil, item: StudyItem? = nil) {
+    init(
+        date: Date,
+        minutes: Int,
+        extraSeconds: Int = 0,
+        note: String? = nil,
+        item: StudyItem? = nil
+    ) {
         self.uuid = UUID()
         self.date = date
         self.minutes = minutes
+        self.extraSeconds = min(59, max(0, extraSeconds))
         self.note = note
         self.item = item
         self.updatedAt = Date()
@@ -67,6 +77,9 @@ final class StudySession {
 }
 
 extension StudySession {
+    /// 記録された正味の長さ。手入力は秒まで、タイマー記録は分単位。
+    var totalSeconds: Int { minutes * 60 + min(59, max(0, extraSeconds)) }
+
     /// 記録一覧で共通して使う順序。項目の種類に関係なく、全件を開始時刻の新しい順にする。
     /// 同時刻でも同期の到着順で表示が揺れないよう、更新時刻とUUIDまで比較する。
     static func newestFirst(_ lhs: StudySession, _ rhs: StudySession) -> Bool {

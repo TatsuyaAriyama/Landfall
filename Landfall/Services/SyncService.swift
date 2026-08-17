@@ -42,7 +42,8 @@ final class SyncService {
     func push(_ session: StudySession) {
         guard let uid else { return }
         let dto = SessionDTO(
-            date: session.date, minutes: session.minutes, note: session.note,
+            date: session.date, minutes: session.minutes,
+            extraSeconds: session.extraSeconds, note: session.note,
             itemUUID: session.item?.uuid.uuidString, updatedAt: Date()
         )
         try? sessionsCollection(uid).document(session.uuid.uuidString).setData(from: dto)
@@ -496,11 +497,18 @@ final class SyncService {
                 if let existing = fetchSession(id, context) {
                     if remoteAt > existing.updatedAt {
                         existing.date = dto.date; existing.minutes = dto.minutes
+                        existing.extraSeconds = min(59, max(0, dto.extraSeconds ?? 0))
                         existing.note = dto.note; existing.item = item; existing.updatedAt = remoteAt
                         changed = true
                     }
                 } else {
-                    let session = StudySession(date: dto.date, minutes: dto.minutes, note: dto.note, item: item)
+                    let session = StudySession(
+                        date: dto.date,
+                        minutes: dto.minutes,
+                        extraSeconds: dto.extraSeconds ?? 0,
+                        note: dto.note,
+                        item: item
+                    )
                     if let u = UUID(uuidString: id) { session.uuid = u }
                     session.updatedAt = remoteAt
                     context.insert(session); changed = true
@@ -672,6 +680,8 @@ private struct ItemDTO: Codable {
 private struct SessionDTO: Codable {
     var date: Date
     var minutes: Int
+    /// 秒の端数。この項目を持たない古い記録・他プラットフォームからは 0 で読む。
+    var extraSeconds: Int?
     var note: String?
     var itemUUID: String?
     var updatedAt: Date?

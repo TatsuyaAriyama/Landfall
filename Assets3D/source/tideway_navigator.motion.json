@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 3,
+  "assetVersion": 2,
+  "fps": 24,
+  "authoredHeight": 1.78,
+  "sitSurfaceHeight": 0.515,
+  "walkGroundSpeed": 0.87,
+  "runGroundSpeed": 1.77,
+  "rootMotion": false,
+  "frontAxis": "+Z",
+  "clips": [
+    { "name": "Idle", "startFrame": 1, "endFrame": 96, "loop": true },
+    { "name": "Walk", "startFrame": 106, "endFrame": 130, "loop": true, "authoredSpeed": 0.87 },
+    { "name": "Run", "startFrame": 140, "endFrame": 156, "loop": true, "authoredSpeed": 1.77 },
+    { "name": "Wave", "startFrame": 166, "endFrame": 225, "loop": false },
+    { "name": "Sit", "startFrame": 235, "endFrame": 282, "loop": false }
+  ]
+}

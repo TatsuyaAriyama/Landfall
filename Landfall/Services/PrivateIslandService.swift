@@ -789,6 +789,14 @@ final class PrivateIslandService: ObservableObject {
             arrivalNonce: resolvedArrivalNonce
         )
         lastPresenceDraft = draft
+
+        // Alone on the island there is nobody to send a position to. Holding
+        // the draft instead of writing it turns the most common case — one
+        // player pottering about their own island — into no traffic at all.
+        guard hasCompanions else {
+            stopPresenceHeartbeat()
+            return
+        }
         ensurePresenceHeartbeat()
 
         let now = Date()
@@ -840,6 +848,35 @@ final class PrivateIslandService: ObservableObject {
         try await db.collection("privateIslands").document(draft.code)
             .collection("presence").document(draft.uid)
             .setData(data, merge: true)
+    }
+
+    /// Whether anyone else is on the island right now. Only their presence
+    /// makes ours worth sending.
+    private var hasCompanions: Bool {
+        let uid = currentUserID
+        return presences.contains { $0.uid != uid }
+    }
+
+    private func stopPresenceHeartbeat() {
+        presenceHeartbeatTimer?.invalidate()
+        presenceHeartbeatTimer = nil
+        presenceTrailingTask?.cancel()
+        presenceTrailingTask = nil
+    }
+
+    /// Called when the room's population changes. Someone arriving needs to see
+    /// where we are straight away, so the held draft goes out at once.
+    private func presenceCompanionsChanged() {
+        guard hasCompanions else {
+            stopPresenceHeartbeat()
+            return
+        }
+        guard let draft = lastPresenceDraft else { return }
+        ensurePresenceHeartbeat()
+        Task { @MainActor in
+            try? await writePresence(draft)
+            lastPresenceWriteAt = Date()
+        }
     }
 
     private func ensurePresenceHeartbeat() {
@@ -908,14 +945,23 @@ final class PrivateIslandService: ObservableObject {
                         self.errorMessage = error.localizedDescription
                         return
                     }
+                    let wasAccompanied = self.hasCompanions
                     self.presences = snapshot?.documents
                         .compactMap(Self.decodePresence)
                         .filter(Self.isFreshPresence) ?? []
+                    if wasAccompanied != self.hasCompanions {
+                        self.presenceCompanionsChanged()
+                    }
                 }
             }
         let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.presences.removeAll { !Self.isFreshPresence($0) }
+                guard let self else { return }
+                let wasAccompanied = self.hasCompanions
+                self.presences.removeAll { !Self.isFreshPresence($0) }
+                if wasAccompanied != self.hasCompanions {
+                    self.presenceCompanionsChanged()
+                }
             }
         }
         RunLoop.main.add(timer, forMode: .common)

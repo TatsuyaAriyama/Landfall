@@ -188,40 +188,6 @@ def build_harbor_boarding_float() -> None:
     finish("harbor_boarding_float", root, objects)
 
 
-def build_harbor_gathering_deck() -> None:
-    kit.reset_scene()
-    root = kit.make_root("harbor_gathering_deck", "Harbor_Gathering_Deck", "large")
-    objects: list[bpy.types.Object] = []
-    mats = harbor_materials("GatheringDeck")
-    # Continue the floor beneath the seaward council chair. The extra four
-    # planks finish just behind its backrest instead of leaving the seat and
-    # rear leg suspended past the deck edge.
-    for index in range(26):
-        y = -1.48 + index * 0.142
-        inset = 0.18 * abs(y) / 1.55
-        kit.add_box(
-            f"Commons_Plank_{index + 1:02}",
-            (0, y, 0.14 + (0.004 if index % 4 == 0 else 0)),
-            (5.80 - inset, 0.126, 0.11),
-            (mats["sun"], mats["wood"], mats["wood"], mats["wet"])[index % 4],
-            root,
-            objects,
-            rotation=(0, 0, math.radians((index % 5 - 2) * 0.18)),
-            bevel=0.016,
-        )
-    for y in (-1.30, 0, 1.30, 1.98):
-        kit.add_box(
-            f"Commons_Underbeam_{y:+.1f}",
-            (0, y, 0.03),
-            (5.55, 0.15, 0.18),
-            mats["deep"],
-            root,
-            objects,
-            bevel=0.018,
-        )
-    finish("harbor_gathering_deck", root, objects)
-
-
 def build_harbor_sail_canopy() -> None:
     kit.reset_scene()
     root = kit.make_root("harbor_sail_canopy", "Harbor_Sail_Canopy", "large")
@@ -361,7 +327,6 @@ def build_harbor_welcome_beacon() -> None:
 
 BUILDERS = (
     ("harbor_boarding_float", build_harbor_boarding_float),
-    ("harbor_gathering_deck", build_harbor_gathering_deck),
     ("harbor_sail_canopy", build_harbor_sail_canopy),
     ("harbor_council_table", build_harbor_council_table),
     ("harbor_arc_bench", build_harbor_arc_bench),

@@ -458,6 +458,11 @@ struct VoyageHomeView: View {
                     .transition(.opacity)
             }
         }
+        // Above the island layer, which is hit-test disabled while a launch is
+        // in flight — a skip placed inside it could never be tapped.
+        .overlay(alignment: .topTrailing) {
+            departureSkipButton
+        }
         .onReceive(minuteClock) { tick in
             now = tick
         }
@@ -680,6 +685,40 @@ struct VoyageHomeView: View {
             showingWorkManifest = true
         }
         Haptics.tap(.light)
+    }
+
+    /// The sail-out is worth watching once and a wait every day after. Small,
+    /// in the corner, and it lands exactly where the animation would have.
+    @ViewBuilder
+    private var departureSkipButton: some View {
+        if pendingIslandLaunchItem != nil {
+            Button {
+                skipDeparture()
+            } label: {
+                HStack(spacing: 5) {
+                    Text("Skip")
+                        .font(LFFont.label(11))
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                }
+                .foregroundStyle(LFColor.harborSand)
+                .padding(.horizontal, 12)
+                .frame(height: 32)
+                .background(LFColor.harborTeal.opacity(0.92), in: Capsule())
+                .overlay(Capsule().stroke(LFColor.harborSand.opacity(0.26), lineWidth: 1))
+                .shadow(color: Color.black.opacity(0.16), radius: 10, y: 4)
+            }
+            .buttonStyle(LFPressableButtonStyle())
+            .padding(.trailing, 16)
+            .safeAreaPadding(.top, 10)
+            .transition(.opacity)
+            .accessibilityLabel(Text("Skip the departure"))
+        }
+    }
+
+    private func skipDeparture() {
+        sailAnimator.finish()
+        finishIslandDeparture()
     }
 
     private func finishIslandDeparture() {

@@ -93,6 +93,11 @@ enum Asset3DCatalog {
         "hibiscus_bush_orange",
         "council_table",
         "council_chair",
+        "palm_tree",
+        "beach_parasol",
+        "swim_ring",
+        "sandcastle",
+        "watermelon",
         "landfall_boat",
         "navigator_main",
     ]
@@ -161,6 +166,11 @@ enum Asset3DCatalog {
         case "hibiscus_bush_orange": return String(localized: "Orange Hibiscus")
         case "council_table": return String(localized: "Council Table")
         case "council_chair": return String(localized: "Council Chair")
+        case "palm_tree": return String(localized: "Palm Tree")
+        case "beach_parasol": return String(localized: "Beach Parasol")
+        case "swim_ring": return String(localized: "Swim Ring")
+        case "sandcastle": return String(localized: "Sandcastle")
+        case "watermelon": return String(localized: "Watermelon")
         case "landfall_boat": return "Landfall Boat"
         case "navigator_main": return "Navigator"
         default:

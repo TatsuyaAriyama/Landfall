@@ -30,9 +30,13 @@ struct HomeIslandBoatBoardingRequest: Equatable {
 }
 
 enum HomeIslandPlacementRejection: Equatable {
-    case occupied
+    /// A spot the island keeps for itself: the step off the jetty, or the
+    /// notice board. Props never reserve space from each other.
+    case reserved
     case outsideBuildArea
     case coastRequired
+    /// This kind of prop has reached its per-island limit.
+    case limitReached
 }
 
 enum HomeIslandMode: Equatable {
@@ -49,7 +53,8 @@ private enum HomeIslandBuildCameraTuning {
     static let elevation: Float = 0.34
     static let radius: Float = 8.4
     static let minimumRadius: Float = 4.6
-    static let maximumRadius: Float = 16.0
+    // Far enough back to frame the whole island while arranging it.
+    static let maximumRadius: Float = 26.0
     static let targetHeight: Float = 0.72
     static let fieldOfView: CGFloat = 46
     static let horizontalTargetLimit: Float = 18
@@ -264,6 +269,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
     var onMoveBlockedChanged: (Bool) -> Void = { _ in }
     var onPlacementCompleted: (UUID) -> Void
     var onPlacementRejected: (HomeIslandPlacementRejection) -> Void
+    /// Also carries the build-mode pickup as `carry:<uuid>`; see `handleLongPress`.
     var onAssetActivated: (String) -> Void
     var onAssetInteractionDenied: (String) -> Void
     var onArrivalCompleted: () -> Void
@@ -404,6 +410,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private weak var doubleTapRecognizer: UITapGestureRecognizer?
         private var touchWalkInput = HomeIslandWalkInput.zero
         private var keyboardWalkInput = HomeIslandWalkInput.zero
+        /// In build mode the left thumb region drives the camera across the
+        /// island — the touch equivalent of WASD, which pans the same target.
+        /// The navigator does not walk while building, so the region is free.
+        private var editCameraPanInput = HomeIslandWalkInput.zero
         private var gamepadWalkInput = HomeIslandWalkInput.zero
         private var externalWalkInput = HomeIslandWalkInput.zero
         /// One-shot phone jump input. Kept until the renderer consumes it so a
@@ -2423,36 +2433,50 @@ struct HomeIslandSceneView: UIViewRepresentable {
                   let node = placementNodes[selectedID]
             else { return }
 
-            let bounds = node.boundingBox
-            let width = max(0.24, CGFloat(bounds.max.x - bounds.min.x) + 0.22)
-            let height = max(0.24, CGFloat(bounds.max.y - bounds.min.y) + 0.22)
-            let length = max(0.24, CGFloat(bounds.max.z - bounds.min.z) + 0.22)
-            let box = SCNBox(width: width, height: height, length: length, chamferRadius: 0.04)
-            box.widthSegmentCount = 1
-            box.heightSegmentCount = 1
-            box.lengthSegmentCount = 1
-            let material = SCNMaterial()
-            material.lightingModel = .constant
-            material.diffuse.contents = selectionMoveBlocked
+            // A rim around the prop itself rather than a cage around its
+            // bounding box: the player is carrying the thing, so the thing is
+            // what should light up. Blue reads as "this spot works", warm
+            // orange as "not here".
+            let color = selectionMoveBlocked
                 ? UIColor(rgb: 0xF2A66F)
-                : UIColor(rgb: 0xF3D58B)
-            material.emission.contents = selectionMoveBlocked
-                ? UIColor(rgb: 0xC9664B).withAlphaComponent(0.34)
-                : UIColor(rgb: 0x8CCDB5).withAlphaComponent(0.28)
-            material.fillMode = .lines
-            material.readsFromDepthBuffer = false
-            material.writesToDepthBuffer = false
-            box.materials = [material]
-            let outline = SCNNode(geometry: box)
-            outline.name = "home-island-selection-outline"
-            outline.renderingOrder = 500
-            outline.position = SCNVector3(
+                : UIColor(rgb: 0x5CC0F0)
+            let bounds = node.boundingBox
+            let center = SCNVector3(
                 (bounds.min.x + bounds.max.x) * 0.5,
                 (bounds.min.y + bounds.max.y) * 0.5,
                 (bounds.min.z + bounds.max.z) * 0.5
             )
-            node.addChildNode(outline)
-            selectedOutline = outline
+            let shell = node.clone()
+            shell.transform = SCNMatrix4Identity
+            shell.position = SCNVector3(-center.x, -center.y, -center.z)
+            shell.enumerateHierarchy { child, _ in
+                child.physicsBody = nil
+                child.castsShadow = false
+                child.renderingOrder = -10
+                guard let geometry = child.geometry?.copy() as? SCNGeometry else { return }
+                let material = SCNMaterial()
+                material.lightingModel = .constant
+                material.diffuse.contents = color
+                material.emission.contents = color
+                // Seen from the inside, so only what pokes past the model's own
+                // silhouette is drawn. Scaling the shell rather than pushing
+                // vertices along their normals keeps it visible on meshes whose
+                // normals are missing or flat-shaded into hard facets.
+                material.cullMode = .front
+                material.writesToDepthBuffer = false
+                material.readsFromDepthBuffer = true
+                geometry.materials = [material]
+                child.geometry = geometry
+            }
+
+            // Parented to the prop, so the rim follows every drag and rotation.
+            let holder = SCNNode()
+            holder.name = "home-island-selection-outline"
+            holder.position = center
+            holder.scale = SCNVector3(1.06, 1.06, 1.06)
+            holder.addChildNode(shell)
+            node.addChildNode(holder)
+            selectedOutline = holder
         }
 
         @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
@@ -2524,19 +2548,30 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     Haptics.error()
                     return
                 }
+                // Running out of a prop's allowance and standing on a reserved
+                // spot used to report the same thing, which read as "you may
+                // not overlap that" even though overlap is always allowed.
+                let atLimit = !owner.store.canAdd(assetID: assetID)
                 guard let placementID = owner.store.add(
                     assetID: assetID,
                     x: point.x,
                     z: point.z,
                     playerLevel: owner.playerLevel
                 ) else {
-                    owner.onPlacementRejected(
-                        assetID == "wooden_jetty" ? .coastRequired : .occupied
-                    )
+                    if atLimit {
+                        owner.onPlacementRejected(.limitReached)
+                    } else {
+                        owner.onPlacementRejected(
+                            assetID == "wooden_jetty" ? .coastRequired : .reserved
+                        )
+                    }
                     Haptics.error()
                     return
                 }
-                owner.placementAssetID = nil
+                // The palette selection survives a placement, so a grove or a
+                // flower bed is tap-tap-tap instead of a trip back to the shelf
+                // between every prop. It clears itself once the allowance runs
+                // out, or when the player picks something else.
                 let onPlacementCompleted = owner.onPlacementCompleted
                 DispatchQueue.main.async {
                     onPlacementCompleted(placementID)
@@ -2748,11 +2783,20 @@ struct HomeIslandSceneView: UIViewRepresentable {
         /// right and upper portions remain available for direct camera orbit,
         /// and UIKit can track one finger in each region simultaneously.
         private func isMovementControlPoint(_ point: CGPoint, in view: UIView) -> Bool {
-            guard owner.mode == .explore,
+            guard owner.mode == .explore || owner.mode == .edit,
                   !owner.cameraInteractionLocked,
                   !owner.cameraShowcaseActive,
                   !boardingRequested
             else { return false }
+            // While carrying a prop, a touch that starts on it belongs to the
+            // drag even inside the thumb region — otherwise props that happen
+            // to sit low and left could not be picked up.
+            if owner.mode == .edit,
+               owner.movingSelection,
+               let selectedID = owner.store.selectedID,
+               hitPlacement(at: point) == selectedID {
+                return false
+            }
             let bounds = view.bounds
             let safeInsets = view.safeAreaInsets
             let usableTop = max(bounds.minY + safeInsets.top, bounds.minY)
@@ -2768,7 +2812,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         @objc private func handleMovementPan(_ recognizer: UIPanGestureRecognizer) {
-            guard owner.mode == .explore,
+            guard owner.mode == .explore || owner.mode == .edit,
                   !owner.cameraInteractionLocked,
                   !owner.cameraShowcaseActive,
                   !boardingRequested,
@@ -2795,6 +2839,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let deadZone = max(maximumRadius * 0.12, 7)
                 guard distance > deadZone else {
                     touchWalkInput = .zero
+                    editCameraPanInput = .zero
                     refreshWalkInput()
                     return
                 }
@@ -2813,8 +2858,13 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     movementFeedbackSent = true
                     Haptics.tap(.light)
                 }
+                if owner.mode == .edit {
+                    editCameraPanInput = touchWalkInput
+                    touchWalkInput = .zero
+                }
                 refreshWalkInput()
             case .ended, .cancelled, .failed:
+                editCameraPanInput = .zero
                 resetTouchMovement()
             default:
                 break
@@ -2895,13 +2945,13 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
             if owner.mode == .edit, owner.movingSelection {
                 if recognizer.state == .began {
-                    // UIPan becomes `.began` only after the finger has moved a
-                    // few points. Small props could already be outside the hit
-                    // mesh by then, turning an intended move into camera orbit.
-                    // Use the touch-down hit captured by the gesture delegate.
-                    selectionMovePanActive = owner.store.selectedID.map {
-                        selectionMoveTouchPlacementID == $0
-                    } ?? false
+                    // Move mode with something selected means the drag belongs
+                    // to that prop, full stop. Requiring the touch-down hit to
+                    // resolve to the selected prop broke the moment props were
+                    // allowed to overlap: a prop standing inside another is
+                    // never the frontmost hit, so its drag silently turned into
+                    // a camera orbit and it could not be moved at all.
+                    selectionMovePanActive = owner.store.selectedID != nil
                 }
                 if selectionMovePanActive {
                     handleSelectionMove(recognizer, in: view)
@@ -3028,8 +3078,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 node.eulerAngles.y = transform.yaw
                 view.setNeedsDisplay()
             case .ended:
-                guard moveDragPlacementID == selected.id,
-                      let position = moveDragPosition
+                // Fall back to the node's own previewed position: losing the
+                // drag bookkeeping must not silently discard the move.
+                let position = moveDragPosition
+                    ?? (moveDragPlacementID == nil ? nil : node.position)
+                    ?? node.position
+                guard moveDragPlacementID == nil || moveDragPlacementID == selected.id
                 else {
                     clearSelectionMoveDrag()
                     return
@@ -3037,7 +3091,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 guard owner.store.moveSelected(x: position.x, z: position.z) else {
                     selected.transform.apply(to: node)
                     clearSelectionMoveDrag()
-                    owner.onPlacementRejected(.occupied)
+                    owner.onPlacementRejected(.reserved)
                     Haptics.error()
                     return
                 }
@@ -3062,6 +3116,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func cancelSelectionMovePreviewIfNeeded() {
+            // A drag under the finger owns the prop until it is released.
+            // SwiftUI re-renders during the drag (the blocked-state chip alone
+            // causes one), and cancelling here dropped the drag mid-flight:
+            // the prop kept following the finger as a preview, but the release
+            // no longer committed, so it snapped back to where it started.
+            guard !selectionMovePanActive else { return }
             guard let moveDragPlacementID,
                   owner.mode != .edit
                     || !owner.movingSelection
@@ -3222,6 +3282,13 @@ struct HomeIslandSceneView: UIViewRepresentable {
             else { return }
             if owner.mode == .camera {
                 focusCamera(at: recognizer.location(in: view))
+                return
+            }
+            // Pressing a prop picks it up directly: select it and enter move
+            // mode in one gesture, instead of tap, read the dock, tap "move".
+            if let placementID = hitPlacement(at: recognizer.location(in: view)) {
+                owner.onAssetActivated("carry:\(placementID.uuidString)")
+                Haptics.tap(.medium)
                 return
             }
             guard let point = groundPoint(at: recognizer.location(in: view)),
@@ -3400,6 +3467,26 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 ) * distance
                 updateCamera()
             }
+        }
+
+        /// Slides the camera's ground target. Speed scales with how far out the
+        /// camera is, so a zoomed-out survey crosses the island at the same
+        /// apparent rate as a close-up nudge.
+        private func panEditCamera(with input: HomeIslandWalkInput, deltaTime: Float) {
+            guard !owner.cameraInteractionLocked,
+                  deltaTime > 0,
+                  let target = cameraTarget
+            else { return }
+            let speed = min(max(radius * 0.65, 5.0), 28.0)
+            let distance = speed * min(deltaTime, 0.05)
+            let basis = cameraGroundBasis()
+            target.position.x += (
+                basis.forward.x * input.forward + basis.right.x * input.x
+            ) * distance
+            target.position.z += (
+                basis.forward.z * input.forward + basis.right.z * input.x
+            ) * distance
+            updateCamera()
         }
 
         private func handleGamepadMovement(
@@ -4536,7 +4623,13 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 return false
             }
 
-            recoverNavigatorFromInvalidPositionIfNeeded(navigator)
+            // Never while sitting. A seat is by definition inside its own prop's
+            // collider, so this rescue fired every frame of the sit animation
+            // and dragged the navigator back down to walkable ground — the sit
+            // played out but ended on the sand beside the bench.
+            if !seatInteractionState.keepsNavigatorOnSeat {
+                recoverNavigatorFromInvalidPositionIfNeeded(navigator)
+            }
 
             let currentWalkInput = currentCachedWalkInput()
             let magnitude = currentWalkInput.magnitude
@@ -5056,6 +5149,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func cancelSeatInteraction() {
+
             guard seatInteractionState.keepsNavigatorOnSeat else { return }
             navigatorNode?.removeAction(forKey: "seat-transition")
             seatInteractionState = .free
@@ -5424,6 +5518,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
             // background gaps to avoid an unbounded catch-up burst.
             let deltaTime = Float(min(max(time - (lastFrameTime ?? time), 0), 0.25))
             lastFrameTime = time
+            // The build-mode thumb pan runs here rather than on the keyboard
+            // loop: that loop only ticks while a WASD key is held, so on a
+            // device with no keyboard the thumb moved nothing at all.
+            if owner.mode == .edit, editCameraPanInput.magnitude > 0.001 {
+                panEditCamera(with: editCameraPanInput, deltaTime: deltaTime)
+            }
             if owner.mode == .explore {
                 applyPendingExploreOrbit()
             }
@@ -5474,12 +5574,16 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     && !hasExploreInteractiveTarget(at: point)
             }
             if gestureRecognizer === orbitPanRecognizer,
-               owner.mode == .explore {
+               owner.mode == .explore
+                || (owner.mode == .edit && !owner.movingSelection) {
                 return !isMovementControlPoint(point, in: view)
             }
             if gestureRecognizer === orbitPanRecognizer,
                owner.mode == .edit,
                owner.movingSelection {
+                // The thumb region pans the view even mid-carry, so one hand
+                // can steer the island while the other holds the prop.
+                guard !isMovementControlPoint(point, in: view) else { return false }
                 // Capture the target before UIPan's movement threshold is met.
                 // This keeps rocks and stumps draggable even when the finger
                 // leaves their small projected mesh during the first few pixels.

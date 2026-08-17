@@ -55,6 +55,14 @@ struct HomeTimerSnapshot {
         min(6_000, max(minimum, Int((Double(workedSeconds(at: date)) / 60).rounded())))
     }
 
+    /// How many 25-minute focus blocks have been completed since pomodoro was
+    /// switched on. Shown so a long session reads as progress, not a number.
+    func completedPomodoroCycles(at date: Date = Date()) -> Int {
+        guard mode == .pomodoro else { return 0 }
+        let elapsed = max(0, elapsedSeconds(at: date) - Int(pomodoroStartElapsed))
+        return elapsed / 1_800
+    }
+
     func phase(at date: Date = Date()) -> HomePomodoroPhase? {
         guard mode == .pomodoro else { return nil }
         // 通常の合計時計とは別に、オンにした瞬間から25:00を始める。
@@ -88,6 +96,7 @@ struct HomeQuickTimerRecord: Identifiable {
 private struct HomeVoyageCompletion {
     let minutes: Int
     let note: String?
+    var pomodoroCycles: Int = 0
 }
 
 @MainActor
@@ -185,6 +194,7 @@ struct HomeVoyageTimerView: View {
     @State private var uiHidden = false
     @State private var showingSoundPicker = false
     @State private var showingTodoList = false
+    @State private var showingManualEntry = false
     @StateObject private var todoStore = HomeIslandTodoStore.shared
     @State private var clockNow = Date()
     @FocusState private var noteFocused: Bool
@@ -297,6 +307,20 @@ struct HomeVoyageTimerView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Your timer is still running. Please try again.")
+        }
+        .sheet(isPresented: $showingManualEntry) {
+            HomeManualTimeSheet(
+                item: item,
+                initialMinutes: snapshot.creditedMinutes(minimum: 0),
+                onSaved: {},
+                onRecorded: { minutes, savedNote in
+                    // Finish exactly as a measured voyage does, card and all.
+                    StudyTimer.clearAll()
+                    HomeVoyageAudio.shared.stop()
+                    completion = HomeVoyageCompletion(minutes: minutes, note: savedNote)
+                    Haptics.success()
+                }
+            )
         }
         .onDisappear {
             noteFocused = false
@@ -705,10 +729,11 @@ struct HomeVoyageTimerView: View {
             if !isFirstVoyage {
                 HStack {
                     Button {
-                        let minutes = snapshot.creditedMinutes(minimum: 0)
-                        StudyTimer.clearAll()
-                        HomeVoyageAudio.shared.stop()
-                        onManual(minutes)
+                        // Stay at sea. Leaving the voyage to type a number and
+                        // landing back at the pier lost the thread of what the
+                        // player was doing.
+                        noteFocused = false
+                        showingManualEntry = true
                         Haptics.tap(.light)
                     } label: {
                         Text("Enter work time")
@@ -1210,21 +1235,164 @@ struct HomeManualTimeSheet: View {
     let item: StudyItem
     let initialMinutes: Int
     let onSaved: () -> Void
+    /// Reports the saved length and note. The voyage screen uses it to show its
+    /// own completion card instead of dropping the player back at the pier.
+    var onRecorded: ((Int, String?) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StudyDay.date, order: .reverse) private var days: [StudyDay]
 
-    @State private var minutes: Int
+    private static let maximumSeconds = 6_000 * 60
+
+    @State private var totalSeconds: Int
     @State private var note = ""
     @State private var recordDate = Date()
+    @State private var steppingDelta: Int?
+    @State private var repeatTask: Task<Void, Never>?
+    /// Hours, minutes and seconds are three ordinary fields: tap the one you
+    /// mean and type it. Filling one long number from the right read as a
+    /// puzzle, which is not what entering "25 minutes" should be.
+    @State private var hourText = "0"
+    @State private var minuteText = "00"
+    @State private var secondText = "00"
     @FocusState private var noteFocused: Bool
+    @FocusState private var focusedClockField: ClockField?
 
-    init(item: StudyItem, initialMinutes: Int, onSaved: @escaping () -> Void) {
+    private enum ClockField: Hashable {
+        case hour
+        case minute
+        case second
+    }
+
+    init(
+        item: StudyItem,
+        initialMinutes: Int,
+        onSaved: @escaping () -> Void,
+        onRecorded: ((Int, String?) -> Void)? = nil
+    ) {
         self.item = item
         self.initialMinutes = initialMinutes
         self.onSaved = onSaved
-        _minutes = State(initialValue: min(6_000, max(0, initialMinutes)))
+        self.onRecorded = onRecorded
+        _totalSeconds = State(initialValue: min(Self.maximumSeconds, max(0, initialMinutes * 60)))
+    }
+
+    private static func clamped(_ seconds: Int) -> Int {
+        min(maximumSeconds, max(0, seconds))
+    }
+
+    /// Reads the three fields. Minutes and seconds above 59 simply carry, so
+    /// typing "90" into minutes gives an hour and a half rather than an error.
+    private func applyClockFields() {
+        let hours = Int(hourText) ?? 0
+        let minutes = Int(minuteText) ?? 0
+        let seconds = Int(secondText) ?? 0
+        totalSeconds = Self.clamped(hours * 3_600 + minutes * 60 + seconds)
+    }
+
+    private func syncClockFields() {
+        hourText = String(totalSeconds / 3_600)
+        minuteText = String(format: "%02d", (totalSeconds % 3_600) / 60)
+        secondText = String(format: "%02d", totalSeconds % 60)
+    }
+
+    private var clockSeparator: some View {
+        Text(verbatim: ":")
+            .font(LFFont.number(34))
+            .foregroundStyle(LFColor.ink.opacity(0.32))
+            .padding(.bottom, 14)
+    }
+
+    private func clockField(
+        _ field: ClockField,
+        text: Binding<String>,
+        unit: LocalizedStringKey,
+        label: LocalizedStringKey
+    ) -> some View {
+        VStack(spacing: 2) {
+            TextField("", text: text)
+                .font(LFFont.number(42))
+                .monospacedDigit()
+                .multilineTextAlignment(.center)
+                .keyboardType(.numberPad)
+                .foregroundStyle(
+                    focusedClockField == field ? LFColor.returnOrange : LFColor.ink
+                )
+                .focused($focusedClockField, equals: field)
+                .frame(width: 74)
+                .onChange(of: text.wrappedValue) { _, value in
+                    let digits = String(value.filter(\.isNumber).prefix(field == .hour ? 3 : 2))
+                    if digits != value { text.wrappedValue = digits }
+                    applyClockFields()
+                }
+                .onChange(of: focusedClockField) { previous, current in
+                    // Tapping a field clears it so typing replaces rather than
+                    // appends; leaving it empty falls back to zero.
+                    if current == field { text.wrappedValue = "" }
+                    if previous == field, text.wrappedValue.isEmpty {
+                        text.wrappedValue = "0"
+                        applyClockFields()
+                        syncClockFields()
+                    }
+                }
+                .accessibilityLabel(Text(label))
+
+            Text(unit)
+                .font(LFFont.label(10))
+                .foregroundStyle(LFColor.ink.opacity(0.46))
+        }
+    }
+
+    /// One second per tap, and a run of seconds while held — the whole control
+    /// is these two buttons, so holding has to cover the distance that rows of
+    /// preset amounts used to.
+    private func stepButton(_ delta: Int, symbol: String, label: LocalizedStringKey) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(LFColor.ink.opacity(0.72))
+            .frame(width: 38, height: 38)
+            .background(Circle().fill(LFColor.ink.opacity(steppingDelta == delta ? 0.12 : 0.05)))
+            .overlay(Circle().stroke(LFColor.ink.opacity(0.16), lineWidth: 1))
+            .contentShape(Circle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in beginStepping(delta) }
+                    .onEnded { _ in endStepping() }
+            )
+            .accessibilityLabel(Text(label))
+    }
+
+    private func beginStepping(_ delta: Int) {
+        // A drag reports continuously; only the first report starts a run.
+        guard steppingDelta == nil else { return }
+        steppingDelta = delta
+        adjust(by: delta)
+        Haptics.tap(.light)
+        repeatTask = Task { @MainActor in
+            // A moment's grace so a tap stays a tap, then an accelerating run.
+            try? await Task.sleep(for: .milliseconds(420))
+            var interval = 90
+            var ticks = 0
+            while !Task.isCancelled {
+                adjust(by: delta)
+                ticks += 1
+                if ticks % 10 == 0 { Haptics.tap(.light) }
+                try? await Task.sleep(for: .milliseconds(interval))
+                interval = max(16, interval - 4)
+            }
+        }
+    }
+
+    private func endStepping() {
+        steppingDelta = nil
+        repeatTask?.cancel()
+        repeatTask = nil
+    }
+
+    private func adjust(by delta: Int) {
+        totalSeconds = Self.clamped(totalSeconds + delta)
+        syncClockFields()
     }
 
     var body: some View {
@@ -1240,54 +1408,20 @@ struct HomeManualTimeSheet: View {
                             .lineLimit(2)
                     }
 
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("\(minutes)")
-                            .font(LFFont.number(46))
-                            .foregroundStyle(LFColor.ink)
-                            .contentTransition(.numericText())
-                        Text("min")
-                            .font(LFFont.label(14))
-                            .foregroundStyle(LFColor.ink.opacity(0.50))
-                    }
-                    .frame(maxWidth: .infinity)
+                    HStack(spacing: 10) {
+                        stepButton(-1, symbol: "minus", label: "One second less")
 
-                    LazyVGrid(
-                        columns: Array(repeating: GridItem(.flexible(), spacing: 9), count: 4),
-                        spacing: 9
-                    ) {
-                        ForEach([5, 15, 30, 60], id: \.self) { value in
-                            Button {
-                                minutes = min(6_000, minutes + value)
-                                Haptics.tap(.light)
-                            } label: {
-                                Text("+\(value)")
-                                    .font(LFFont.label(15))
-                                    .monospacedDigit()
-                                    .foregroundStyle(LFColor.ink)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 44)
-                                    .overlay(
-                                        Capsule().stroke(LFColor.ink.opacity(0.22), lineWidth: 1)
-                                    )
-                            }
-                            .buttonStyle(LFPressableButtonStyle())
+                        HStack(spacing: 4) {
+                            clockField(.hour, text: $hourText, unit: "h", label: "Hours")
+                            clockSeparator
+                            clockField(.minute, text: $minuteText, unit: "min", label: "Minutes")
+                            clockSeparator
+                            clockField(.second, text: $secondText, unit: "sec", label: "Seconds")
                         }
-                    }
+                        .frame(maxWidth: .infinity)
 
-                    Stepper(value: $minutes, in: 0...6_000, step: 5) {
-                        Text("Fine tune in 5-minute steps")
-                            .font(LFFont.label(13))
-                            .foregroundStyle(LFColor.ink.opacity(0.58))
+                        stepButton(1, symbol: "plus", label: "One second more")
                     }
-
-                    Button {
-                        minutes = 0
-                    } label: {
-                        Text("Reset")
-                            .font(LFFont.label(13))
-                            .foregroundStyle(LFColor.coral)
-                    }
-                    .buttonStyle(.plain)
 
                     DatePicker(
                         "Date",
@@ -1316,16 +1450,27 @@ struct HomeManualTimeSheet: View {
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
                             .background(
-                                minutes > 0 ? LFColor.ink : LFColor.ink.opacity(0.28),
+                                totalSeconds > 0 ? LFColor.ink : LFColor.ink.opacity(0.28),
                                 in: RoundedRectangle(cornerRadius: 17)
                             )
                     }
                     .buttonStyle(LFPressableButtonStyle())
-                    .disabled(minutes <= 0)
+                    .disabled(totalSeconds <= 0)
                 }
                 .padding(20)
             }
             .background(LFColor.paper)
+            .onAppear { syncClockFields() }
+            .onDisappear { endStepping() }
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        focusedClockField = nil
+                        noteFocused = false
+                    }
+                }
+            }
             .navigationTitle("Enter work time")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1337,12 +1482,14 @@ struct HomeManualTimeSheet: View {
     }
 
     private func save() {
-        guard minutes > 0 else { return }
+        let seconds = totalSeconds
+        guard seconds > 0 else { return }
         let date = recordDate
         let trimmed = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
         let session = StudySession(
             date: date,
-            minutes: minutes,
+            minutes: seconds / 60,
+            extraSeconds: seconds % 60,
             note: trimmed.isEmpty ? nil : trimmed,
             item: item
         )
@@ -1360,7 +1507,11 @@ struct HomeManualTimeSheet: View {
         let recorded = StudyDayStore.recordedToday(context: modelContext)
         Task { await NotificationService.reschedule(recordedToday: recorded) }
         Haptics.success()
-        onSaved()
+        if let onRecorded {
+            onRecorded(session.minutes, session.note)
+        } else {
+            onSaved()
+        }
         dismiss()
     }
 }

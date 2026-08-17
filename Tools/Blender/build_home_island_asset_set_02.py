@@ -318,6 +318,11 @@ def add_preview_stage(objects: list[bpy.types.Object]) -> None:
     world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.25
 
     span = max(dimensions.x, dimensions.y, dimensions.z, 1.0)
+    # Lights sit at a multiple of the prop's own span, so their energy has to
+    # follow the inverse-square law. Without this a small prop is lit from
+    # centimetres away and blows out to white, which makes its colours
+    # impossible to judge in review. 2.4 is the span the presets were tuned for.
+    exposure = (span / 2.4) ** 2
     for name, offset, energy, size, color in (
         ("PREVIEW_Key", Vector((-1.7, -2.2, 2.5)), 560, 4.2, "#FFE8BB"),
         ("PREVIEW_Fill", Vector((2.0, -0.8, 1.5)), 310, 3.4, "#77C4A5"),
@@ -326,7 +331,7 @@ def add_preview_stage(objects: list[bpy.types.Object]) -> None:
         bpy.ops.object.light_add(type="AREA", location=center + offset * span)
         light = bpy.context.object
         light.name = name
-        light.data.energy = energy
+        light.data.energy = energy * exposure
         light.data.shape = "DISK"
         light.data.size = size
         light.data.color = rgba(color)[:3]
@@ -505,16 +510,19 @@ def build_driftwood_bench() -> None:
         slot_id="right",
         purpose="seat",
     )
+    # The approach marks where the navigator stands before sitting. At -1.88 it
+    # sat a full body-length out from the bench, so sitting meant walking away
+    # from it first, and the only spot that triggered a sit was a 7cm ring.
     approach_left = add_socket(
         "SeatApproach_Left",
-        (-0.68, -1.88, 0.0),
+        (-0.68, -1.30, 0.0),
         root,
         slot_id="left",
         purpose="approach",
     )
     approach_right = add_socket(
         "SeatApproach_Right",
-        (0.68, -1.88, 0.0),
+        (0.68, -1.30, 0.0),
         root,
         slot_id="right",
         purpose="approach",

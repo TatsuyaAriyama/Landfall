@@ -40,6 +40,7 @@
 
 /* 導入(オンボーディング) */
 "Skip" = "スキップ";
+"Skip the departure" = "出航の演出をスキップ";
 "Next" = "次へ";
 "Begin" = "始める";
 "Step %lld of %lld" = "%2$lldステップ中 %1$lld";
@@ -119,6 +120,9 @@
 "Tap the new place on the sand" = "砂地の移動先をタップ";
 "Drag the selected asset freely across the island" = "移動モード：選択中のアセットをドラッグ";
 "Slide along the obstacle to find open space" = "障害物に沿って、空いている場所へ動かしてください";
+"Drag lower-left to move · drag to turn · pinch to zoom" = "左下で移動・ドラッグで回転・ピンチで拡大";
+"This spot is kept clear" = "ここは通り道として空けてあります";
+"You have placed all of these" = "これはもう置ける数に達しています";
 "Keep the asset inside the sandy build area" = "砂地の配置エリア内に置いてください";
 "Place the jetty along the island edge" = "桟橋は島の海岸線に沿って置いてください";
 "Removed %@ · Undo is available" = "%@を削除しました・取り消しできます";
@@ -828,6 +832,19 @@
 "Pomodoro · On" = "ポモドーロ · オン";
 "Pomodoro" = "ポモドーロ";
 "Log up to here" = "ここまでを記録する";
+"Length" = "長さ";
+"Start and end" = "開始と終了";
+"Started" = "開始";
+"Ended" = "終了";
+"Seconds come from the gap between the two times." = "2つの時刻の差から秒まで計算します。";
+"One second less" = "1秒減らす";
+"One second more" = "1秒増やす";
+"Hours" = "時間";
+"Minutes" = "分";
+"Seconds" = "秒";
+"h" = "時間";
+"min" = "分";
+"sec" = "秒";
 "Enter work time" = "作業時間を入力する";
 "On break" = "休憩中";
 "Focus" = "集中";
@@ -1030,6 +1047,11 @@
 "Orange Hibiscus" = "オレンジのハイビスカス";
 "Council Table" = "円卓";
 "Council Chair" = "円卓の椅子";
+"Palm Tree" = "ヤシの木";
+"Beach Parasol" = "パラソル";
+"Swim Ring" = "浮き輪";
+"Sandcastle" = "砂のお城";
+"Watermelon" = "スイカ";
 "Assets" = "アセット";
 "Details" = "詳細";
 "Move panel" = "パネルを左右に移動";

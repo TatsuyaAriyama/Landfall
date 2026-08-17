@@ -44,7 +44,8 @@ private enum HomeIslandAssetCategory: String, CaseIterable, Identifiable {
             ["small_tree", "conifer_tree", "small_stump", "small_rock", "small_lake",
              "coastal_rocks", "dune_grass_patch",
              "rose_bush_white", "rose_bush_red", "rose_bush_yellow",
-             "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange"]
+             "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange",
+             "palm_tree"]
                 .contains(assetID)
         case .structures:
             ["weathered_cottage", "small_lighthouse", "weathered_lighthouse",
@@ -54,7 +55,8 @@ private enum HomeIslandAssetCategory: String, CaseIterable, Identifiable {
         case .decor:
             ["weathered_crate", "campfire_circle", "voyage_flagpole",
              "harbor_lantern_post", "weathered_anchor", "net_drying_rack",
-             "voyage_signal_bell", "supply_barrels"]
+             "voyage_signal_bell", "supply_barrels",
+             "beach_parasol", "swim_ring", "sandcastle", "watermelon"]
                 .contains(assetID)
         case .paths:
             ["stone_path_straight", "stone_path_curve", "stone_path_fork",
@@ -181,7 +183,10 @@ struct HomeIslandView: View {
     @State private var activePhotoSaveRequestID: UUID?
     @State private var showingIslandShare = false
     @State private var showingCaptureError = false
-    @State private var selectedAssetCategory = HomeIslandAssetCategory.all
+    // Builders work in one category for a long stretch; reopening on "all"
+    // every time meant scrolling past forty tiles to get back to it.
+    @AppStorage("homeIsland.buildCategory") private var selectedAssetCategoryToken =
+        HomeIslandAssetCategory.all.rawValue
     @State private var transientNotice: String?
     @State private var isDismissingAfterDeparture = false
     @State private var isNavigatorOnArrivalJetty = false
@@ -294,6 +299,76 @@ struct HomeIslandView: View {
     }
 
     var body: some View {
+        // The presentation modifiers live here and the scene in
+        // `islandStage`: as one expression this view no longer type-checks.
+        islandStage
+            .fullScreenCover(isPresented: $showingLogbook) {
+                LogbookView()
+                    .presentationBackground(.clear)
+            }
+            .fullScreenCover(item: $activeInterior, onDismiss: {
+                walkInput = .zero
+                publishInteriorPresence(scene: "island")
+            }) { interior in
+                HomeIslandInteriorView(kind: interior)
+                    .presentationBackground(.black)
+                    .onAppear {
+                        publishInteriorPresence(scene: "interior:\(interior.rawValue)")
+                    }
+            }
+            .fullScreenCover(isPresented: $showingIslandShare) {
+                if let islandShareImage {
+                    HomeIslandShareSheet(
+                        photo: islandShareImage,
+                        shareCard: islandShareCardImage,
+                        saveState: photoSaveState,
+                        onRetake: {
+                            showingIslandShare = false
+                            Haptics.tap(.light)
+                        },
+                        onClose: {
+                            showingIslandShare = false
+                            exitCameraMode()
+                        }
+                    )
+                    .presentationBackground(.black)
+                }
+            }
+            .alert("Could not create the photo", isPresented: $showingCaptureError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Please try again.")
+            }
+            .confirmationDialog(
+                "More actions",
+                isPresented: $showingSelectionActions,
+                titleVisibility: .visible
+            ) {
+                Button("Duplicate") {
+                    duplicateSelection()
+                }
+                .disabled(!canDuplicateSelection)
+
+                Button("Remove", role: .destructive) {
+                    let removedTitle = store.selectedPlacement.flatMap {
+                        HomeIslandAssetCatalog.asset(id: $0.assetID)?.title
+                    }
+                    store.deleteSelected()
+                    movingSelection = false
+                    showingSizeControls = false
+                    placementMoveBlocked = false
+                    showTransientNotice(
+                        removedTitle.map { LF.format("Removed %@ · Undo is available", $0) }
+                            ?? String(localized: "Removed · Undo is available")
+                    )
+                    Haptics.tap(.medium)
+                }
+
+                Button("Cancel", role: .cancel) {}
+            }
+    }
+
+    fileprivate var islandStageBase: some View {
         ZStack {
             // Keep the daylight sky outside SceneKit's HDR tone mapper. The
             // voyage home uses the same composition; rendering this color as
@@ -322,38 +397,9 @@ struct HomeIslandView: View {
                 onMoveBlockedChanged: { blocked in
                     placementMoveBlocked = blocked
                 },
-                onPlacementCompleted: { _ in
-                    placementAssetID = nil
-                    movingSelection = false
-                    showingSizeControls = allowsAssetSizeCalibration
-                },
-                onPlacementRejected: { reason in
-                    let notice: String
-                    switch reason {
-                    case .occupied:
-                        notice = String(localized: "That space is occupied")
-                    case .outsideBuildArea:
-                        notice = String(localized: "Keep the asset inside the sandy build area")
-                    case .coastRequired:
-                        notice = String(localized: "Place the jetty along the island edge")
-                    }
-                    showTransientNotice(notice)
-                },
-                onAssetActivated: { assetID in
-                    if assetID == "fixed_notice_board" {
-                        openVoyageNoticeBoard()
-                        return
-                    }
-                    if let interior = HomeIslandInteriorKind(assetID: assetID) {
-                        walkInput = .zero
-                        activeInterior = interior
-                        Haptics.tap(.medium)
-                        return
-                    }
-                    guard assetID == "campfire_circle" else { return }
-                    showingLogbook = true
-                    Haptics.tap(.medium)
-                },
+                onPlacementCompleted: finishPlacement,
+                onPlacementRejected: reportPlacementRejection,
+                onAssetActivated: activateAsset,
                 onAssetInteractionDenied: { assetID in
                     let notice = String(localized: "Move closer to interact")
                     showTransientNotice(notice)
@@ -663,6 +709,12 @@ struct HomeIslandView: View {
         .onChange(of: multiplayerSession?.snapshot) { _, snapshot in
             replaceGuestSnapshot(snapshot)
         }
+    }
+
+    /// The second half of the scene's modifier chain. Three properties instead
+    /// of one keeps each expression small enough for the type checker.
+    fileprivate var islandStage: some View {
+        islandStageBase
         .onChange(of: multiplayerSession?.room.id) { _, _ in
             replaceGuestSnapshot(multiplayerSession?.snapshot)
         }
@@ -708,70 +760,6 @@ struct HomeIslandView: View {
         }
         .overlay(alignment: .topTrailing) {
             homeUtilityPanel
-        }
-        .fullScreenCover(isPresented: $showingLogbook) {
-            LogbookView()
-                .presentationBackground(.clear)
-        }
-        .fullScreenCover(item: $activeInterior, onDismiss: {
-            walkInput = .zero
-            publishInteriorPresence(scene: "island")
-        }) { interior in
-            HomeIslandInteriorView(kind: interior)
-                .presentationBackground(.black)
-                .onAppear {
-                    publishInteriorPresence(scene: "interior:\(interior.rawValue)")
-                }
-        }
-        .fullScreenCover(isPresented: $showingIslandShare) {
-            if let islandShareImage {
-                HomeIslandShareSheet(
-                    photo: islandShareImage,
-                    shareCard: islandShareCardImage,
-                    saveState: photoSaveState,
-                    onRetake: {
-                        showingIslandShare = false
-                        Haptics.tap(.light)
-                    },
-                    onClose: {
-                        showingIslandShare = false
-                        exitCameraMode()
-                    }
-                )
-                .presentationBackground(.black)
-            }
-        }
-        .alert("Could not create the photo", isPresented: $showingCaptureError) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Please try again.")
-        }
-        .confirmationDialog(
-            "More actions",
-            isPresented: $showingSelectionActions,
-            titleVisibility: .visible
-        ) {
-            Button("Duplicate") {
-                duplicateSelection()
-            }
-            .disabled(!canDuplicateSelection)
-
-            Button("Remove", role: .destructive) {
-                let removedTitle = store.selectedPlacement.flatMap {
-                    HomeIslandAssetCatalog.asset(id: $0.assetID)?.title
-                }
-                store.deleteSelected()
-                movingSelection = false
-                showingSizeControls = false
-                placementMoveBlocked = false
-                showTransientNotice(
-                    removedTitle.map { LF.format("Removed %@ · Undo is available", $0) }
-                        ?? String(localized: "Removed · Undo is available")
-                )
-                Haptics.tap(.medium)
-            }
-
-            Button("Cancel", role: .cancel) {}
         }
     }
 
@@ -1910,6 +1898,76 @@ struct HomeIslandView: View {
         }
     }
 
+    /// The palette selection survives a placement so a grove can be planted
+    /// tap by tap; it steps aside only once the allowance is used up.
+    private func finishPlacement(_ placementID: UUID) {
+        movingSelection = false
+        showingSizeControls = allowsAssetSizeCalibration
+        if let assetID = placementAssetID, !store.canAdd(assetID: assetID) {
+            placementAssetID = nil
+        }
+    }
+
+    /// Every refusal says what it actually was. They used to share one line,
+    /// which read as "you may not overlap that" even where overlap is fine.
+    private func reportPlacementRejection(_ reason: HomeIslandPlacementRejection) {
+        let notice: String
+        switch reason {
+        case .reserved:
+            notice = String(localized: "This spot is kept clear")
+        case .limitReached:
+            notice = String(localized: "You have placed all of these")
+        case .outsideBuildArea:
+            notice = String(localized: "Keep the asset inside the sandy build area")
+        case .coastRequired:
+            notice = String(localized: "Place the jetty along the island edge")
+        }
+        showTransientNotice(notice)
+    }
+
+    /// Tapping a prop in explore mode: the board opens the harbors, a building
+    /// is entered, and the campfire opens the logbook.
+    private func activateAsset(_ assetID: String) {
+        // A long press in build mode arrives here as `carry:<uuid>`: the scene
+        // reports it through this channel rather than a separate callback,
+        // which the scene initializer no longer has room for.
+        if assetID.hasPrefix("carry:"),
+           let placementID = UUID(uuidString: String(assetID.dropFirst(6))) {
+            beginCarrying(placementID)
+            return
+        }
+        if assetID == "fixed_notice_board" {
+            openVoyageNoticeBoard()
+            return
+        }
+        if let interior = HomeIslandInteriorKind(assetID: assetID) {
+            walkInput = .zero
+            activeInterior = interior
+            Haptics.tap(.medium)
+            return
+        }
+        guard assetID == "campfire_circle" else { return }
+        showingLogbook = true
+        Haptics.tap(.medium)
+    }
+
+    /// A long press on a prop selects it and starts the carry in one gesture.
+    private func beginCarrying(_ placementID: UUID) {
+        placementAssetID = nil
+        store.select(placementID)
+        withAnimation(.easeOut(duration: 0.18)) {
+            movingSelection = true
+        }
+    }
+
+    /// Shown once per visit to build mode. The camera controls are invisible
+    /// by design, so they have to be said out loud at least once.
+    private func announceBuildControls() {
+        showTransientNotice(
+            String(localized: "Drag lower-left to move · drag to turn · pinch to zoom")
+        )
+    }
+
     private func enterEditMode() {
         guard canEditIsland else { return }
         showingBoatCustomization = false
@@ -1918,6 +1976,7 @@ struct HomeIslandView: View {
         withAnimation(.easeOut(duration: 0.22)) {
             mode = .edit
         }
+        announceBuildControls()
         Haptics.tap(.light)
     }
 
@@ -2451,6 +2510,10 @@ struct HomeIslandView: View {
         )
     }
 
+    private var selectedAssetCategory: HomeIslandAssetCategory {
+        HomeIslandAssetCategory(rawValue: selectedAssetCategoryToken) ?? .all
+    }
+
     private var visibleAssets: [HomeIslandAsset] {
         assets
             .filter { selectedAssetCategory.contains($0.id) }
@@ -2471,7 +2534,7 @@ struct HomeIslandView: View {
     private func categoryButton(_ category: HomeIslandAssetCategory) -> some View {
         let selected = selectedAssetCategory == category
         return Button {
-            selectedAssetCategory = category
+            selectedAssetCategoryToken = category.rawValue
             Haptics.tap(.light)
         } label: {
             Label(category.title, systemImage: category.symbol)
@@ -3293,8 +3356,20 @@ private struct HomeIslandAssetThumbnail: View {
 private enum HomeIslandAssetThumbnailRenderer {
     private static var cache: [String: UIImage] = [:]
     /// Bump when the render setup changes so stale thumbnails are re-rendered.
-    private static let diskCacheVersion = 1
+    private static let diskCacheVersion = 2
     private static let side: CGFloat = 96
+
+    /// A model's own size and modification date are part of its cache key, so
+    /// re-authoring an asset refreshes its tile by itself. Without this a
+    /// rebuilt model kept showing the shape it had the first time it was drawn.
+    private static func fingerprint(for assetID: String) -> String {
+        guard let url = Bundle.main.url(forResource: assetID, withExtension: "usdz"),
+              let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        else { return "none" }
+        let size = values.fileSize ?? 0
+        let modified = Int((values.contentModificationDate ?? .distantPast).timeIntervalSince1970)
+        return "\(size)-\(modified)"
+    }
 
     /// Building a Metal renderer costs more than the snapshot itself, so the
     /// whole catalog shares one.
@@ -3339,7 +3414,8 @@ private enum HomeIslandAssetThumbnailRenderer {
 
     private static func diskURL(assetID: String) -> URL? {
         guard !assetID.contains("/") else { return nil }
-        return diskCacheDirectory?.appendingPathComponent("\(assetID).png")
+        return diskCacheDirectory?
+            .appendingPathComponent("\(assetID)-\(fingerprint(for: assetID)).png")
     }
 
     private static func loadFromDisk(assetID: String) -> UIImage? {

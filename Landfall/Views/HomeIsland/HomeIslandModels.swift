@@ -49,11 +49,6 @@ enum HomeIslandMetrics {
     // The transfer point remains on the low float for the departure walk.
     static let arrivalJettyLandingLocalX: Float = 0.35
     static let arrivalJettyIslandLocalZ: Float = 1.50
-    // The reserved corridor includes both the permanent jetty and the
-    // player's moored boat, so newly placed props cannot overlap the berth.
-    static let arrivalJettyReservedHalfWidth: Float = 4.90
-    static let arrivalJettyReservedNearZ: Float = 5.00
-    static let arrivalJettyReservedFarZ: Float = 16.80
     static let welcomeBeaconPositions = [
         (x: Float(-0.98), z: Float(8.05)),
         (x: Float(0.98), z: Float(8.05)),
@@ -261,7 +256,6 @@ enum HomeIslandAssetCatalog {
 
     /// Saved instances remain in snapshots while these props are withheld.
     private static let temporarilyHiddenAssetIDs: Set<String> = [
-        "small_stump",
         "navigator_hammock",
     ]
 
@@ -276,18 +270,25 @@ enum HomeIslandAssetCatalog {
         ),
     ]
 
+    /// The bench sockets already sit in the middle of a 0.36 deep seat, so the
+    /// default backrest clearance — which pushes the body 0.145 toward the
+    /// approach — parked the navigator on the front lip, looking like they were
+    /// standing in front of the bench rather than sitting on it. Nought keeps
+    /// them on the socket.
     private static let driftwoodBenchSeatSlots = [
         HomeIslandContactSlotDefinition(
             id: "left",
             motion: .sit,
             seatNodeName: "SeatSocket_Left",
-            approachNodeName: "SeatApproach_Left"
+            approachNodeName: "SeatApproach_Left",
+            seatPlanarOffset: 0
         ),
         HomeIslandContactSlotDefinition(
             id: "right",
             motion: .sit,
             seatNodeName: "SeatSocket_Right",
-            approachNodeName: "SeatApproach_Right"
+            approachNodeName: "SeatApproach_Right",
+            seatPlanarOffset: 0
         ),
     ]
 
@@ -371,7 +372,7 @@ enum HomeIslandAssetCatalog {
             id: "small_stump",
             title: String(localized: "Small Stump"),
             symbolName: "tree.fill",
-            defaultScale: 0.76,
+            defaultScale: 0.66,
             footprintMargin: 0.60,
             unlockLevel: 4
         ),
@@ -659,6 +660,46 @@ enum HomeIslandAssetCatalog {
             footprintMargin: 0.42,
             unlockLevel: 2
         ),
+        HomeIslandAsset(
+            id: "palm_tree",
+            title: String(localized: "Palm Tree"),
+            symbolName: "tree.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.85,
+            unlockLevel: 4
+        ),
+        HomeIslandAsset(
+            id: "beach_parasol",
+            title: String(localized: "Beach Parasol"),
+            symbolName: "umbrella.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.56,
+            unlockLevel: 5
+        ),
+        HomeIslandAsset(
+            id: "swim_ring",
+            title: String(localized: "Swim Ring"),
+            symbolName: "lifepreserver.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.24,
+            unlockLevel: 5
+        ),
+        HomeIslandAsset(
+            id: "sandcastle",
+            title: String(localized: "Sandcastle"),
+            symbolName: "building.2.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.30,
+            unlockLevel: 6
+        ),
+        HomeIslandAsset(
+            id: "watermelon",
+            title: String(localized: "Watermelon"),
+            symbolName: "leaf.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.26,
+            unlockLevel: 6
+        ),
     ]
 
     static var approvedIDs: Set<String> { Set(approved.map(\.id)) }
@@ -705,16 +746,42 @@ enum HomeIslandAssetCatalog {
         return asset.defaultScale
     }
 
+    /// Trees, rocks and flowers are turned by a stable angle taken from their
+    /// own identifier. Everything built by hand keeps the facing it was
+    /// authored with, so jetties, paths and furniture stay square.
+    static func naturalFacing(assetID: String, id: UUID) -> Float {
+        switch assetID {
+        case "small_tree", "conifer_tree", "palm_tree", "small_rock",
+             "small_stump", "coastal_rocks", "dune_grass_patch",
+             "rose_bush_white", "rose_bush_red", "rose_bush_yellow",
+             "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange":
+            let hashed = UInt32(truncatingIfNeeded: id.hashValue)
+            return Float(hashed % 3600) / 3600 * 2 * .pi
+        default:
+            return 0
+        }
+    }
+
     /// Most props are intentionally scarce. Natural ground details can be
     /// repeated more freely so players can shape a convincing island edge.
     static func placementLimit(for assetID: String) -> Int {
         switch assetID {
         case "small_stump", "small_rock", "small_tree", "conifer_tree",
+             "palm_tree", "dune_grass_patch",
              "rose_bush_white", "rose_bush_red", "rose_bush_yellow",
              "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange":
-            10
-        default:
+            // Planting is what an island is made of. Overlap is allowed now,
+            // so a believable grove or border needs real numbers.
+            16
+        case "stone_path_straight", "stone_path_curve", "stone_path_fork":
+            // A path of three tiles never reaches anywhere.
+            12
+        case "weathered_cottage", "small_lighthouse", "weathered_lighthouse",
+             "cliff_lookout", "mossy_ruins", "stone_well", "navigator_tent":
+            // Landmarks stay rare on purpose.
             3
+        default:
+            6
         }
     }
 
@@ -793,7 +860,11 @@ enum HomeIslandAssetCatalog {
              "rose_bush_yellow",
              "hibiscus_bush_red",
              "hibiscus_bush_pink",
-             "hibiscus_bush_orange":
+             "hibiscus_bush_orange",
+             // Ankle height: the navigator steps over these rather than
+             // walking around them.
+             "swim_ring",
+             "watermelon":
             false
         default:
             true
@@ -805,6 +876,39 @@ enum HomeIslandAssetCatalog {
     /// but a much tighter body collider so the navigator can reach its
     /// authored interaction point.
     static func walkingCollisionRadius(assetID: String, scale: Float) -> Float {
+        // A parasol and a palm are mostly canopy: blocking their full footprint
+        // would fence off the shade, which is the point of standing there.
+        // A bench is shallow and its seat is only 0.42 from its centre. The
+        // footprint-derived collider was 0.78, which put the seat — and the
+        // ground in front of it — inside the navigator's own no-go circle: the
+        // player could not reach the bench, and standing up landed on an
+        // invalid spot. The collider is now the frame itself.
+        if assetID == "small_stump" {
+            guard let asset = asset(id: assetID) else { return 0.30 }
+            let scaleRatio = max(scale, 0.05) / max(asset.defaultScale, 0.05)
+            return max(0.18, 0.30 * scaleRatio)
+        }
+        if assetID == "driftwood_bench" {
+            guard let asset = asset(id: assetID) else { return 0.30 }
+            let scaleRatio = max(scale, 0.05) / max(asset.defaultScale, 0.05)
+            return max(0.18, 0.30 * scaleRatio)
+        }
+        // Masts, posts and bells are thin: their footprint buys them visual
+        // breathing room, but the body collider is the pole itself.
+        switch assetID {
+        case "voyage_flagpole", "harbor_lantern_post", "voyage_signal_bell",
+             "weathered_anchor", "small_lighthouse":
+            guard let asset = asset(id: assetID) else { return 0.24 }
+            let scaleRatio = max(scale, 0.05) / max(asset.defaultScale, 0.05)
+            return max(0.16, 0.26 * scaleRatio)
+        default:
+            break
+        }
+        if assetID == "beach_parasol" || assetID == "palm_tree" {
+            guard let asset = asset(id: assetID) else { return 0.22 }
+            let scaleRatio = max(scale, 0.05) / max(asset.defaultScale, 0.05)
+            return max(0.14, (assetID == "palm_tree" ? 0.26 : 0.18) * scaleRatio)
+        }
         if assetID == "navigator_hammock" {
             guard let asset = asset(id: assetID) else { return 0.54 }
             let scaleRatio = max(scale, 0.05) / max(asset.defaultScale, 0.05)
@@ -824,14 +928,16 @@ enum HomeIslandAssetCatalog {
         max(0.16, footprintMargin(assetID: assetID, scale: scale) * 0.38)
     }
 
-    /// Planting is free-form: flowers and grass may overlap each other and any
-    /// other prop, which is how a believable bed or border gets made.
+    /// Planting is free-form: trees, flowers and grass may overlap each other
+    /// and any other prop, which is how a believable grove, bed or border gets
+    /// made. Their trunks still block walking — only placement is unrestricted.
     static func participatesInPlacementCollision(assetID: String) -> Bool {
         switch assetID {
         case "stone_path_straight", "stone_path_curve", "stone_path_fork",
              "compass_rose_inlay", "dune_grass_patch",
              "rose_bush_white", "rose_bush_red", "rose_bush_yellow",
-             "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange":
+             "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange",
+             "small_tree", "conifer_tree", "palm_tree":
             false
         default:
             true
@@ -1187,20 +1293,23 @@ final class HomeIslandStore: ObservableObject {
               HomeIslandAssetCatalog.isUnlocked(asset, playerLevel: playerLevel)
         else { return nil }
         let previous = editState
+        let placementID = UUID()
         guard let transform = validTransform(
             assetID: assetID,
             x: x,
             z: z,
-            // New props should preserve their authored facing. Deriving yaw
-            // from the total object count made identical assets appear to
-            // rotate unpredictably as the island grew.
-            yaw: 0,
+            // Built props keep their authored facing. Natural ones are turned
+            // by an angle derived from their own id: a grove of identical
+            // trees stops looking stamped, and because the angle comes from
+            // the placement itself it never changes afterwards. (Deriving it
+            // from the island's object count used to do exactly that.)
+            yaw: HomeIslandAssetCatalog.naturalFacing(assetID: assetID, id: placementID),
             scale: asset.defaultScale,
             excluding: nil,
             requireValidCoastPoint: true
         ) else { return nil }
         let placement = HomeIslandPlacement(
-            id: UUID(),
+            id: placementID,
             assetID: assetID,
             transform: transform
         )
@@ -1217,7 +1326,7 @@ final class HomeIslandStore: ObservableObject {
               let index = placements.firstIndex(where: { $0.id == selectedID })
         else { return false }
         let previous = editState
-        guard let transform = validTransform(
+        if let transform = validTransform(
             assetID: placements[index].assetID,
             x: x,
             z: z,
@@ -1225,8 +1334,29 @@ final class HomeIslandStore: ObservableObject {
             scale: placements[index].transform.scale,
             excluding: selectedID,
             requireValidCoastPoint: true
+        ) {
+            placements[index].transform = transform
+            finishEdit(from: previous)
+            return true
+        }
+
+        // A prop already standing somewhere the rules refuse — an older island
+        // laid out under different rules, say — could otherwise never be
+        // dragged out of it, because every destination on the way is refused
+        // too. Let it move anywhere the shoreline allows.
+        guard !isValidPlacement(
+            assetID: placements[index].assetID,
+            transform: placements[index].transform,
+            excluding: selectedID
+        ), let rescued = HomeIslandAssetCatalog.placementTransform(
+            assetID: placements[index].assetID,
+            x: x,
+            z: z,
+            yaw: placements[index].transform.yaw,
+            scale: placements[index].transform.scale,
+            requireValidCoastPoint: false
         ) else { return false }
-        placements[index].transform = transform
+        placements[index].transform = rescued
         finishEdit(from: previous)
         return true
     }
@@ -1289,12 +1419,14 @@ final class HomeIslandStore: ObservableObject {
             (1, 0), (0.7, 0.7), (0, 1), (-0.7, 0.7),
             (-1, 0), (-0.7, -0.7), (0, -1), (0.7, -0.7),
         ]
+        // Just far enough that the copy is visibly a second prop. Props may
+        // overlap, so there is no reason to fling a duplicate a metre away.
         let baseSpacing = max(
-            0.9,
+            0.30,
             HomeIslandAssetCatalog.placementCollisionRadius(
                 assetID: selected.assetID,
                 scale: selected.transform.scale
-            ) * 1.75
+            ) * 0.65
         )
         var transform: HomeIslandTransform?
         for ring in 1...3 where transform == nil {
@@ -1413,26 +1545,25 @@ final class HomeIslandStore: ObservableObject {
             scale: transform.scale
         )
 
-        // Preserve a clear path from the permanent arrival jetty into the island.
-        // Ground paths remain allowed because they are deliberately traversable.
+        // Keep the step off the jetty clear. This used to reserve a 5.25 m lane
+        // running deep into the island, which refused props over a large part
+        // of the front shore; only the landing itself actually has to stay
+        // walkable. Ground paths remain allowed — they are traversable.
         if HomeIslandAssetCatalog.blocksWalking(assetID: assetID),
-           transform.z >= 2.85 - candidateRadius,
-           transform.z <= 8.10 + candidateRadius,
-           abs(transform.x) <= 0.78 + candidateRadius {
+           transform.z >= 6.60 - candidateRadius,
+           transform.z <= 8.90 + candidateRadius,
+           abs(transform.x) <= 0.72 + candidateRadius {
             return false
         }
 
         guard HomeIslandAssetCatalog.participatesInPlacementCollision(assetID: assetID)
         else { return true }
 
-        // The fixed arrival jetty is a system node rather than a saved placement,
-        // so reserve its complete visible footprint explicitly. This prevents new
-        // props and player jetties from covering the berth or its walkable ramp.
-        if abs(transform.x) <= HomeIslandMetrics.arrivalJettyReservedHalfWidth + candidateRadius,
-           transform.z >= HomeIslandMetrics.arrivalJettyReservedNearZ - candidateRadius,
-           transform.z <= HomeIslandMetrics.arrivalJettyReservedFarZ + candidateRadius {
-            return false
-        }
+        // The berth itself needs no reservation: props are clamped to the
+        // shoreline and cannot reach the water where the boat moors. Reserving
+        // the whole 9.8 x 11.8 rectangle in front of the jetty made a third of
+        // the island refuse anything, which is what made dragging props around
+        // the entrance feel broken.
 
         // The notice board is a permanent public fixture beside the fixed jetty.
         // Keep player-built assets from covering it even though it is not saved.
@@ -1445,22 +1576,12 @@ final class HomeIslandStore: ObservableObject {
             return false
         }
 
-        return placements.allSatisfy { existing in
-            guard existing.id != excludedID,
-                  HomeIslandAssetCatalog.participatesInPlacementCollision(
-                    assetID: existing.assetID
-                  )
-            else { return true }
-
-            let existingRadius = HomeIslandAssetCatalog.placementCollisionRadius(
-                assetID: existing.assetID,
-                scale: existing.transform.scale
-            )
-            let dx = transform.x - existing.transform.x
-            let dz = transform.z - existing.transform.z
-            let minimumDistance = candidateRadius + existingRadius
-            return dx * dx + dz * dz >= minimumDistance * minimumDistance
-        }
+        // Props do not collide with each other at all. Overlap is how a grove,
+        // a flower bed or a cluster of furniture gets composed, and the player
+        // can see exactly what they are building. What stays reserved above is
+        // only what gameplay needs: the walk in from the jetty, the berth the
+        // boat arrives at, and the notice board.
+        return true
     }
 
     /// Applies a live host snapshot to an in-memory visitor store. Writable
