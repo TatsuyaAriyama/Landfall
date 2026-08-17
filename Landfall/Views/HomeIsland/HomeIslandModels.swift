@@ -777,6 +777,10 @@ enum HomeIslandAssetCatalog {
     static func blocksWalking(assetID: String) -> Bool {
         switch assetID {
         case "wooden_jetty",
+             // The lookout is climbed rather than walked around: its deck and
+             // stairs are a walk surface, and its own rail line does the
+             // blocking. A body-sized obstacle here would seal the stairs.
+             "cliff_lookout",
              "stone_path_straight",
              "stone_path_curve",
              "stone_path_fork",

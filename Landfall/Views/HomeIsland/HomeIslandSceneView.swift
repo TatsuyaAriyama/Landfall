@@ -437,6 +437,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var walkingObstacles: [WalkingObstacle] = []
         private var ruinsWalkObstacles: [RuinsWalkObstacle] = []
         private var jettyWalkSurfaces: [JettyWalkSurface] = []
+        private var lookoutWalkSurfaces: [LookoutWalkSurface] = []
         private var placedSeatSlots: [PlacedSeatSlot] = []
 #if DEBUG
         private var seatDemoDidBegin = false
@@ -729,6 +730,131 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 // Its gameplay clearance is kept large enough for the navigator at small scales.
                 let passageHalfWidth = max(0.34, 0.52 * scale)
                 return abs(local.x) > passageHalfWidth
+            }
+        }
+
+        /// The cliff lookout is a raised deck reached by five timber steps.
+        /// Its authored dimensions are mirrored here so walking, standing
+        /// height and the rail line all agree with what the model shows.
+        ///
+        /// Blender authors the asset +Y forward; USDZ import turns that into
+        /// SceneKit -Z, so the stairs — built along Blender -Y — climb toward
+        /// local +Z here.
+        private struct LookoutWalkSurface {
+            let transform: HomeIslandTransform
+
+            /// Deck planks: 2.16 wide, spanning local z -0.82 ... 0.78, topped
+            /// at 1.0525 above the model's footing.
+            private static let deckHalfWidth: Float = 1.08
+            private static let deckFarZ: Float = -0.82
+            private static let deckMouthZ: Float = 0.78
+            private static let deckTopY: Float = 1.0525
+            /// Five treads, 0.78 wide, stepping down away from the deck.
+            private static let stairHalfWidth: Float = 0.39
+            private static let stairFirstZ: Float = 1.00
+            private static let stairDepth: Float = 0.34
+            private static let stairSpacing: Float = 0.27
+            private static let stairTopY: Float = 0.94
+            private static let stairRise: Float = 0.17
+            private static let stairCount = 5
+
+            private func localPosition(x: Float, z: Float) -> (x: Float, z: Float) {
+                let dx = x - transform.x
+                let dz = z - transform.z
+                let cosine = cos(transform.yaw)
+                let sine = sin(transform.yaw)
+                return (
+                    dx * cosine - dz * sine,
+                    dx * sine + dz * cosine
+                )
+            }
+
+            private var scale: Float { max(transform.scale, 0.05) }
+
+            /// Local z of the last tread's outer edge, where sand meets timber.
+            private var stairOuterZ: Float {
+                Self.stairFirstZ
+                    + Self.stairSpacing * Float(Self.stairCount - 1)
+                    + Self.stairDepth * 0.5
+            }
+
+            private func isOnDeck(local: (x: Float, z: Float), inset: Float) -> Bool {
+                abs(local.x) <= Self.deckHalfWidth * scale - inset
+                    && local.z >= Self.deckFarZ * scale + inset
+                    && local.z <= Self.deckMouthZ * scale
+            }
+
+            private func isOnStairs(local: (x: Float, z: Float), widthPadding: Float) -> Bool {
+                abs(local.x) <= Self.stairHalfWidth * scale + widthPadding
+                    && local.z >= Self.deckMouthZ * scale
+                    && local.z <= stairOuterZ * scale
+            }
+
+            /// Where the navigator's capsule centre may stand. The deck is
+            /// inset by half a body so the model never hangs over the edge;
+            /// the stairs are widened slightly so a diagonal approach still
+            /// finds them.
+            func contains(x: Float, z: Float, playerRadius: Float) -> Bool {
+                let local = localPosition(x: x, z: z)
+                return isOnDeck(local: local, inset: playerRadius * 0.55)
+                    || isOnStairs(local: local, widthPadding: playerRadius * 0.35)
+            }
+
+            /// Foot probes use the authored footprint without the body inset,
+            /// so a position accepted above always samples timber.
+            func containsGroundSurface(x: Float, z: Float, playerRadius: Float) -> Bool {
+                let local = localPosition(x: x, z: z)
+                return isOnDeck(local: local, inset: 0)
+                    || isOnStairs(local: local, widthPadding: playerRadius * 0.5)
+            }
+
+            func height(
+                x: Float,
+                z: Float,
+                playerRadius: Float,
+                baseHeight: Float
+            ) -> Float {
+                let local = localPosition(x: x, z: z)
+                let deckTop = HomeIslandMetrics.surfaceY + Self.deckTopY * scale
+                guard local.z > Self.deckMouthZ * scale else { return deckTop }
+                // Steps, not a ramp: report the tread the foot is actually on
+                // so the walk motor climbs one riser at a time.
+                let travelled = (local.z / scale - Self.stairFirstZ + Self.stairDepth * 0.5)
+                let index = Int(floor(travelled / Self.stairSpacing))
+                let clamped = min(max(index, 0), Self.stairCount - 1)
+                let treadTop = Self.stairTopY - Self.stairRise * Float(clamped)
+                return max(
+                    baseHeight,
+                    HomeIslandMetrics.surfaceY + treadTop * scale
+                )
+            }
+
+            /// The rope rail, the two posts flanking the stairs, and the open
+            /// drop beneath the deck. Everything but the stair mouth is solid,
+            /// which is what makes the steps the only way up.
+            func blocksRail(x: Float, z: Float, playerRadius: Float) -> Bool {
+                let local = localPosition(x: x, z: z)
+                let clearance = playerRadius * 0.92
+                let halfWidth = Self.deckHalfWidth * scale
+                let farZ = Self.deckFarZ * scale
+                let mouthZ = Self.deckMouthZ * scale
+                guard local.x >= -halfWidth - clearance,
+                      local.x <= halfWidth + clearance,
+                      local.z >= farZ - clearance,
+                      local.z <= mouthZ + clearance
+                else { return false }
+                // Comfortably inside the deck: standing on it, not crossing it.
+                if abs(local.x) <= halfWidth - clearance,
+                   local.z >= farZ + clearance,
+                   local.z <= mouthZ {
+                    return false
+                }
+                // The stair mouth stays open across the tread's full width.
+                let mouthHalfWidth = Self.stairHalfWidth * scale + playerRadius * 0.35
+                if abs(local.x) <= mouthHalfWidth, local.z >= mouthZ - clearance {
+                    return false
+                }
+                return true
             }
         }
 
@@ -1795,6 +1921,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
             jettyWalkSurfaces = (arrivalJettyWalkSurface.map { [$0] } ?? [])
                 + playerJettySurfaces
+            lookoutWalkSurfaces = owner.store.placements.compactMap {
+                placement -> LookoutWalkSurface? in
+                guard placement.assetID == "cliff_lookout" else { return nil }
+                return LookoutWalkSurface(transform: placement.transform)
+            }
             updateSelectionOutline()
             view?.setNeedsDisplay()
         }
@@ -4295,8 +4426,16 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let isOnJetty = jettyWalkSurfaces.contains {
                 $0.contains(x: x, z: z, playerRadius: playerRadius)
             }
-            guard isOnSand || isOnJetty else { return false }
+            let isOnLookout = lookoutWalkSurfaces.contains {
+                $0.contains(x: x, z: z, playerRadius: playerRadius)
+            }
+            guard isOnSand || isOnJetty || isOnLookout else { return false }
             guard jettyWalkSurfaces.allSatisfy({
+                !$0.blocksRail(x: x, z: z, playerRadius: playerRadius)
+            }) else { return false }
+            // The deck is reachable only through the stair mouth: everywhere
+            // else its rail line and the drop below it are solid.
+            guard lookoutWalkSurfaces.allSatisfy({
                 !$0.blocksRail(x: x, z: z, playerRadius: playerRadius)
             }) else { return false }
             guard walkingObstacles.allSatisfy({ obstacle in
@@ -5054,6 +5193,20 @@ struct HomeIslandSceneView: UIViewRepresentable {
                                 ?? HomeIslandMetrics.surfaceY
                         }
                     ),
+                    surface: .wood
+                )
+            }
+            if let lookout = lookoutWalkSurfaces.first(where: {
+                $0.containsGroundSurface(x: x, z: z, playerRadius: playerRadius)
+            }) {
+                return HomeIslandGroundSample(
+                    height: lookout.height(
+                        x: x,
+                        z: z,
+                        playerRadius: playerRadius,
+                        baseHeight: foundation.height
+                    ),
+                    normal: SIMD3<Float>(0, 1, 0),
                     surface: .wood
                 )
             }
