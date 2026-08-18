@@ -94,7 +94,7 @@ service cloud.firestore {
 
       function validHomeIslandBackup() {
         return request.resource.data.keys().hasOnly([
-            'schemaVersion', 'placements', 'updatedAt'
+            'schemaVersion', 'placements', 'updatedAt', 'origin'
           ])
           && request.resource.data.keys().hasAll([
             'schemaVersion', 'placements', 'updatedAt'
@@ -102,6 +102,39 @@ service cloud.firestore {
           && request.resource.data.schemaVersion == 1
           && request.resource.data.placements is list
           && request.resource.data.placements.size() <= 120
+          && (!request.resource.data.keys().hasAny(['origin'])
+            || (request.resource.data.origin is string
+              && request.resource.data.origin.size() <= 64))
+          && request.resource.data.updatedAt == request.time;
+      }
+
+      allow read: if ownsGameData();
+      allow create, update: if ownsGameData() && validHomeIslandBackup();
+      allow delete: if false;
+    }
+
+    // 第2の島(Voyage Pass加入者向け)。検証内容はhomeIslandと完全に同一で、
+    // ドキュメント名だけが違う。サブスクの有効性はここでは問わない
+    // (パスが失効しても既存のバックアップを消してはならないため。
+    // クライアント側が編集画面を開かせないだけで足りる)。
+    match /users/{userId}/gameData/homeIsland2 {
+      function ownsGameData() {
+        return request.auth != null && request.auth.uid == userId;
+      }
+
+      function validHomeIslandBackup() {
+        return request.resource.data.keys().hasOnly([
+            'schemaVersion', 'placements', 'updatedAt', 'origin'
+          ])
+          && request.resource.data.keys().hasAll([
+            'schemaVersion', 'placements', 'updatedAt'
+          ])
+          && request.resource.data.schemaVersion == 1
+          && request.resource.data.placements is list
+          && request.resource.data.placements.size() <= 120
+          && (!request.resource.data.keys().hasAny(['origin'])
+            || (request.resource.data.origin is string
+              && request.resource.data.origin.size() <= 64))
           && request.resource.data.updatedAt == request.time;
       }
 
