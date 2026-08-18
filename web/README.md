@@ -71,9 +71,14 @@ VITE_FB_APP_CHECK_SITE_KEY
 
 1. **Firebase コンソールでウェブアプリを登録**
    プロジェクトの設定 → アプリを追加 → ウェブ。表示された `appId` を `web/.env.local`(開発用)と Cloudflare Pages の環境変数 `VITE_FB_APP_ID`(本番用)の両方に入れる。
-2. **Auth の承認済みドメイン**
+2. **Auth の承認済みドメイン / OAuth リダイレクトURI**
    Authentication → Settings → Authorized domains に **`aftide.app`** を追加。
-   iPad/iPhone の Safari はリダイレクト方式でサインインするため、**このドメインが無いとモバイルでログインできない**。必ず追加すること。
+   Google Cloud Console のWeb OAuthクライアントに
+   **`https://aftide.app/__/auth/handler`** と
+   **`https://www.aftide.app/__/auth/handler`** を承認済みリダイレクトURIとして追加。
+   Apple Developer の Services ID にも同じ2つの戻り先を登録する。Cloudflare Pages Function
+   (`web/functions/__/auth/[[path]].ts`) がFirebase Auth helperを同一オリジンで配信し、
+   iPad/iPhone Safariのストレージ分離下でもリダイレクト認証を完了させる。
 3. **Firestore ルールのデプロイ**(未実施なら)
    `firebase deploy --only firestore:rules`
 4. **App Check のWeb登録**

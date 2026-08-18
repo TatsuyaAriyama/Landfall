@@ -30,6 +30,12 @@ const LEGACY_SEA_POSITIONS: Record<string, FreeColorSelection> = {
   seaGreen: { hue: 160, saturation: 0.54, value: 0.79 },
   violet: { hue: 244, saturation: 0.62, value: 0.72 },
   sunYellow: { hue: 48, saturation: 0.70, value: 1 },
+  harbor: { hue: 168, saturation: 0.68, value: 0.29 },
+  sand: { hue: 46, saturation: 0.20, value: 0.92 },
+  ember: { hue: 40, saturation: 0.59, value: 0.95 },
+  rust: { hue: 16, saturation: 0.84, value: 0.29 },
+  lavender: { hue: 244, saturation: 0.17, value: 0.96 },
+  sunrise: { hue: 27, saturation: 0.83, value: 0.96 },
 };
 
 function seaPositionFromToken(token: string): FreeColorSelection {
@@ -334,7 +340,7 @@ export function ItemEditor({
 
           <div className="item-color-subsection">
             <span>{lang === "ja" ? "港の色見本" : "Harbor swatches"}</span>
-            <small>{lang === "ja" ? "六つの染料" : "Six ready-mixed colors"}</small>
+            <small>{lang === "ja" ? "十二の染料" : "Twelve ready-mixed colors"}</small>
           </div>
           <div className="item-color-presets" role="group" aria-label={lang === "ja" ? "港の色見本" : "Harbor swatches"}>
             {TILE_STYLES.map((token) => {

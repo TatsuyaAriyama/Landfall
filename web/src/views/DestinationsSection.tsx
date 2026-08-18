@@ -132,7 +132,19 @@ function latestDoneStep(dest: Destination): { name: string; doneAt: Date } | nul
   return latest;
 }
 
-export function DestinationsSection({ uid, data }: { uid: string; data: UserData }) {
+export function DestinationsSection({
+  uid,
+  data,
+  variant = "card",
+  openToken = 0,
+  onImmersiveChange,
+}: {
+  uid: string;
+  data: UserData;
+  variant?: "card" | "home";
+  openToken?: number;
+  onImmersiveChange?: (open: boolean) => void;
+}) {
   // world: 開いている世界。dest=null は「新規作成」を世界の中で行う。
   const [world, setWorld] = useState<{ dest: Destination | null } | null>(null);
   const [celebrating, setCelebrating] = useState<Destination | null>(null);
@@ -144,6 +156,23 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
   const active = useMemo(
     () => data.destinations.filter((d) => !d.achievedAt),
     [data.destinations],
+  );
+  useEffect(() => {
+    if (variant === "home") void loadVoyageWorld();
+  }, [variant]);
+  const handledOpenToken = useRef(0);
+  useEffect(() => {
+    if (variant !== "home" || openToken <= 0 || handledOpenToken.current === openToken) return;
+    handledOpenToken.current = openToken;
+    setWorld({ dest: active[0] ?? null });
+  }, [active, openToken, variant]);
+  const immersiveOpen = world !== null || celebrating !== null;
+  useEffect(() => {
+    onImmersiveChange?.(immersiveOpen);
+  }, [immersiveOpen, onImmersiveChange]);
+  useEffect(
+    () => () => onImmersiveChange?.(false),
+    [onImmersiveChange],
   );
 
   // 上陸は本人が決める。条件を満たしても自動では祝わない。
@@ -193,37 +222,49 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
 
   return (
     <>
-      <p className="section-label">{t("destinations")}</p>
-      <div className="dest-stack">
-        {active.length === 0 ? (
+      {variant === "home" ? (
+        <HomeDestinationEntry
+          dest={active[0]}
+          data={data}
+          onOpen={() => setWorld({ dest: active[0] ?? null })}
+          onMarkDone={active[0]?.manual ? () => void markDone(active[0]) : undefined}
+          onLand={active[0] ? () => void land(active[0], false) : undefined}
+        />
+      ) : (
+        <>
+          <p className="section-label">{t("destinations")}</p>
+          <div className="dest-stack">
+            {active.length === 0 ? (
           // 初めての人・未設定の人にも、まず同じ夜の海が見えている。
           // 押すと世界にズームインして、その中で目的地を設定する。
-          <EmptySeaCard onClick={() => setWorld({ dest: null })} />
-        ) : (
-          active.map((dest, index) =>
-            index === 0 && canUseWebGL() ? (
-              <VoyageCard
-                key={dest.id}
-                paused={world !== null || celebrating !== null}
-                dest={dest}
-                data={data}
-                onClick={() => setWorld({ dest })}
-                onMarkDone={dest.manual ? () => void markDone(dest) : undefined}
-                onLand={() => void land(dest, false)}
-              />
+              <EmptySeaCard onClick={() => setWorld({ dest: null })} />
             ) : (
-              <DestinationCard
-                key={dest.id}
-                dest={dest}
-                data={data}
-                onClick={() => setWorld({ dest })}
-                onMarkDone={dest.manual ? () => void markDone(dest) : undefined}
-                onLand={() => void land(dest, false)}
-              />
-            ),
-          )
-        )}
-      </div>
+              active.map((dest, index) =>
+                index === 0 && canUseWebGL() ? (
+                  <VoyageCard
+                    key={dest.id}
+                    paused={world !== null || celebrating !== null}
+                    dest={dest}
+                    data={data}
+                    onClick={() => setWorld({ dest })}
+                    onMarkDone={dest.manual ? () => void markDone(dest) : undefined}
+                    onLand={() => void land(dest, false)}
+                  />
+                ) : (
+                  <DestinationCard
+                    key={dest.id}
+                    dest={dest}
+                    data={data}
+                    onClick={() => setWorld({ dest })}
+                    onMarkDone={dest.manual ? () => void markDone(dest) : undefined}
+                    onLand={() => void land(dest, false)}
+                  />
+                ),
+              )
+            )}
+          </div>
+        </>
+      )}
 
       {/* 没入エディタ(作成・変更とも同じ世界)。読込中は夜の海色の静かな幕。
           描画失敗時は幕をタップで閉じられる(旧ダイアログは廃止)。 */}
@@ -275,6 +316,53 @@ export function DestinationsSection({ uid, data }: { uid: string; data: UserData
         </VoyageErrorBoundary>
       )}
     </>
+  );
+}
+
+function HomeDestinationEntry({
+  dest,
+  data,
+  onOpen,
+  onMarkDone,
+  onLand,
+}: {
+  dest?: Destination;
+  data: UserData;
+  onOpen: () => void;
+  onMarkDone?: () => void;
+  onLand?: () => void;
+}) {
+  const progress = dest ? destinationProgress(dest, data.sessions) : undefined;
+  const item = dest?.itemUUID
+    ? data.items.find((candidate) => candidate.id === dest.itemUUID)
+    : undefined;
+  const name = dest ? (item ? `${dest.name} · ${item.name}` : dest.name) : t("setDestinationPrompt");
+  const detail = dest && progress ? destSubLabel(dest, progress) : "";
+
+  return (
+    <section className="home-destination-entry" aria-label={t("destinations")}>
+      <button
+        type="button"
+        className="home-destination-world-hit"
+        onClick={onOpen}
+        aria-label={name}
+      />
+      <div className="home-destination-caption" aria-hidden="true">
+        <span>{t("destinations")}</span>
+        <strong>{name}</strong>
+        {detail && <small>{detail}</small>}
+      </div>
+      {dest && progress?.reached && onLand && (
+        <button type="button" className="home-destination-action" onClick={onLand}>
+          {t("landNow")}
+        </button>
+      )}
+      {dest && dest.manual && !dest.manualDone && onMarkDone && (
+        <button type="button" className="home-destination-action" onClick={onMarkDone}>
+          {t("markDone")}
+        </button>
+      )}
+    </section>
   );
 }
 

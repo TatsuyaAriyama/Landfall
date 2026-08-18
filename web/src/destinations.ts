@@ -50,7 +50,7 @@ export interface Destination {
 export const MAX_ACTIVE_DESTINATIONS = 1;
 
 /// ステップの上限。分解しすぎて航路が埋まらない程度に抑える。
-export const MAX_STEPS = 20;
+export const MAX_STEPS = 3;
 
 export function listenDestinations(
   uid: string,
@@ -87,7 +87,7 @@ export function listenDestinations(
               targetHasTime: v.targetHasTime === true,
               manual: v.manual === true,
               manualDone: v.manualDone === true,
-              steps: steps && steps.length > 0 ? steps : undefined,
+              steps: steps && steps.length > 0 ? steps.slice(0, MAX_STEPS) : undefined,
               createdAt: date("createdAt") ?? new Date(0),
               achievedAt: date("achievedAt"),
               updatedAt: date("updatedAt") ?? new Date(0),
@@ -159,6 +159,7 @@ export async function toggleDestinationStep(
     itemUUID: dest.itemUUID,
     steps,
     createdAt: dest.createdAt,
+    achievedAt: dest.achievedAt,
   });
 }
 

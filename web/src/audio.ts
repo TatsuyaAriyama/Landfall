@@ -1,17 +1,85 @@
 import { storage } from "./storage";
+import { readTimer } from "./timer";
 
-// 計測中のBGM。すべてWebAudioでの生成音(音源ファイル不使用・権利問題なし)。
-// - waves: 低くフィルタした波の音。ゆっくり満ち引きする
-// - piano: 6/8拍子のオリジナル・ノクターン。分散和音と旋律が波の上を進む
-// 音量は控えめに固定。集中の邪魔をしないことが最優先。
+// 計測中の波音と、iOS版と同じKeelMiraオリジナルサウンドトラック。
+// 音量は控えめに固定し、選んだ曲から4曲を順番に再生する。
 
-export type SoundMode = "off" | "waves" | "piano";
+export const VOYAGE_MUSIC_TRACKS = [
+  {
+    id: "harbor_minuet_main_theme",
+    title: "Harbor Minuet",
+    titleJa: "港のメヌエット",
+  },
+  {
+    id: "beacon_rondo",
+    title: "Beacon Rondo",
+    titleJa: "灯標のロンド",
+  },
+  {
+    id: "celestial_navigation_nocturne",
+    title: "Celestial Navigation Nocturne",
+    titleJa: "天測のノクターン",
+  },
+  {
+    id: "approaching_evolution",
+    title: "Approaching Evolution",
+    titleJa: "接近する進化",
+  },
+] as const;
+
+export type VoyageMusicTrack = (typeof VOYAGE_MUSIC_TRACKS)[number]["id"];
+export type SoundMode = "off" | "waves" | VoyageMusicTrack;
 
 const PREF_KEY = "timer.sound";
+const HOME_MUSIC_PREF_KEY = "home.backgroundMusicEnabled";
+const HOME_WAVES_PREF_KEY = "home.waveAmbienceEnabled";
+export const HOME_MUSIC_PREF_EVENT = "landfall:home-music-preference";
+export const HOME_WAVES_PREF_EVENT = "landfall:home-waves-preference";
+const HOME_MUSIC_VOLUME = 0.22;
+const HOME_WAVE_VOLUME = 0.095;
+const HOME_WAVE_WITH_MUSIC_VOLUME = 0.062;
+const TIMER_MUSIC_VOLUME = 0.34;
+
+const voyageMusicTrackIds = new Set<string>(
+  VOYAGE_MUSIC_TRACKS.map((track) => track.id),
+);
+
+export function isVoyageMusicTrack(value: string): value is VoyageMusicTrack {
+  return voyageMusicTrackIds.has(value);
+}
+
+export function homeMusicEnabled(): boolean {
+  return storage.get(HOME_MUSIC_PREF_KEY) === "on";
+}
+
+export function setHomeMusicEnabled(enabled: boolean): void {
+  storage.set(HOME_MUSIC_PREF_KEY, enabled ? "on" : "off");
+  // 設定ボタンのクリック中に開始することで、WebKitの自動再生制限も解除できる。
+  if (enabled) startBackgroundMusic();
+  else stopBackgroundMusic();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(HOME_MUSIC_PREF_EVENT));
+  }
+}
+
+export function homeWavesEnabled(): boolean {
+  return storage.get(HOME_WAVES_PREF_KEY) !== "off";
+}
+
+export function setHomeWavesEnabled(enabled: boolean): void {
+  storage.set(HOME_WAVES_PREF_KEY, enabled ? "on" : "off");
+  // クリック中に開始すると自動再生制限を解除できるが、
+  // タイマー中やhidden時はその一瞬だけホーム音を鳴らさない。
+  if (enabled && homeWavePlaybackAllowed()) startWaveAmbience();
+  else stopWaveAmbience();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(HOME_WAVES_PREF_EVENT));
+  }
+}
 
 export function soundPref(): SoundMode {
   const v = storage.get(PREF_KEY);
-  return v === "waves" || v === "piano" ? v : "off";
+  return v === "waves" || (v !== null && isVoyageMusicTrack(v)) ? v : "off";
 }
 
 export function setSoundPref(mode: SoundMode) {
@@ -20,22 +88,38 @@ export function setSoundPref(mode: SoundMode) {
 
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
-let pianoTimer: number | null = null;
-let current: SoundMode = "off";
+let timerMusicAudio: HTMLAudioElement | null = null;
+let timerMusicFadeFrame: number | null = null;
+let timerMusicPlaybackGeneration = 0;
+let homeAudio: HTMLAudioElement | null = null;
+let homeFadeFrame: number | null = null;
+let homePlaybackGeneration = 0;
+let ambientWaveGraph: HomeWaveGraph | null = null;
+let ambientWaveDisposeTimer: number | null = null;
+let ambientWaveRequested = false;
+let ambientWaveTarget = 0;
+let activeSoundRun: TimerSoundRun | null = null;
 
 function ensureCtx(): AudioContext {
   if (!ctx) {
     ctx = new AudioContext();
-    master = ctx.createGain();
-    master.gain.value = 0;
-    master.connect(ctx.destination);
   }
   void ctx.resume();
   return ctx;
 }
 
+interface WaveHandle {
+  stop(): void;
+}
+
+interface TimerSoundRun {
+  output: GainNode;
+  waves: WaveHandle[];
+}
+
 /// 波: ホワイトノイズ → ローパス → うねる音量(2つの遅いLFOを重ねて自然に)。
-function buildWaves(target: GainNode) {
+/// タイマーの1runごとに必ず破棄できるハンドルを返す。
+function buildWaves(target: GainNode): WaveHandle {
   const c = ensureCtx();
   const buffer = c.createBuffer(1, c.sampleRate * 4, c.sampleRate);
   const data = buffer.getChannelData(0);
@@ -48,6 +132,8 @@ function buildWaves(target: GainNode) {
   filter.frequency.value = 420;
   const swell = c.createGain();
   swell.gain.value = 0.5;
+  const sources: AudioScheduledSourceNode[] = [src];
+  const nodes: AudioNode[] = [src, filter, swell];
   for (const [freq, depth] of [
     [0.07, 0.3],
     [0.045, 0.2],
@@ -59,225 +145,490 @@ function buildWaves(target: GainNode) {
     lfo.connect(lfoGain);
     lfoGain.connect(swell.gain);
     lfo.start();
+    sources.push(lfo);
+    nodes.push(lfo, lfoGain);
   }
   src.connect(filter);
   filter.connect(swell);
   swell.connect(target);
   src.start();
+  let stopped = false;
+  return {
+    stop() {
+      if (stopped) return;
+      stopped = true;
+      for (const source of sources) {
+        try {
+          source.stop();
+        } catch {
+          // すでに停止したsourceはdisconnectだけ行う。
+        }
+      }
+      for (const node of nodes) node.disconnect();
+    },
+  };
 }
 
-/// MIDIノート番号から周波数へ。
-function noteHz(midi: number): number {
-  return 440 * 2 ** ((midi - 69) / 12);
+interface HomeWaveGraph {
+  output: GainNode;
+  sources: AudioScheduledSourceNode[];
+  nodes: AudioNode[];
 }
 
-/// ピアノの一音。基音は長く、倍音は早く消えるよう別々の包絡線を持たせる。
-/// 単純なオシレーターの「電子音」ではなく、鍵盤を打った直後だけ明るく、
-/// その後は丸く沈む響きにする。
-function playPianoTone(
+interface WaveLayerOptions {
+  noiseSeconds: number;
+  driftSeconds: number;
+  level: number;
+  baseGain: number;
+  driftDepth: number;
+  highpass: number;
+  lowpass: number;
+  pan: number;
+  playbackRate: number;
+}
+
+function makeNoiseSource(
+  c: AudioContext,
+  seconds: number,
+  playbackRate = 1,
+): AudioBufferSourceNode {
+  const length = Math.max(2, Math.floor(c.sampleRate * seconds));
+  const buffer = c.createBuffer(1, length, c.sampleRate);
+  const data = buffer.getChannelData(0);
+  const crossfadeSeconds = Math.min(seconds * 0.2, 0.5 + Math.random());
+  const crossfadeSamples = Math.min(
+    length - 1,
+    Math.max(2, Math.floor(c.sampleRate * crossfadeSeconds)),
+  );
+  // 先頭直前のプリロールを用意し、末尾でそこへ等電力
+  // crossfadeする。ループ後はプリロールの次の標本から始まるため、
+  // 単に末尾と先頭を平均するよりホワイトノイズの連続性を保てる。
+  const raw = new Float32Array(length + crossfadeSamples);
+  for (let i = 0; i < raw.length; i++) raw[i] = Math.random() * 2 - 1;
+  for (let i = 0; i < length; i++) data[i] = raw[crossfadeSamples + i];
+  const tailStart = length - crossfadeSamples;
+  for (let i = 0; i < crossfadeSamples; i++) {
+    const phase = i / (crossfadeSamples - 1);
+    const outgoing = Math.cos(phase * Math.PI * 0.5);
+    const incoming = Math.sin(phase * Math.PI * 0.5);
+    data[tailStart + i] =
+      raw[crossfadeSamples + tailStart + i] * outgoing
+      + raw[i] * incoming;
+  }
+  const source = c.createBufferSource();
+  source.buffer = buffer;
+  source.loop = true;
+  source.playbackRate.value = playbackRate;
+  return source;
+}
+
+/// ランダムな制御点をなめらかに結ぶ超低周波バッファ。
+/// 各層で異なる素数寄りの長さにし、短い周期の繰り返しを感じさせない。
+function makeDriftSource(c: AudioContext, seconds: number): AudioBufferSourceNode {
+  const length = Math.max(2, Math.floor(c.sampleRate * seconds));
+  const buffer = c.createBuffer(1, length, c.sampleRate);
+  const data = buffer.getChannelData(0);
+  const anchorCount = Math.max(9, Math.floor(seconds / 2.7));
+  const anchors = Array.from(
+    { length: anchorCount },
+    () => Math.random() * 2 - 1,
+  );
+  // ループ境界に段差ができないよう最後は最初の値へ戻す。
+  anchors.push(anchors[0]);
+  for (let i = 0; i < length; i++) {
+    const position = (i / length) * anchorCount;
+    const index = Math.floor(position);
+    const linear = position - index;
+    const smooth = linear * linear * (3 - 2 * linear);
+    data[i] = anchors[index] + (anchors[index + 1] - anchors[index]) * smooth;
+  }
+  const source = c.createBufferSource();
+  source.buffer = buffer;
+  source.loop = true;
+  return source;
+}
+
+function addHomeWaveLayer(
+  c: AudioContext,
   target: AudioNode,
-  midi: number,
-  at: number,
-  duration: number,
-  velocity: number,
-  pan: number,
-) {
-  const c = ensureCtx();
-  const filter = c.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.frequency.setValueAtTime(4200, at);
-  filter.frequency.exponentialRampToValueAtTime(1350, at + Math.min(1.8, duration));
-
+  options: WaveLayerOptions,
+  graph: HomeWaveGraph,
+): void {
+  const noise = makeNoiseSource(c, options.noiseSeconds, options.playbackRate);
+  const highpass = c.createBiquadFilter();
+  highpass.type = "highpass";
+  highpass.frequency.value = options.highpass;
+  highpass.Q.value = 0.55;
+  const lowpass = c.createBiquadFilter();
+  lowpass.type = "lowpass";
+  lowpass.frequency.value = options.lowpass;
+  lowpass.Q.value = 0.62;
+  const envelope = c.createGain();
+  envelope.gain.value = options.baseGain;
+  const layerGain = c.createGain();
+  layerGain.gain.value = options.level;
   const panner = c.createStereoPanner();
-  panner.pan.value = pan;
-  filter.connect(panner);
+  panner.pan.value = options.pan;
+
+  const drift = makeDriftSource(c, options.driftSeconds);
+  const driftDepth = c.createGain();
+  driftDepth.gain.value = options.driftDepth;
+  drift.connect(driftDepth);
+  driftDepth.connect(envelope.gain);
+
+  noise.connect(highpass);
+  highpass.connect(lowpass);
+  lowpass.connect(envelope);
+  envelope.connect(layerGain);
+  layerGain.connect(panner);
   panner.connect(target);
 
-  const partials: Array<{
-    ratio: number;
-    type: OscillatorType;
-    level: number;
-    release: number;
-  }> = [
-    { ratio: 1, type: "triangle", level: 0.72, release: 1 },
-    { ratio: 2, type: "sine", level: 0.22, release: 0.55 },
-    { ratio: 3, type: "sine", level: 0.07, release: 0.32 },
-  ];
-
-  for (const partial of partials) {
-    const release = Math.max(0.7, duration * partial.release);
-    const env = c.createGain();
-    const peak = Math.max(0.0002, velocity * partial.level);
-    env.gain.setValueAtTime(0.0001, at);
-    env.gain.linearRampToValueAtTime(peak, at + 0.012);
-    env.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak * 0.58), at + 0.16);
-    env.gain.exponentialRampToValueAtTime(0.0001, at + release);
-
-    const osc = c.createOscillator();
-    osc.type = partial.type;
-    osc.frequency.value = noteHz(midi) * partial.ratio;
-    // ごく小さな揺らぎだけを左右交互に与え、完全な電子的ユニゾンを避ける。
-    osc.detune.value = midi % 2 === 0 ? 1.1 : -1.1;
-    osc.connect(env);
-    env.connect(filter);
-    osc.start(at);
-    osc.stop(at + release + 0.05);
-  }
+  graph.sources.push(noise, drift);
+  graph.nodes.push(
+    noise,
+    highpass,
+    lowpass,
+    envelope,
+    layerGain,
+    panner,
+    drift,
+    driftDepth,
+  );
+  noise.start(c.currentTime + 0.01);
+  drift.start(c.currentTime + 0.01);
 }
 
-interface ClassicalBar {
-  /// 左手の分散和音。低音→内声→高音。
-  chord: [number, number, number, number];
-  /// [6/8内の開始位置, MIDI音程, 長さ(8分音符単位), 強さ]
-  melody: Array<[number, number, number, number]>;
-}
+/// ホーム専用の三層ミックス。遠い海鳴り、寄せ波、泡の音域と
+/// 揺れの長さを分け、同じ包絡線が同時に戻らないようにする。
+function buildHomeWaveAmbience(c: AudioContext): HomeWaveGraph {
+  const output = c.createGain();
+  output.gain.value = 0;
+  const compressor = c.createDynamicsCompressor();
+  compressor.threshold.value = -23;
+  compressor.knee.value = 15;
+  compressor.ratio.value = 2.2;
+  compressor.attack.value = 0.07;
+  compressor.release.value = 0.78;
+  compressor.connect(output);
 
-// 「海上のノクターン」— D major / B minor、全16小節。
-// 既存曲の引用ではなく、このアプリのためのオリジナル進行と旋律。
-const CLASSICAL_SCORE: ClassicalBar[] = [
-  { chord: [38, 45, 50, 54], melody: [[0, 74, 3, 0.11], [3, 69, 2, 0.085], [5, 78, 1, 0.095]] },
-  { chord: [37, 45, 49, 52], melody: [[0, 76, 2, 0.1], [2, 73, 2, 0.09], [4, 69, 2, 0.08]] },
-  { chord: [35, 42, 47, 50], melody: [[0, 71, 2, 0.09], [2, 74, 3, 0.11], [5, 69, 1, 0.075]] },
-  { chord: [42, 49, 54, 57], melody: [[0, 73, 3, 0.1], [3, 69, 2, 0.08], [5, 66, 1, 0.07]] },
-  { chord: [43, 50, 55, 59], melody: [[0, 71, 2, 0.085], [2, 74, 2, 0.1], [4, 79, 2, 0.115]] },
-  { chord: [42, 45, 50, 54], melody: [[0, 78, 3, 0.105], [3, 76, 2, 0.09], [5, 74, 1, 0.08]] },
-  { chord: [40, 47, 50, 55], melody: [[0, 76, 2, 0.09], [2, 79, 2, 0.105], [4, 74, 2, 0.085]] },
-  { chord: [45, 52, 55, 61], melody: [[0, 73, 2, 0.095], [2, 71, 2, 0.08], [4, 69, 2, 0.075]] },
-  { chord: [35, 42, 47, 50], melody: [[0, 71, 3, 0.085], [3, 74, 2, 0.1], [5, 78, 1, 0.11]] },
-  { chord: [43, 50, 55, 59], melody: [[0, 79, 2, 0.115], [2, 78, 2, 0.095], [4, 74, 2, 0.085]] },
-  { chord: [38, 45, 50, 54], melody: [[0, 76, 2, 0.09], [2, 74, 3, 0.105], [5, 69, 1, 0.07]] },
-  { chord: [45, 52, 57, 61], melody: [[0, 73, 2, 0.095], [2, 76, 2, 0.105], [4, 81, 2, 0.115]] },
-  { chord: [40, 47, 50, 55], melody: [[0, 79, 2, 0.105], [2, 76, 2, 0.09], [4, 74, 2, 0.08]] },
-  { chord: [42, 47, 50, 54], melody: [[0, 71, 3, 0.085], [3, 74, 3, 0.1]] },
-  { chord: [43, 50, 55, 59], melody: [[0, 79, 2, 0.11], [2, 78, 2, 0.095], [4, 76, 2, 0.085]] },
-  { chord: [45, 52, 57, 62], melody: [[0, 74, 2, 0.1], [2, 73, 2, 0.085], [4, 74, 2, 0.105]] },
-];
-
-const EIGHTH_NOTE_SEC = 0.42;
-const BAR_SEC = EIGHTH_NOTE_SEC * 6;
-const CLASSICAL_CYCLE_SEC = BAR_SEC * CLASSICAL_SCORE.length;
-
-function buildPianoRoom(target: GainNode): GainNode {
-  const c = ensureCtx();
-  const input = c.createGain();
-  const dry = c.createGain();
-  const wet = c.createGain();
-  const reverb = c.createConvolver();
-
-  dry.gain.value = 0.88;
-  wet.gain.value = 0.2;
-
-  // 小さな木造船室のような、2.8秒で消える柔らかい残響。
-  const length = Math.floor(c.sampleRate * 2.8);
-  const impulse = c.createBuffer(2, length, c.sampleRate);
-  for (let channel = 0; channel < impulse.numberOfChannels; channel++) {
-    const samples = impulse.getChannelData(channel);
-    for (let i = 0; i < length; i++) {
-      const decay = (1 - i / length) ** 3.1;
-      samples[i] = (Math.random() * 2 - 1) * decay * 0.58;
-    }
-  }
-  reverb.buffer = impulse;
-
-  input.connect(dry);
-  dry.connect(target);
-  input.connect(reverb);
-  reverb.connect(wet);
-  wet.connect(target);
-  return input;
-}
-
-function scheduleClassicalCycle(target: AudioNode, start: number) {
-  for (let barIndex = 0; barIndex < CLASSICAL_SCORE.length; barIndex++) {
-    const bar = CLASSICAL_SCORE[barIndex];
-    const barStart = start + barIndex * BAR_SEC;
-    const [bass, inner, middle, high] = bar.chord;
-
-    // 左手: 低音を小節頭に置き、その上を6/8の波のような分散和音が往復する。
-    playPianoTone(target, bass, barStart, BAR_SEC * 0.94, 0.07, -0.28);
-    const arpeggio = [middle, high, inner, high, middle, high];
-    arpeggio.forEach((note, step) => {
-      const breathe = step === 0 ? 0.004 : 0;
-      playPianoTone(
-        target,
-        note,
-        barStart + step * EIGHTH_NOTE_SEC + breathe,
-        EIGHTH_NOTE_SEC * 4.8,
-        step === 0 ? 0.047 : 0.04,
-        -0.12 + step * 0.035,
-      );
-    });
-
-    // 右手: 長短を混ぜた旋律。小節の終わりを少し空け、呼吸を作る。
-    for (const [step, note, length, velocity] of bar.melody) {
-      playPianoTone(
-        target,
-        note,
-        barStart + step * EIGHTH_NOTE_SEC + 0.025,
-        length * EIGHTH_NOTE_SEC * 1.35,
-        velocity,
-        0.2 + (note - 74) * 0.018,
-      );
-    }
-  }
-}
-
-function startClassicalPiano(target: GainNode) {
-  const c = ensureCtx();
-  const room = buildPianoRoom(target);
-
-  const scheduleCycle = (start: number) => {
-    if (current !== "piano") return;
-    // バックグラウンドでタイマーが遅延した場合、過去に予約されるはずだった
-    // 全音を復帰時に一斉発音させず、次の小節群を静かに現在から始め直す。
-    const safeStart = Math.max(start, c.currentTime + 0.08);
-    scheduleClassicalCycle(room, safeStart);
-    // 次の周回は少し前に予約し、バックグラウンド復帰時にも音切れしにくくする。
-    const delay = Math.max(
-      1000,
-      (safeStart + CLASSICAL_CYCLE_SEC - c.currentTime - 3) * 1000,
-    );
-    pianoTimer = window.setTimeout(
-      () => scheduleCycle(safeStart + CLASSICAL_CYCLE_SEC),
-      delay,
-    );
+  const graph: HomeWaveGraph = {
+    output,
+    sources: [],
+    nodes: [compressor, output],
   };
 
-  scheduleCycle(c.currentTime + 0.08);
+  // 水平線の向こうの低い海鳴り。ほぼ中央に置く。
+  addHomeWaveLayer(c, compressor, {
+    noiseSeconds: 17.9,
+    driftSeconds: 43.1,
+    level: 0.42,
+    baseGain: 0.56,
+    driftDepth: 0.17,
+    highpass: 32,
+    lowpass: 245,
+    pan: -0.08,
+    playbackRate: 0.973,
+  }, graph);
+  // 左から岸へ寄せて広がる中域。
+  addHomeWaveLayer(c, compressor, {
+    noiseSeconds: 23.7,
+    driftSeconds: 57.7,
+    level: 0.34,
+    baseGain: 0.39,
+    driftDepth: 0.27,
+    highpass: 170,
+    lowpass: 1_480,
+    pan: -0.24,
+    playbackRate: 1.011,
+  }, graph);
+  // 砂浜で泡がほどける高域。少し右へ置き音場を開く。
+  addHomeWaveLayer(c, compressor, {
+    noiseSeconds: 11.3,
+    driftSeconds: 31.9,
+    level: 0.2,
+    baseGain: 0.21,
+    driftDepth: 0.16,
+    highpass: 980,
+    lowpass: 4_800,
+    pan: 0.31,
+    playbackRate: 1.027,
+  }, graph);
+
+  output.connect(c.destination);
+  return graph;
+}
+
+function holdAudioParam(param: AudioParam, at: number): void {
+  if (typeof param.cancelAndHoldAtTime === "function") {
+    param.cancelAndHoldAtTime(at);
+  } else {
+    const value = param.value;
+    param.cancelScheduledValues(at);
+    param.setValueAtTime(value, at);
+  }
+}
+
+function homeMusicIsPlaying(): boolean {
+  return homeAudio !== null && !homeAudio.paused;
+}
+
+function homeWavePlaybackAllowed(): boolean {
+  const visible = typeof document === "undefined" || !document.hidden;
+  return visible && readTimer() === null;
+}
+
+function fadeAmbientWaves(target: number, seconds: number): void {
+  if (!ctx || !ambientWaveGraph) return;
+  const now = ctx.currentTime;
+  holdAudioParam(ambientWaveGraph.output.gain, now);
+  ambientWaveGraph.output.gain.linearRampToValueAtTime(target, now + seconds);
+  ambientWaveTarget = target;
+}
+
+function updateAmbientWaveMusicMix(musicPlaying: boolean): void {
+  if (!ambientWaveRequested || !ambientWaveGraph) return;
+  fadeAmbientWaves(
+    musicPlaying ? HOME_WAVE_WITH_MUSIC_VOLUME : HOME_WAVE_VOLUME,
+    1.1,
+  );
+}
+
+function disposeHomeWaveGraph(graph: HomeWaveGraph): void {
+  for (const source of graph.sources) {
+    try {
+      source.stop();
+    } catch {
+      // 停止済みのAudioScheduledSourceNodeはそのまま破棄できる。
+    }
+  }
+  for (const node of graph.nodes) node.disconnect();
+}
+
+/// タイマー外で流すホーム専用の波音。`buildWaves` のタイマー音とは
+/// グラフと寿命を分け、代表BGMとも独立してミックスできる。
+export function startWaveAmbience(): void {
+  // pointer/keyboardの再試行にも必ず同じガードを通し、React側の
+  // timer state反映が1tick遅れてもホーム音を割り込ませない。
+  if (!homeWavePlaybackAllowed()) {
+    stopWaveAmbience();
+    return;
+  }
+  const c = ensureCtx();
+  if (ambientWaveDisposeTimer !== null) {
+    clearTimeout(ambientWaveDisposeTimer);
+    ambientWaveDisposeTimer = null;
+  }
+  if (!ambientWaveGraph) {
+    ambientWaveGraph = buildHomeWaveAmbience(c);
+  }
+  const target = homeMusicIsPlaying()
+    ? HOME_WAVE_WITH_MUSIC_VOLUME
+    : HOME_WAVE_VOLUME;
+  if (ambientWaveRequested && Math.abs(ambientWaveTarget - target) < 0.000_5) return;
+  ambientWaveRequested = true;
+  fadeAmbientWaves(target, 1.8);
+}
+
+export function stopWaveAmbience(): void {
+  if (!ctx || !ambientWaveGraph || !ambientWaveRequested) return;
+  ambientWaveRequested = false;
+  fadeAmbientWaves(0, 0.9);
+  const graph = ambientWaveGraph;
+  if (ambientWaveDisposeTimer !== null) clearTimeout(ambientWaveDisposeTimer);
+  ambientWaveDisposeTimer = window.setTimeout(() => {
+    ambientWaveDisposeTimer = null;
+    if (ambientWaveRequested || ambientWaveGraph !== graph) return;
+    disposeHomeWaveGraph(graph);
+    ambientWaveGraph = null;
+    ambientWaveTarget = 0;
+  }, 1_100);
+}
+
+function timerMusicUrl(track: VoyageMusicTrack): string {
+  return new URL(`audio/${track}.m4a?v=ios-playlist-1`, document.baseURI).href;
+}
+
+function fadeTimerMusic(
+  audio: HTMLAudioElement,
+  target: number,
+  durationMs: number,
+): void {
+  if (timerMusicFadeFrame !== null) cancelAnimationFrame(timerMusicFadeFrame);
+  const initial = audio.volume;
+  const startedAt = performance.now();
+  const tick = (now: number) => {
+    if (timerMusicAudio !== audio) return;
+    const ratio = Math.min(1, Math.max(0, (now - startedAt) / durationMs));
+    audio.volume = initial + (target - initial) * ratio;
+    if (ratio < 1) {
+      timerMusicFadeFrame = requestAnimationFrame(tick);
+    } else {
+      timerMusicFadeFrame = null;
+    }
+  };
+  timerMusicFadeFrame = requestAnimationFrame(tick);
+}
+
+function startTimerMusic(track: VoyageMusicTrack): void {
+  const audio = new Audio(timerMusicUrl(track));
+  audio.loop = false;
+  audio.preload = "auto";
+  audio.volume = 0;
+  timerMusicAudio = audio;
+  const generation = ++timerMusicPlaybackGeneration;
+  audio.addEventListener("ended", () => {
+    if (generation !== timerMusicPlaybackGeneration || timerMusicAudio !== audio) return;
+    const index = VOYAGE_MUSIC_TRACKS.findIndex(({ id }) => id === track);
+    const next = VOYAGE_MUSIC_TRACKS[(index + 1) % VOYAGE_MUSIC_TRACKS.length];
+    timerMusicAudio = null;
+    startTimerMusic(next.id);
+  }, { once: true });
+  void audio.play().then(() => {
+    if (generation !== timerMusicPlaybackGeneration || timerMusicAudio !== audio) {
+      audio.pause();
+      return;
+    }
+    fadeTimerMusic(audio, TIMER_MUSIC_VOLUME, 350);
+  }).catch(() => {
+    // 自動再生の制限や読み込み失敗時は、UIとタイマー自体を止めない。
+  });
 }
 
 export function startSound(mode: SoundMode) {
+  // タイマー開始時はホームテーマから静かに主導権を受け取る。
+  stopWaveAmbience();
+  stopBackgroundMusic();
   stopSound();
   if (mode === "off") return;
-  const c = ensureCtx();
-  current = mode;
-  master = c.createGain();
-  master.gain.setValueAtTime(0, c.currentTime);
-  master.gain.linearRampToValueAtTime(mode === "waves" ? 0.16 : 0.2, c.currentTime + 1.2);
-  master.connect(c.destination);
-  if (mode === "waves") {
-    buildWaves(master);
-  } else {
-    // クラシックでは波を遠景へ下げ、旋律を邪魔しない程度にだけ残す。
-    const distantSea = c.createGain();
-    distantSea.gain.value = 0.13;
-    distantSea.connect(master);
-    buildWaves(distantSea);
-    startClassicalPiano(master);
+  if (isVoyageMusicTrack(mode)) {
+    startTimerMusic(mode);
+    return;
   }
+  const c = ensureCtx();
+  const output = c.createGain();
+  output.gain.setValueAtTime(0, c.currentTime);
+  output.gain.linearRampToValueAtTime(0.16, c.currentTime + 1.2);
+  output.connect(c.destination);
+  const run: TimerSoundRun = { output, waves: [] };
+  activeSoundRun = run;
+  master = output;
+  run.waves.push(buildWaves(output));
 }
 
 export function stopSound() {
-  if (pianoTimer !== null) {
-    clearTimeout(pianoTimer);
-    pianoTimer = null;
+  timerMusicPlaybackGeneration += 1;
+  if (timerMusicFadeFrame !== null) {
+    cancelAnimationFrame(timerMusicFadeFrame);
+    timerMusicFadeFrame = null;
   }
-  if (ctx && master && current !== "off") {
-    const m = master;
-    m.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
-    setTimeout(() => m.disconnect(), 700);
+  if (timerMusicAudio) {
+    timerMusicAudio.pause();
+    timerMusicAudio.currentTime = 0;
+    timerMusicAudio = null;
   }
-  current = "off";
+  const run = activeSoundRun;
+  activeSoundRun = null;
+  if (ctx && run) {
+    holdAudioParam(run.output.gain, ctx.currentTime);
+    run.output.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+    // run自身をcaptureし、この700msの間に始まった新runの
+    // source/LFOやmasterを巻き込まない。
+    setTimeout(() => {
+      for (const waves of run.waves) waves.stop();
+      run.output.disconnect();
+      if (master === run.output) master = null;
+    }, 700);
+  }
+}
+
+function ensureHomeAudio(): HTMLAudioElement {
+  if (!homeAudio) {
+    homeAudio = new Audio(
+      new URL("audio/harbor_minuet_main_theme.m4a?v=ios-playlist-1", document.baseURI).href,
+    );
+    homeAudio.loop = true;
+    homeAudio.preload = "auto";
+    homeAudio.volume = 0;
+  }
+  return homeAudio;
+}
+
+function fadeHomeAudio(
+  audio: HTMLAudioElement,
+  target: number,
+  durationMs: number,
+  completed?: () => void,
+): void {
+  if (homeFadeFrame !== null) cancelAnimationFrame(homeFadeFrame);
+  const initial = audio.volume;
+  const startedAt = performance.now();
+  const tick = (now: number) => {
+    const ratio = Math.min(1, Math.max(0, (now - startedAt) / durationMs));
+    audio.volume = initial + (target - initial) * ratio;
+    if (ratio < 1) {
+      homeFadeFrame = requestAnimationFrame(tick);
+    } else {
+      homeFadeFrame = null;
+      completed?.();
+    }
+  };
+  homeFadeFrame = requestAnimationFrame(tick);
+}
+
+/// ホーム・軌跡・航海誌・港で流すKeelMiraメインテーマ「港のメヌエット」。
+/// ブラウザの自動再生制限で初回が拒否された場合は、次の操作時に再試行される。
+export function startBackgroundMusic(): void {
+  if (typeof document !== "undefined" && document.hidden) {
+    stopBackgroundMusic();
+    return;
+  }
+  const audio = ensureHomeAudio();
+  if (!audio.paused) {
+    if (audio.volume < HOME_MUSIC_VOLUME) fadeHomeAudio(audio, HOME_MUSIC_VOLUME, 900);
+    updateAmbientWaveMusicMix(true);
+    return;
+  }
+  stopSound();
+  const generation = ++homePlaybackGeneration;
+  audio.volume = 0;
+  void audio.play().then(() => {
+    if (generation !== homePlaybackGeneration) {
+      audio.pause();
+      return;
+    }
+    updateAmbientWaveMusicMix(true);
+    fadeHomeAudio(audio, HOME_MUSIC_VOLUME, 1600);
+  }).catch(() => {
+    // Safari/Chromeの初回自動再生拒否は正常。次のpointer/keyboard操作で再試行する。
+  });
+}
+
+export function stopBackgroundMusic(): void {
+  homePlaybackGeneration += 1;
+  // hiddenに入った後はrAFが停止・大幅間引きされるため、
+  // 通常のフェード完了を待たずここで確実にpauseする。
+  const hidden = typeof document !== "undefined" && document.hidden;
+  if (hidden && homeFadeFrame !== null) {
+    cancelAnimationFrame(homeFadeFrame);
+    homeFadeFrame = null;
+  }
+  if (hidden && homeAudio) {
+    homeAudio.volume = 0;
+    homeAudio.pause();
+    homeAudio.currentTime = 0;
+    updateAmbientWaveMusicMix(false);
+    return;
+  }
+  if (!homeAudio || homeAudio.paused) {
+    updateAmbientWaveMusicMix(false);
+    return;
+  }
+  const audio = homeAudio;
+  fadeHomeAudio(audio, 0, 550, () => {
+    audio.pause();
+    audio.currentTime = 0;
+    updateAmbientWaveMusicMix(false);
+  });
 }
 
 /// 船をつついた時などの、ごく短いやわらかな一音(チャイムより控えめ)。

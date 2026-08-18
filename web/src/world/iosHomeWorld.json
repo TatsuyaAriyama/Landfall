@@ -1,0 +1,1293 @@
+{
+  "activeStudioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+  "paintStrokes" : [
+    {
+      "context" : "studio",
+      "id" : "27FD4494-F554-4687-B7FB-71AD8416D594",
+      "material" : "grass",
+      "points" : [
+        {
+          "x" : -14.049124,
+          "y" : 0.87847286,
+          "z" : -1.4932206
+        }
+      ],
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "width" : 0.48
+    },
+    {
+      "context" : "studio",
+      "id" : "D61CF9FF-D3E3-4DBD-945E-6D4F6AE060D6",
+      "material" : "rock",
+      "points" : [
+        {
+          "x" : -0.29859552,
+          "y" : 2.328817,
+          "z" : -1.5748242
+        }
+      ],
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "width" : 0.48
+    },
+    {
+      "context" : "studio",
+      "id" : "A32D5C0A-E1FF-4A3D-BC3A-3111FD97CF92",
+      "material" : "rock",
+      "points" : [
+        {
+          "x" : -2.7890835,
+          "y" : 2.1244345,
+          "z" : -0.6596978
+        }
+      ],
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "width" : 0.48
+    },
+    {
+      "context" : "studio",
+      "id" : "3FAAD678-D804-4082-9584-9F2AA498C655",
+      "material" : "snow",
+      "points" : [
+        {
+          "x" : -0.5393618,
+          "y" : 2.5114527,
+          "z" : -1.7018678
+        }
+      ],
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "width" : 0.48
+    },
+    {
+      "context" : "studio",
+      "id" : "730B52D0-2FAB-4C2E-8D92-E001C47A112A",
+      "material" : "snow",
+      "points" : [
+        {
+          "x" : -3.044236,
+          "y" : 2.3589551,
+          "z" : -0.6070689
+        }
+      ],
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "width" : 0.48
+    }
+  ],
+  "placements" : [
+    {
+      "assetID" : "small_tree",
+      "context" : "studio",
+      "id" : "28720D63-53CC-4866-A616-1011ED99FD5C",
+      "name" : "小さな木",
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "transform" : {
+        "pitch" : 0,
+        "roll" : 0,
+        "scale" : 0.4590176,
+        "x" : -14.341883,
+        "y" : 0.41173553,
+        "yaw" : 0,
+        "z" : -1.9144695
+      }
+    },
+    {
+      "assetID" : "small_tree",
+      "context" : "studio",
+      "id" : "48E1CB3D-A893-4DA7-A21B-6C9C01C7740F",
+      "name" : "小さな木 2",
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "transform" : {
+        "pitch" : 0,
+        "roll" : 0,
+        "scale" : 0.62043566,
+        "x" : -13.796873,
+        "y" : 1.0453162,
+        "yaw" : 0.52359873,
+        "z" : -1.5625652
+      }
+    },
+    {
+      "assetID" : "island_base",
+      "context" : "studio",
+      "id" : "0A54250B-EB30-4147-AF53-889ECD754C43",
+      "name" : "島の土台",
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "transform" : {
+        "pitch" : 0,
+        "roll" : 0,
+        "scale" : 2.6048,
+        "x" : -1.2837114,
+        "y" : -0.0119999265,
+        "yaw" : 0,
+        "z" : -1.4501432
+      }
+    },
+    {
+      "assetID" : "small_lake",
+      "context" : "studio",
+      "id" : "12C3F2BC-6453-4AEC-B0B5-8BA6FF09D23E",
+      "name" : "小さな湖",
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "transform" : {
+        "pitch" : 0,
+        "roll" : 0,
+        "scale" : 1,
+        "x" : -1.2190382,
+        "y" : 1.0472221,
+        "yaw" : 0,
+        "z" : -4.8788204
+      }
+    },
+    {
+      "assetID" : "small_tree",
+      "context" : "studio",
+      "id" : "A1084465-8334-4FF0-9312-9A9373FC049B",
+      "name" : "小さな木 3",
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "transform" : {
+        "pitch" : 0,
+        "roll" : 0,
+        "scale" : 0.7086,
+        "x" : -1.6848184,
+        "y" : 0.84202546,
+        "yaw" : 1.0471975,
+        "z" : -3.9761038
+      }
+    },
+    {
+      "assetID" : "small_tree",
+      "context" : "studio",
+      "id" : "F964563A-257D-4EA2-86C8-C56B0ED6995B",
+      "name" : "小さな木 4",
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "transform" : {
+        "pitch" : 0,
+        "roll" : 0,
+        "scale" : 0.4591,
+        "x" : -0.72690505,
+        "y" : 1.0093886,
+        "yaw" : 1.5707963,
+        "z" : -0.52701837
+      }
+    },
+    {
+      "assetID" : "small_tree",
+      "context" : "studio",
+      "id" : "60FE1103-7B63-4946-A2D2-6B09EF57C078",
+      "name" : "小さな木 5",
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "transform" : {
+        "pitch" : 0,
+        "roll" : 0,
+        "scale" : 0.5589,
+        "x" : -0.91767144,
+        "y" : 0.7170061,
+        "yaw" : 2.094395,
+        "z" : 1.3960167
+      }
+    },
+    {
+      "assetID" : "small_tree",
+      "context" : "studio",
+      "id" : "1B1C0A1B-3C3F-43D2-9324-76C50D440FB9",
+      "name" : "小さな木 6",
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "transform" : {
+        "pitch" : 0,
+        "roll" : 0,
+        "scale" : 0.75850004,
+        "x" : -2.4173021,
+        "y" : 1.6838263,
+        "yaw" : 2.6179936,
+        "z" : -0.87354106
+      }
+    }
+  ],
+  "savedAt" : 807440406.004003,
+  "studios" : [
+    {
+      "id" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "name" : "目的地3Dモデル"
+    },
+    {
+      "id" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "name" : "潮風の峰島"
+    }
+  ],
+  "terrainStrokes" : [
+    {
+      "context" : "destinationIsland",
+      "id" : "E9A73BE6-16BF-4525-9E5F-C815E3646912",
+      "points" : [
+        {
+          "x" : -23.96932,
+          "y" : -0.055,
+          "z" : -29.331875
+        }
+      ],
+      "radius" : 0.85,
+      "strength" : 0.34,
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "FBC00C49-C12F-47FD-8AB3-4411D9661821",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -1.1812127,
+          "y" : 0,
+          "z" : -0.9273497
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "76F1729F-8C93-4FF1-A22C-220AFDD964D8",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -1.0135586,
+          "y" : 0,
+          "z" : 0.7782141
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "121FD810-6027-4D5E-B2D5-90550673F825",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -3.7021594,
+          "y" : 0,
+          "z" : -1.0980223
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "lower"
+    },
+    {
+      "context" : "studio",
+      "id" : "3BD1D10F-62F7-4F5A-82E4-5AB24EDD2490",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -5.124937,
+          "y" : 0,
+          "z" : -0.7292533
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "lower"
+    },
+    {
+      "context" : "studio",
+      "id" : "C2158E93-FA59-40D8-8A0D-E1C1332AF2BD",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -5.3636417,
+          "y" : 0,
+          "z" : -0.47551364
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "6ED659F2-C47E-477B-A799-BEFE65E13E43",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -1.9071246,
+          "y" : 0,
+          "z" : -0.18342437
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "1F867977-9653-46F3-B6EA-E4C876044A46",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -2.5697687,
+          "y" : 0,
+          "z" : 0.4071361
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "6917ACD1-76BE-4699-A4F0-9226A8E8B97F",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -3.6048129,
+          "y" : 0,
+          "z" : 0.8804042
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "987FFD43-E2D1-48B8-8EEE-EA1CECA68C1F",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -4.9532137,
+          "y" : 0,
+          "z" : 1.1893554
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "EF7D719C-985E-4AF4-94C7-9CE0F33251F9",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -7.0659404,
+          "y" : 0,
+          "z" : 0.9991138
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "38D84E0E-3674-4B87-95B5-F06A73894303",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -8.624572,
+          "y" : 0,
+          "z" : -0.9963017
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "A3C4E81F-C51A-4E23-8048-14816DD8FC42",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -10.129511,
+          "y" : 0,
+          "z" : 1.1049668
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "A864828F-6C69-4C5F-99AB-817F6E416AE1",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -12.283287,
+          "y" : 0,
+          "z" : -1.02928
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "C398FFB9-2217-4E0D-8E4F-B7A9F275DE42",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -10.409767,
+          "y" : 0,
+          "z" : -0.5185408
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "D2C6C583-9E6D-48E9-B5D1-817E35B8B7CD",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -12.667115,
+          "y" : 0,
+          "z" : 1.1924142
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "93E30084-A889-4C9F-8634-70FC178F99C7",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -14.132995,
+          "y" : 0,
+          "z" : -0.21819855
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "D87C9A5E-9571-407E-9C26-B4A7552CEAD0",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -13.406716,
+          "y" : 0,
+          "z" : -1.2335546
+        },
+        {
+          "x" : -12.703946,
+          "y" : 0,
+          "z" : -0.9535797
+        },
+        {
+          "x" : -12.528247,
+          "y" : 0,
+          "z" : -0.66606325
+        },
+        {
+          "x" : -12.501835,
+          "y" : 0,
+          "z" : -0.35944197
+        },
+        {
+          "x" : -13.076169,
+          "y" : 0,
+          "z" : 0.7181966
+        },
+        {
+          "x" : -12.821819,
+          "y" : 0,
+          "z" : 0.92415947
+        },
+        {
+          "x" : -12.506209,
+          "y" : 0,
+          "z" : 0.8962192
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "lower"
+    },
+    {
+      "context" : "studio",
+      "id" : "F1563576-2341-4E85-8610-0DF8BD1F90B7",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -13.24069,
+          "y" : 0,
+          "z" : 1.9097759
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "smooth"
+    },
+    {
+      "context" : "studio",
+      "id" : "5B2AAA86-5FA7-49B3-B4D3-AA7B033A1629",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -13.452774,
+          "y" : 0,
+          "z" : 0.9364783
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "8382B34F-199B-4B07-9F99-57DF91718567",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -13.187597,
+          "y" : 0,
+          "z" : -1.3237903
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "EE49DF79-67F9-4078-A890-2219B1678E80",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -14.224091,
+          "y" : 0,
+          "z" : -0.62598324
+        },
+        {
+          "x" : -14.951804,
+          "y" : 0,
+          "z" : 0.07161178
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "smooth"
+    },
+    {
+      "context" : "studio",
+      "id" : "607F0259-72D0-47E0-B6E8-572FDCABC248",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -12.348179,
+          "y" : 0,
+          "z" : -1.2734443
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "smooth"
+    },
+    {
+      "context" : "studio",
+      "id" : "F4DB1880-DEAB-42D6-BBDE-3B3E81377AC9",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -12.448751,
+          "y" : 0,
+          "z" : -0.6730656
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "smooth"
+    },
+    {
+      "context" : "studio",
+      "id" : "406EC970-D30C-4C61-8FD5-09C5F8550DA1",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -12.665359,
+          "y" : 0,
+          "z" : -0.3479222
+        },
+        {
+          "x" : -13.033335,
+          "y" : 0,
+          "z" : -0.030127078
+        },
+        {
+          "x" : -13.289046,
+          "y" : 0,
+          "z" : -0.2821111
+        },
+        {
+          "x" : -13.241215,
+          "y" : 0,
+          "z" : -1.376642
+        },
+        {
+          "x" : -12.953618,
+          "y" : 0,
+          "z" : -0.7884336
+        },
+        {
+          "x" : -13.650234,
+          "y" : 0,
+          "z" : -0.092541814
+        },
+        {
+          "x" : -13.941281,
+          "y" : 0,
+          "z" : 0.005680807
+        },
+        {
+          "x" : -15.515807,
+          "y" : 0,
+          "z" : -0.2599504
+        },
+        {
+          "x" : -15.741474,
+          "y" : 0,
+          "z" : -0.046030954
+        },
+        {
+          "x" : -15.657989,
+          "y" : 0,
+          "z" : 0.5742544
+        },
+        {
+          "x" : -15.070461,
+          "y" : 0,
+          "z" : 0.7563167
+        },
+        {
+          "x" : -14.476193,
+          "y" : 0,
+          "z" : 0.60506797
+        },
+        {
+          "x" : -14.136583,
+          "y" : 0,
+          "z" : 0.36312905
+        },
+        {
+          "x" : -14.06298,
+          "y" : 0,
+          "z" : 0.058634758
+        },
+        {
+          "x" : -14.951092,
+          "y" : 0,
+          "z" : -0.54784745
+        },
+        {
+          "x" : -15.2619505,
+          "y" : 0,
+          "z" : -0.5584684
+        },
+        {
+          "x" : -15.535007,
+          "y" : 0,
+          "z" : -0.39427838
+        },
+        {
+          "x" : -15.702812,
+          "y" : 0,
+          "z" : -0.10789874
+        },
+        {
+          "x" : -15.65393,
+          "y" : 0,
+          "z" : 0.19913982
+        },
+        {
+          "x" : -15.327923,
+          "y" : 0,
+          "z" : 0.34183985
+        },
+        {
+          "x" : -14.471229,
+          "y" : 0,
+          "z" : 0.38382807
+        },
+        {
+          "x" : -13.770125,
+          "y" : 0,
+          "z" : 0.112990946
+        },
+        {
+          "x" : -13.005195,
+          "y" : 0,
+          "z" : -0.75043565
+        },
+        {
+          "x" : -14.012806,
+          "y" : 0,
+          "z" : -1.0080515
+        },
+        {
+          "x" : -14.61897,
+          "y" : 0,
+          "z" : -0.8459218
+        },
+        {
+          "x" : -15.059382,
+          "y" : 0,
+          "z" : -0.09067181
+        },
+        {
+          "x" : -15.746416,
+          "y" : 0,
+          "z" : 0.5676385
+        },
+        {
+          "x" : -15.777585,
+          "y" : 0,
+          "z" : 0.87754387
+        },
+        {
+          "x" : -15.450288,
+          "y" : 0,
+          "z" : 1.0041615
+        },
+        {
+          "x" : -14.926179,
+          "y" : 0,
+          "z" : 1.0799505
+        },
+        {
+          "x" : -14.352345,
+          "y" : 0,
+          "z" : 0.7216916
+        },
+        {
+          "x" : -14.146632,
+          "y" : 0,
+          "z" : 0.43839616
+        },
+        {
+          "x" : -13.827159,
+          "y" : 0,
+          "z" : -0.5406208
+        },
+        {
+          "x" : -13.946523,
+          "y" : 0,
+          "z" : -0.8322516
+        },
+        {
+          "x" : -14.273633,
+          "y" : 0,
+          "z" : -0.92183226
+        },
+        {
+          "x" : -14.942104,
+          "y" : 0,
+          "z" : -0.8950983
+        },
+        {
+          "x" : -15.239025,
+          "y" : 0,
+          "z" : -0.73486054
+        },
+        {
+          "x" : -15.718241,
+          "y" : 0,
+          "z" : -0.20041764
+        },
+        {
+          "x" : -15.830793,
+          "y" : 0,
+          "z" : 0.10131058
+        },
+        {
+          "x" : -15.699619,
+          "y" : 0,
+          "z" : 0.7691622
+        },
+        {
+          "x" : -15.417198,
+          "y" : 0,
+          "z" : 0.9557627
+        },
+        {
+          "x" : -14.802625,
+          "y" : 0,
+          "z" : 1.063576
+        },
+        {
+          "x" : -14.460869,
+          "y" : 0,
+          "z" : 0.9658324
+        },
+        {
+          "x" : -14.229392,
+          "y" : 0,
+          "z" : 0.72195053
+        },
+        {
+          "x" : -14.145158,
+          "y" : 0,
+          "z" : -0.40369353
+        },
+        {
+          "x" : -14.315951,
+          "y" : 0,
+          "z" : -0.74256814
+        },
+        {
+          "x" : -14.9072895,
+          "y" : 0,
+          "z" : -0.94783896
+        },
+        {
+          "x" : -15.16588,
+          "y" : 0,
+          "z" : -0.77901965
+        },
+        {
+          "x" : -15.49686,
+          "y" : 0,
+          "z" : -0.21430331
+        },
+        {
+          "x" : -15.395584,
+          "y" : 0,
+          "z" : 0.08549695
+        },
+        {
+          "x" : -14.812956,
+          "y" : 0,
+          "z" : 0.31404188
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "smooth"
+    },
+    {
+      "context" : "studio",
+      "id" : "0E23A0FC-DA56-4A3E-B268-EA8AF6F1ACDA",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -17.008177,
+          "y" : 0,
+          "z" : -0.96773106
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "4F19933A-2D87-47F7-BC5B-F72003B799E2",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -16.267832,
+          "y" : 0,
+          "z" : 0.8156117
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "F7780EDE-41CF-4BE5-93F8-A1B7F18674F1",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -17.48567,
+          "y" : 0,
+          "z" : -0.9454922
+        },
+        {
+          "x" : -17.579758,
+          "y" : 0,
+          "z" : -0.008438706
+        },
+        {
+          "x" : -17.861465,
+          "y" : 0,
+          "z" : 0.20893635
+        },
+        {
+          "x" : -17.794918,
+          "y" : 0,
+          "z" : -0.28339154
+        },
+        {
+          "x" : -17.098633,
+          "y" : 0,
+          "z" : -1.224826
+        },
+        {
+          "x" : -16.528128,
+          "y" : 0,
+          "z" : -1.3657871
+        },
+        {
+          "x" : -14.624424,
+          "y" : 0,
+          "z" : -0.2640939
+        },
+        {
+          "x" : -13.610865,
+          "y" : 0,
+          "z" : -0.26089633
+        },
+        {
+          "x" : -14.321064,
+          "y" : 0,
+          "z" : 0.042673223
+        },
+        {
+          "x" : -15.150191,
+          "y" : 0,
+          "z" : -0.074328154
+        },
+        {
+          "x" : -15.556455,
+          "y" : 0,
+          "z" : -0.59104836
+        },
+        {
+          "x" : -15.322042,
+          "y" : 0,
+          "z" : -0.8135764
+        },
+        {
+          "x" : -14.98459,
+          "y" : 0,
+          "z" : -0.44197616
+        },
+        {
+          "x" : -15.308475,
+          "y" : 0,
+          "z" : -0.3037299
+        },
+        {
+          "x" : -14.877159,
+          "y" : 0,
+          "z" : -0.38015684
+        },
+        {
+          "x" : -14.152007,
+          "y" : 0,
+          "z" : -0.7638118
+        },
+        {
+          "x" : -14.285413,
+          "y" : 0,
+          "z" : -0.4763775
+        },
+        {
+          "x" : -15.353834,
+          "y" : 0,
+          "z" : 0.14721096
+        },
+        {
+          "x" : -16.11354,
+          "y" : 0,
+          "z" : 0.34673744
+        },
+        {
+          "x" : -16.387743,
+          "y" : 0,
+          "z" : 0.045811146
+        },
+        {
+          "x" : -16.154633,
+          "y" : 0,
+          "z" : -0.28178245
+        },
+        {
+          "x" : -15.6435995,
+          "y" : 0,
+          "z" : -0.34916726
+        },
+        {
+          "x" : -15.442563,
+          "y" : 0,
+          "z" : -0.07175645
+        },
+        {
+          "x" : -15.311117,
+          "y" : 0,
+          "z" : -0.3580114
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "smooth"
+    },
+    {
+      "context" : "studio",
+      "id" : "14606C44-CACC-47AE-8DAE-AFBFA4F33EE6",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -15.208128,
+          "y" : 0,
+          "z" : -0.33073384
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "smooth"
+    },
+    {
+      "context" : "studio",
+      "id" : "8CEDA90B-72C6-47D2-BABA-142867574B1B",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -15.422929,
+          "y" : 0,
+          "z" : 0.10307715
+        },
+        {
+          "x" : -16.193478,
+          "y" : 0,
+          "z" : 0.6376969
+        },
+        {
+          "x" : -18.04977,
+          "y" : 0,
+          "z" : 0.923272
+        },
+        {
+          "x" : -17.922956,
+          "y" : 0,
+          "z" : 0.6062353
+        },
+        {
+          "x" : -17.132639,
+          "y" : 0,
+          "z" : -0.13517886
+        },
+        {
+          "x" : -16.244642,
+          "y" : 0,
+          "z" : -0.41336355
+        },
+        {
+          "x" : -15.372986,
+          "y" : 0,
+          "z" : -0.4761183
+        },
+        {
+          "x" : -14.742671,
+          "y" : 0,
+          "z" : -0.26379016
+        },
+        {
+          "x" : -14.571495,
+          "y" : 0,
+          "z" : 0.08986315
+        },
+        {
+          "x" : -14.801756,
+          "y" : 0,
+          "z" : 0.6895945
+        },
+        {
+          "x" : -15.1957,
+          "y" : 0,
+          "z" : 1.0868663
+        },
+        {
+          "x" : -16.115509,
+          "y" : 0,
+          "z" : 1.3820987
+        },
+        {
+          "x" : -16.99069,
+          "y" : 0,
+          "z" : 1.3910755
+        },
+        {
+          "x" : -17.593323,
+          "y" : 0,
+          "z" : 1.228801
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "3754E2C6-F590-48BB-952B-D2A9ED503CDA",
+      "tool" : "smooth"
+    },
+    {
+      "context" : "studio",
+      "id" : "4D45C2F0-BCB8-4DF4-8980-1311AE7A47AF",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -0.5500247,
+          "y" : 0.97794634,
+          "z" : -1.8738658
+        }
+      ],
+      "radius" : 1.3,
+      "shape" : "mountain",
+      "strength" : 1.85,
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "D3179234-997F-47CC-9EE2-8732F5474C44",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -3.0591323,
+          "y" : 0.95896494,
+          "z" : -0.8253571
+        }
+      ],
+      "radius" : 1.3,
+      "shape" : "mountain",
+      "strength" : 1.85,
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "6F0B4582-8EAC-4F91-A35C-08ECA10FF255",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : 0.81771374,
+          "y" : 0.9738994,
+          "z" : -1.6946568
+        }
+      ],
+      "radius" : 1.3,
+      "shape" : "mountain",
+      "strength" : 1.85,
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "CC08FDF9-AFE3-4B34-BAE9-59B27CC14586",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -1.6956183,
+          "y" : 0.8150583,
+          "z" : 0.9508053
+        }
+      ],
+      "radius" : 0.78,
+      "shape" : "ridge",
+      "strength" : 1.25,
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "40930655-9AF2-47CB-B6BB-56CCFBE998A1",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -1.2997179,
+          "y" : 0,
+          "z" : -5.0018525
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "tool" : "raise"
+    },
+    {
+      "context" : "studio",
+      "id" : "455072B0-6ABD-49A6-B840-797E89194056",
+      "material" : "sand",
+      "points" : [
+        {
+          "x" : -19.35602,
+          "y" : 0,
+          "z" : -23.004211
+        }
+      ],
+      "radius" : 1.7,
+      "shape" : "plateau",
+      "strength" : 1.15,
+      "studioID" : "F46AF0DB-7AD4-4823-8B4F-217F564D2A59",
+      "tool" : "raise"
+    }
+  ],
+  "version" : 7
+}

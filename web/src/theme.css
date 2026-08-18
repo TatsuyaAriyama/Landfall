@@ -628,6 +628,12 @@ textarea {
   justify-content: center;
 }
 
+.tile-art-button {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius);
+}
+
 .tile-art svg {
   width: 62%;
   height: 62%;
@@ -637,7 +643,10 @@ textarea {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  width: 100%;
   min-width: 0;
+  min-height: 32px;
+  text-align: left;
 }
 
 .tile-name-text {
@@ -2720,14 +2729,123 @@ textarea {
   color: var(--return-orange);
 }
 
-.timer-sound {
-  font-size: 12px;
-  color: color-mix(in srgb, var(--paper) 60%, transparent);
+.voyage-sound-control {
+  position: relative;
+  flex: none;
+}
+
+.voyage-sound-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  max-width: 210px;
+  padding: 0 11px;
   border: 1px solid color-mix(in srgb, var(--paper) 25%, transparent);
   border-radius: 999px;
-  padding: 0 10px;
-  min-height: 30px;
+  color: color-mix(in srgb, var(--paper) 82%, transparent);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.voyage-sound-current {
+  max-width: 122px;
+  overflow: hidden;
+  color: var(--return-orange);
+  text-overflow: ellipsis;
+}
+
+.voyage-sound-picker {
+  position: absolute;
+  left: 50%;
+  z-index: 40;
+  width: min(340px, 90vw);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--paper) 18%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ink) 96%, transparent);
+  box-shadow: 0 16px 38px color-mix(in srgb, #000 34%, transparent);
+  color: var(--paper);
+  transform: translateX(-50%);
+}
+
+.voyage-sound-control.placement-up .voyage-sound-picker {
+  bottom: calc(100% + 10px);
+}
+
+.voyage-sound-control.placement-down .voyage-sound-picker {
+  top: calc(100% + 10px);
+}
+
+.voyage-sound-picker-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 13px;
+  color: color-mix(in srgb, var(--paper) 52%, transparent);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.voyage-sound-option {
+  display: flex;
+  width: 100%;
+  min-height: 50px;
+  align-items: center;
+  gap: 11px;
+  padding: 6px 13px;
+  border-top: 1px solid color-mix(in srgb, var(--paper) 9%, transparent);
+  color: var(--paper);
+  text-align: left;
+}
+
+.voyage-sound-option.selected {
+  background: color-mix(in srgb, var(--paper) 9%, transparent);
+}
+
+.voyage-sound-option:hover,
+.voyage-sound-option:focus-visible {
+  background: color-mix(in srgb, var(--paper) 12%, transparent);
+}
+
+.voyage-sound-icon {
+  display: grid;
+  width: 25px;
+  height: 25px;
   flex: none;
+  place-items: center;
+  color: var(--return-orange);
+  font-size: 17px;
+}
+
+.voyage-sound-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.voyage-sound-copy small {
+  color: color-mix(in srgb, var(--paper) 43%, transparent);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.voyage-sound-check {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  flex: none;
+  margin-left: auto;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--return-orange);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 /* ---- 船のアニメーション(浮遊・航跡・プレビュー) ---- */
@@ -3968,6 +4086,12 @@ textarea {
   background: #123830;
 }
 
+/* タイマーはiOS版と同じ全画面HUD。背後のWebナビゲーションを重ねない。 */
+body:has(.voyaging-world) .topbar {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* 明るい海ではUIも墨色へ切り替える。夜用の白い文字をそのまま置くと、
    朝霧や昼空に溶けて操作が見えなくなる。 */
 .voyaging-world.time-morning,
@@ -3975,20 +4099,6 @@ textarea {
   --ink: #123b40;
   --paper: #edf7f2;
   color-scheme: light;
-}
-
-.voyaging-world.time-morning .voyaging-panel,
-.voyaging-world.time-day .voyaging-panel {
-  background: color-mix(in srgb, #edf7f2 76%, transparent);
-}
-
-.voyaging-world.time-morning .voyaging-break,
-.voyaging-world.time-day .voyaging-break,
-.voyaging-world.time-morning .voyaging-mode,
-.voyaging-world.time-day .voyaging-mode,
-.voyaging-world.time-morning .voyage-world-close,
-.voyaging-world.time-day .voyage-world-close {
-  background: color-mix(in srgb, #edf7f2 62%, transparent);
 }
 
 .voyaging-world canvas {
@@ -4031,147 +4141,342 @@ textarea {
 
 .voyaging-top {
   position: absolute;
-  /* --vv-top: iOSが入力を見せるためにページごとスクロールした量。足さないと
-     唯一の出口である「閉じる」が画面の上へ消える(目的地側では既に対応済み)。 */
-  top: calc(14px + env(safe-area-inset-top) + var(--vv-top, 0px));
+  top: calc(12px + env(safe-area-inset-top) + var(--vv-top, 0px));
   left: 16px;
   right: 16px;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
   max-width: 560px;
   margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #184a40 18%, transparent);
+  border-radius: 17px;
+  color: #184a40;
+  background: color-mix(in srgb, #fff 80%, transparent);
+  box-shadow: 0 6px 26px rgb(6 30 27 / 16%);
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  color-scheme: light;
+  --ink: #184a40;
+  --paper: #fffdf8;
+  transition: max-height 0.28s ease, opacity 0.4s ease;
 }
 
-.voyaging-heading {
-  flex: 1;
+.voyaging-header-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 10px 11px 0;
+}
+
+.voyaging-item-art {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, #184a40 14%, transparent);
+  border-radius: 10px;
+}
+
+.voyaging-item-art svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 5px;
+}
+
+.voyaging-identity {
   min-width: 0;
 }
 
-.voyaging-item {
+.voyaging-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
-  font-size: 14px;
-  color: color-mix(in srgb, var(--ink) 70%, transparent);
+  color: color-mix(in srgb, #184a40 66%, transparent);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.voyaging-status-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  border-radius: 50%;
+  background: #f5822a;
+}
+
+.voyaging-status-dot.resting {
+  background: #f3c065;
+}
+
+.voyaging-item {
+  margin: 3px 0 0;
+  overflow: hidden;
+  color: #184a40;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voyaging-elapsed {
+  flex: none;
+  margin-left: auto;
+  text-align: right;
+}
+
+.voyaging-elapsed p {
+  margin: 0;
+  color: color-mix(in srgb, #184a40 48%, transparent);
+  font-size: 7px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.voyaging-elapsed strong {
+  display: block;
+  margin-top: 1px;
+  color: #a74312;
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 440;
+  line-height: 1;
+}
+
+.voyaging-minimize {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #184a40;
+  background: color-mix(in srgb, #184a40 7%, transparent);
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.voyaging-divider {
+  height: 1px;
+  margin-top: 8px;
+  background: color-mix(in srgb, #184a40 12%, transparent);
+}
+
+.voyaging-commands {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 9px;
+}
+
+.voyaging-command {
+  display: flex;
+  min-width: 0;
+  height: 57px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 3px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, #184a40 11%, transparent);
+  border-radius: 13px;
+  color: color-mix(in srgb, #184a40 74%, transparent);
+  background: color-mix(in srgb, #184a40 5%, transparent);
+  text-align: left;
+}
+
+.voyaging-command.active {
+  border-color: color-mix(in srgb, #f5822a 52%, transparent);
+  color: #184a40;
+  background: color-mix(in srgb, #f5822a 10%, transparent);
+}
+
+.voyaging-command-head {
+  display: flex;
+  min-height: 13px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.voyaging-command-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  overflow: visible;
+}
+
+.voyaging-command-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: #f5822a;
+}
+
+.voyaging-command-title,
+.voyaging-command-detail {
+  display: block;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 時間はこの画面の主役。数字が伸び縮みしないよう等幅の数字で。 */
-.voyaging-clock {
-  margin: 2px 0 0;
-  font-size: 44px;
-  font-weight: 400;
-  line-height: 1.05;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
-  color: var(--ink);
+.voyaging-command-title {
+  font-size: 10px;
+  font-weight: 650;
 }
 
-.voyaging-phase {
-  margin: 2px 0 0;
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  color: var(--return-orange);
+.voyaging-command-detail {
+  color: color-mix(in srgb, #184a40 52%, transparent);
+  font-size: 7px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .voyaging-panel {
   position: absolute;
   left: 16px;
   right: 16px;
-  bottom: calc(12px + env(safe-area-inset-bottom) + var(--vv-lift, 0px));
+  bottom: calc(10px + env(safe-area-inset-bottom) + var(--vv-lift, 0px));
   max-width: 460px;
   margin: 0 auto;
-  /* dvh はキーボードで縮まないので、それだけだと上端(選択チップや期日欄)が
-     画面外に切れる。実際に見えている高さ(--vv-h)から余白を引いて上限にする。
-     vh を先に置き、dvh 未対応のブラウザでも宣言が丸ごと落ちないようにする。 */
-  max-height: min(48vh, 400px);
-  max-height: min(48dvh, 400px);
-  max-height: min(calc(var(--vv-h, 48dvh) - 150px), 400px);
+  max-height: min(calc(var(--vv-h, 100dvh) - 180px), 220px);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  border-radius: var(--radius);
-  padding: 16px 20px 18px;
-  background: color-mix(in srgb, #0d2a24 68%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid color-mix(in srgb, #184a40 16%, transparent);
+  border-radius: 18px;
+  padding: 11px 14px 5px;
+  color: #184a40;
+  background: color-mix(in srgb, #fff 82%, transparent);
+  box-shadow: 0 5px 24px rgb(6 30 27 / 13%);
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
+  color-scheme: light;
+  --ink: #184a40;
+  --paper: #fffdf8;
 }
 
-/* 休憩。時計を止める唯一の操作なので、設定チップより一段はっきりさせる
-   (ただし記録するボタンほど強くはしない — 航海の途中の行動なので)。 */
-.voyaging-break {
-  min-height: 36px;
-  margin-top: 12px;
-  padding: 0 18px;
-  border-radius: 999px;
-  font-size: 13px;
-  color: var(--ink);
-  border: 1px solid color-mix(in srgb, var(--ink) 42%, transparent);
-  background: color-mix(in srgb, #0d2a24 62%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-/* 休憩中は、押せば戻れることが分かるよう塗る。 */
-.voyaging-break.on {
-  color: var(--ink-fixed);
-  background: var(--sun-yellow);
-  border-color: transparent;
-}
-
-/* 航海の進み方(ポモドーロ・音)。時計の下に小さく添える控えめな切り替え。
-   下の行動ボタンとは見た目から別ものにする。 */
-.voyaging-modes {
+.voyaging-note-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.voyaging-mode {
-  min-height: 32px;
+  height: 40px;
+  align-items: center;
+  gap: 10px;
   padding: 0 12px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: color-mix(in srgb, var(--ink) 62%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
-  background: color-mix(in srgb, #0d2a24 55%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, #184a40 12%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, #fff 66%, transparent);
 }
 
-.voyaging-mode.on {
-  color: var(--paper);
-  background: var(--ink);
-  border-color: transparent;
+.voyaging-note-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: color-mix(in srgb, #184a40 62%, transparent);
 }
 
-/* 主の行動。ひとことの下に、はっきり間を空けて置く。 */
+.voyaging-note-row input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: #184a40;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+}
+
+.voyaging-note-row input::placeholder {
+  color: color-mix(in srgb, #184a40 48%, transparent);
+}
+
+.voyaging-note-row:focus-within {
+  border-color: color-mix(in srgb, #184a40 44%, transparent);
+  background: color-mix(in srgb, #fff 78%, transparent);
+}
+
+.voyaging-top .voyage-sound-picker {
+  position: static;
+  width: auto;
+  margin: 0 9px 9px;
+  border-color: color-mix(in srgb, #184a40 16%, transparent);
+  color: #184a40;
+  background: color-mix(in srgb, #fff 54%, transparent);
+  box-shadow: none;
+  transform: none;
+}
+
+.voyaging-top .voyage-sound-picker-heading {
+  min-height: 28px;
+  padding: 0 12px;
+  color: color-mix(in srgb, #184a40 52%, transparent);
+  font-size: 8px;
+}
+
+.voyaging-top .voyage-sound-option {
+  min-height: 43px;
+  padding: 4px 12px;
+  border-top-color: color-mix(in srgb, #184a40 10%, transparent);
+  color: #184a40;
+}
+
+.voyaging-top .voyage-sound-option.selected,
+.voyaging-top .voyage-sound-option:hover,
+.voyaging-top .voyage-sound-option:focus-visible {
+  background: color-mix(in srgb, #184a40 8%, transparent);
+}
+
+.voyaging-top .voyage-sound-icon,
+.voyaging-top .voyage-sound-copy small {
+  color: color-mix(in srgb, #184a40 56%, transparent);
+}
+
+.voyaging-top .voyage-sound-check {
+  color: #fffdf8;
+  background: #f5822a;
+}
+
 .voyaging-record {
-  margin-top: 16px;
+  height: 46px;
+  min-height: 46px;
+  margin-top: 9px;
+  border-radius: 12px;
+  color: #fffdf8;
+  background: #184a40;
+  font-size: 16px;
 }
 
-/* 副の行動(作業時間を入力する / 航海をやめる)。主と取り違えないよう文字のみ。 */
 .voyaging-alt {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 6px;
+  margin-top: 0;
 }
 
 .voyaging-link {
-  min-height: 44px;
+  min-height: 34px;
   padding: 0 4px;
   border: 0;
   background: none;
-  font-size: 13px;
-  color: color-mix(in srgb, var(--ink) 65%, transparent);
+  font-size: 12px;
+  color: color-mix(in srgb, #184a40 72%, transparent);
 }
 
 .voyaging-link.danger {
-  color: var(--coral);
+  color: #a23b32;
 }
 
 /* ---- 航海の完了 ----
@@ -4439,6 +4744,46 @@ textarea {
 }
 
 /* ---- ステップ目標の編集(没入エディタのパネル内) ---- */
+.step-progress {
+  display: grid;
+  gap: 7px;
+  margin: 10px 2px 12px;
+}
+
+.step-progress-copy {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.step-progress-copy .ready,
+.step-ready {
+  color: var(--return-orange);
+}
+
+.step-progress progress {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+  accent-color: var(--return-orange);
+}
+
+.step-progress progress::-webkit-progress-bar {
+  background: color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.step-progress progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--return-orange);
+}
+
 .step-list {
   display: flex;
   flex-direction: column;
@@ -4474,6 +4819,17 @@ textarea {
 .step-check.done {
   background: var(--harbor-sand, #eadebd);
   border-color: var(--harbor-sand, #eadebd);
+}
+
+.step-check:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+.step-check > span {
+  font-size: 11px;
+  font-weight: 650;
+  color: color-mix(in srgb, var(--ink) 72%, transparent);
 }
 
 .step-row .step-input {
@@ -4520,6 +4876,12 @@ textarea {
   cursor: pointer;
 }
 
+.step-remove-spacer {
+  flex: none;
+  width: 30px;
+  height: 30px;
+}
+
 .step-add {
   margin-top: 10px;
   min-height: 40px;
@@ -4530,6 +4892,11 @@ textarea {
   border: 1px dashed color-mix(in srgb, var(--ink) 34%, transparent);
   background: transparent;
   cursor: pointer;
+}
+
+.step-ready {
+  margin: 10px 2px 0;
+  font-size: 12px;
 }
 
 /* 2Dフォールバックカードのステップ pips(●達成/○未達) */
@@ -5886,6 +6253,17 @@ textarea {
   .voyaging-mode {
     background: #0d2a24;
   }
+
+  .voyaging-world .voyaging-top,
+  .voyaging-world .voyaging-panel,
+  .voyaging-world .voyage-sound-picker {
+    background: #f8f7f2;
+  }
+
+  .voyaging-world .voyaging-top .voyage-world-close,
+  .voyaging-world .voyaging-mode {
+    background: #edf3ef;
+  }
 }
 
 /* 日付・時刻の入力。iOSは -webkit-appearance の既定が独自で、高さも
@@ -6045,4 +6423,634 @@ textarea {
   gap: 14px;
   padding: 32px 16px;
   text-align: center;
+}
+
+/* ---- iOS 26 航海ホームと共通のWeb起点 ---- */
+
+.topbar {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  right: 0;
+  justify-content: flex-end;
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 10px)
+    max(12px, env(safe-area-inset-right, 0px))
+    8px
+    max(12px, env(safe-area-inset-left, 0px));
+  pointer-events: none;
+}
+
+.topbar > * {
+  pointer-events: auto;
+}
+
+.topbar.route-left {
+  justify-content: flex-start;
+}
+
+.route-close-button,
+.route-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  color: #f6eee1;
+  background: #173f3c;
+  border: 1px solid color-mix(in srgb, #eadebd 22%, transparent);
+  box-shadow: 0 8px 22px rgb(0 0 0 / 18%);
+  transition: transform 0.12s ease-out, opacity 0.12s ease-out;
+}
+
+.route-close-button {
+  width: 38px;
+  border-radius: 50%;
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.route-back-button {
+  gap: 5px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.route-back-button span {
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 0;
+}
+
+.home-menu-trigger {
+  height: 38px;
+  min-height: 38px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 38%, transparent);
+  border-radius: 999px;
+  color: #173f3c;
+  background: color-mix(in srgb, #f6eee1 92%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: transform 0.12s ease-out, opacity 0.12s ease-out;
+}
+
+.home-menu-trigger:active,
+.home-command-card:active,
+.home-command-action:active,
+.route-close-button:active,
+.route-back-button:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+
+.home-menu-trigger-chevron {
+  color: color-mix(in srgb, #173f3c 48%, transparent);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.home-command-layer {
+  position: fixed;
+  z-index: 45;
+  inset: 0;
+  animation: home-command-fade-in 0.16s ease-out both;
+}
+
+.home-command-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: rgb(0 0 0 / 34%);
+}
+
+.home-command-menu {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 62px);
+  right: max(12px, env(safe-area-inset-right, 0px));
+  display: block;
+  width: min(354px, calc(100vw - 24px));
+  margin: 0;
+  padding: 14px;
+  color: #173f3c;
+  border: 1px solid color-mix(in srgb, #eadebd 42%, transparent);
+  border-radius: 24px;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, #f6eee1 99%, transparent),
+    color-mix(in srgb, #f6eee1 95%, transparent)
+  );
+  box-shadow: 0 14px 48px rgb(0 0 0 / 34%);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  transform-origin: top right;
+  animation: home-command-panel-in 0.16s ease-out both;
+}
+
+.home-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.home-command-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  min-height: 112px;
+  padding: 11px;
+  text-align: left;
+  color: #173f3c;
+  border: 1px solid color-mix(in srgb, #173f3c 10%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, #173f3c 4.5%, transparent);
+  transition: transform 0.12s ease-out, opacity 0.12s ease-out, background 0.12s ease-out;
+}
+
+.home-command-card:hover {
+  background: color-mix(in srgb, #173f3c 8%, transparent);
+}
+
+.home-command-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.home-command-card-icon {
+  display: grid;
+  place-items: center;
+  width: 45px;
+  height: 45px;
+  padding: 8px;
+  border-radius: 50%;
+  background: color-mix(in srgb, #173f3c 7%, transparent);
+}
+
+.home-command-card-icon svg {
+  width: 29px;
+  height: 29px;
+}
+
+.home-command-arrow {
+  color: color-mix(in srgb, #eadebd 56%, transparent);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.home-command-card strong {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-command-card small {
+  overflow: hidden;
+  color: color-mix(in srgb, #173f3c 46%, transparent);
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-command-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 10px;
+}
+
+.home-command-action {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 44px;
+  padding: 0 9px;
+  color: color-mix(in srgb, #173f3c 70%, transparent);
+  text-align: left;
+  background: transparent;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  transition: transform 0.12s ease-out, opacity 0.12s ease-out, background 0.12s ease-out;
+}
+
+.home-command-action:hover {
+  background: color-mix(in srgb, #173f3c 5%, transparent);
+}
+
+.home-command-action-icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: color-mix(in srgb, #173f3c 6%, transparent);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.home-command-action-icon.settings {
+  gap: 3px;
+  padding: 7px 6px;
+}
+
+.home-command-action-icon.settings i {
+  position: relative;
+  display: block;
+  width: 15px;
+  height: 1px;
+  background: currentColor;
+}
+
+.home-command-action-icon.settings i::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  width: 5px;
+  height: 5px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: #f6eee1;
+}
+
+.home-command-action-icon.settings i:nth-child(1)::after,
+.home-command-action-icon.settings i:nth-child(3)::after {
+  left: 2px;
+}
+
+.home-command-action-icon.settings i:nth-child(2)::after {
+  right: 2px;
+}
+
+.home-command-chevron {
+  color: color-mix(in srgb, #173f3c 34%, transparent);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.home-command-corner {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+
+.home-command-corner::before,
+.home-command-corner::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: color-mix(in srgb, #eadebd 42%, transparent);
+}
+
+.home-command-corner::before {
+  width: 18px;
+  height: 1px;
+}
+
+.home-command-corner::after {
+  width: 1px;
+  height: 18px;
+}
+
+.home-command-corner.top {
+  top: 8px;
+  left: 8px;
+}
+
+.home-command-corner.bottom {
+  right: 8px;
+  bottom: 8px;
+  transform: rotate(180deg);
+}
+
+@keyframes home-command-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes home-command-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.help-dialog-intro {
+  margin: 0 0 16px;
+  color: color-mix(in srgb, var(--ink) 64%, transparent);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.help-dialog-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.help-dialog-card {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  align-items: start;
+  gap: 12px;
+  padding: 13px;
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.help-dialog-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 8px;
+  color: var(--ink);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.help-dialog-icon svg {
+  width: 26px;
+  height: 26px;
+}
+
+.help-dialog-card h3 {
+  margin: 1px 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.help-dialog-card p {
+  margin: 0;
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+#main-content {
+  width: 100%;
+  min-width: 0;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 84px);
+}
+
+.shell[data-tab="today"] {
+  padding-inline: 0;
+  padding-bottom: 0;
+}
+
+.shell[data-tab="today"] #main-content {
+  padding-top: 0;
+}
+
+.voyage-home {
+  position: relative;
+  min-height: 100dvh;
+  isolation: isolate;
+}
+
+.home-world-canvas,
+.home-world-fallback {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  width: 100vw;
+  height: var(--vv-h, 100dvh);
+  pointer-events: none;
+  background: linear-gradient(to bottom, var(--home-sky-a), var(--home-sea-b));
+}
+
+.home-world-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.home-date-chip {
+  position: absolute;
+  z-index: 4;
+  top: calc(env(safe-area-inset-top, 0px) + 68px);
+  left: 50%;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 26%, transparent);
+  border-radius: 11px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--home-glass) 92%, transparent);
+  box-shadow: 0 6px 18px color-mix(in srgb, #061211 14%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transform: translateX(-50%);
+}
+
+.home-date-chip > span:first-child {
+  color: var(--return-orange);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.home-date-chip strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.home-date-chip small {
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.home-destination-entry {
+  position: relative;
+  z-index: 1;
+  height: clamp(330px, 49dvh, 470px);
+}
+
+.home-destination-world-hit {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.home-destination-caption {
+  position: absolute;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  bottom: 16px;
+  display: grid;
+  gap: 3px;
+  max-width: min(70vw, 520px);
+  text-shadow: 0 2px 10px color-mix(in srgb, #061211 46%, transparent);
+  pointer-events: none;
+}
+
+.home-destination-caption > span {
+  color: color-mix(in srgb, var(--ink) 68%, transparent);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.home-destination-caption strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-destination-caption small {
+  color: color-mix(in srgb, var(--ink) 68%, transparent);
+  font-size: 11px;
+}
+
+.home-destination-action {
+  position: absolute;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: 16px;
+  min-height: 38px;
+  padding: 0 18px;
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  border-radius: 999px;
+  color: var(--ink-fixed);
+  background: var(--harbor-sand);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 6px 18px color-mix(in srgb, #061211 16%, transparent);
+}
+
+.voyage-home-sections {
+  position: relative;
+  z-index: 2;
+  width: min(760px, calc(100% - 24px));
+  margin: 0 auto;
+  padding: 0 0 42px;
+}
+
+.voyage-home-sections > .section-label:first-child {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  margin: 0 0 10px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 26%, transparent);
+  border-radius: 11px;
+  color: color-mix(in srgb, var(--ink) 76%, transparent);
+  background: color-mix(in srgb, var(--home-glass) 92%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.voyage-home-sections .rows {
+  border: 1px solid color-mix(in srgb, var(--harbor-sand) 28%, transparent);
+  background: color-mix(in srgb, var(--home-glass) 90%, transparent);
+}
+
+@media (max-width: 600px) {
+  .home-destination-entry {
+    height: clamp(330px, 49dvh, 430px);
+  }
+
+  .voyage-home-sections .tile-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .voyage-home-sections .tile-name {
+    display: grid;
+    gap: 2px;
+  }
+
+  .voyage-home-sections .tile-name-text {
+    font-size: 12px;
+  }
+
+  .voyage-home-sections .tile-today {
+    font-size: 10px;
+  }
+
+  .home-date-chip small {
+    display: none;
+  }
+}
+
+@media (min-width: 901px) {
+  .topbar {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  }
+
+  .home-destination-entry {
+    height: clamp(350px, 47dvh, 470px);
+  }
+
+  .voyage-home-sections {
+    width: min(1040px, calc(100% - 48px));
+  }
+
+  .voyage-home-sections .tile-grid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: clamp(10px, 1vw, 15px);
+  }
+
+  .voyage-home-sections .tile {
+    gap: 5px;
+  }
+
+  .voyage-home-sections .tile-name {
+    min-height: 27px;
+    gap: 5px;
+  }
+
+  .voyage-home-sections .tile-name-text {
+    font-size: 12px;
+  }
+
+  .voyage-home-sections .tile-today {
+    font-size: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-command-layer,
+  .home-command-menu {
+    animation: none;
+  }
+
+  .home-world-canvas,
+  .home-world-fallback {
+    transition: none;
+  }
 }

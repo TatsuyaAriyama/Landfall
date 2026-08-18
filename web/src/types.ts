@@ -6,7 +6,7 @@ import {
   pccsStyle,
 } from "./pccs";
 
-/// 項目タイルで選べる配色。グリッドは一覧性が命なので、ここは意図的に増やさない。
+/// 項目タイルで選べるブランド配色。iOS の TileStyle.itemCases と同じ並び。
 export const TILE_STYLES = [
   "midnight",
   "coral",
@@ -14,14 +14,6 @@ export const TILE_STYLES = [
   "seaGreen",
   "violet",
   "sunYellow",
-] as const;
-export type TileStyleToken = (typeof TILE_STYLES)[number];
-
-/// プレイヤーカードで選べる配色。タイルの6色に加えて、既存のブランド色から
-/// 組んだ6色を足す(新しい色は増やさない — パレットの外に出ない)。
-/// 港のカードは一人一枚なので、タイルより多くても画面は散らからない。
-export const PROFILE_STYLES = [
-  ...TILE_STYLES,
   "harbor",
   "sand",
   "ember",
@@ -29,6 +21,10 @@ export const PROFILE_STYLES = [
   "lavender",
   "sunrise",
 ] as const;
+export type TileStyleToken = (typeof TILE_STYLES)[number];
+
+/// プレイヤーカードも項目と同じ12配色を使う。
+export const PROFILE_STYLES = [...TILE_STYLES] as const;
 export type ProfileStyleToken = (typeof PROFILE_STYLES)[number];
 
 export const TILE_SYMBOLS = [
@@ -76,7 +72,6 @@ export function normalizeSymbol(token: string): TileSymbolToken {
 }
 
 /// 配色(背景/前景)。iOS の TileStyle と同じ組み。ink の背景だけ明暗に追従。
-/// 前半6色はタイルとカード共用、後半6色はプレイヤーカード専用。
 export const STYLE_COLORS: Record<ProfileStyleToken, { bg: string; fg: string }> = {
   midnight: { bg: "#1A1130", fg: "#F0997B" },
   coral: { bg: "#F0997B", fg: "#4A1B0C" },

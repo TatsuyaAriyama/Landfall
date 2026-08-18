@@ -74,16 +74,17 @@ export interface UserData {
   retry: () => void;
 }
 
-/// どのコレクションが届いたか。1つのカウンタで数えてはいけない —
+/// 画面の成立に必要なコアコレクションが届いたか。1つのカウンタで数えてはいけない —
 /// Firestoreは同じコレクションについて「キャッシュ→サーバ」と2回流すことがあり、
 /// 合計3回に達しても days が一度も来ていない、という状態が起きる。
 /// その場合 ready になってしまい、カレンダーが全ての過去日を「休んだ日」として
 /// 塗ってしまう(繋がっているのに嘘を表示する)。
+/// voyageLogs は航海日録タブの補助データなので、ここが一時的に読めなくても
+/// 作業項目・セッション・日付が揃ったホームと記録機能までは止めない。
 interface Loaded {
   items: boolean;
   sessions: boolean;
   days: boolean;
-  voyageLogs: boolean;
 }
 
 /// これだけ待って何も届かなければ、繋がらないものとして扱う。
@@ -101,7 +102,6 @@ export function useUserData(uid: string, enabled = true): UserData {
     items: false,
     sessions: false,
     days: false,
-    voyageLogs: false,
   });
   const [failed, setFailed] = useState(false);
   // 再試行のたびに増やして、購読を張り直す。
@@ -110,7 +110,6 @@ export function useUserData(uid: string, enabled = true): UserData {
     items: false,
     sessions: false,
     days: false,
-    voyageLogs: false,
   });
 
   useEffect(() => {
@@ -125,7 +124,6 @@ export function useUserData(uid: string, enabled = true): UserData {
       items: false,
       sessions: false,
       days: false,
-      voyageLogs: false,
     };
     setLoaded(loadedRef.current);
 
@@ -135,7 +133,7 @@ export function useUserData(uid: string, enabled = true): UserData {
       setLoaded(loadedRef.current);
     };
     // 購読が落ちたら、待たせ続けずにその場で伝える(権限切れ・トークン失効など)。
-    const onError = () => setFailed(true);
+    const onCoreError = () => setFailed(true);
 
     const offItems = onSnapshot(collection(db, "users", uid, "items"), (snap) => {
       setItems(
@@ -155,7 +153,7 @@ export function useUserData(uid: string, enabled = true): UserData {
           .sort((a, b) => a.sortOrder - b.sortOrder),
       );
       mark("items");
-    }, onError);
+    }, onCoreError);
 
     const offSessions = onSnapshot(collection(db, "users", uid, "sessions"), (snap) => {
       setSessions(
@@ -177,7 +175,7 @@ export function useUserData(uid: string, enabled = true): UserData {
           .sort((a, b) => b.date.getTime() - a.date.getTime()),
       );
       mark("sessions");
-    }, onError);
+    }, onCoreError);
 
     const offDays = onSnapshot(collection(db, "users", uid, "days"), (snap) => {
       setDays(
@@ -192,7 +190,7 @@ export function useUserData(uid: string, enabled = true): UserData {
         }),
       );
       mark("days");
-    }, onError);
+    }, onCoreError);
 
     const offVoyageLogs = onSnapshot(
       collection(db, "users", uid, "voyageLogs"),
@@ -211,9 +209,10 @@ export function useUserData(uid: string, enabled = true): UserData {
             .filter((entry) => entry.body.length > 0)
             .sort((a, b) => b.date.getTime() - a.date.getTime()),
         );
-        mark("voyageLogs");
       },
-      onError,
+      // 航海日録だけの権限・一時障害で、メインの記録画面まで通信不能扱いにしない。
+      // 正常化すればonSnapshotが再接続し、内容はそのまま追いつく。
+      () => setVoyageLogs([]),
     );
 
     const offDestinations = listenDestinations(uid, setDestinations);
@@ -221,7 +220,7 @@ export function useUserData(uid: string, enabled = true): UserData {
     // 黙ったまま何も来ない場合の見切り。
     const timer = setTimeout(() => {
       const l = loadedRef.current;
-      if (!(l.items && l.sessions && l.days && l.voyageLogs)) setFailed(true);
+      if (!(l.items && l.sessions && l.days)) setFailed(true);
     }, CONNECT_TIMEOUT_MS);
 
     return () => {
@@ -234,7 +233,7 @@ export function useUserData(uid: string, enabled = true): UserData {
     };
   }, [uid, enabled, attempt]);
 
-  const ready = loaded.items && loaded.sessions && loaded.days && loaded.voyageLogs;
+  const ready = loaded.items && loaded.sessions && loaded.days;
   return {
     items,
     sessions,

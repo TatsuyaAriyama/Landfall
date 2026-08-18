@@ -70,6 +70,17 @@ function messageForCode(code: string): string | null {
   if (code === "auth/web-storage-unsupported" || code === "auth/operation-not-supported-in-this-environment") {
     return t("signInStorageBlocked");
   }
+  if (code === "auth/network-request-failed" || code === "auth/timeout") {
+    return t("signInNetworkFailed");
+  }
+  if (
+    code === "auth/unauthorized-domain" ||
+    code === "auth/operation-not-allowed" ||
+    code === "auth/invalid-api-key" ||
+    code === "auth/app-not-authorized"
+  ) {
+    return t("signInNotConfigured");
+  }
   return t("signInFailed");
 }
 
@@ -78,6 +89,7 @@ export function SignInView({ redirectError }: { redirectError?: string | null })
   const [error, setError] = useState<string | null>(
     redirectError ? messageForCode(redirectError) : null,
   );
+  const [errorCode, setErrorCode] = useState<string | null>(redirectError ?? null);
   const [working, setWorking] = useState<"google" | "apple" | null>(null);
   // Instagram/LINEなどのアプリ内ブラウザは、Googleの仕様でサインインが必ず失敗する
   // (disallowed_useragent)。押させる前に、対処法(ブラウザで開く)を案内する。
@@ -87,12 +99,14 @@ export function SignInView({ redirectError }: { redirectError?: string | null })
     if (working) return;
     setWorking(which);
     setError(null);
+    setErrorCode(null);
     try {
       // モバイル Safari はここでリダイレクトし、戻ってきたら自動でサインイン完了。
       // PC はポップアップで完結する。
       await (which === "google" ? signInWithGoogle() : signInWithApple());
     } catch (e) {
       const code = (e as { code?: string }).code ?? "";
+      setErrorCode(code || "unknown");
       const message = messageForCode(code);
       if (message) setError(message);
     } finally {
@@ -138,7 +152,11 @@ export function SignInView({ redirectError }: { redirectError?: string | null })
             <span>{t("signInWithGoogle")}</span>
           </button>
           <p className="harbor-note">{t("signInNote")}</p>
-          {error && <p className="harbor-error">{error}</p>}
+          {error && (
+            <p className="harbor-error" data-auth-error-code={errorCode ?? undefined}>
+              {error}
+            </p>
+          )}
         </div>
       </main>
     </div>

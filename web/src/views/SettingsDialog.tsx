@@ -18,6 +18,12 @@ import {
   type HarborControlSettings,
 } from "../harborControls";
 import { useScrollFriendlyPointerDrag } from "../pointerDrag";
+import {
+  homeMusicEnabled,
+  homeWavesEnabled,
+  setHomeMusicEnabled,
+  setHomeWavesEnabled,
+} from "../audio";
 
 function HarborControlEditor({ onBack }: { onBack: () => void }) {
   const [settings, setSettings] = useState(loadHarborControlSettings);
@@ -112,12 +118,16 @@ export function SettingsDialog({
   uid,
   data,
   onClose,
+  onVoyagePass,
 }: {
   uid: string;
   data: UserData;
   onClose: () => void;
+  onVoyagePass?: () => void;
 }) {
   const [language, setLanguage] = useState(storage.get(LANGUAGE_KEY) ?? "system");
+  const [backgroundMusicOn, setBackgroundMusicOn] = useState(homeMusicEnabled);
+  const [waveAmbienceOn, setWaveAmbienceOn] = useState(homeWavesEnabled);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState<"main" | "items" | "harborControls">("main");
@@ -308,6 +318,46 @@ export function SettingsDialog({
           {pill(language === "en", "English", () => pickLanguage("en"))}
         </div>
 
+        <p className="section-label">{t("music")}</p>
+        <div className="rows">
+          <div className="row">
+            <div className="row-main">
+              <div className="row-title">{t("homeBackgroundMusic")}</div>
+              <div className="row-sub">{t("harborMinuetSummary")}</div>
+            </div>
+            <button
+              type="button"
+              className={`chip${backgroundMusicOn ? " selected" : ""}`}
+              aria-pressed={backgroundMusicOn}
+              onClick={() => {
+                const next = !backgroundMusicOn;
+                setBackgroundMusicOn(next);
+                setHomeMusicEnabled(next);
+              }}
+            >
+              {backgroundMusicOn ? t("musicOn") : t("musicOff")}
+            </button>
+          </div>
+          <div className="row">
+            <div className="row-main">
+              <div className="row-title">{t("waveAmbience")}</div>
+              <div className="row-sub">{t("waveAmbienceSummary")}</div>
+            </div>
+            <button
+              type="button"
+              className={`chip${waveAmbienceOn ? " selected" : ""}`}
+              aria-pressed={waveAmbienceOn}
+              onClick={() => {
+                const next = !waveAmbienceOn;
+                setWaveAmbienceOn(next);
+                setHomeWavesEnabled(next);
+              }}
+            >
+              {waveAmbienceOn ? t("musicOn") : t("musicOff")}
+            </button>
+          </div>
+        </div>
+
         <p className="section-label">{t("workItemsSettings")}</p>
         <div className="rows">
           <button
@@ -327,6 +377,19 @@ export function SettingsDialog({
 
         <p className="section-label">{t("harborSection")}</p>
         <div className="rows">
+          {onVoyagePass && (
+            <button
+              type="button"
+              className="row row-button settings-section-row"
+              onClick={onVoyagePass}
+            >
+              <div className="row-main">
+                <div className="row-title">{t("voyagePass")}</div>
+                <div className="row-sub">{t("voyagePassDescription")}</div>
+              </div>
+              <span className="settings-row-chevron" aria-hidden="true">›</span>
+            </button>
+          )}
           <button
             type="button"
             className="row row-button settings-section-row"

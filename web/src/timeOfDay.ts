@@ -68,8 +68,8 @@ export const SEA_LIGHT: Record<TimeOfDay, SeaLightPalette> = {
 
 export function timeOfDayAt(date: Date): TimeOfDay {
   const hour = date.getHours();
-  if (hour >= 5 && hour < 10) return "morning";
-  if (hour >= 10 && hour < 17) return "day";
+  if (hour >= 5 && hour < 11) return "morning";
+  if (hour >= 11 && hour < 17) return "day";
   if (hour >= 17 && hour < 20) return "evening";
   return "night";
 }

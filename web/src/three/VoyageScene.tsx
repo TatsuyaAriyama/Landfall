@@ -11,7 +11,7 @@ import { boatProps } from "../boat";
 import { useNavigatorPose } from "./navigatorPose";
 import { shortDateLabel } from "../i18n";
 import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
-import WindsweptTree from "./WindsweptTree";
+import IOSHomeIsland from "./IOSHomeIsland";
 
 // 目的地の航海シーン。自分の船が、現在の時間帯の海を島へ向かって走っている。
 // 記録するほど(ratioが増えるほど)船が島に近づく。BoatStudioと同じ
@@ -84,10 +84,6 @@ export const X_START = -9.0;
 export const X_END = 4.2;
 
 // ジオメトリは色に依存しないので、モジュール読み込み時に一度だけ作る。
-const HILL_GEO = new THREE.ConeGeometry(1.25, 1.05, 7);
-const HILL2_GEO = new THREE.ConeGeometry(0.85, 0.72, 6);
-const KNOLL_GEO = new THREE.SphereGeometry(0.6, 8, 6);
-const BEACH_GEO = new THREE.CylinderGeometry(1.9, 2.05, 0.07, 9);
 const WAKE_GEO = new THREE.PlaneGeometry(2.3, 0.4);
 const HORIZON_GEO = new THREE.PlaneGeometry(60, 0.08);
 
@@ -120,29 +116,10 @@ export function stepBuoyX(index: number, total: number): number {
   return X_START + ((index + 1) / (total + 1)) * (X_END - X_START);
 }
 
-/// 低ポリの島。半球と円錐を組んだ丘+水面の際のわずかな浜。
+/// iOSのホームで作成・保存された最新の目的地。
+/// カード・航海中・編集画面のすべてが同じ完成データを使う。
 export function Island() {
-  return (
-    <group position={[3.5, 0, -0.9]}>
-      <mesh geometry={BEACH_GEO} position={[0, 0.03, 0.1]}>
-        <meshStandardMaterial color={BEACH} flatShading roughness={0.95} />
-      </mesh>
-      <mesh geometry={HILL_GEO} position={[0, 0.5, 0]} rotation={[0, 0.4, 0]}>
-        <meshStandardMaterial color={SAND} flatShading roughness={0.9} />
-      </mesh>
-      <mesh geometry={HILL2_GEO} position={[0.8, 0.34, 0.35]} rotation={[0, 1.1, 0]}>
-        <meshStandardMaterial color={SAND} flatShading roughness={0.9} />
-      </mesh>
-      <mesh geometry={KNOLL_GEO} position={[-0.85, 0.08, 0.25]}>
-        <meshStandardMaterial color={SAND} flatShading roughness={0.9} />
-      </mesh>
-      <WindsweptTree
-        position={[-0.38, 0.7, -0.12]}
-        rotation={[0, -0.28, 0]}
-        scale={0.72}
-      />
-    </group>
-  );
+  return <IOSHomeIsland position={[3.5, 0, -0.9]} scale={1.34} />;
 }
 
 /// 水平線。霧に沈む海の縁に、sandの淡い一線(2Dカードの.dest-horizon風)。

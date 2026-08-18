@@ -22,7 +22,7 @@ if (!import.meta.env.DEV && window.location.hash === "#demo") {
 
 // Service Worker廃止前に失敗したメインJSのHTTPキャッシュとURLを分離する。
 // 今後の障害調査でも、表示中の配信世代をDOMから確認できる。
-const APP_BUILD = "2026-08-01-keelmira-restore-v1";
+const APP_BUILD = "2026-08-10-ios-home-navigation-v1";
 document.documentElement.dataset.appBuild = APP_BUILD;
 
 // キーボード/ピッカーで実際に見えている高さを :root に流す(全階層のCSSが参照する)。

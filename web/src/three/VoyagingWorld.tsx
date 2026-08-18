@@ -25,6 +25,7 @@ import { useBodyScrollLock } from "../scrollLock";
 import { SEA_LIGHT, useTimeOfDay, type TimeOfDay } from "../timeOfDay";
 import { itemStyleColors, normalizeSymbol } from "../types";
 import { TileSymbolSvg } from "../symbols";
+import { VoyageSoundList } from "../views/VoyageSoundPicker";
 
 // 作業中の世界。自分の船が現在の時間帯の海を走り、その上に経過時間が出る。
 // 「分数を入力する」のではなく、この航海そのものが記録になる。
@@ -56,7 +57,7 @@ const VOYAGING_LIGHT_POS: Record<TimeOfDay, [number, number, number]> = {
   night: MOON_POS,
 };
 
-/// 休憩中の流れの速さ(通常=1)。錨を下ろしたら止まりきらずに漂う程度まで落ちる。
+/// 休憩中の流れの速さ(通常=1)。止まりきらずに漂う程度まで落とす。
 const RESTING_FLOW = 0.12;
 
 // 航海中の空を旋回するカモメ。半径・高さ・大きさは、この構図(縦長・fov38)に
@@ -207,6 +208,8 @@ function VoyagingSea({
 
 export interface VoyagingWorldProps {
   itemName: string;
+  itemStyleToken: string;
+  itemSymbolToken: string;
   /// 走っている航海そのもの(休憩の状態を含む)。
   timer: RunningTimer;
   /// 目的地が設定されているか。遠くに島を出すかどうかだけに使う。
@@ -234,6 +237,8 @@ export interface VoyagingWorldProps {
 
 export default function VoyagingWorld({
   itemName,
+  itemStyleToken,
+  itemSymbolToken,
   timer,
   hasDestination,
   saving = false,
@@ -254,6 +259,7 @@ export default function VoyagingWorld({
   const timeOfDay = useTimeOfDay();
   const [note, setNote] = useState("");
   const [sound, setSound] = useState<SoundMode>(() => soundPref());
+  const [soundPickerOpen, setSoundPickerOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   // 海をタップすると、UIを消して世界だけにする(もう一度タップで戻る)。
   const [uiHidden, setUiHidden] = useState(false);
@@ -270,6 +276,22 @@ export default function VoyagingWorld({
   const phase = mode === "pomo" && !resting ? pomoPhase(sec) : null;
   // 自由計測は経過を数え上げ、ポモドーロは今の局面の残りを数え下げる。
   const display = phase ? clockLabel(phase.left) : clockLabel(sec);
+  const elapsedDisplay = clockLabel(sec);
+  const pomodoroDetail = phase
+    ? `${phase.inFocus ? t("focusLabel") : t("breakLabel")} · ${clockLabel(phase.left)}`
+    : t("timerOff");
+  const soundLabel = sound === "waves"
+    ? t("soundWaves")
+    : sound === "harbor_minuet_main_theme"
+      ? t("soundHarborMinuet")
+      : sound === "beacon_rondo"
+        ? t("soundBeaconRondo")
+        : sound === "celestial_navigation_nocturne"
+          ? t("soundCelestialNocturne")
+          : sound === "approaching_evolution"
+            ? t("soundApproachingEvolution")
+            : t("soundOff");
+  const tileColors = itemStyleColors(itemStyleToken);
 
   // 局面が変わったら知らせる。初回マウントでは鳴らさない。
   const prevPhase = useRef(phase?.key);
@@ -296,18 +318,19 @@ export default function VoyagingWorld({
 
   // BGM。航海の世界を見ているあいだ流れる(畳んでいるあいだは浮きピル側が受け持つ)。
   useEffect(() => {
+    if (completion || resting) {
+      stopSound();
+      return;
+    }
     startSound(sound);
     return () => stopSound();
-  }, [sound]);
+  }, [completion, resting, sound]);
 
-  const cycleSound = () => {
-    const next: SoundMode = sound === "off" ? "waves" : sound === "waves" ? "piano" : "off";
+  const selectSound = (next: SoundMode) => {
     setSoundPref(next);
     setSound(next);
+    setSoundPickerOpen(false);
   };
-
-  const soundLabel =
-    sound === "off" ? t("soundOff") : sound === "waves" ? t("soundWaves") : t("soundPiano");
 
   // 計測中の「戻る」は世界を畳む。完了後は戻り先のない浮きチップを作らず、
   // 明示ボタンと同じくホームへ戻す。
@@ -371,64 +394,127 @@ export default function VoyagingWorld({
       {!completion && (
         <div className={`voyaging-ui${uiHidden ? " hidden" : ""}`}>
           <div className="voyaging-top">
-            <div className="voyaging-heading">
-              <p className="voyaging-item">{itemName}</p>
-              <p className="voyaging-clock">{display}</p>
-              <p className="voyaging-phase">
-                {resting
-                  ? t("restingNow")
-                  : phase
-                    ? phase.inFocus
-                      ? t("focusLabel")
-                      : t("breakLabel")
-                    : t("voyagingNow")}
-              </p>
-              {/* 休憩。押すと時計が止まり、甲板の航海士が腰を下ろす。
-                  設定(下のチップ)でも記録の締め(下のパネル)でもない、
-                  この航海の途中の行動なので、時計のすぐ下に単独で置く。 */}
+            <div className="voyaging-header-row">
+              <div
+                className="voyaging-item-art"
+                style={{ background: tileColors.bg }}
+                aria-hidden="true"
+              >
+                <TileSymbolSvg
+                  symbol={normalizeSymbol(itemSymbolToken)}
+                  fg={tileColors.fg}
+                  bg={tileColors.bg}
+                />
+              </div>
+
+              <div className="voyaging-identity">
+                <p className="voyaging-status">
+                  <span className={`voyaging-status-dot${resting ? " resting" : ""}`} />
+                  <span>
+                    {resting
+                      ? t("restingNow")
+                      : phase
+                        ? phase.inFocus
+                          ? t("focusLabel")
+                          : t("breakLabel")
+                        : t("voyagingNow")}
+                  </span>
+                </p>
+                <p className="voyaging-item">{itemName}</p>
+              </div>
+
+              <div className="voyaging-elapsed">
+                <p>{t("elapsedLabel")}</p>
+                <strong>{elapsedDisplay}</strong>
+              </div>
+
               <button
-                className={`voyaging-break${resting ? " on" : ""}`}
+                type="button"
+                className="voyaging-minimize"
+                onClick={onDiscard}
+                aria-label={t("discardVoyage")}
+              >
+                <span aria-hidden="true">×</span>
+              </button>
+            </div>
+
+            <div className="voyaging-divider" />
+
+            <div className="voyaging-commands">
+              <button
+                type="button"
+                className={`voyaging-command${resting ? " active" : ""}`}
                 onClick={() => {
-                  // 休憩ぶんはこの瞬間に引かれる。1秒ごとの now のままだと
-                  // 再開した瞬間だけ時計が1秒巻き戻って見えるので、取り直す。
                   setNow(Date.now());
                   onToggleBreak();
                 }}
               >
-                {resting ? t("endBreak") : t("takeBreak")}
+                <span className="voyaging-command-head">
+                  <TimerCommandIcon name={resting ? "play" : "pause"} />
+                  {resting && <span className="voyaging-command-dot" />}
+                </span>
+                <span className="voyaging-command-title">
+                  {resting ? t("endBreak") : t("takeBreak")}
+                </span>
+                <span className="voyaging-command-detail">
+                  {resting ? t("returnLabel") : t("breakActionLabel")}
+                </span>
               </button>
-              {/* 航海の「進み方」の設定。下の行動(記録する/やめる)とは別ものなので、
-                  時計のそばに小さく置いて混ぜない。 */}
-              <div className="voyaging-modes">
-                <button
-                  className={`voyaging-mode${mode === "pomo" ? " on" : ""}`}
-                  onClick={onToggleMode}
-                  aria-pressed={mode === "pomo"}
-                >
-                  {t("pomodoroChip")}
-                </button>
-                <button className="voyaging-mode" onClick={cycleSound}>
-                  {soundLabel}
-                </button>
-              </div>
-              {/* 見渡せること・世界だけにできることを知らせる。 */}
-              <p className="voyaging-hint">{t("lookAroundHint")}</p>
+
+              <button
+                type="button"
+                className={`voyaging-command${mode === "pomo" ? " active" : ""}`}
+                onClick={onToggleMode}
+                aria-pressed={mode === "pomo"}
+              >
+                <span className="voyaging-command-head">
+                  <TimerCommandIcon name="timer" />
+                  {mode === "pomo" && <span className="voyaging-command-dot" />}
+                </span>
+                <span className="voyaging-command-title">{t("pomodoroLabel")}</span>
+                <span className="voyaging-command-detail">{pomodoroDetail}</span>
+              </button>
+
+              <button
+                type="button"
+                className={`voyaging-command${soundPickerOpen || sound !== "off" ? " active" : ""}`}
+                onClick={() => setSoundPickerOpen((open) => !open)}
+                aria-haspopup="listbox"
+                aria-expanded={soundPickerOpen}
+                aria-label={`${t("bgm")}: ${soundLabel}`}
+              >
+                <span className="voyaging-command-head">
+                  <TimerCommandIcon name="music" />
+                  {(soundPickerOpen || sound !== "off") && <span className="voyaging-command-dot" />}
+                </span>
+                <span className="voyaging-command-title">{t("bgm")}</span>
+                <span className="voyaging-command-detail">{soundLabel}</span>
+              </button>
             </div>
-            <button className="voyage-world-close" onClick={onMinimize}>
-              {t("close")}
-            </button>
+
+            {soundPickerOpen && (
+              <VoyageSoundList
+                value={sound}
+                onChange={selectSound}
+                className="voyaging-sound-list"
+              />
+            )}
           </div>
 
-          {/* 下のパネルは「この航海をどうするか」だけ。 */}
           <div className="voyaging-panel">
-            <input
-              className="field"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder={t("noteOptional")}
-              maxLength={120}
-              aria-label={t("noteOptional")}
-            />
+            <label className="voyaging-note-row">
+              <svg className="voyaging-note-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4.5 18.9 6 14.4 15.8 4.6a1.6 1.6 0 0 1 2.3 0l1.3 1.3a1.6 1.6 0 0 1 0 2.3L9.6 18l-4.5 1.5Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+                <path d="m14.4 6 3.6 3.6M6 14.4 9.6 18" fill="none" stroke="currentColor" strokeWidth="1.7" />
+              </svg>
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder={t("noteOptional")}
+                maxLength={120}
+                aria-label={t("noteOptional")}
+              />
+            </label>
             <button
               className="primary-button voyaging-record"
               onClick={() => onFinish(note)}
@@ -439,9 +525,6 @@ export default function VoyagingWorld({
             <div className="voyaging-alt">
               <button className="voyaging-link" onClick={onManual}>
                 {t("enterByHand")}
-              </button>
-              <button className="voyaging-link danger" onClick={onDiscard}>
-                {t("discardVoyage")}
               </button>
             </div>
           </div>
@@ -459,6 +542,33 @@ export default function VoyagingWorld({
         />
       )}
     </div>
+  );
+}
+
+function TimerCommandIcon({ name }: { name: "pause" | "play" | "timer" | "music" }) {
+  return (
+    <svg className={`voyaging-command-icon ${name}`} viewBox="0 0 24 24" aria-hidden="true">
+      {name === "pause" && (
+        <>
+          <rect x="7" y="5" width="3.4" height="14" rx="1.2" fill="currentColor" />
+          <rect x="13.6" y="5" width="3.4" height="14" rx="1.2" fill="currentColor" />
+        </>
+      )}
+      {name === "play" && <path d="M8 5.5 18 12 8 18.5Z" fill="currentColor" />}
+      {name === "music" && (
+        <>
+          <path d="M10 17.3V6.6l8-1.7v9.7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          <ellipse cx="7.5" cy="18" rx="2.6" ry="2" fill="currentColor" />
+          <ellipse cx="15.5" cy="15.2" rx="2.6" ry="2" fill="currentColor" />
+        </>
+      )}
+      {name === "timer" && (
+        <>
+          <circle cx="12" cy="13" r="7.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          <path d="M12 13V8.5M9.5 3.5h5M12 3.5v2" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </>
+      )}
+    </svg>
   );
 }
 

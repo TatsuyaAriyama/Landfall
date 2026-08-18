@@ -11,6 +11,11 @@ const TIMER_START_KEY = "timer.startedAt";
 const TIMER_MODE_KEY = "timer.mode";
 const TIMER_BREAK_MS_KEY = "timer.breakMs";
 const TIMER_BREAK_AT_KEY = "timer.breakStartedAt";
+export const TIMER_STATE_EVENT = "landfall:timer-state";
+
+function announceTimerState(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(TIMER_STATE_EVENT));
+}
 
 export type TimerMode = "free" | "pomo";
 
@@ -56,6 +61,7 @@ export function writeTimer(t: RunningTimer): void {
   } else {
     storage.remove(TIMER_BREAK_AT_KEY);
   }
+  announceTimerState();
 }
 
 export function eraseTimer(): void {
@@ -64,9 +70,10 @@ export function eraseTimer(): void {
   storage.remove(TIMER_MODE_KEY);
   storage.remove(TIMER_BREAK_MS_KEY);
   storage.remove(TIMER_BREAK_AT_KEY);
+  announceTimerState();
 }
 
-/// いま休憩中か(錨を下ろしているか)。
+/// いま休憩中か。
 export function isOnBreak(t: RunningTimer): boolean {
   return t.breakStartedAt !== null;
 }

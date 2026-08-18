@@ -1,40 +1,61 @@
-import { Component, lazy, Suspense, useEffect, useState } from "react";
+import { Component, lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useAuthUser, useUserData } from "./data";
 import { SignInView } from "./views/SignInView";
 import { TodayView } from "./views/TodayView";
-import { BrandMark, TileSymbolSvg } from "./symbols";
+import { TileSymbolSvg } from "./symbols";
 import type { ReactNode } from "react";
 import type { TileSymbolToken } from "./types";
 import { OfflineWatcher, OverlayHost } from "./overlays";
 import { t } from "./i18n";
 import { demoData, isDemo } from "./demo";
+import { PlayerProfile } from "./profile";
+import { useBodyScrollLock } from "./scrollLock";
 import { useTimeOfDay } from "./timeOfDay";
-import { whenIdle } from "./idle";
+import {
+  HOME_MUSIC_PREF_EVENT,
+  HOME_WAVES_PREF_EVENT,
+  homeMusicEnabled,
+  homeWavesEnabled,
+  startBackgroundMusic,
+  startWaveAmbience,
+  stopBackgroundMusic,
+  stopWaveAmbience,
+} from "./audio";
+import { readTimer, TIMER_STATE_EVENT } from "./timer";
 
-type Tab = "today" | "trace" | "logbook" | "boat" | "harbor";
+type Tab = "today" | "logbook" | "boat" | "harbor";
+type MenuDestination = "island" | Exclude<Tab, "today">;
 
-const TABS: Tab[] = ["today", "trace", "logbook", "boat", "harbor"];
+const TABS: Tab[] = ["today", "logbook", "boat", "harbor"];
 
 const TAB_ITEMS: { key: Tab; label: Parameters<typeof t>[0]; symbol: TileSymbolToken }[] = [
   { key: "today", label: "today", symbol: "wheel" },
-  { key: "trace", label: "trace", symbol: "compass" },
   { key: "logbook", label: "logbook", symbol: "book" },
-  { key: "boat", label: "boatTab", symbol: "attire" },
-  { key: "harbor", label: "harbor", symbol: "sailboat" },
+  { key: "boat", label: "boatTab", symbol: "sailboat" },
+  { key: "harbor", label: "harbor", symbol: "lighthouse" },
+];
+
+const MENU_ITEMS: Array<{
+  key: MenuDestination;
+  label?: Parameters<typeof t>[0];
+  subtitle: Parameters<typeof t>[0];
+  symbol: TileSymbolToken;
+}> = [
+  { key: "island", subtitle: "islandMenuSubtitle", symbol: "island" },
+  { key: "harbor", label: "harbor", subtitle: "harborMenuSubtitle", symbol: "lighthouse" },
+  { key: "logbook", label: "logbook", subtitle: "logbookMenuSubtitle", symbol: "book" },
+  { key: "boat", label: "boatTab", subtitle: "styleMenuSubtitle", symbol: "sailboat" },
 ];
 
 // ホーム以外は初期表示に含めない。動的 import 自体が同じ Promise を再利用するため、
 // 指を置いた瞬間に先読みしても、クリック後の描画と二重取得にはならない。
-const loadTraceView = () => import("./views/TraceView");
 const loadLogbookView = () => import("./views/LogbookView");
 const loadBoatStudio = () => import("./views/BoatStudio");
 const loadHarborView = () => import("./views/HarborView");
 const loadSettingsDialog = () => import("./views/SettingsDialog");
+const loadHelpDialog = () => import("./views/HelpDialog");
 const loadVoyagePassDialog = () => import("./views/VoyagePassDialog");
 
-const TraceView = lazy(() =>
-  loadTraceView().then(({ TraceView: view }) => ({ default: view })),
-);
 const LogbookView = lazy(() =>
   loadLogbookView().then(({ LogbookView: view }) => ({ default: view })),
 );
@@ -45,28 +66,12 @@ const HarborView = lazy(() =>
 const SettingsDialog = lazy(() =>
   loadSettingsDialog().then(({ SettingsDialog: view }) => ({ default: view })),
 );
+const HelpDialog = lazy(() =>
+  loadHelpDialog().then(({ HelpDialog: view }) => ({ default: view })),
+);
 const VoyagePassDialog = lazy(() =>
   loadVoyagePassDialog().then(({ VoyagePassDialog: view }) => ({ default: view })),
 );
-
-function preloadTab(tab: Tab) {
-  const connection = (
-    navigator as Navigator & {
-      connection?: { saveData?: boolean; effectiveType?: string };
-    }
-  ).connection;
-  if (
-    connection?.saveData ||
-    connection?.effectiveType === "slow-2g" ||
-    connection?.effectiveType === "2g"
-  ) {
-    return;
-  }
-  if (tab === "trace") void loadTraceView();
-  if (tab === "logbook") void loadLogbookView();
-  if (tab === "boat") void loadBoatStudio();
-  if (tab === "harbor") void loadHarborView();
-}
 
 function ViewLoading() {
   return (
@@ -86,6 +91,127 @@ function DialogLoading() {
     <div className="overlay" role="status" aria-label={t("loading")}>
       <div className="dialog dialog-loading">
         <ViewLoading />
+      </div>
+    </div>
+  );
+}
+
+function preloadMenuDestination(destination: MenuDestination) {
+  if (destination === "island") void import("./three/VoyageWorld");
+  if (destination === "harbor") void loadHarborView();
+  if (destination === "logbook") void loadLogbookView();
+  if (destination === "boat") void loadBoatStudio();
+}
+
+function HomeCommandMenu({
+  onClose,
+  onDestination,
+  onHelp,
+  onSettings,
+}: {
+  onClose: () => void;
+  onDestination: (destination: MenuDestination) => void;
+  onHelp: () => void;
+  onSettings: () => void;
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  useBodyScrollLock();
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const selector = 'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>(selector)];
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLElement>(selector)?.focus());
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      previouslyFocused?.focus();
+    };
+  }, []);
+
+  return (
+    <div className="home-command-layer">
+      <button
+        type="button"
+        className="home-command-backdrop"
+        onClick={onClose}
+        aria-label={t("close")}
+      />
+      <div
+        ref={dialogRef}
+        className="home-command-menu"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("mainNavigation")}
+      >
+        <span className="home-command-corner top" aria-hidden="true" />
+        <span className="home-command-corner bottom" aria-hidden="true" />
+        <nav className="home-command-grid" aria-label={t("mainNavigation")}>
+          {MENU_ITEMS.map(({ key, label, subtitle, symbol }) => {
+            const title = key === "island" ? PlayerProfile.islandName : t(label!);
+            return (
+              <button
+                key={key}
+                className="home-command-card"
+                onPointerEnter={() => preloadMenuDestination(key)}
+                onFocus={() => preloadMenuDestination(key)}
+                onClick={() => onDestination(key)}
+                aria-label={`${title} · ${t(subtitle)}`}
+              >
+                <span className="home-command-card-head">
+                  <span className="home-command-card-icon" aria-hidden="true">
+                    <TileSymbolSvg symbol={symbol} fg="currentColor" bg="transparent" />
+                  </span>
+                  <span className="home-command-arrow" aria-hidden="true">↗</span>
+                </span>
+                <strong>{title}</strong>
+                <small>{t(subtitle)}</small>
+              </button>
+            );
+          })}
+        </nav>
+        <div className="home-command-actions">
+          <button
+            className="home-command-action"
+            onPointerEnter={() => void loadHelpDialog()}
+            onFocus={() => void loadHelpDialog()}
+            onClick={onHelp}
+          >
+            <span className="home-command-action-icon help" aria-hidden="true">?</span>
+            <span>{t("help")}</span>
+            <span className="home-command-chevron" aria-hidden="true">›</span>
+          </button>
+          <button
+            className="home-command-action"
+            onPointerEnter={() => void loadSettingsDialog()}
+            onFocus={() => void loadSettingsDialog()}
+            onClick={onSettings}
+          >
+            <span className="home-command-action-icon settings" aria-hidden="true"><i /><i /><i /></span>
+            <span>{t("settings")}</span>
+            <span className="home-command-chevron" aria-hidden="true">›</span>
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -154,6 +280,12 @@ function Main({ uid }: { uid: string }) {
   const [tab, setTabState] = useState<Tab>(() => initialTab());
   const [inviteCode] = useState(() => initialInviteCode());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [openDestinationToken, setOpenDestinationToken] = useState(0);
+  const [backgroundMusicOn, setBackgroundMusicOn] = useState(homeMusicEnabled);
+  const [waveAmbienceOn, setWaveAmbienceOn] = useState(homeWavesEnabled);
+  const [timerRunning, setTimerRunning] = useState(() => readTimer() !== null);
   const [voyagePassOpen, setVoyagePassOpen] = useState(() =>
     new URLSearchParams(window.location.search).has("voyage-pass"),
   );
@@ -161,16 +293,65 @@ function Main({ uid }: { uid: string }) {
   const live = useUserData(uid, !isDemo);
   const data = isDemo ? demoData() : live;
 
-  // よく使う軽い2画面だけ、初期描画後の空き時間に準備する。
-  // 3Dを含む装い・港は、ユーザーが触れるまでネットワークを使わない。
-  useEffect(
-    () =>
-      whenIdle(() => {
-        void loadTraceView();
-        void loadLogbookView();
-      }),
-    [],
-  );
+  useEffect(() => {
+    const syncMusicPreference = () => setBackgroundMusicOn(homeMusicEnabled());
+    const syncWavesPreference = () => setWaveAmbienceOn(homeWavesEnabled());
+    const syncTimer = () => setTimerRunning(readTimer() !== null);
+    const syncStorage = () => {
+      syncMusicPreference();
+      syncWavesPreference();
+      syncTimer();
+    };
+    window.addEventListener(HOME_MUSIC_PREF_EVENT, syncMusicPreference);
+    window.addEventListener(HOME_WAVES_PREF_EVENT, syncWavesPreference);
+    window.addEventListener(TIMER_STATE_EVENT, syncTimer);
+    window.addEventListener("storage", syncStorage);
+    return () => {
+      window.removeEventListener(HOME_MUSIC_PREF_EVENT, syncMusicPreference);
+      window.removeEventListener(HOME_WAVES_PREF_EVENT, syncWavesPreference);
+      window.removeEventListener(TIMER_STATE_EVENT, syncTimer);
+      window.removeEventListener("storage", syncStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    const syncWaves = () => {
+      if (waveAmbienceOn && !timerRunning && !document.hidden) startWaveAmbience();
+      else stopWaveAmbience();
+    };
+    syncWaves();
+    document.addEventListener("visibilitychange", syncWaves);
+    window.addEventListener("pointerdown", syncWaves, { capture: true });
+    window.addEventListener("keydown", syncWaves, { capture: true });
+    return () => {
+      document.removeEventListener("visibilitychange", syncWaves);
+      window.removeEventListener("pointerdown", syncWaves, { capture: true });
+      window.removeEventListener("keydown", syncWaves, { capture: true });
+      stopWaveAmbience();
+    };
+  }, [waveAmbienceOn, timerRunning]);
+
+  useEffect(() => {
+    const syncPlayback = () => {
+      if (backgroundMusicOn && !timerRunning && !document.hidden) {
+        startBackgroundMusic();
+      } else {
+        stopBackgroundMusic();
+      }
+    };
+    // 自動再生できる環境ではそのまま開始。拒否されたブラウザでは、最初の操作を
+    // 同じ関数へ渡してユーザー操作のコンテキスト内で再試行する。
+    syncPlayback();
+    document.addEventListener("visibilitychange", syncPlayback);
+    window.addEventListener("pointerdown", syncPlayback, { capture: true });
+    window.addEventListener("keydown", syncPlayback, { capture: true });
+    return () => {
+      document.removeEventListener("visibilitychange", syncPlayback);
+      window.removeEventListener("pointerdown", syncPlayback, { capture: true });
+      window.removeEventListener("keydown", syncPlayback, { capture: true });
+      stopBackgroundMusic();
+    };
+  }, [backgroundMusicOn, timerRunning]);
 
   useEffect(() => {
     const colors = {
@@ -189,7 +370,7 @@ function Main({ uid }: { uid: string }) {
   }, [timeOfDay]);
 
   const setTab = (next: Tab) => {
-    preloadTab(next);
+    setMenuOpen(false);
     setTabState(next);
     if (!isDemo) history.replaceState(null, "", `#${next}`);
     window.requestAnimationFrame(() => {
@@ -198,6 +379,17 @@ function Main({ uid }: { uid: string }) {
         behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
       });
     });
+  };
+
+  const openMenuDestination = (destination: MenuDestination) => {
+    if (destination === "island") {
+      setMenuOpen(false);
+      setTabState("today");
+      setOpenDestinationToken((token) => token + 1);
+      if (!isDemo) history.replaceState(null, "", "#today");
+      return;
+    }
+    setTab(destination);
   };
 
   const closeVoyagePass = () => {
@@ -217,59 +409,49 @@ function Main({ uid }: { uid: string }) {
       <a className="skip-link" href="#main-content">
         {t("skipToContent")}
       </a>
-      <header className="topbar">
-        <span className="brand">
-          <BrandMark size={28} />
-          {t("appName")}
-        </span>
-        <div className="topbar-actions">
+      <header className={`topbar${tab === "harbor" || tab === "boat" ? " route-left" : ""}`}>
+        {tab === "today" ? (
           <button
-            className="voyage-pass-entry"
-            onPointerEnter={() => void loadVoyagePassDialog()}
-            onFocus={() => void loadVoyagePassDialog()}
-            onClick={() => setVoyagePassOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={voyagePassOpen}
+            className="home-menu-trigger"
+            onClick={() => setMenuOpen((open) => !open)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
           >
-            <span className="voyage-pass-entry-mark" aria-hidden="true">
-              <TileSymbolSvg symbol="compass" fg="#ffd84d" bg="#2c2a28" />
+            <span>{t("today")}</span>
+            <span className="home-menu-trigger-chevron" aria-hidden="true">
+              {menuOpen ? "⌃" : "⌄"}
             </span>
-            {t("voyagePass")}
           </button>
+        ) : tab === "boat" ? (
+          <button className="route-back-button" onClick={() => setTab("today")}>
+            <span aria-hidden="true">‹</span>
+            {t("back")}
+          </button>
+        ) : (
           <button
-            className="quiet-button"
-            onPointerEnter={() => void loadSettingsDialog()}
-            onFocus={() => void loadSettingsDialog()}
-            onTouchStart={() => void loadSettingsDialog()}
-            onClick={() => setSettingsOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={settingsOpen}
+            className="route-close-button"
+            onClick={() => setTab("today")}
+            aria-label={t("close")}
           >
-            {t("settings")}
+            ×
           </button>
-        </div>
+        )}
       </header>
 
-      {/* タブ。航海の語彙のアイコン+水平線のような選択インジケータ。
-          モバイルでは画面下のタブバー(アイコン+小ラベルの縦積み)になる。 */}
-      <nav className="tabs" aria-label={t("mainNavigation")}>
-        {TAB_ITEMS.map(({ key, label, symbol }) => (
-          <button
-            key={key}
-            className={`tab${tab === key ? " selected" : ""}`}
-            onPointerEnter={() => preloadTab(key)}
-            onFocus={() => preloadTab(key)}
-            onTouchStart={() => preloadTab(key)}
-            onClick={() => setTab(key)}
-            aria-current={tab === key ? "page" : undefined}
-          >
-            <span className="tab-icon" aria-hidden="true">
-              <TileSymbolSvg symbol={symbol} fg="currentColor" bg="var(--paper)" />
-            </span>
-            <span className="tab-label">{t(label)}</span>
-          </button>
-        ))}
-      </nav>
+      {menuOpen && (
+        <HomeCommandMenu
+          onClose={() => setMenuOpen(false)}
+          onDestination={openMenuDestination}
+          onHelp={() => {
+            setMenuOpen(false);
+            setHelpOpen(true);
+          }}
+          onSettings={() => {
+            setMenuOpen(false);
+            setSettingsOpen(true);
+          }}
+        />
+      )}
 
       <span className="sr-only" role="status" aria-live="polite">
         {t("tabChanged").replace("{tab}", t(TAB_ITEMS.find((item) => item.key === tab)!.label))}
@@ -289,9 +471,13 @@ function Main({ uid }: { uid: string }) {
         ) : !data.ready ? (
           <ViewLoading />
         ) : tab === "today" ? (
-          <TodayView uid={uid} data={data} />
-        ) : tab === "trace" ? (
-          <TraceView uid={uid} data={data} />
+          <TodayView
+            uid={uid}
+            data={data}
+            timeOfDay={timeOfDay}
+            navigationOpen={menuOpen}
+            openDestinationToken={openDestinationToken}
+          />
         ) : tab === "logbook" ? (
           <LogbookView uid={uid} data={data} />
         ) : tab === "boat" ? (
@@ -308,7 +494,20 @@ function Main({ uid }: { uid: string }) {
 
       {settingsOpen && (
         <Suspense fallback={<DialogLoading />}>
-          <SettingsDialog uid={uid} data={data} onClose={() => setSettingsOpen(false)} />
+          <SettingsDialog
+            uid={uid}
+            data={data}
+            onClose={() => setSettingsOpen(false)}
+            onVoyagePass={() => {
+              setSettingsOpen(false);
+              setVoyagePassOpen(true);
+            }}
+          />
+        </Suspense>
+      )}
+      {helpOpen && (
+        <Suspense fallback={<DialogLoading />}>
+          <HelpDialog onClose={() => setHelpOpen(false)} />
         </Suspense>
       )}
       {voyagePassOpen && (

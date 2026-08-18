@@ -28,6 +28,7 @@ import { deleteSession, recordSession, saveItem, type UserData } from "../data";
 import { TileSymbolSvg } from "../symbols";
 import { ItemEditor } from "./ItemEditor";
 import { DestinationsSection } from "./DestinationsSection";
+import { VoyageSoundPicker } from "./VoyageSoundPicker";
 import { Modal, askConfirm, showToast } from "../overlays";
 import { storage } from "../storage";
 import { durationLabel, lang, t, tf } from "../i18n";
@@ -50,6 +51,8 @@ import { canUseWebGL } from "../webgl";
 import { useDragReorder } from "../dragReorder";
 import { useFloatingDrag } from "../floatingDrag";
 import { whenIdle } from "../idle";
+import { destinationProgress } from "../destinations";
+import type { TimeOfDay } from "../timeOfDay";
 
 // 航海の世界は three.js を含んで重いので、初期描画と競合させない。
 // 空き時間か、タイルへ指を置いた瞬間から読み込み、押した後の待ちを短くする。
@@ -62,6 +65,7 @@ function preloadVoyagingWorld() {
   if (canUseWebGL()) void loadVoyagingWorld();
 }
 const VoyagingWorld = lazy(loadVoyagingWorld);
+const HomeWorld = lazy(() => import("../three/HomeWorld"));
 
 /// 3Dの描画に失敗しても計測は続けたい。世界だけ畳んでチップに戻す。
 class VoyagingErrorBoundary extends Component<
@@ -104,9 +108,22 @@ function lastUsedMinutes(): number | null {
 
 // 計測の状態は timer.ts に集約(航海中の世界と共有する)。
 
-export function TodayView({ uid, data }: { uid: string; data: UserData }) {
+export function TodayView({
+  uid,
+  data,
+  timeOfDay,
+  navigationOpen = false,
+  openDestinationToken = 0,
+}: {
+  uid: string;
+  data: UserData;
+  timeOfDay: TimeOfDay;
+  navigationOpen?: boolean;
+  openDestinationToken?: number;
+}) {
   const [recording, setRecording] = useState<StudyItem | null>(null);
   const [creating, setCreating] = useState(false);
+  const [editingItem, setEditingItem] = useState<StudyItem | null>(null);
   const [timer, setTimer] = useState<RunningTimer | null>(() => readTimer());
   // 航海の世界を開いているか。閉じても計測は続く(チップから戻れる)。
   const [voyaging, setVoyaging] = useState(false);
@@ -115,6 +132,8 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
   const [saving, setSaving] = useState(false);
   // 「時間を手で入れる」で開くときの初期値(測った分)。
   const [prefillMinutes, setPrefillMinutes] = useState<number | null>(null);
+  const [homeWorldFailed, setHomeWorldFailed] = useState(false);
+  const [destinationWorldOpen, setDestinationWorldOpen] = useState(false);
 
   // 読み込み済みの項目一覧から大元が消えたら、別端末からの削除を含めて
   // その項目を指す端末ローカルのタイマーも同時に畳む。
@@ -307,55 +326,84 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         : undefined,
     [completion],
   );
+  const activeDestination = data.destinations.find((destination) => !destination.achievedAt);
+  const homeRatio = activeDestination
+    ? destinationProgress(activeDestination, data.sessions).ratio
+    : 0;
 
   return (
-    <div>
-      <header className="today-dateline">
-        <span className="today-weekday">{weekday}</span>
-        <div className="today-title-row">
-          <h1 className="today-date">{monthDay}</h1>
-          {todayTotal > 0 && (
-            <span className="today-total">
-              {tf(t("todayTotalLabel"), { time: durationLabel(todayTotal) })}
-            </span>
-          )}
-        </div>
-      </header>
+    <div className="voyage-home">
+      {!homeWorldFailed && canUseWebGL() && (
+        <Suspense fallback={<div className="home-world-fallback" aria-hidden="true" />}>
+          <HomeWorld
+            ratio={homeRatio}
+            timeOfDay={timeOfDay}
+            paused={voyaging || destinationWorldOpen || navigationOpen}
+            onContextLost={() => setHomeWorldFailed(true)}
+          />
+        </Suspense>
+      )}
 
-      <DestinationsSection uid={uid} data={data} />
+      <div className="home-date-chip">
+        <span>{weekday}</span>
+        <strong>{monthDay}</strong>
+        {todayTotal > 0 && (
+          <small>{tf(t("todayTotalLabel"), { time: durationLabel(todayTotal) })}</small>
+        )}
+      </div>
 
-      <p className="section-label">{t("items")}</p>
-      {data.items.length === 0 && <p className="empty-note">{t("emptyToday")}</p>}
-      <div className="tile-grid">
+      <DestinationsSection
+        uid={uid}
+        data={data}
+        variant="home"
+        openToken={openDestinationToken}
+        onImmersiveChange={setDestinationWorldOpen}
+      />
+
+      <div className="voyage-home-sections">
+        <p className="section-label">{t("items")}</p>
+        {data.items.length === 0 && <p className="empty-note">{t("emptyToday")}</p>}
+        <div className="tile-grid">
         {orderedItems.map((item) => {
           const style = itemStyleColors(item.styleToken);
           const lifted = item.id === reorder.liftedId ? " lifted" : "";
           const timing = timer?.itemId === item.id;
           const totalMin = totalByItem.get(item.id) ?? 0;
           return (
-            <button
+            <div
               key={item.id}
               className={`tile${lifted}${timing ? " timing" : ""}`}
               onPointerEnter={preloadVoyagingWorld}
-              onFocus={preloadVoyagingWorld}
-              onTouchStart={preloadVoyagingWorld}
-              onClick={() => void openOrStart(item)}
               {...reorder.tileProps(item.id)}
             >
-              <div className="tile-art" style={{ background: style.bg }}>
-                <TileSymbolSvg
-                  symbol={normalizeSymbol(item.symbolToken)}
-                  fg={style.fg}
-                  bg={style.bg}
-                />
-              </div>
-              <span className="tile-name">
+              <button
+                type="button"
+                className="tile-art-button"
+                onFocus={preloadVoyagingWorld}
+                onTouchStart={preloadVoyagingWorld}
+                onClick={() => void openOrStart(item)}
+                aria-label={`${timing ? t("backToVoyage") : t("startVoyage")} · ${item.name}`}
+              >
+                <span className="tile-art" style={{ background: style.bg }}>
+                  <TileSymbolSvg
+                    symbol={normalizeSymbol(item.symbolToken)}
+                    fg={style.fg}
+                    bg={style.bg}
+                  />
+                </span>
+              </button>
+              <button
+                type="button"
+                className="tile-name"
+                onClick={() => setEditingItem(item)}
+                aria-label={`${t("editItem")} · ${item.name}`}
+              >
                 <span className="tile-name-text">{item.name}</span>
                 {totalMin > 0 && (
                   <span className="tile-today">{durationLabel(totalMin)}</span>
                 )}
-              </span>
-            </button>
+              </button>
+            </div>
           );
         })}
         <button
@@ -365,35 +413,36 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
         >
           +
         </button>
-      </div>
+        </div>
 
-      {todaySessions.length > 0 && (
-        <>
-          <p className="section-label">
-            {t("todaysLog")}
-          </p>
-          <div className="rows">
-            {todaySessions.map((s) => (
-              <SessionRow
-                key={s.id}
-                session={s}
-                item={s.itemUUID ? itemById.get(s.itemUUID) : undefined}
-                onDelete={async () => {
-                  if (
-                    await askConfirm({
-                      title: t("deleteSessionConfirm"),
-                      confirmLabel: t("delete"),
-                      danger: true,
-                    })
-                  ) {
-                    await deleteSession(uid, s, data);
-                  }
-                }}
-              />
-            ))}
-          </div>
-        </>
-      )}
+        {todaySessions.length > 0 && (
+          <>
+            <p className="section-label">
+              {t("todaysLog")}
+            </p>
+            <div className="rows">
+              {todaySessions.map((s) => (
+                <SessionRow
+                  key={s.id}
+                  session={s}
+                  item={s.itemUUID ? itemById.get(s.itemUUID) : undefined}
+                  onDelete={async () => {
+                    if (
+                      await askConfirm({
+                        title: t("deleteSessionConfirm"),
+                        confirmLabel: t("delete"),
+                        danger: true,
+                      })
+                    ) {
+                      await deleteSession(uid, s, data);
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* 航海中の世界。記録後も同じ海を残し、完了の一幕だけを重ねる。 */}
       {worldTimer && voyaging && canUseWebGL() && (
@@ -412,6 +461,8 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           >
             <VoyagingWorld
               itemName={activeItem?.name ?? ""}
+              itemStyleToken={activeItem?.styleToken ?? "midnight"}
+              itemSymbolToken={activeItem?.symbolToken ?? "compass"}
               timer={worldTimer}
               hasDestination={data.destinations.some((d) => !d.achievedAt)}
               saving={saving}
@@ -482,6 +533,15 @@ export function TodayView({ uid, data }: { uid: string; data: UserData }) {
           }}
         />
       )}
+      {editingItem && (
+        <ItemEditor
+          uid={uid}
+          item={editingItem}
+          nextSortOrder={editingItem.sortOrder}
+          data={data}
+          onClose={() => setEditingItem(null)}
+        />
+      )}
     </div>
   );
 }
@@ -549,7 +609,7 @@ function TimerChip({
   // 変えるたびに目的地・全タイル・今日の記録まで再描画されてしまう。
   const [now, setNow] = useState(Date.now);
   // 休憩中は時計が止まる(elapsedSecが休憩ぶんを引く)。止まった数字だけでは
-  // 事故に見えるので、局面の代わりに「錨を下ろしている」と出す。
+  // 計測を止めている間は、航海表現ではなく明確に「休憩中」と出す。
   const resting = isOnBreak(timer);
   const elapsed = elapsedSec(timer, now);
 
@@ -590,18 +650,18 @@ function TimerChip({
 
   // BGM。チップが出ている間だけ流れる。
   useEffect(() => {
+    if (resting) {
+      stopSound();
+      return;
+    }
     startSound(sound);
     return () => stopSound();
-  }, [sound]);
+  }, [resting, sound]);
 
-  const cycleSound = () => {
-    const next: SoundMode = sound === "off" ? "waves" : sound === "waves" ? "piano" : "off";
+  const selectSound = (next: SoundMode) => {
     setSoundPref(next);
     setSound(next);
   };
-
-  const soundLabel =
-    sound === "off" ? t("soundOff") : sound === "waves" ? t("soundWaves") : t("soundPiano");
 
   return (
     <div
@@ -624,14 +684,10 @@ function TimerChip({
         </span>
         <span className="timer-elapsed">{display}</span>
       </button>
-      <button
-        className="timer-sound"
-        data-no-floating-drag
-        onClick={cycleSound}
-        aria-label={soundLabel}
-      >
-        {soundLabel}
-      </button>
+      <VoyageSoundPicker
+        value={sound}
+        onChange={selectSound}
+      />
       {/* 休憩。世界を閉じて実際に作業しているときこそ要る操作なので、
           世界の中だけでなくここにも置く。 */}
       <button

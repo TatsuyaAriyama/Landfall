@@ -87,7 +87,7 @@ const DECK_GEO = new THREE.CylinderGeometry(1, 1, 0.06, 14);
 const MAST_GEO = new THREE.CylinderGeometry(0.035, 0.028, 2.3, 8);
 const BOOM_GEO = new THREE.CylinderGeometry(0.024, 0.024, 1.15, 8);
 const STRIPE_GEO = new THREE.TorusGeometry(1, 0.05, 8, 40);
-/// 船本体。ゆっくり上下+ロール+微ピッチで、錨泊中の揺れを再現する。
+/// 船本体。ゆっくり上下+ロール+微ピッチで、穏やかな海上の揺れを再現する。
 export default function BoatModel({ parts, animate }: { parts: BoatParts; animate: boolean }) {
   const sail = parts.sail ?? "#EADEBD";
   const jib = parts.jib ?? "#EADEBD";

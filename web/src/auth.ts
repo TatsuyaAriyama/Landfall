@@ -8,19 +8,11 @@ import {
   type AuthProvider,
 } from "firebase/auth";
 import { appleProvider, auth, googleProvider } from "./firebase";
+import { isEmbeddedWebViewUserAgent } from "./authStrategy";
 
-// 【重要】signInWithRedirect は使わない。
-//
-// かつては「モバイル Safari はポップアップが塞がれやすいのでリダイレクト」が定石だったが、
-// Safari 16.1+ / Chrome の Storage Partitioning により、認証ドメイン
-// (*.firebaseapp.com)と自サイト(aftide.app)が別オリジンの場合、
-// リダイレクトで戻ってきても認証状態を引き継げなくなった。
-// 結果、Googleのログイン画面までは進むのに、戻ると未サインインのまま——という
-// 「iPhone/iPadでログインできない」症状になる(Firebase 公式も既知の制約として、
-// カスタムドメイン運用では signInWithPopup を推奨している)。
-//
-// ポップアップはボタンのタップという明確なユーザー操作から直接開くため、
-// iOS Safari でもブロックされない。よって全環境でポップアップに統一する。
+// リダイレクト認証は使わない。Safari 16.1+などのストレージ分離では、
+// Firebase標準ドメインから自サイトへ戻る際に認証状態を引き継げないことがある。
+// ボタンの直接タップから開くポップアップに全環境を統一する。
 
 /// Instagram/LINE/X などアプリ内の埋め込みブラウザ(WebView)か。
 /// Google は WebView からの OAuth を仕様でブロックしており(disallowed_useragent)、
@@ -28,13 +20,7 @@ import { appleProvider, auth, googleProvider } from "./firebase";
 /// 案内するのが唯一の対処(iPhone/iPadで「サインインできない」の実例で多い原因)。
 export function isEmbeddedWebView(): boolean {
   if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent;
-  if (/FBAN|FBAV|Instagram|Line\/|MicroMessenger|TikTok/i.test(ua)) return true;
-  // X(Twitter)アプリの内蔵ブラウザ。
-  if (/Twitter/i.test(ua)) return true;
-  // Android の WebView 全般("; wv)" を名乗る)。iOS 版アプリ内ブラウザは上記個別UAで拾う。
-  if (/; wv\)/.test(ua)) return true;
-  return false;
+  return isEmbeddedWebViewUserAgent(navigator.userAgent);
 }
 
 /// この端末・状況で想定される、認証まわりの注意点(あれば)。
@@ -61,9 +47,8 @@ function ensurePersistence(): Promise<void> {
   return persistenceReady;
 }
 
-/// 過去にリダイレクト方式でサインインした人が戻ってきた場合の取り込み。
-/// 現在はポップアップ方式に統一したので通常は何もしないが、旧版で遷移した
-/// 途中の人を取りこぼさないために残す。失敗コードは呼び出し側で文言化する。
+/// モバイルのリダイレクト復帰と、旧版で遷移した途中の人を取り込む。
+/// 失敗コードは呼び出し側で文言化する。
 export async function completeRedirectSignIn(): Promise<string | null> {
   try {
     await ensurePersistence();
@@ -79,8 +64,7 @@ export async function completeRedirectSignIn(): Promise<string | null> {
 // disabled をすり抜けたイベントでポップアップが二重に開くのを防ぐ。
 let signInInFlight = false;
 
-/// 共通のサインイン。全環境でポップアップを使う(上のコメント参照:
-/// クロスドメインの signInWithRedirect は Safari/iOS で認証状態を引き継げない)。
+/// 共通のサインイン。直接のユーザー操作からポップアップを開く。
 async function signInWith(provider: AuthProvider): Promise<void> {
   if (signInInFlight) return;
   signInInFlight = true;

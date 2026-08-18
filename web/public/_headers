@@ -10,7 +10,7 @@
 # 全画面共通のブラウザー側防御。Google/Appleの認証ポップアップを保ったまま、
 # 埋め込み・MIME誤認・不要な端末権限・参照元の漏出を閉じる。
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com; font-src 'self' data:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://www.google.com https://www.recaptcha.net https://*.stripe.com; frame-src https://accounts.google.com https://appleid.apple.com https://*.firebaseapp.com https://www.google.com https://www.recaptcha.net https://*.stripe.com; worker-src 'self' blob:; manifest-src 'self'; form-action 'self' https://accounts.google.com https://appleid.apple.com https://*.stripe.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://apis.google.com https://www.gstatic.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.googleusercontent.com; font-src 'self' data:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com https://*.cloudfunctions.net https://www.google.com https://www.recaptcha.net https://*.stripe.com; frame-src 'self' https://accounts.google.com https://appleid.apple.com https://*.firebaseapp.com https://www.google.com https://www.recaptcha.net https://*.stripe.com; worker-src 'self' blob:; manifest-src 'self'; form-action 'self' https://accounts.google.com https://appleid.apple.com https://*.stripe.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; upgrade-insecure-requests
   Cross-Origin-Opener-Policy: same-origin-allow-popups
   Cross-Origin-Resource-Policy: same-site
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
@@ -48,6 +48,12 @@
   Cache-Control: public, max-age=31536000, immutable
 
 /models/navigator_main-v5.glb
+  Cache-Control: public, max-age=31536000, immutable
+
+/models/island_base.glb
+  Cache-Control: public, max-age=31536000, immutable
+
+/models/small_tree.glb
   Cache-Control: public, max-age=31536000, immutable
 
 /assets/*

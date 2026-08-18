@@ -36,7 +36,7 @@ import {
 } from "../destinations";
 import { newUUID } from "../types";
 import { askConfirm, showToast } from "../overlays";
-import { t } from "../i18n";
+import { t, tf } from "../i18n";
 import { useBackToClose } from "../backClose";
 import { useBodyScrollLock } from "../scrollLock";
 import { TAP_SLOP } from "./voyageConstants";
@@ -398,27 +398,26 @@ function WorldScene({
   const light = SEA_LIGHT[timeOfDay];
   // 夜は従来の密度(620個)を保ち、夕方は共有パレットの薄い星空へ比例させる。
   const starCount = Math.round(light.stars * (620 / SEA_LIGHT.night.stars));
-  // 近景の構図は画面の縦横比で決める。横長なら船と島の中間を見る。縦長は
-  // 視野が狭いので船寄り+少し引き、下部パネルに隠れないよう視線をやや
-  // 沈めて船を画面上寄りに置く(島は回して見つける楽しみに残す)。
+  // 島の制作中心を原点へ補正したうえで、船・航路・島が同時に見える距離を取る。
+  // 以前の近景は島の半径より内側まで入り、巨大な地面だけが画面を覆っていた。
   const size = useThree((s) => s.size);
   const near = useMemo(() => {
     const aspect = size.width / Math.max(size.height, 1);
     const wide = aspect >= 1.05;
-    const tx = boatX + (ISLAND_POS[0] - boatX) * (wide ? 0.5 : 0.08);
+    const tx = boatX + (ISLAND_POS[0] - boatX) * (wide ? 0.48 : 0.4);
     // カモメは注視点の真上を回らせる。見渡す操作(OrbitControls)の中心も同じ点
     // なので、どちらへ回しても空にカモメが残る。
     const gullCenter: [number, number, number] = [tx, 0, -0.5];
     return wide
       ? {
-          pos: new THREE.Vector3(tx - 1.2, 1.9, 5.4),
-          target: new THREE.Vector3(tx, 0.5, -0.5),
+          pos: new THREE.Vector3(tx - 4.0, 3.2, 13.0),
+          target: new THREE.Vector3(tx, 0.65, -0.5),
           maxPolar: Math.PI * 0.52,
           gullCenter,
         }
       : {
-          pos: new THREE.Vector3(tx - 1.0, 1.9, 7.2),
-          target: new THREE.Vector3(tx, -0.25, -0.5),
+          pos: new THREE.Vector3(tx - 3.4, 3.0, 14.5),
+          target: new THREE.Vector3(tx, 0.55, -0.5),
           maxPolar: Math.PI * 0.46,
           gullCenter,
         };
@@ -508,8 +507,8 @@ function WorldScene({
           target={[near.target.x, near.target.y, near.target.z]}
           enablePan={false}
           enableDamping
-          minDistance={3.2}
-          maxDistance={11}
+          minDistance={9}
+          maxDistance={22}
           minPolarAngle={Math.PI * 0.16}
           maxPolarAngle={near.maxPolar}
         />
@@ -553,7 +552,9 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
     dest?.steps && dest.steps.length > 0 ? "steps" : "date",
   );
   // ステップ目標の編集リスト(順序付き)。チェックの反転は即保存する。
-  const [steps, setSteps] = useState<DestinationStep[]>(() => dest?.steps ?? []);
+  const [steps, setSteps] = useState<DestinationStep[]>(() =>
+    (dest?.steps ?? []).slice(0, MAX_STEPS),
+  );
   const [dateStr, setDateStr] = useState(
     dest?.targetDate ? dateInputValue(dest.targetDate) : "",
   );
@@ -577,6 +578,9 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
   const trimmed = name.replace(/^[\s　]+|[\s　]+$/g, "");
   // 名前のあるステップだけを有効とみなす(空行は保存時に落とす)。
   const namedSteps = steps.filter((s) => s.name.trim().length > 0);
+  const completedStepCount = namedSteps.filter((s) => s.doneAt).length;
+  const allStepsComplete =
+    namedSteps.length > 0 && completedStepCount === namedSteps.length;
   // 締切。時刻を決めていなければ「その日いっぱい」(destinationDeadline と同じ解釈)。
   const targetDateValue = (): Date | undefined => {
     if (kind !== "date" || dateStr.length !== 10) return undefined;
@@ -607,12 +611,12 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
 
   // ---- 世界の配置(カードと同じ航路・島) ----
   // ステップ目標は「達成数/全数」で船が進む(編集中の局所stateを即反映)。
-  const stepDoneFlags: VoyageStep[] = steps.map((s) => ({
+  const stepDoneFlags: VoyageStep[] = namedSteps.map((s) => ({
     done: Boolean(s.doneAt),
     doneAt: s.doneAt,
   }));
-  const stepsRatio = steps.length
-    ? stepDoneFlags.filter((s) => s.done).length / steps.length
+  const stepsRatio = namedSteps.length
+    ? stepDoneFlags.filter((s) => s.done).length / namedSteps.length
     : 0;
   const ratio =
     kind === "steps"
@@ -677,8 +681,9 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
   // 名前と1件以上のステップが揃ったら、既存/新規を問わず同じIDへ確定する。
   // これにより保存ボタンを押さず「閉じる」で戻っても入力した航路が残る。
   const persistSteps = (next: DestinationStep[]) => {
-    setSteps(next);
-    if (trimmed.length > 0 && next.some((s) => s.name.trim().length > 0)) {
+    const bounded = next.slice(0, MAX_STEPS);
+    setSteps(bounded);
+    if (trimmed.length > 0 && bounded.some((s) => s.name.trim().length > 0)) {
       // fire-and-forget。局所stateは先に進めるが、保存失敗は知らせる。
       // saveDestination は setDoc(マージ無し)なので、渡さなかった項目は
       // ドキュメントから消える。チェックを1つ入れるたびに紐づく項目や達成日が
@@ -690,7 +695,7 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
             id: destinationIdRef.current,
             name: trimmed,
             itemUUID: dest?.itemUUID,
-            steps: next,
+            steps: bounded,
             createdAt: destinationCreatedAtRef.current,
             achievedAt: dest?.achievedAt,
           }),
@@ -703,6 +708,12 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
     if (kind === "steps") persistSteps(steps);
   };
   const toggleStep = (index: number) => {
+    const step = steps[index];
+    if (!step) return;
+    if (!step.name.trim()) {
+      document.getElementById(`voyage-step-${step.id}`)?.focus();
+      return;
+    }
     playPlink();
     persistSteps(
       steps.map((s, i) =>
@@ -710,13 +721,29 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
       ),
     );
   };
+  const focusStep = (id: string) => {
+    requestAnimationFrame(() => document.getElementById(`voyage-step-${id}`)?.focus());
+  };
+  const selectKind = (nextKind: "date" | "steps") => {
+    setKind(nextKind);
+    if (nextKind !== "steps" || steps.length > 0) return;
+    const first = { id: newUUID(), name: "" };
+    setSteps([first]);
+    focusStep(first.id);
+  };
   const addStep = () => {
-    // 上限は「名前の付いたステップ」で数える。空行まで数えると、保存時に落ちる
-    // 空行のせいで実際は20個未満なのに追加できなくなる。
-    if (namedSteps.length >= MAX_STEPS) return;
-    setSteps((list) => [...list, { id: newUUID(), name: "" }]);
+    const blank = steps.find((s) => s.name.trim().length === 0);
+    if (blank) {
+      focusStep(blank.id);
+      return;
+    }
+    if (steps.length >= MAX_STEPS) return;
+    const step = { id: newUUID(), name: "" };
+    setSteps((list) => [...list, step].slice(0, MAX_STEPS));
+    focusStep(step.id);
   };
   const removeStep = (index: number) => {
+    if (steps.length <= 1) return;
     persistSteps(steps.filter((_, i) => i !== index));
   };
   const renameStep = (index: number, value: string) => {
@@ -920,13 +947,13 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
           <div className="chip-row">
             <button
               className={`chip${kind === "date" ? " selected" : ""}`}
-              onClick={() => setKind("date")}
+              onClick={() => selectKind("date")}
             >
               {t("goalDateOption")}
             </button>
             <button
               className={`chip${kind === "steps" ? " selected" : ""}`}
-              onClick={() => setKind("steps")}
+              onClick={() => selectKind("steps")}
             >
               {t("goalStepsOption")}
             </button>
@@ -980,6 +1007,22 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
             ) : (
               <>
                 <p className="quest-intro">{t("goalStepsDesc")}</p>
+                <div className="step-progress" aria-live="polite">
+                  <div className="step-progress-copy">
+                    <span className={allStepsComplete ? "ready" : ""}>
+                      {tf(t("stepsProgress"), {
+                        done: completedStepCount,
+                        total: namedSteps.length,
+                      })}
+                    </span>
+                    <span>{tf(t("stepsLimit"), { count: steps.length, max: MAX_STEPS })}</span>
+                  </div>
+                  <progress
+                    max={Math.max(namedSteps.length, 1)}
+                    value={completedStepCount}
+                    aria-label={t("goalSteps")}
+                  />
+                </div>
                 <div className="step-list">
                   {steps.map((step, i) => (
                     <div key={step.id} className="step-entry">
@@ -988,6 +1031,7 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
                           type="button"
                           className={`step-check${step.doneAt ? " done" : ""}`}
                           onClick={() => toggleStep(i)}
+                          disabled={!step.name.trim()}
                           aria-pressed={Boolean(step.doneAt)}
                           aria-label={t("markDone")}
                         >
@@ -1002,9 +1046,12 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
                                 strokeLinejoin="round"
                               />
                             </svg>
-                          ) : null}
+                          ) : (
+                            <span aria-hidden="true">{i + 1}</span>
+                          )}
                         </button>
                         <input
+                          id={`voyage-step-${step.id}`}
                           className={`field step-input${step.doneAt ? " done" : ""}`}
                           value={step.name}
                           onChange={(e) => renameStep(i, e.target.value)}
@@ -1013,14 +1060,18 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
                           maxLength={60}
                           aria-label={t("goalSteps")}
                         />
-                        <button
-                          type="button"
-                          className="step-remove"
-                          onClick={() => removeStep(i)}
-                          aria-label={t("delete")}
-                        >
-                          ×
-                        </button>
+                        {steps.length > 1 ? (
+                          <button
+                            type="button"
+                            className="step-remove"
+                            onClick={() => removeStep(i)}
+                            aria-label={t("delete")}
+                          >
+                            ×
+                          </button>
+                        ) : (
+                          <span className="step-remove-spacer" aria-hidden="true" />
+                        )}
                       </div>
                       <label className="step-done-at">
                         <span>{t("stepScheduledAt")}</span>
@@ -1044,10 +1095,13 @@ export default function VoyageWorld({ dest, data, uid, onClose, onLand }: Voyage
                     </div>
                   ))}
                 </div>
-                {namedSteps.length < MAX_STEPS && (
+                {steps.length < MAX_STEPS && (
                   <button type="button" className="step-add" onClick={addStep}>
                     + {t("addStep")}
                   </button>
+                )}
+                {allStepsComplete && (
+                  <p className="step-ready">⚑ {t("stepsReady")}</p>
                 )}
               </>
             )}

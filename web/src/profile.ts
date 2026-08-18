@@ -1,5 +1,5 @@
 import { boatShareData } from "./boat";
-import { t } from "./i18n";
+import { t, tf } from "./i18n";
 import { dayId, trimAll } from "./types";
 import { storage } from "./storage";
 
@@ -28,6 +28,10 @@ export const PlayerProfile = {
   /// 表示名。未設定なら「船乗り」。
   get displayName(): string {
     return this.name || t("sailor");
+  },
+
+  get islandName(): string {
+    return tf(t("playerIslandName"), { name: this.displayName });
   },
 
   save(data: { name: string; styleToken: string; symbolToken: string; resolve: string }) {
