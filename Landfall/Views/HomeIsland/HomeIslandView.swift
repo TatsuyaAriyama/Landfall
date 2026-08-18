@@ -587,22 +587,28 @@ struct HomeIslandView: View {
 
             if mode != .departure, !showingHarborPanel {
                 VStack(spacing: 0) {
-                    if mode != .camera, !showingDestinationSetup {
-                        if showingBoatCustomization {
-                            boatCustomizationTopBar
-                        } else {
-                            topBar
+                    if mode != .camera {
+                        Group {
+                            if showingBoatCustomization {
+                                boatCustomizationTopBar
+                            } else {
+                                topBar
+                            }
                         }
+                        // 目的地を決めている間だけ姿を消す。行そのものは残す
+                        // ので、下の目的地の文字は押す前と同じ高さに座る。
+                        .opacity(showingDestinationSetup ? 0 : 1)
+                        .allowsHitTesting(!showingDestinationSetup)
                     }
                     if mode == .explore,
                        multiplayerSession?.isReadOnly != true,
                        !showingBoatCustomization,
-                       !showingDestinationSetup,
                        showsDestination {
                         destinationShortcut
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, compactTopHUD ? 8 : 12)
                             .padding(.top, compactTopHUD ? 6 : 8)
+                            .allowsHitTesting(!showingDestinationSetup)
                     }
                     if showingBoatCustomization || showingDestinationSetup {
                         EmptyView()
@@ -1001,43 +1007,41 @@ struct HomeIslandView: View {
         .safeAreaPadding(.top, 8)
     }
 
-    /// いま向かっている目的地。プレイヤーカードの真下に置き、決めてあれば
-    /// 名前と期日だけを小さく出す。押すと、この島から沖の目的地を見つめる。
+    /// いま向かっている目的地。プレイヤーカードの真下に置き、名前と期日を
+    /// 帯なしの文字だけで出す。空の色は決まっているので、名前は黒、期日は
+    /// 帰還と同じ橙で読ませる。押すと、この島から沖の目的地を見つめる。
     private var destinationShortcut: some View {
         Button {
             enterDestinationSetup()
         } label: {
-            HStack(spacing: compactTopHUD ? 7 : 9) {
-                Image(systemName: "mountain.2.fill")
-                    .font(.system(size: compactTopHUD ? 12 : 13, weight: .semibold))
-                    .foregroundStyle(LFColor.harborTeal)
-
+            VStack(alignment: .leading, spacing: 1) {
                 if let destination = activeDestination {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(verbatim: destination.name)
-                            .font(LFFont.copy(compactTopHUD ? 11.5 : 12))
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+                    Text(verbatim: destination.name)
+                        .font(LFFont.copy(compactTopHUD ? 14 : 16))
+                        .foregroundStyle(homeGlassInk)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
 
+                    if !destinationSubtitle.isEmpty {
                         Text(verbatim: destinationSubtitle)
-                            .font(LFFont.label(8))
-                            .foregroundStyle(homeGlassInk.opacity(0.58))
+                            .font(LFFont.label(compactTopHUD ? 11 : 12))
+                            .foregroundStyle(LFColor.returnOrange)
                             .lineLimit(1)
                     }
                 } else {
                     Text("Set a destination")
-                        .font(LFFont.copy(compactTopHUD ? 11.5 : 12))
+                        .font(LFFont.copy(compactTopHUD ? 14 : 16))
+                        .foregroundStyle(homeGlassInk.opacity(0.62))
                         .lineLimit(1)
                 }
             }
-            .foregroundStyle(homeGlassInk)
-            .padding(.horizontal, compactTopHUD ? 11 : 13)
-            .frame(minHeight: compactTopHUD ? 34 : 40)
+            // 島の緑や桟橋が上まで入り込む画角でも読めるよう、空の色の
+            // にじみだけ敷く。帯には戻さない。
+            .shadow(color: Color(uiColor: UIColor(rgb: 0x8BCFDB)).opacity(0.9), radius: 4)
+            .padding(.horizontal, compactTopHUD ? 4 : 6)
+            .frame(minHeight: compactTopHUD ? 34 : 40, alignment: .center)
             .frame(maxWidth: destinationShortcutMaxWidth, alignment: .leading)
-            .background(homeGlassBackground, in: Capsule())
-            .overlay(Capsule().stroke(homeGlassInk.opacity(0.12), lineWidth: 1))
-            .shadow(color: .black.opacity(0.12), radius: 8, y: 4)
-            .contentShape(Capsule())
+            .contentShape(Rectangle())
         }
         .buttonStyle(LFPressableButtonStyle())
         .accessibilityLabel(Text("Destinations"))
