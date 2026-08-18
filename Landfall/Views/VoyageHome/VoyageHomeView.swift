@@ -62,6 +62,12 @@ struct VoyageHomeView: View {
     @State private var privateIslandVisit: PrivateIslandRoom?
     @State private var queuedPrivateIslandVisit: PrivateIslandRoom?
     @StateObject private var hostedPrivateIsland = HostedPrivateIslandSessionCoordinator()
+    /// Which of the player's islands is live. The pass opens a second one, and
+    /// switching has to rebuild the scene, so the identity lives out here
+    /// rather than inside the island view that reads from it.
+    @StateObject private var islandSlots = HomeIslandSlotBook(
+        baseOwnerID: AuthService.shared.homeIslandOwnerID
+    )
     @FocusState private var workManifestKeyboardFocused: Bool
     @FocusState private var commandMenuKeyboardFocused: Bool
     @AccessibilityFocusState private var workManifestAccessibilityFocused: Bool
@@ -163,7 +169,7 @@ struct VoyageHomeView: View {
                 ZStack(alignment: .top) {
                     if timerVoyageItem == nil {
                         VoyageHomeIslandSceneHost(
-                            ownerID: auth.homeIslandOwnerID,
+                            ownerID: islandSlots.activeOwnerID,
                             levelProgress: PlayerLevelProgress(sessions: sessions),
                             boardingRequest: homeIslandBoardingRequest,
                             noticeBoardRequestID: noticeBoardRequestID,
@@ -176,7 +182,7 @@ struct VoyageHomeView: View {
                                 pendingLandingDestination = destination
                             }
                         )
-                        .id("\(auth.homeIslandOwnerID)-\(homeIslandSceneGeneration.uuidString)")
+                        .id("\(islandSlots.activeOwnerID)-\(homeIslandSceneGeneration.uuidString)")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .allowsHitTesting(
                             !showingWorkManifest && pendingIslandLaunchItem == nil
@@ -523,6 +529,9 @@ struct VoyageHomeView: View {
                   currentRoute == nil
             else { return }
             homeIslandSceneGeneration = UUID()
+        }
+        .onChange(of: auth.homeIslandOwnerID) { _, ownerID in
+            islandSlots.rebase(to: ownerID)
         }
         .onAppear {
             clearOrphanedTimer()

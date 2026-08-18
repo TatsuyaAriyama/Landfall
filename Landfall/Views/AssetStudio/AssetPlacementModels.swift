@@ -72,11 +72,12 @@ enum Asset3DCatalog {
         "stone_path_fork",
         "coastal_rocks",
         "navigator_tent",
-        "wooden_desk",
-        "wooden_chair",
         "weathered_crate",
         "harbor_lantern_post",
         "driftwood_bench",
+        "stone_bench",
+        "wooden_bookshelf",
+        "stacked_books",
         "weathered_anchor",
         "net_drying_rack",
         "navigator_hammock",
@@ -98,6 +99,8 @@ enum Asset3DCatalog {
         "swim_ring",
         "sandcastle",
         "watermelon",
+        "seaside_mailbox",
+        "seaside_gramophone",
         "landfall_boat",
         "navigator_main",
     ]
@@ -145,11 +148,12 @@ enum Asset3DCatalog {
         case "stone_path_fork": return String(localized: "Stone Path — Fork")
         case "coastal_rocks": return String(localized: "Coastal Rocks")
         case "navigator_tent": return String(localized: "Navigator's Tent")
-        case "wooden_desk": return String(localized: "Wooden Desk")
-        case "wooden_chair": return String(localized: "Wooden Chair")
         case "weathered_crate": return String(localized: "Weathered Crate")
         case "harbor_lantern_post": return String(localized: "Harbor Lantern Post")
         case "driftwood_bench": return String(localized: "Driftwood Bench")
+        case "stone_bench": return String(localized: "Stone Bench")
+        case "wooden_bookshelf": return String(localized: "Bookshelf")
+        case "stacked_books": return String(localized: "Stacked Books")
         case "weathered_anchor": return String(localized: "Weathered Anchor")
         case "net_drying_rack": return String(localized: "Net Drying Rack")
         case "navigator_hammock": return String(localized: "Navigator's Hammock")
@@ -171,6 +175,8 @@ enum Asset3DCatalog {
         case "swim_ring": return String(localized: "Swim Ring")
         case "sandcastle": return String(localized: "Sandcastle")
         case "watermelon": return String(localized: "Watermelon")
+        case "seaside_mailbox": return String(localized: "Seaside Mailbox")
+        case "seaside_gramophone": return String(localized: "Seaside Gramophone")
         case "landfall_boat": return "Landfall Boat"
         case "navigator_main": return "Navigator"
         default:
@@ -1560,6 +1566,64 @@ final class AssetPlacementStore: ObservableObject {
 enum AssetPlacementRuntime {
     static let placementSurfaceCategory = 1 << 12
 
+    /// Parsed USDZ roots, kept one per resource.
+    ///
+    /// Every prop used to re-parse its file: an island with ten trees paid the
+    /// tree's load ten times, all of it on the main thread while the first
+    /// frame waited. A prototype is parsed once and each placement gets a
+    /// clone, which shares the geometry instead of rebuilding it.
+    private static let prototypeLock = NSLock()
+    private static var prototypeCache: [String: SCNNode] = [:]
+
+    /// Parses the given resources on a background queue so the scene can be
+    /// built from warm cache entries. Safe to call repeatedly; already-cached
+    /// resources cost nothing.
+    static func preload(resourceNames: [String], bundle: Bundle = .main) {
+        let pending = Set(resourceNames).filter { name in
+            prototypeLock.lock()
+            defer { prototypeLock.unlock() }
+            return prototypeCache[name] == nil
+        }
+        guard !pending.isEmpty else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            for name in pending {
+                _ = prototype(resourceName: name, bundle: bundle)
+            }
+        }
+    }
+
+    /// The parsed, un-instanced root for a resource. Geometry only: physics
+    /// bodies and looping actions belong to each instance, so they are applied
+    /// after cloning rather than baked into the shared prototype.
+    private static func prototype(resourceName: String, bundle: Bundle) -> SCNNode? {
+        prototypeLock.lock()
+        let cached = prototypeCache[resourceName]
+        prototypeLock.unlock()
+        if let cached { return cached }
+
+        guard let url = bundle.url(forResource: resourceName, withExtension: "usdz") else {
+            return nil
+        }
+        let container = SCNNode()
+        if let reference = SCNReferenceNode(url: url) {
+            reference.load()
+            for child in reference.childNodes {
+                container.addChildNode(child)
+            }
+        } else if let scene = try? SCNScene(url: url, options: nil) {
+            for child in scene.rootNode.childNodes {
+                container.addChildNode(child)
+            }
+        } else {
+            return nil
+        }
+
+        prototypeLock.lock()
+        prototypeCache[resourceName] = container
+        prototypeLock.unlock()
+        return container
+    }
+
     /// ゲーム全体が表示する、現在の3Dスタジオ世界。
     /// 空のスタジオは旧来の島へフォールバックできるようnilを返す。
     static func makeActiveStudioWorldNode(bundle: Bundle = .main) -> SCNNode? {
@@ -1615,22 +1679,10 @@ enum AssetPlacementRuntime {
             return makeSmallLakeNode()
         }
 
-        guard let url = bundle.url(forResource: resourceName, withExtension: "usdz") else {
+        guard let prototype = prototype(resourceName: resourceName, bundle: bundle) else {
             return nil
         }
-
-        let node: SCNNode
-        if let reference = SCNReferenceNode(url: url) {
-            reference.load()
-            node = reference
-        } else {
-            guard let scene = try? SCNScene(url: url, options: nil) else { return nil }
-            let container = SCNNode()
-            for child in scene.rootNode.childNodes {
-                container.addChildNode(child.clone())
-            }
-            node = container
-        }
+        let node = prototype.clone()
 
         if Asset3DCatalog.providesPlacementSurface(for: resourceName) {
             let shape = SCNPhysicsShape(

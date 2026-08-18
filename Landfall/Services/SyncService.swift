@@ -146,12 +146,32 @@ final class SyncService {
         Task { try? await document.setData(payload, merge: false) }
     }
 
+    /// Slots with a cloud backup today. Mirrors `HomeIslandSlot`
+    /// (Views/HomeIsland/HomeIslandSlots.swift): index 1 is the original
+    /// island every existing install already has; index 2 is the
+    /// Voyage-Pass-gated second one.
+    private static let islandSlotIndices = [1, 2]
+
+    /// The account-scoped owner key for one slot, built the same way
+    /// `HomeIslandSlot.ownerID(base:)` builds the on-disk identity, so a
+    /// pushed snapshot's ownerKey always lines up with exactly one slot's
+    /// document. Slot 1 keeps the bare "firebase:<uid>" identity untouched.
+    private func islandOwnerKey(uid: String, slot: Int) -> String {
+        HomeIslandPersistence.ownerKey(for: HomeIslandSlot(index: slot).ownerID(base: "firebase:\(uid)"))
+    }
+
+    /// Accepts a snapshot from either slot and routes it to that slot's own
+    /// document. A snapshot whose ownerKey matches neither slot cannot be
+    /// attributed safely, so — exactly as before — it is dropped rather than
+    /// risking a write under the wrong identity.
     func pushHomeIslandSnapshot(_ snapshot: HomeIslandSnapshot) async {
         guard let uid,
-              snapshot.ownerKey == HomeIslandPersistence.ownerKey(for: "firebase:\(uid)")
+              let slot = Self.islandSlotIndices.first(where: {
+                  islandOwnerKey(uid: uid, slot: $0) == snapshot.ownerKey
+              })
         else { return }
-        UserDefaults.standard.set(true, forKey: islandPendingKey(uid))
-        let document = islandDocument(uid)
+        UserDefaults.standard.set(true, forKey: islandPendingKey(uid, slot: slot))
+        let document = islandDocument(uid, slot: slot)
         let payload = islandPayload(snapshot)
         Task { try? await document.setData(payload, merge: false) }
     }
@@ -203,17 +223,27 @@ final class SyncService {
         }
     }
 
+    /// Runs the same first-run reconcile independently for every slot, so a
+    /// stale or missing slot 2 backup can never block — or be blocked by —
+    /// slot 1's.
     private func resolveInitialIsland(for uid: String) async {
-        let ownerKey = HomeIslandPersistence.ownerKey(for: "firebase:\(uid)")
+        for slot in Self.islandSlotIndices {
+            guard self.uid == uid, !Task.isCancelled else { return }
+            await resolveInitialIsland(for: uid, slot: slot)
+        }
+    }
+
+    private func resolveInitialIsland(for uid: String, slot: Int) async {
+        let ownerKey = islandOwnerKey(uid: uid, slot: slot)
         let local = HomeIslandPersistence.load(ownerKey: ownerKey)
-        if UserDefaults.standard.bool(forKey: islandPendingKey(uid)) {
+        if UserDefaults.standard.bool(forKey: islandPendingKey(uid, slot: slot)) {
             await pushHomeIslandSnapshot(local)
             return
         }
         do {
-            let document = try await islandDocument(uid).getDocument(source: .server)
+            let document = try await islandDocument(uid, slot: slot).getDocument(source: .server)
             guard self.uid == uid, !Task.isCancelled else { return }
-            if document.exists, let remote = decodeIsland(document.data(), uid: uid) {
+            if document.exists, let remote = decodeIsland(document.data(), uid: uid, slot: slot) {
                 if remote.updatedAt > local.updatedAt {
                     applyIsland(remote)
                 } else if local.updatedAt > remote.updatedAt {
@@ -298,6 +328,20 @@ final class SyncService {
         }
     }
 
+    /// A stable per-install identity, written onto every island document so
+    /// this device can recognise the echo of its own push. Without it, the
+    /// server-stamped echo of an older push can land after a newer local edit
+    /// and — being "newer" by timestamp — drag already-placed props back to
+    /// where they used to stand. That is the teleport players saw whenever
+    /// they placed something.
+    static let installationID: String = {
+        let key = "sync.installationID"
+        if let existing = UserDefaults.standard.string(forKey: key) { return existing }
+        let created = UUID().uuidString
+        UserDefaults.standard.set(created, forKey: key)
+        return created
+    }()
+
     private func islandPayload(_ snapshot: HomeIslandSnapshot) -> [String: Any] {
         let placements: [[String: Any]] = HomeIslandPersistence
             .sanitizedForAccountSync(snapshot.placements)
@@ -315,10 +359,11 @@ final class SyncService {
             "schemaVersion": 1,
             "placements": placements,
             "updatedAt": FieldValue.serverTimestamp(),
+            "origin": Self.installationID,
         ]
     }
 
-    private func decodeIsland(_ data: [String: Any]?, uid: String) -> HomeIslandSnapshot? {
+    private func decodeIsland(_ data: [String: Any]?, uid: String, slot: Int) -> HomeIslandSnapshot? {
         guard let data,
               (data["schemaVersion"] as? NSNumber)?.intValue == 1,
               let rawPlacements = data["placements"] as? [[String: Any]],
@@ -342,7 +387,7 @@ final class SyncService {
             )
         }
         return HomeIslandSnapshot(
-            ownerKey: HomeIslandPersistence.ownerKey(for: "firebase:\(uid)"),
+            ownerKey: islandOwnerKey(uid: uid, slot: slot),
             updatedAt: updatedAt,
             placements: HomeIslandPersistence.sanitizedForAccountSync(placements)
         )
@@ -367,8 +412,11 @@ final class SyncService {
         "accountGameData.profilePending.\(uid)"
     }
 
-    private func islandPendingKey(_ uid: String) -> String {
-        "accountGameData.islandPending.\(uid)"
+    private func islandPendingKey(_ uid: String, slot: Int) -> String {
+        // Slot 1 keeps the exact key existing installs already hold a value
+        // under; changing it would strand that flag mid-flight and briefly
+        // reintroduce the stale-echo teleport this flag exists to prevent.
+        slot == 1 ? "accountGameData.islandPending.\(uid)" : "accountGameData.islandPending.\(uid).slot\(slot)"
     }
 
     /// v1.0→v1.1 の移行(および新規サインイン)で、この uid につき一度だけローカルを push する。
@@ -411,28 +459,36 @@ final class SyncService {
                 )
             }
         })
-        listeners.append(islandDocument(uid).addSnapshotListener(includeMetadataChanges: true) {
-            [weak self] snapshot, _ in
-            Task { @MainActor [weak self] in
-                guard let self,
-                      self.uid == uid,
-                      let snapshot,
-                      snapshot.exists,
-                      !snapshot.metadata.hasPendingWrites,
-                      let remote = self.decodeIsland(snapshot.data(), uid: uid)
-                else { return }
-                let wasPending = UserDefaults.standard.bool(
-                    forKey: self.islandPendingKey(uid)
-                )
-                UserDefaults.standard.set(false, forKey: self.islandPendingKey(uid))
-                let local = HomeIslandPersistence.load(ownerKey: remote.ownerKey)
-                if wasPending && remote.placements == local.placements {
-                    self.persistIsland(remote)
-                } else {
+        // Each slot gets its own listener, its own pending flag and its own
+        // echo check: a slot 2 write must never be mistaken for slot 1's echo
+        // (or vice versa) just because both happen to land around the same time.
+        for slot in Self.islandSlotIndices {
+            listeners.append(islandDocument(uid, slot: slot).addSnapshotListener(includeMetadataChanges: true) {
+                [weak self] snapshot, _ in
+                Task { @MainActor [weak self] in
+                    guard let self,
+                          self.uid == uid,
+                          let snapshot,
+                          snapshot.exists,
+                          !snapshot.metadata.hasPendingWrites,
+                          let remote = self.decodeIsland(snapshot.data(), uid: uid, slot: slot)
+                    else { return }
+                    UserDefaults.standard.set(false, forKey: self.islandPendingKey(uid, slot: slot))
+                    let local = HomeIslandPersistence.load(ownerKey: remote.ownerKey)
+                    guard snapshot.data()?["origin"] as? String != Self.installationID else {
+                        // Our own write coming back. The only thing worth taking
+                        // from it is the server timestamp, and only while the saved
+                        // layout still matches what we sent — an echo that arrives
+                        // after a newer edit is stale by definition.
+                        if remote.placements == local.placements {
+                            self.persistIsland(remote)
+                        }
+                        return
+                    }
                     self.applyIsland(remote)
                 }
-            }
-        })
+            })
+        }
         listeners.append(itemsCollection(uid).addSnapshotListener { [weak self] snap, _ in
             guard let self, let snap else { return }
             MainActor.assumeIsolated { self.applyItems(snap, context: context) }
@@ -649,8 +705,15 @@ final class SyncService {
     private func profileDocument(_ uid: String) -> DocumentReference {
         db.collection("users").document(uid).collection("gameData").document("profile")
     }
-    private func islandDocument(_ uid: String) -> DocumentReference {
-        db.collection("users").document(uid).collection("gameData").document("homeIsland")
+    private func islandDocument(_ uid: String, slot: Int) -> DocumentReference {
+        db.collection("users").document(uid).collection("gameData").document(Self.islandDocumentName(slot: slot))
+    }
+
+    /// Slot 1 is the exact document name every existing install already
+    /// backs up to; later slots get their own numbered sibling so a second
+    /// island can never collide with — or overwrite — the first.
+    private static func islandDocumentName(slot: Int) -> String {
+        slot == 1 ? "homeIsland" : "homeIsland\(slot)"
     }
 
     private static let dayFormatter: DateFormatter = {
@@ -788,6 +851,7 @@ enum LocalAccountData {
         PlayerProfile.reset()
         BoatCustomization.reset()
         PhoenixPose.resetSelection()
+        NavigatorCustomization.reset()
         RoomService.shared.resetLocalState()
         PublicHarborService.shared.resetLocalState()
         UserDefaults.standard.removeObject(forKey: ownerKey)

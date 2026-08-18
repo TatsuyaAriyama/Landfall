@@ -63,12 +63,12 @@
           ],
           "localizations" : [
             {
-              "description" : "最大4人のプライベート港をひらき、無料の仲間を招待できます。",
+              "description" : "航海士のカラー、マルチプレイサーバー、限定アセット、継続的なアップデート。",
               "displayName" : "航海証 月額",
               "locale" : "ja"
             },
             {
-              "description" : "Open a private harbor for up to 4 sailors. Invited sailors join free.",
+              "description" : "Navigator colours, the multiplayer server, exclusive assets, and ongoing updates.",
               "displayName" : "Voyage Pass Monthly",
               "locale" : "en_US"
             }
@@ -107,12 +107,12 @@
           ],
           "localizations" : [
             {
-              "description" : "最大4人のプライベート港をひらける、2か月分お得な年間航海証です。",
+              "description" : "航海士のカラー、マルチプレイサーバー、限定アセット、継続的なアップデート。2か月分お得。",
               "displayName" : "航海証 年額",
               "locale" : "ja"
             },
             {
-              "description" : "Open a private harbor for up to 4 sailors, with two months saved annually.",
+              "description" : "Navigator colours, the multiplayer server, exclusive assets, and ongoing updates. Two months saved.",
               "displayName" : "Voyage Pass Annual",
               "locale" : "en_US"
             }

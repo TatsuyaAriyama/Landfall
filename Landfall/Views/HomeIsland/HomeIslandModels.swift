@@ -9,6 +9,14 @@ extension Notification.Name {
 }
 
 enum HomeIslandMetrics {
+    /// The props every island builds regardless of what the player placed.
+    static let fixedSceneryResourceNames = [
+        foundationResourceName,
+        "wooden_jetty",
+        "voyage_notice_board",
+        "harbor_welcome_beacon",
+    ]
+
     static let foundationResourceName = "home_island_foundation"
     static let surfaceY: Float = 0.62
     // Placement follows the same authored shoreline that walking uses, so a
@@ -99,6 +107,12 @@ enum HomeIslandMetrics {
         if progress >= 1 { return near }
         return far + (near - far) * pow(progress, 2.15)
     }
+
+    /// How far from the island's centre a ground-plane raycast is still
+    /// meaningful. Near the horizon a camera ray runs almost parallel to the
+    /// ground and "hits" it tens of units out at sea; treating that as a real
+    /// point let a single drag frame throw a prop clear across the island.
+    static let groundRaycastLimit: Float = 20.0
 
     private static let foundationRadiusX: Float = 13.10
     private static let foundationRadiusZ: Float = 9.10
@@ -197,6 +211,8 @@ struct HomeIslandAsset: Identifiable, Hashable {
     let defaultScale: Float
     let footprintMargin: Float
     let unlockLevel: Int
+    /// 航海証で開く飾り。鍵が掛かっていても一覧には並べる。
+    var requiresPass = false
 }
 
 /// アセット側が要求するキャラモーション。寝具を追加するときも接触ソケットと
@@ -270,12 +286,15 @@ enum HomeIslandAssetCatalog {
         ),
     ]
 
+    /// Shared by every bench: the stone bench is authored from the driftwood
+    /// bench's own envelope, so both carry these sockets at identical heights.
+    ///
     /// The bench sockets already sit in the middle of a 0.36 deep seat, so the
     /// default backrest clearance — which pushes the body 0.145 toward the
     /// approach — parked the navigator on the front lip, looking like they were
     /// standing in front of the bench rather than sitting on it. Nought keeps
     /// them on the socket.
-    private static let driftwoodBenchSeatSlots = [
+    private static let benchSeatSlots = [
         HomeIslandContactSlotDefinition(
             id: "left",
             motion: .sit,
@@ -316,8 +335,8 @@ enum HomeIslandAssetCatalog {
         switch assetID {
         case "small_stump":
             smallStumpSeatSlots
-        case "driftwood_bench":
-            driftwoodBenchSeatSlots
+        case "driftwood_bench", "stone_bench":
+            benchSeatSlots
         case "navigator_hammock":
             navigatorHammockContactSlots
         case "council_chair":
@@ -342,10 +361,9 @@ enum HomeIslandAssetCatalog {
         "small_tree",
         "small_stump",
         "small_rock",
-        // Both shipped far too large for the navigator; resize the ones already
-        // placed rather than leaving giant furniture on existing islands.
-        "wooden_desk",
-        "wooden_chair"
+        // Sizes the operator set by eye in the simulator. Listing them here
+        // applies the calibration to islands that already have one placed.
+        "sandcastle"
     ]
 
     /// Only these operator-approved assets can enter player-authored islands.
@@ -398,7 +416,8 @@ enum HomeIslandAssetCatalog {
             symbolName: "house.fill",
             defaultScale: 0.78,
             footprintMargin: 0.92,
-            unlockLevel: 4
+            unlockLevel: 4,
+            requiresPass: true
         ),
         HomeIslandAsset(
             id: "weathered_crate",
@@ -505,26 +524,6 @@ enum HomeIslandAssetCatalog {
             unlockLevel: 2
         ),
         HomeIslandAsset(
-            id: "wooden_desk",
-            title: String(localized: "Wooden Desk"),
-            symbolName: "table.furniture.fill",
-            // Calibrated against the seated navigator: the council chair's seat
-            // socket sits 0.42 above ground, so a desk top belongs near 0.67.
-            defaultScale: 0.53,
-            footprintMargin: 0.70,
-            unlockLevel: 4
-        ),
-        HomeIslandAsset(
-            id: "wooden_chair",
-            title: String(localized: "Wooden Chair"),
-            symbolName: "chair.fill",
-            // Its authored seat is 0.89 tall, which the navigator could not sit
-            // on at the old scale. 0.47 lands the seat with the council chair.
-            defaultScale: 0.47,
-            footprintMargin: 0.42,
-            unlockLevel: 4
-        ),
-        HomeIslandAsset(
             id: "harbor_lantern_post",
             title: String(localized: "Harbor Lantern Post"),
             symbolName: "lightbulb.fill",
@@ -539,6 +538,32 @@ enum HomeIslandAssetCatalog {
             defaultScale: 0.62,
             footprintMargin: 1.08,
             unlockLevel: 3
+        ),
+        HomeIslandAsset(
+            id: "stone_bench",
+            title: String(localized: "Stone Bench"),
+            symbolName: "chair.fill",
+            defaultScale: 0.62,
+            footprintMargin: 1.08,
+            unlockLevel: 5
+        ),
+        HomeIslandAsset(
+            id: "wooden_bookshelf",
+            title: String(localized: "Bookshelf"),
+            symbolName: "books.vertical.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.42,
+            unlockLevel: 4,
+            requiresPass: true
+        ),
+        HomeIslandAsset(
+            id: "stacked_books",
+            title: String(localized: "Stacked Books"),
+            symbolName: "book.closed.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.24,
+            unlockLevel: 3,
+            requiresPass: true
         ),
         HomeIslandAsset(
             id: "weathered_anchor",
@@ -602,7 +627,8 @@ enum HomeIslandAssetCatalog {
             symbolName: "camera.macro",
             defaultScale: 1.00,
             footprintMargin: 0.42,
-            unlockLevel: 4
+            unlockLevel: 4,
+            requiresPass: true
         ),
         HomeIslandAsset(
             id: "rose_bush_red",
@@ -610,7 +636,8 @@ enum HomeIslandAssetCatalog {
             symbolName: "camera.macro",
             defaultScale: 1.00,
             footprintMargin: 0.42,
-            unlockLevel: 4
+            unlockLevel: 4,
+            requiresPass: true
         ),
         HomeIslandAsset(
             id: "rose_bush_yellow",
@@ -618,7 +645,8 @@ enum HomeIslandAssetCatalog {
             symbolName: "camera.macro",
             defaultScale: 1.00,
             footprintMargin: 0.42,
-            unlockLevel: 4
+            unlockLevel: 4,
+            requiresPass: true
         ),
         HomeIslandAsset(
             id: "hibiscus_bush_red",
@@ -688,8 +716,8 @@ enum HomeIslandAssetCatalog {
             id: "sandcastle",
             title: String(localized: "Sandcastle"),
             symbolName: "building.2.fill",
-            defaultScale: 1.00,
-            footprintMargin: 0.30,
+            defaultScale: 1.60,
+            footprintMargin: 0.48,
             unlockLevel: 6
         ),
         HomeIslandAsset(
@@ -698,6 +726,22 @@ enum HomeIslandAssetCatalog {
             symbolName: "leaf.fill",
             defaultScale: 1.00,
             footprintMargin: 0.26,
+            unlockLevel: 6
+        ),
+        HomeIslandAsset(
+            id: "seaside_mailbox",
+            title: String(localized: "Seaside Mailbox"),
+            symbolName: "envelope.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.40,
+            unlockLevel: 5
+        ),
+        HomeIslandAsset(
+            id: "seaside_gramophone",
+            title: String(localized: "Seaside Gramophone"),
+            symbolName: "music.note",
+            defaultScale: 1.00,
+            footprintMargin: 0.38,
             unlockLevel: 6
         ),
     ]
@@ -795,6 +839,13 @@ enum HomeIslandAssetCatalog {
         #endif
     }
 
+    /// A second lock, independent of level. It is asked only when something new
+    /// is placed: a pass that lapses never takes back what the island already
+    /// has, and no simulator escape hatch applies — an entitlement fails closed.
+    static func isPassLocked(_ asset: HomeIslandAsset, hasVoyagePass: Bool) -> Bool {
+        asset.requiresPass && !hasVoyagePass
+    }
+
     static func footprintMargin(assetID: String, scale: Float) -> Float {
         guard let asset = asset(id: assetID) else { return 0 }
         return asset.footprintMargin
@@ -864,7 +915,8 @@ enum HomeIslandAssetCatalog {
              // Ankle height: the navigator steps over these rather than
              // walking around them.
              "swim_ring",
-             "watermelon":
+             "watermelon",
+             "stacked_books":
             false
         default:
             true
@@ -888,7 +940,7 @@ enum HomeIslandAssetCatalog {
             let scaleRatio = max(scale, 0.05) / max(asset.defaultScale, 0.05)
             return max(0.18, 0.30 * scaleRatio)
         }
-        if assetID == "driftwood_bench" {
+        if assetID == "driftwood_bench" || assetID == "stone_bench" {
             guard let asset = asset(id: assetID) else { return 0.30 }
             let scaleRatio = max(scale, 0.05) / max(asset.defaultScale, 0.05)
             return max(0.18, 0.30 * scaleRatio)
@@ -897,7 +949,7 @@ enum HomeIslandAssetCatalog {
         // breathing room, but the body collider is the pole itself.
         switch assetID {
         case "voyage_flagpole", "harbor_lantern_post", "voyage_signal_bell",
-             "weathered_anchor", "small_lighthouse":
+             "weathered_anchor", "small_lighthouse", "seaside_mailbox":
             guard let asset = asset(id: assetID) else { return 0.24 }
             let scaleRatio = max(scale, 0.05) / max(asset.defaultScale, 0.05)
             return max(0.16, 0.26 * scaleRatio)
@@ -1051,6 +1103,10 @@ enum HomeIslandPersistence {
     /// multiplayer snapshots. Keeping it file-private lets the in-memory
     /// visitor store reuse the exact persistence validation without exposing a
     /// general-purpose editor API to the rest of the app.
+    ///
+    /// It validates shape, never entitlement: neither unlock level nor the
+    /// Voyage Pass is consulted, so an island keeps everything it was built
+    /// with. Only placing something new asks whether the pass is active.
     fileprivate static func sanitized(_ placements: [HomeIslandPlacement]) -> [HomeIslandPlacement] {
         var counts: [String: Int] = [:]
         var seenIDs: Set<UUID> = []
@@ -1106,6 +1162,12 @@ enum HomeIslandPersistence {
         _ placements: [HomeIslandPlacement]
     ) -> [HomeIslandPlacement] {
         sanitized(placements)
+    }
+
+    /// A slot's headline figures, read without building placements.
+    static func summary(ownerKey: String) -> (updatedAt: Date, placementCount: Int)? {
+        guard let document = loadDocument(ownerKey: ownerKey) else { return nil }
+        return (document.updatedAt, sanitized(document.placements).count)
     }
 
     static func load(ownerKey: String) -> HomeIslandSnapshot {
@@ -1228,6 +1290,14 @@ final class HomeIslandStore: ObservableObject {
         snapshotSchemaVersion = snapshot.schemaVersion
         placements = snapshot.placements
         lastSavedAt = snapshot.updatedAt == .distantPast ? nil : snapshot.updatedAt
+
+        // Warm the 3D cache off the main thread. The scene view is built a
+        // moment later and every model it needs is known right here, so the
+        // parsing overlaps with view setup instead of stalling the first frame.
+        AssetPlacementRuntime.preload(
+            resourceNames: HomeIslandMetrics.fixedSceneryResourceNames
+                + snapshot.placements.map(\.assetID)
+        )
     }
 
     /// Convenience for callers that already decoded only the placement array.
@@ -1275,7 +1345,20 @@ final class HomeIslandStore: ObservableObject {
     func canAdd(assetID: String) -> Bool {
         canAdd
             && HomeIslandAssetCatalog.isUserPlaceable(assetID: assetID)
+            && !isPassLocked(assetID: assetID)
             && placementCount(assetID: assetID) < HomeIslandAssetCatalog.placementLimit(for: assetID)
+    }
+
+    /// Adding and duplicating both come through `canAdd(assetID:)`, so the
+    /// subscription is enforced here rather than only by the build palette.
+    /// Loading, moving and saving deliberately never ask: props placed while
+    /// the pass was active stay on the island, and stay editable, without it.
+    private func isPassLocked(assetID: String) -> Bool {
+        guard let asset = HomeIslandAssetCatalog.asset(id: assetID) else { return false }
+        return HomeIslandAssetCatalog.isPassLocked(
+            asset,
+            hasVoyagePass: VoyagePassStore.shared.isActive
+        )
     }
 
     func select(_ id: UUID?) {
@@ -1611,6 +1694,13 @@ final class HomeIslandStore: ObservableObject {
         let snapshot = HomeIslandPersistence.load(ownerKey: ownerKey)
         let currentDate = lastSavedAt ?? .distantPast
         guard snapshot.updatedAt > currentDate else { return false }
+        guard snapshot.placements != placements else {
+            // Same layout, newer stamp: the account echo of our own save. Take
+            // the timestamp so last-write-wins stays honest, but leave the
+            // editor — selection, undo history, an in-flight drag — alone.
+            lastSavedAt = snapshot.updatedAt
+            return false
+        }
         placements = snapshot.placements
         selectedID = nil
         undoStack.removeAll(keepingCapacity: true)

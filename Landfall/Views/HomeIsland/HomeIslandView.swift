@@ -56,15 +56,17 @@ private enum HomeIslandAssetCategory: String, CaseIterable, Identifiable {
             ["weathered_crate", "campfire_circle", "voyage_flagpole",
              "harbor_lantern_post", "weathered_anchor", "net_drying_rack",
              "voyage_signal_bell", "supply_barrels",
-             "beach_parasol", "swim_ring", "sandcastle", "watermelon"]
+             "beach_parasol", "swim_ring", "sandcastle", "watermelon",
+             "seaside_mailbox", "seaside_gramophone"]
                 .contains(assetID)
         case .paths:
             ["stone_path_straight", "stone_path_curve", "stone_path_fork",
              "compass_rose_inlay"]
                 .contains(assetID)
         case .furniture:
-            ["wooden_desk", "wooden_chair", "council_table", "council_chair",
-             "driftwood_bench", "navigator_hammock"]
+            ["council_table", "council_chair",
+             "driftwood_bench", "stone_bench", "wooden_bookshelf",
+             "stacked_books", "navigator_hammock"]
                 .contains(assetID)
         }
     }
@@ -168,7 +170,8 @@ struct HomeIslandView: View {
     @State private var cameraResetToken = 0
     @State private var cameraRequest: HomeIslandCameraRequest?
     @State private var captureRequest: HomeIslandCaptureRequest?
-    @State private var cameraExposureOffset: Float = 0.18
+    /// 写真モードの明るさ増減(EV)。0 = 歩いているときのまま。
+    @State private var cameraExposureOffset: Float = 0
     @State private var showingCameraExposureControl = false
     @State private var boatBoardingRequest: HomeIslandBoatBoardingRequest?
     @State private var mode: HomeIslandMode = .arrival
@@ -193,6 +196,19 @@ struct HomeIslandView: View {
     @State private var isNavigatorNearNoticeBoard = false
     @State private var showingBoatCustomization = false
     @State private var selectedBoatSailID = BoatCustomization.selectedSailID
+    /// 航海士を触ったときに出す、色替えだけの小さな表示。
+    @State private var showingNavigatorColors = false
+    @State private var selectedNavColorID = NavigatorCustomization.selectedID
+    @State private var showingVoyagePass = false
+    @State private var showingIslandSlots = false
+    /// Switching islands rebuilds this very view, so the choice is held until
+    /// the cover has finished dismissing. Acting while it was still on screen
+    /// tore the presenter down mid-transition and the switch was dropped.
+    @State private var pendingIslandSwitch: Int?
+    @StateObject private var islandSlots = HomeIslandSlotBook(
+        baseOwnerID: AuthService.shared.homeIslandOwnerID
+    )
+    @StateObject private var voyagePass = VoyagePassStore.shared
     @State private var showingTodoList = false
     @StateObject private var todoStore = HomeIslandTodoStore.shared
     @State private var showingPlayerStats = false
@@ -287,6 +303,7 @@ struct HomeIslandView: View {
             || privateChatInputFocused
             || showingBoatCustomization
             || showingDestinationSetup
+            || showingVoyagePass
             || showingLogbook
             || activeInterior != nil
             || showingTodoList
@@ -302,6 +319,28 @@ struct HomeIslandView: View {
         // The presentation modifiers live here and the scene in
         // `islandStage`: as one expression this view no longer type-checks.
         islandStage
+            .fullScreenCover(isPresented: $showingVoyagePass) {
+                VoyagePassView()
+            }
+            .fullScreenCover(isPresented: $showingIslandSlots, onDismiss: commitIslandSwitch) {
+                HomeIslandSlotsView(
+                    book: islandSlots,
+                    onSelect: { index in
+                        pendingIslandSwitch = index
+                        showingIslandSlots = false
+                    },
+                    onOpenVoyagePass: {
+                        showingIslandSlots = false
+                        showingVoyagePass = true
+                    }
+                )
+                .overlay(alignment: .topTrailing) { islandSlotsCloseButton }
+            }
+            // 証を取った直後・切れた直後に、鍵と航海士の姿を合わせ直す。
+            .onChange(of: voyagePass.isActive) { _, active in
+                NavigatorCustomization.updatePassState(active)
+                selectedNavColorID = NavigatorCustomization.selectedID
+            }
             .fullScreenCover(isPresented: $showingLogbook) {
                 LogbookView()
                     .presentationBackground(.clear)
@@ -380,7 +419,6 @@ struct HomeIslandView: View {
             HomeIslandSceneView(
                 store: store,
                 placementAssetID: $placementAssetID,
-                movingSelection: movingSelection,
                 playerLevel: levelProgress.level,
                 cameraResetToken: cameraResetToken,
                 cameraRequest: cameraRequest,
@@ -390,6 +428,10 @@ struct HomeIslandView: View {
                 cameraExposureOffset: cameraExposureOffset,
                 cameraInteractionLocked: sceneInputLocked,
                 walkInput: sceneInputLocked ? .zero : walkInput,
+                onMoveBegan: {
+                    movingSelection = true
+                    showingSizeControls = false
+                },
                 onMoveCompleted: {
                     movingSelection = false
                     placementMoveBlocked = false
@@ -439,6 +481,9 @@ struct HomeIslandView: View {
                 boatTapOpensSelection: boatTapOpensSelection,
                 boatCustomizationActive: showingBoatCustomization,
                 boatAppearanceID: selectedBoatSailID,
+                navigatorTapOpensColors: multiplayerSession?.isReadOnly != true,
+                navigatorAppearanceID: effectiveNavColor.id,
+                onNavigatorSelected: { toggleNavigatorColors() },
                 destinationBearing: destinationBearing,
                 destinationGazeActive: showingDestinationSetup,
                 onBoatSelected: onBoatSelected,
@@ -488,6 +533,7 @@ struct HomeIslandView: View {
 
             if mode == .explore,
                !showingBoatCustomization,
+               !showingNavigatorColors,
                !showingDestinationSetup,
                !showingHarborPanel {
                 HomeIslandClockHUD()
@@ -500,6 +546,7 @@ struct HomeIslandView: View {
 
             if mode == .explore,
                !showingBoatCustomization,
+               !showingNavigatorColors,
                !showingDestinationSetup,
                !showingHarborPanel,
                !privateChatExpanded,
@@ -555,22 +602,22 @@ struct HomeIslandView: View {
                         destinationShortcut
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, compactTopHUD ? 8 : 12)
-                            .padding(.top, 8)
+                            .padding(.top, compactTopHUD ? 6 : 8)
                     }
                     if showingBoatCustomization || showingDestinationSetup {
                         EmptyView()
                     } else if mode != .camera, !store.lastSaveSucceeded {
                         saveFailureHint
-                            .padding(.top, 10)
+                            .padding(.top, compactTopHUD ? 8 : 10)
                     } else if mode == .arrival {
                         arrivalStatus
                             .padding(.top, 12)
                     } else if mode == .edit {
                         modeHint
-                            .padding(.top, 10)
+                            .padding(.top, compactTopHUD ? 8 : 10)
                     } else if mode != .camera, let transientNotice {
                         noticePill(symbol: "figure.walk", text: transientNotice)
-                            .padding(.top, 10)
+                            .padding(.top, compactTopHUD ? 8 : 10)
                     } else if mode == .explore, isNavigatorOnArrivalJetty {
                         noticePill(
                             symbol: "sailboat.fill",
@@ -580,7 +627,7 @@ struct HomeIslandView: View {
                                     : "Walk to the boat and tap it to return home"
                             )
                         )
-                        .padding(.top, 10)
+                        .padding(.top, compactTopHUD ? 8 : 10)
                     } else if mode == .explore,
                               isNavigatorNearNoticeBoard,
                               multiplayerSession?.isReadOnly != true,
@@ -593,7 +640,7 @@ struct HomeIslandView: View {
                             symbol: "signpost.right.and.left.fill",
                             text: String(localized: "Tap the notice board to check it")
                         )
-                        .padding(.top, 10)
+                        .padding(.top, compactTopHUD ? 8 : 10)
                     }
 
                     Spacer(minLength: mode == .edit || mode == .camera ? 72 : 24)
@@ -601,6 +648,9 @@ struct HomeIslandView: View {
                     if mode == .explore {
                         if showingBoatCustomization {
                             boatCustomizationDock
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        } else if showingNavigatorColors {
+                            navigatorColorDock
                                 .transition(.move(edge: .bottom).combined(with: .opacity))
                         } else if showingDestinationSetup {
                             destinationSetupDock
@@ -675,6 +725,7 @@ struct HomeIslandView: View {
         .animation(.easeOut(duration: 0.18), value: placementAssetID)
         .animation(.easeOut(duration: 0.22), value: mode)
         .animation(.easeOut(duration: 0.22), value: showingBoatCustomization)
+        .animation(.easeOut(duration: 0.22), value: showingNavigatorColors)
         .animation(.easeOut(duration: 0.22), value: showingDestinationSetup)
         .onChange(of: placementAssetID) { _, value in
             if value != nil {
@@ -789,9 +840,9 @@ struct HomeIslandView: View {
                             }
                         } label: {
                             Image(systemName: "sailboat.fill")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.system(size: topControlSymbolSize, weight: .semibold))
                                 .foregroundStyle(homeGlassInk)
-                                .frame(width: topControlWidth, height: 40)
+                                .frame(width: topControlWidth, height: topControlHeight)
                         }
                         .buttonStyle(LFPressableButtonStyle())
                         .accessibilityLabel(
@@ -814,9 +865,9 @@ struct HomeIslandView: View {
                         enterCameraMode()
                     } label: {
                         Image(systemName: "camera.fill")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: topControlSymbolSize, weight: .semibold))
                             .foregroundStyle(homeGlassInk)
-                            .frame(width: topControlWidth, height: 40)
+                            .frame(width: topControlWidth, height: topControlHeight)
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .accessibilityLabel(Text("Camera mode"))
@@ -826,9 +877,9 @@ struct HomeIslandView: View {
                             enterEditMode()
                         } label: {
                             Image(systemName: "hammer.fill")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.system(size: topControlSymbolSize, weight: .semibold))
                                 .foregroundStyle(homeGlassInk)
-                                .frame(width: topControlWidth, height: 40)
+                                .frame(width: topControlWidth, height: topControlHeight)
                         }
                         .buttonStyle(LFPressableButtonStyle())
                         .accessibilityLabel(Text("Edit Island"))
@@ -839,9 +890,9 @@ struct HomeIslandView: View {
                         openUtility(.todo)
                     } label: {
                         Image(systemName: "checklist")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: topControlSymbolSize, weight: .semibold))
                             .foregroundStyle(homeGlassInk)
-                            .frame(width: topControlWidth, height: 40)
+                            .frame(width: topControlWidth, height: topControlHeight)
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .accessibilityLabel(Text("ToDo list"))
@@ -852,7 +903,7 @@ struct HomeIslandView: View {
                     } label: {
                         ZStack(alignment: .topTrailing) {
                             Image(systemName: "music.note")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.system(size: topControlSymbolSize, weight: .semibold))
                                 .foregroundStyle(homeGlassInk)
                             if homeMusic.isPlaying {
                                 Circle()
@@ -861,7 +912,7 @@ struct HomeIslandView: View {
                                     .offset(x: 5, y: -5)
                             }
                         }
-                        .frame(width: topControlWidth, height: 40)
+                        .frame(width: topControlWidth, height: topControlHeight)
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .accessibilityLabel(Text("Music"))
@@ -874,9 +925,9 @@ struct HomeIslandView: View {
                         Haptics.tap(.light)
                     } label: {
                         Image(systemName: "gearshape.fill")
-                            .font(.system(size: 16, weight: .semibold))
+                            .font(.system(size: topControlSymbolSize, weight: .semibold))
                             .foregroundStyle(homeGlassInk)
-                            .frame(width: topControlWidth, height: 40)
+                            .frame(width: topControlWidth, height: topControlHeight)
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .accessibilityLabel(Text("Settings"))
@@ -956,15 +1007,15 @@ struct HomeIslandView: View {
         Button {
             enterDestinationSetup()
         } label: {
-            HStack(spacing: 9) {
+            HStack(spacing: compactTopHUD ? 7 : 9) {
                 Image(systemName: "mountain.2.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: compactTopHUD ? 12 : 13, weight: .semibold))
                     .foregroundStyle(LFColor.harborTeal)
 
                 if let destination = activeDestination {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(verbatim: destination.name)
-                            .font(LFFont.copy(12))
+                            .font(LFFont.copy(compactTopHUD ? 11.5 : 12))
                             .lineLimit(1)
                             .truncationMode(.tail)
 
@@ -975,13 +1026,13 @@ struct HomeIslandView: View {
                     }
                 } else {
                     Text("Set a destination")
-                        .font(LFFont.copy(12))
+                        .font(LFFont.copy(compactTopHUD ? 11.5 : 12))
                         .lineLimit(1)
                 }
             }
             .foregroundStyle(homeGlassInk)
-            .padding(.horizontal, 13)
-            .frame(minHeight: 40)
+            .padding(.horizontal, compactTopHUD ? 11 : 13)
+            .frame(minHeight: compactTopHUD ? 34 : 40)
             .frame(maxWidth: destinationShortcutMaxWidth, alignment: .leading)
             .background(homeGlassBackground, in: Capsule())
             .overlay(Capsule().stroke(homeGlassInk.opacity(0.12), lineWidth: 1))
@@ -1001,7 +1052,7 @@ struct HomeIslandView: View {
 
     /// 名前が長くても、島の景色を横切る帯にはしない。
     private var destinationShortcutMaxWidth: CGFloat {
-        compactTopHUD ? 208 : 260
+        compactTopHUD ? 190 : 260
     }
 
     private var activeDestination: Destination? {
@@ -1268,33 +1319,33 @@ struct HomeIslandView: View {
     }
 
     private var playerCardHUD: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: compactTopHUD ? 7 : 9) {
             PlayerAvatarArt(
                 styleToken: playerStyleToken,
                 symbolToken: playerSymbolToken
             )
-            .frame(width: 32, height: 32)
+            .frame(width: playerAvatarSide, height: playerAvatarSide)
             .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: compactTopHUD ? 1 : 2) {
                 Text(verbatim: playerDisplayName)
-                    .font(LFFont.copy(14))
+                    .font(LFFont.copy(compactTopHUD ? 13 : 14))
                     .foregroundStyle(homeGlassInk)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                     .allowsTightening(true)
 
                 Text(verbatim: "LV \(levelProgress.level)")
-                    .font(LFFont.label(9))
+                    .font(LFFont.label(compactTopHUD ? 8 : 9))
                     .tracking(0.6)
                     .foregroundStyle(homeGlassInk.opacity(0.58))
             }
 
             Spacer(minLength: 0)
         }
-        .padding(.leading, 7)
-        .padding(.trailing, 12)
-        .frame(width: playerCardWidth, height: 46)
+        .padding(.leading, compactTopHUD ? 6 : 7)
+        .padding(.trailing, compactTopHUD ? 10 : 12)
+        .frame(width: playerCardWidth, height: playerCardHeight)
         .background(homeGlassBackground, in: Capsule())
         .overlay(Capsule().stroke(homeGlassInk.opacity(0.12), lineWidth: 1))
         .accessibilityElement(children: .combine)
@@ -1420,8 +1471,12 @@ struct HomeIslandView: View {
         }
     }
 
-    private var utilityPanelWidth: CGFloat {
-        compactTopHUD ? 300 : 340
+    private func utilityPanelWidth(for utility: HomeUtility) -> CGFloat {
+        guard compactTopHUD else { return 340 }
+        // The music picker is a short list of names. On a phone it does not
+        // need the width the ToDo list and the player card do, and the island
+        // stays visible behind it.
+        return utility == .music ? 262 : 300
     }
 
     @ViewBuilder
@@ -1482,7 +1537,7 @@ struct HomeIslandView: View {
                     }
                     .padding(10)
                 }
-                .frame(width: utilityPanelWidth)
+                .frame(width: utilityPanelWidth(for: utility))
                 .background(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(.regularMaterial)
@@ -1520,12 +1575,32 @@ struct HomeIslandView: View {
         }
     }
 
+    /// iPhone では名札とツール列が画面幅をほとんど食い切り、島の景色に
+    /// 貼りついて見えていた。コンパクト時だけ一回り小さくして、両端と
+    /// 名札の隣に余白を返す。iPad は元の大きさのまま。
     private var playerCardWidth: CGFloat {
-        compactTopHUD ? 136 : 178
+        compactTopHUD ? 124 : 178
+    }
+
+    private var playerCardHeight: CGFloat {
+        compactTopHUD ? 40 : 46
+    }
+
+    private var playerAvatarSide: CGFloat {
+        compactTopHUD ? 26 : 32
     }
 
     private var topControlWidth: CGFloat {
-        compactTopHUD ? 34 : 40
+        compactTopHUD ? 30 : 40
+    }
+
+    /// ツール列の丸みは名札の高さに合わせる（左右の帯が段違いに見えない）。
+    private var topControlHeight: CGFloat {
+        playerCardHeight - 6
+    }
+
+    private var topControlSymbolSize: CGFloat {
+        compactTopHUD ? 14 : 16
     }
 
     private var topControlSpacing: CGFloat {
@@ -1657,12 +1732,148 @@ struct HomeIslandView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
+    /// いま着ている色。証が切れているあいだは、選んだ色を残したまま既定へ戻す。
+    private var effectiveNavColor: NavigatorColorOption {
+        let option = NavigatorCustomization.colors.first { $0.id == selectedNavColorID }
+            ?? NavigatorCustomization.colors[0]
+        guard option.requiresPass, !voyagePass.isActive else { return option }
+        return NavigatorCustomization.colors[0]
+    }
+
+    /// 航海士を触ったときの小さな色替え。船のドックのように画面は奪わず、
+    /// 歩きながらでも閉じられる一段だけを足元へ出す。
+    private var navigatorColorDock: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Text("Navigator color")
+                    .font(LFFont.label(11))
+                    .tracking(0.8)
+                    .foregroundStyle(.white.opacity(0.58))
+                Spacer(minLength: 8)
+                Text(effectiveNavColor.title)
+                    .font(LFFont.copy(13))
+                    .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+                Button {
+                    closeNavigatorColors()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.8))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(LFPressableButtonStyle())
+                .accessibilityLabel(Text("Close"))
+            }
+
+            HStack(spacing: 6) {
+                ForEach(NavigatorCustomization.colors) { option in
+                    navigatorColorButton(option)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 360)
+        .background(
+            hudBackground,
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(.white.opacity(0.14), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+        .padding(.horizontal, 12)
+        .safeAreaPadding(.bottom, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text("Navigator color"))
+    }
+
+    /// 既定のコーラル以外は航海証で開く。鍵つきの色も並べ、押すと航海証へ渡す。
+    private func navigatorColorButton(_ option: NavigatorColorOption) -> some View {
+        let locked = option.requiresPass && !voyagePass.isActive
+        let selected = effectiveNavColor.id == option.id
+        return Button {
+            selectNavigatorColor(option, locked: locked)
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(option.swatch)
+                    .frame(width: 32, height: 32)
+                    .opacity(locked ? 0.42 : 1)
+                    .shadow(
+                        color: selected ? option.swatch.opacity(0.55) : .clear,
+                        radius: selected ? 8 : 0
+                    )
+                if selected {
+                    Circle()
+                        .stroke(Color(uiColor: VoyageSceneKit.sand), lineWidth: 2.5)
+                        .frame(width: 40, height: 40)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(LFColor.midnight)
+                }
+                if locked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+                        .padding(3)
+                        .background(.black.opacity(0.72), in: Circle())
+                        .offset(x: 12, y: 11)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 46)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(LFPressableButtonStyle(scale: 0.94))
+        .accessibilityLabel(Text(option.title))
+        .accessibilityHint(locked ? Text("Opens with a Voyage Pass") : Text(""))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func toggleNavigatorColors() {
+        guard mode == .explore, !showingBoatCustomization, !showingDestinationSetup else { return }
+        if showingNavigatorColors {
+            closeNavigatorColors()
+            return
+        }
+        walkInput = .zero
+        selectedNavColorID = NavigatorCustomization.selectedID
+        withAnimation(.easeOut(duration: 0.22)) {
+            showingNavigatorColors = true
+        }
+        Haptics.tap(.medium)
+    }
+
+    private func closeNavigatorColors() {
+        guard showingNavigatorColors else { return }
+        withAnimation(.easeOut(duration: 0.22)) {
+            showingNavigatorColors = false
+        }
+        Haptics.tap(.light)
+    }
+
+    private func selectNavigatorColor(_ option: NavigatorColorOption, locked: Bool) {
+        guard !locked else {
+            walkInput = .zero
+            showingVoyagePass = true
+            Haptics.tap(.medium)
+            return
+        }
+        guard selectedNavColorID != option.id else { return }
+        NavigatorCustomization.select(option.id)
+        selectedNavColorID = option.id
+        Haptics.tap(.light)
+    }
+
     private func enterBoatCustomization() {
         guard mode == .explore,
               !showingBoatCustomization,
               multiplayerSession?.isReadOnly != true
         else { return }
         walkInput = .zero
+        showingNavigatorColors = false
         selectedBoatSailID = BoatCustomization.selectedSailID
         withAnimation(.easeOut(duration: 0.22)) {
             showingBoatCustomization = true
@@ -1822,15 +2033,16 @@ struct HomeIslandView: View {
     }
 
     private func noticePill(symbol: String, text: String) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: compactTopHUD ? 6 : 8) {
             Image(systemName: symbol)
+                .font(.system(size: compactTopHUD ? 12 : 14))
                 .foregroundStyle(homeGlassInk)
             Text(verbatim: text)
-                .font(LFFont.label(12))
+                .font(LFFont.label(compactTopHUD ? 11 : 12))
                 .foregroundStyle(homeGlassInk)
         }
-        .padding(.horizontal, 13)
-        .frame(height: 36)
+        .padding(.horizontal, compactTopHUD ? 11 : 13)
+        .frame(height: compactTopHUD ? 31 : 36)
         .background(homeGlassBackground, in: Capsule())
         .overlay(Capsule().stroke(homeGlassInk.opacity(0.12), lineWidth: 1))
         .allowsHitTesting(false)
@@ -1868,6 +2080,7 @@ struct HomeIslandView: View {
         privateChatExpanded = false
         privateChatInputFocused = false
         showingBoatCustomization = false
+        showingNavigatorColors = false
         showingDestinationSetup = false
         placementAssetID = nil
         movingSelection = false
@@ -1951,20 +2164,18 @@ struct HomeIslandView: View {
         Haptics.tap(.medium)
     }
 
-    /// A long press on a prop selects it and starts the carry in one gesture.
+    /// A long press on a prop selects it. The drag that follows moves it, as
+    /// does any drag that starts on a prop — there is no mode to enter.
     private func beginCarrying(_ placementID: UUID) {
         placementAssetID = nil
         store.select(placementID)
-        withAnimation(.easeOut(duration: 0.18)) {
-            movingSelection = true
-        }
     }
 
     /// Shown once per visit to build mode. The camera controls are invisible
     /// by design, so they have to be said out loud at least once.
     private func announceBuildControls() {
         showTransientNotice(
-            String(localized: "Drag lower-left to move · drag to turn · pinch to zoom")
+            String(localized: "Drag an asset to move it · drag elsewhere to turn · pinch to zoom")
         )
     }
 
@@ -1985,7 +2196,7 @@ struct HomeIslandView: View {
         showingDestinationSetup = false
         isCapturing = false
         captureRequest = nil
-        cameraExposureOffset = 0.18
+        cameraExposureOffset = 0
         showingCameraExposureControl = false
         placementAssetID = nil
         movingSelection = false
@@ -2131,25 +2342,29 @@ struct HomeIslandView: View {
                 self.placementAssetID = nil
             }
         } else if movingSelection {
+            // 指を離せばその場で決まる。取り消すものがないので、この丸には
+            // ボタンを置かない。
             hintPill(
                 symbol: placementMoveBlocked
                     ? "exclamationmark.triangle.fill"
                     : "arrow.up.and.down.and.arrow.left.and.right",
                 text: String(localized: placementMoveBlocked
-                    ? "Slide along the obstacle to find open space"
-                    : "Drag the selected asset freely across the island"),
-                actionTitle: String(localized: "Cancel")
-            ) {
-                movingSelection = false
-            }
+                    ? "That way is closed — slide to open ground"
+                    : "Release to place it here")
+            )
+        } else if store.selectedPlacement != nil {
+            hintPill(
+                symbol: "hand.draw.fill",
+                text: String(localized: "Drag an asset to move it · release to place")
+            )
         }
     }
 
     private func hintPill(
         symbol: String,
         text: String,
-        actionTitle: String,
-        action: @escaping () -> Void
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
     ) -> some View {
         HStack(spacing: 8) {
             Image(systemName: symbol)
@@ -2158,9 +2373,11 @@ struct HomeIslandView: View {
                 .font(LFFont.label(12))
                 .foregroundStyle(.white)
                 .lineLimit(1)
-            Button(actionTitle, action: action)
-                .font(LFFont.label(12))
-                .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+            if let actionTitle, let action {
+                Button(actionTitle, action: action)
+                    .font(LFFont.label(12))
+                    .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+            }
         }
         .padding(.horizontal, 13)
         .frame(height: 38)
@@ -2187,14 +2404,6 @@ struct HomeIslandView: View {
                     .minimumScaleFactor(0.72)
                     .frame(width: 48, alignment: .leading)
 
-                toolButton(
-                    "Move",
-                    symbol: "arrow.up.and.down.and.arrow.left.and.right",
-                    active: movingSelection
-                ) {
-                    showingSizeControls = false
-                    movingSelection = true
-                }
                 toolButton("Rotate", symbol: "rotate.right") {
                     store.rotateSelected()
                 }
@@ -2290,7 +2499,6 @@ struct HomeIslandView: View {
         if store.duplicateSelected(playerLevel: levelProgress.level) == nil {
             Haptics.error()
         } else {
-            movingSelection = true
             placementMoveBlocked = false
             Haptics.tap(.medium)
         }
@@ -2356,12 +2564,68 @@ struct HomeIslandView: View {
         }
     }
 
+    private func commitIslandSwitch() {
+        guard let index = pendingIslandSwitch else { return }
+        pendingIslandSwitch = nil
+        guard index != islandSlots.effectiveIndex else { return }
+        // Leave build mode: the props on screen belong to the island being
+        // left, and the scene is about to be rebuilt from the other one.
+        placementAssetID = nil
+        movingSelection = false
+        lockedAssetID = nil
+        store.select(nil)
+        islandSlots.activate(index)
+    }
+
+    private var islandSlotsCloseButton: some View {
+        Button {
+            showingIslandSlots = false
+            Haptics.tap(.light)
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.66))
+                .frame(width: 44, height: 44)
+                .background(.white.opacity(0.08), in: Circle())
+                .overlay(Circle().stroke(.white.opacity(0.14), lineWidth: 1))
+        }
+        .buttonStyle(LFPressableButtonStyle())
+        .padding(.trailing, 18)
+        .padding(.top, 8)
+        .accessibilityLabel(Text("Close"))
+    }
+
+    /// Which island is being built on, next to the word Build. Switching saves
+    /// belongs in the same place as placing props, not in Settings: this is the
+    /// only screen where the difference between two islands is visible.
+    private var islandSlotChip: some View {
+        Button {
+            islandSlots.refresh()
+            showingIslandSlots = true
+            Haptics.tap(.light)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "square.stack.3d.up.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(LF.format("Island %lld", Int64(islandSlots.effectiveIndex)))
+                    .font(LFFont.label(10))
+            }
+            .foregroundStyle(.white.opacity(0.72))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.white.opacity(0.10), in: Capsule())
+        }
+        .buttonStyle(LFPressableButtonStyle())
+        .accessibilityHint(Text("Sail to this island"))
+    }
+
     private var assetShelf: some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack {
+            HStack(spacing: 8) {
                 Label("Build", systemImage: "hammer.fill")
                     .font(LFFont.copy(13))
                     .foregroundStyle(.white.opacity(0.9))
+                islandSlotChip
                 Spacer()
                 Text(
                     verbatim: "\(assets.filter { HomeIslandAssetCatalog.isUnlocked($0, playerLevel: levelProgress.level) }.count)/\(assets.count)"
@@ -2423,19 +2687,13 @@ struct HomeIslandView: View {
         let placedCount = store.placementCount(assetID: asset.id)
         let placementLimit = HomeIslandAssetCatalog.placementLimit(for: asset.id)
         let atLimit = placedCount >= placementLimit
-        let canPlace = unlocked && !atLimit && store.canAdd
+        let passLocked = isPassLocked(asset)
+        // Nothing but the pass stands in the way, so this tile can hand the
+        // player the Voyage Pass instead of only refusing them.
+        let awaitsPass = passLocked && unlocked && !atLimit && store.canAdd
+        let canPlace = unlocked && !passLocked && !atLimit && store.canAdd
         return Button {
-            if canPlace {
-                lockedAssetID = nil
-                placementAssetID = selected ? nil : asset.id
-                store.select(nil)
-                Haptics.tap(.light)
-            } else {
-                placementAssetID = nil
-                movingSelection = false
-                lockedAssetID = asset.id
-                Haptics.tap(.medium)
-            }
+            selectBuildAsset(asset, canPlace: canPlace, opensVoyagePass: awaitsPass)
         } label: {
             VStack(spacing: 4) {
                 ZStack(alignment: .bottomTrailing) {
@@ -2446,21 +2704,11 @@ struct HomeIslandView: View {
                         .opacity(canPlace ? 1 : 0.38)
                         .frame(width: assetThumbnailSide, height: assetThumbnailSide)
                         .background(.white.opacity(selected ? 0.13 : 0.055), in: RoundedRectangle(cornerRadius: 14))
-                    if !unlocked {
-                        Image(systemName: "lock.fill")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
-                            .padding(3)
-                            .background(.black.opacity(0.72), in: Circle())
-                            .offset(x: 3, y: 3)
-                    } else if atLimit {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Color(uiColor: VoyageSceneKit.nightBG))
-                            .padding(3)
-                            .background(Color(uiColor: VoyageSceneKit.sand), in: Circle())
-                            .offset(x: 3, y: 3)
-                    }
+                    assetCornerMarker(
+                        unlocked: unlocked,
+                        passLocked: passLocked,
+                        atLimit: atLimit
+                    )
                 }
                 Text(verbatim: asset.title)
                     .font(LFFont.label(10))
@@ -2480,10 +2728,16 @@ struct HomeIslandView: View {
                     .stroke(selected ? Color(uiColor: VoyageSceneKit.sand).opacity(0.58) : .white.opacity(0.07), lineWidth: 1)
             }
             .overlay(alignment: .topTrailing) {
-                Text(verbatim: unlocked ? "\(placedCount)/\(placementLimit)" : "LV\(asset.unlockLevel)")
+                assetTagText(
+                    asset,
+                    unlocked: unlocked,
+                    passLocked: passLocked,
+                    placedCount: placedCount,
+                    placementLimit: placementLimit
+                )
                     .font(LFFont.label(7))
                     .monospacedDigit()
-                    .foregroundStyle(unlocked ? .white.opacity(0.64) : Color(uiColor: VoyageSceneKit.sand))
+                    .foregroundStyle(assetTagTint(unlocked: unlocked, passLocked: passLocked))
                     .padding(.horizontal, 5)
                     .frame(height: 16)
                     .background(.black.opacity(0.62), in: Capsule())
@@ -2493,21 +2747,122 @@ struct HomeIslandView: View {
         .buttonStyle(LFPressableButtonStyle())
         .accessibilityLabel(Text(verbatim: asset.title))
         .accessibilityValue(
-            Text(
-                verbatim: unlocked
-                    ? "\(placedCount)/\(placementLimit)"
-                    : "LV\(asset.unlockLevel)"
+            assetTagText(
+                asset,
+                unlocked: unlocked,
+                passLocked: passLocked,
+                placedCount: placedCount,
+                placementLimit: placementLimit
             )
         )
         .accessibilityHint(
-            atLimit
-                ? Text("Placement limit reached")
-                : unlocked
-                ? asset.id == "wooden_jetty"
-                    ? Text("Place only at the island edge; it automatically faces the sea")
-                    : Text("Tap the sand to place this asset")
-                : Text(verbatim: LF.format("Unlocks at Level %lld", Int64(asset.unlockLevel)))
+            assetHintText(
+                asset,
+                unlocked: unlocked,
+                passLocked: passLocked,
+                atLimit: atLimit
+            )
         )
+    }
+
+    /// 航海証で開く飾り。レベルの鍵と違って証は切れるので、これは「これから
+    /// 置くとき」だけの判定。すでに島にあるものには一切かからない。
+    private func isPassLocked(_ asset: HomeIslandAsset) -> Bool {
+        HomeIslandAssetCatalog.isPassLocked(asset, hasVoyagePass: voyagePass.isActive)
+    }
+
+    /// 鍵つきの色と同じ渡し方。証で開く飾りは、黙って弾かずに航海証を開く。
+    private func selectBuildAsset(
+        _ asset: HomeIslandAsset,
+        canPlace: Bool,
+        opensVoyagePass: Bool
+    ) {
+        guard canPlace else {
+            placementAssetID = nil
+            movingSelection = false
+            if opensVoyagePass {
+                lockedAssetID = nil
+                showingVoyagePass = true
+            } else {
+                lockedAssetID = asset.id
+            }
+            Haptics.tap(.medium)
+            return
+        }
+        lockedAssetID = nil
+        placementAssetID = placementAssetID == asset.id ? nil : asset.id
+        store.select(nil)
+        Haptics.tap(.light)
+    }
+
+    @ViewBuilder
+    private func assetCornerMarker(
+        unlocked: Bool,
+        passLocked: Bool,
+        atLimit: Bool
+    ) -> some View {
+        if !unlocked || passLocked {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(assetTagTint(unlocked: unlocked, passLocked: passLocked))
+                .padding(3)
+                .background(.black.opacity(0.72), in: Circle())
+                .offset(x: 3, y: 3)
+        } else if atLimit {
+            Image(systemName: "checkmark")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(Color(uiColor: VoyageSceneKit.nightBG))
+                .padding(3)
+                .background(Color(uiColor: VoyageSceneKit.sand), in: Circle())
+                .offset(x: 3, y: 3)
+        }
+    }
+
+    /// Level is the nearer gate, so a prop still below its level says so
+    /// first; once that is met a pass-exclusive prop names the pass instead
+    /// of a count.
+    private func assetTagText(
+        _ asset: HomeIslandAsset,
+        unlocked: Bool,
+        passLocked: Bool,
+        placedCount: Int,
+        placementLimit: Int
+    ) -> Text {
+        if !unlocked {
+            return Text(verbatim: "LV\(asset.unlockLevel)")
+        }
+        if passLocked {
+            return Text("Voyage Pass")
+        }
+        return Text(verbatim: "\(placedCount)/\(placementLimit)")
+    }
+
+    private func assetTagTint(unlocked: Bool, passLocked: Bool) -> Color {
+        if !unlocked {
+            return Color(uiColor: VoyageSceneKit.sand)
+        }
+        return passLocked ? LFColor.returnOrange : .white.opacity(0.64)
+    }
+
+    private func assetHintText(
+        _ asset: HomeIslandAsset,
+        unlocked: Bool,
+        passLocked: Bool,
+        atLimit: Bool
+    ) -> Text {
+        if atLimit {
+            return Text("Placement limit reached")
+        }
+        if !unlocked {
+            return Text(verbatim: LF.format("Unlocks at Level %lld", Int64(asset.unlockLevel)))
+        }
+        if passLocked {
+            return Text("Opens with a Voyage Pass")
+        }
+        if asset.id == "wooden_jetty" {
+            return Text("Place only at the island edge; it automatically faces the sea")
+        }
+        return Text("Tap the sand to place this asset")
     }
 
     private var selectedAssetCategory: HomeIslandAssetCategory {
@@ -2878,9 +3233,16 @@ private struct HomeIslandMusicPanel: View {
     @Binding var selectedTrackID: String
     @ObservedObject var music: HomeBackgroundMusic
     @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// Rendered inside a floating island panel: no navigation chrome, no
     /// full-screen background — the panel owns both.
     var compact = false
+
+    /// On a phone the floating panel is most of the screen, so the same layout
+    /// that reads as a neat card on iPad reads as a takeover. Everything the
+    /// list needs — artwork, title, state, checkmark — stays; it is drawn at
+    /// phone scale.
+    private var onPhone: Bool { compact && horizontalSizeClass == .compact }
 
     var body: some View {
         if compact {
@@ -2892,16 +3254,16 @@ private struct HomeIslandMusicPanel: View {
 
     private var compactBody: some View {
         ScrollView {
-            VStack(spacing: 10) {
+            VStack(spacing: onPhone ? 7 : 10) {
                 playbackCard
-                VStack(spacing: 3) {
+                VStack(spacing: onPhone ? 1 : 3) {
                     ForEach(HomeBackgroundMusic.tracks) { track in
                         trackRow(track)
                     }
                 }
             }
         }
-        .frame(maxHeight: 340)
+        .frame(maxHeight: onPhone ? 248 : 340)
         .scrollBounceBehavior(.basedOnSize)
     }
 
@@ -2941,24 +3303,24 @@ private struct HomeIslandMusicPanel: View {
     }
 
     private var playbackCard: some View {
-        HStack(spacing: 13) {
+        HStack(spacing: onPhone ? 10 : 13) {
             ZStack {
                 Circle()
                     .fill(panelInk.opacity(0.08))
-                    .frame(width: 48, height: 48)
+                    .frame(width: onPhone ? 36 : 48, height: onPhone ? 36 : 48)
                 if music.isPlaying {
                     HomeIslandEqualizer(color: panelInk)
-                        .frame(width: 21, height: 21)
+                        .frame(width: onPhone ? 16 : 21, height: onPhone ? 16 : 21)
                 } else {
                     Image(systemName: "music.note")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: onPhone ? 14 : 18, weight: .semibold))
                         .foregroundStyle(panelInk)
                 }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(selectedTrack.title)
-                    .font(LFFont.copy(15))
+            VStack(alignment: .leading, spacing: onPhone ? 2 : 4) {
+                Text(displayedTrack.title)
+                    .font(LFFont.copy(onPhone ? 13 : 15))
                     .foregroundStyle(panelInk)
                     .lineLimit(2)
 
@@ -2974,47 +3336,47 @@ private struct HomeIslandMusicPanel: View {
                 Haptics.tap(.medium)
             } label: {
                 Image(systemName: isEnabled ? "pause.fill" : "play.fill")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: onPhone ? 13 : 15, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 46, height: 46)
+                    .frame(width: onPhone ? 36 : 46, height: onPhone ? 36 : 46)
                     .background(panelInk, in: Circle())
             }
             .buttonStyle(LFPressableButtonStyle(scale: 0.94))
             .accessibilityLabel(Text(isEnabled ? "Stop" : "Play"))
         }
-        .padding(14)
-        .background(Color.white.opacity(0.66), in: RoundedRectangle(cornerRadius: 21))
+        .padding(onPhone ? 10 : 14)
+        .background(Color.white.opacity(0.66), in: RoundedRectangle(cornerRadius: onPhone ? 16 : 21))
         .overlay(
-            RoundedRectangle(cornerRadius: 21)
+            RoundedRectangle(cornerRadius: onPhone ? 16 : 21)
                 .stroke(panelInk.opacity(0.11), lineWidth: 1)
         )
     }
 
     private func trackRow(_ track: HomeVoyageSound) -> some View {
-        let selected = selectedTrackID == track.rawValue
-        let playing = selected && music.isPlaying && music.currentTrack == track
+        let selected = displayedTrack == track
+        let playing = music.isPlaying && music.currentTrack == track
 
         return Button {
             selectedTrackID = track.rawValue
             isEnabled = true
             Haptics.tap(.light)
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: onPhone ? 9 : 12) {
                 Image(systemName: "music.note")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: onPhone ? 11 : 14, weight: .semibold))
                     .foregroundStyle(panelInk.opacity(selected ? 1 : 0.48))
-                    .frame(width: 32, height: 32)
+                    .frame(width: onPhone ? 25 : 32, height: onPhone ? 25 : 32)
                     .background(panelInk.opacity(selected ? 0.10 : 0.045), in: Circle())
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: onPhone ? 1 : 3) {
                     Text(track.title)
-                        .font(LFFont.copy(13))
+                        .font(LFFont.copy(onPhone ? 12 : 13))
                         .foregroundStyle(panelInk)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
                     if playing {
                         Text("Playing")
-                            .font(LFFont.label(9))
+                            .font(LFFont.label(onPhone ? 8 : 9))
                             .foregroundStyle(Color(uiColor: VoyageSceneKit.returnOrange))
                     }
                 }
@@ -3023,12 +3385,12 @@ private struct HomeIslandMusicPanel: View {
 
                 if selected {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: onPhone ? 15 : 18, weight: .semibold))
                         .foregroundStyle(panelInk)
                 }
             }
-            .padding(.horizontal, 10)
-            .frame(minHeight: 52)
+            .padding(.horizontal, onPhone ? 7 : 10)
+            .frame(minHeight: onPhone ? 40 : 52)
             .contentShape(Rectangle())
         }
         .buttonStyle(LFPressableButtonStyle(scale: 0.98))
@@ -3042,6 +3404,15 @@ private struct HomeIslandMusicPanel: View {
               HomeBackgroundMusic.tracks.contains(track)
         else { return .harborMinuet }
         return track
+    }
+
+    /// 一曲終わるとプレイリストは次の曲へ自動で進む。パネルは選択値ではなく、
+    /// いま実際に鳴っている曲を出す。止まっている間だけ、次に鳴る選択曲へ戻す。
+    private var displayedTrack: HomeVoyageSound {
+        guard music.isPlaying,
+              HomeBackgroundMusic.tracks.contains(music.currentTrack)
+        else { return selectedTrack }
+        return music.currentTrack
     }
 
     private var statusTitle: LocalizedStringKey {

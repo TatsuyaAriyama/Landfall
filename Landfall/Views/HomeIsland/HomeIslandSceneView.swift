@@ -255,16 +255,21 @@ struct HomeIslandDestinationBearing: Equatable {
 struct HomeIslandSceneView: UIViewRepresentable {
     @ObservedObject var store: HomeIslandStore
     @Binding var placementAssetID: String?
-    var movingSelection: Bool
     var playerLevel: Int
     var cameraResetToken: Int
     var cameraRequest: HomeIslandCameraRequest?
     var captureRequest: HomeIslandCaptureRequest?
     var boatBoardingRequest: HomeIslandBoatBoardingRequest?
     var mode: HomeIslandMode
+    /// 歩いているときの明るさ。写真モードのスライダはここからの増減。
+    static let baseExposureOffset: Float = 0.82
+    /// 写真モードでの増減(EV)。0 のあいだは歩いているときと同じ明るさ。
     var cameraExposureOffset: Float
     var cameraInteractionLocked: Bool
     var walkInput: HomeIslandWalkInput
+    /// 飾りを掴んだ瞬間。移動は指を離した位置で確定するので、HUDはこの
+    /// あいだだけ「動かしています」の顔をしていればよい。
+    var onMoveBegan: () -> Void = {}
     var onMoveCompleted: () -> Void
     var onMoveBlockedChanged: (Bool) -> Void = { _ in }
     var onPlacementCompleted: (UUID) -> Void
@@ -295,6 +300,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
     /// keep their existing state machines.
     var boatCustomizationActive = false
     var boatAppearanceID = BoatCustomization.selectedSailID
+    /// 自分の島では、航海士を触ると色を替える小さな表示が出る。
+    /// 訪問先や見せるだけの島では触っても何も起きない。
+    var navigatorTapOpensColors = false
+    var navigatorAppearanceID = NavigatorCustomization.selectedID
+    var onNavigatorSelected: () -> Void = {}
     /// 桟橋の正面の沖に浮かべる目的地の島。目的地が無い間は海のままにする。
     var destinationBearing: HomeIslandDestinationBearing?
     /// 目的地を決めている間は、この島から沖の目的地を見つめる構図に預ける。
@@ -396,6 +406,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var renderedMode: HomeIslandMode = .arrival
         private var renderedBoatCustomizationActive = false
         private var renderedBoatAppearanceID = ""
+        private var renderedNavigatorAppearanceID = NavigatorCustomization.selectedID
         private var boatCustomizationCameraSnapshot: BoatCustomizationCameraSnapshot?
         private weak var orbitPanRecognizer: UIPanGestureRecognizer?
         /// UIKit supplies orbit intent while SceneKit owns the final Explore
@@ -1243,6 +1254,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             syncPlacements()
             syncRemotePlayers()
             syncBoatAppearanceIfNeeded()
+            syncNavigatorAppearanceIfNeeded()
             syncDestinationIslandIfNeeded()
             syncDestinationGazeCameraIfNeeded()
             if renderedMode != owner.mode {
@@ -1261,7 +1273,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func updateExposure() {
-            let target = CGFloat(owner.mode == .camera ? owner.cameraExposureOffset : 0.82)
+            // 写真モードは構図を決める場所であって、暗くする場所ではない。
+            // スライダは歩いているときの明るさからの増減として扱い、
+            // 入った瞬間は同じ明るさのままにする(±0 EV)。
+            let target = CGFloat(
+                owner.mode == .camera
+                    ? HomeIslandSceneView.baseExposureOffset + owner.cameraExposureOffset
+                    : HomeIslandSceneView.baseExposureOffset
+            )
             guard let sceneCamera = camera?.camera,
                   abs(sceneCamera.exposureOffset - target) > 0.001
             else { return }
@@ -1339,6 +1358,26 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 child.castsShadow = false
             }
             return anchor
+        }
+
+        /// 自分の航海士と、甲板に立つ自分の航海士だけを塗り替える。
+        /// 遠くの相手は自分の装いを着ていないので触らない。
+        private func syncNavigatorAppearanceIfNeeded() {
+            guard renderedNavigatorAppearanceID != owner.navigatorAppearanceID else { return }
+            renderedNavigatorAppearanceID = owner.navigatorAppearanceID
+
+            let palette = (NavigatorCustomization.colors.first {
+                $0.id == owner.navigatorAppearanceID
+            } ?? NavigatorCustomization.colors[0]).palette
+            let duration = UIAccessibility.isReduceMotionEnabled ? 0 : 0.18
+            SCNTransaction.begin()
+            SCNTransaction.animationDuration = duration
+            SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeOut)
+            for node in [navigatorNode, arrivalBoatNavigator].compactMap({ $0 }) {
+                PhoenixNavigator.applyPalette(palette, to: node)
+            }
+            SCNTransaction.commit()
+            view?.setNeedsDisplay()
         }
 
         private func syncBoatAppearanceIfNeeded() {
@@ -1639,7 +1678,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             // Exploration stays bright, while photo mode can lower the exposure
             // to preserve detail in pale sand and sunlit props.
             cameraComponent.wantsHDR = true
-            cameraComponent.exposureOffset = 0.82
+            cameraComponent.exposureOffset = CGFloat(HomeIslandSceneView.baseExposureOffset)
             cameraComponent.contrast = 0.05
             cameraNode.camera = cameraComponent
             scene.rootNode.addChildNode(cameraNode)
@@ -2009,7 +2048,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     continue
                 }
 
-                let navigator = PhoenixNavigator.makeNavigatorNode()
+                // 港の相手は自分の装いを着ていない。遠くの航海士は既定の熾火で描く。
+                let navigator = PhoenixNavigator.makeNavigatorNode(palette: .default)
                 navigator.name = "home-island-remote-player:\(id)"
                 navigator.scale = SCNVector3(
                     NavigatorAppearance.islandScale,
@@ -2156,7 +2196,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             // neutral fleet boat instead of incorrectly borrowing this
             // observer's selected sail color.
             let boat = VoyageSceneKit.makeBoatModel(BoatParts.default)
-            let sailor = PhoenixNavigator.makeNavigatorNode()
+            let sailor = PhoenixNavigator.makeNavigatorNode(palette: .default)
             sailor.name = "home-island-remote-boat-navigator:\(playerID)"
             sailor.scale = SCNVector3(
                 VoyageSceneKit.navigatorDeckScale,
@@ -2509,14 +2549,22 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     }
                     return
                 }
+                if owner.navigatorTapOpensColors, hitNavigator(at: screenPoint) {
+                    owner.onNavigatorSelected()
+                    return
+                }
                 guard let placementID = hitPlacement(at: screenPoint),
                       let placement = owner.store.placements.first(where: { $0.id == placementID })
                 else {
-                    // Phone-first jump: a short empty-space tap inside the
-                    // invisible left thumbstick region jumps. While the left
-                    // thumb is moving, a short right-side camera touch is
-                    // handled by `handlePan` below so running jumps need no HUD.
-                    if isMovementControlPoint(screenPoint, in: view) {
+                    // Phone-first jump: a short empty-space tap on the camera
+                    // half of the screen jumps. The thumbstick half stays
+                    // deliberately inert — a jump used to live there, which
+                    // meant the steering thumb had to lift off to take one, so
+                    // jumping while walking was impossible. With the jump on
+                    // the camera side, the same touch works standing still or
+                    // mid-stride, and `handleRunningJumpPress` covers the case
+                    // where the steering thumb is already down.
+                    if !isMovementControlPoint(screenPoint, in: view) {
                         triggerTouchJump()
                     }
                     return
@@ -2580,13 +2628,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 return
             }
 
-            if owner.movingSelection {
-                // Move mode is drag-only. A single tap used to teleport the
-                // object's centre to the touched ground point, which was easy
-                // to trigger while preparing a drag on iPad.
-                return
-            }
-
+            // 一度のタップで物が瞬間移動しないよう、タップは選択だけを
+            // 担う。移動はドラッグ、指を離した位置で確定。
             if let placementID = hitPlacement(at: screenPoint) {
                 owner.store.select(placementID)
                 Haptics.tap(.light)
@@ -2610,6 +2653,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func hasExploreInteractiveTarget(at point: CGPoint) -> Bool {
             hitFixedNoticeBoard(at: point)
                 || hitArrivalBoat(at: point)
+                || (owner.navigatorTapOpensColors && hitNavigator(at: point))
                 || hitPlacement(at: point) != nil
         }
 
@@ -2703,6 +2747,17 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
         }
 
+        private func hitNavigator(at point: CGPoint) -> Bool {
+            guard let view, let navigator = navigatorNode else { return false }
+            let hits = view.hitTest(
+                point,
+                options: [.searchMode: SCNHitTestSearchMode.all.rawValue]
+            )
+            return hits.contains { hit in
+                isDescendant(hit.node, of: navigator) || hit.node === navigator
+            }
+        }
+
         private func hitFixedNoticeBoard(at point: CGPoint) -> Bool {
             guard let view, let board = fixedNoticeBoardNode else { return false }
             let hits = view.hitTest(
@@ -2768,6 +2823,84 @@ struct HomeIslandSceneView: UIViewRepresentable {
             return nil
         }
 
+        /// 指の太さのぶんだけ広げた当たり判定の半径(pt)。
+        ///
+        /// 花や灯りのような細い飾りは、画面に映る面積が指先より小さい。
+        /// 厳密なヒットだけを掴む条件にすると、数ピクセル外しただけで
+        /// 「掴めなかった」ことになる。
+        private static let grabSlop: CGFloat = 30
+
+        private static let grabProbeDirections: [CGPoint] = {
+            let diagonal = CGFloat(0.70710678)
+            return [
+                CGPoint(x: 1, y: 0),
+                CGPoint(x: 0, y: 1),
+                CGPoint(x: -1, y: 0),
+                CGPoint(x: 0, y: -1),
+                CGPoint(x: diagonal, y: diagonal),
+                CGPoint(x: -diagonal, y: diagonal),
+                CGPoint(x: diagonal, y: -diagonal),
+                CGPoint(x: -diagonal, y: -diagonal)
+            ]
+        }()
+
+        /// 選択中の飾りが、指のすぐ脇にいるか。
+        private func selectedPlacementIsNear(_ point: CGPoint, within slop: CGFloat) -> Bool {
+            guard owner.store.selectedID != nil, slop > 0 else { return false }
+            for radius in [slop * 0.5, slop] {
+                for direction in Self.grabProbeDirections {
+                    if touchReachesSelectedPlacement(at: CGPoint(
+                        x: point.x + direction.x * radius,
+                        y: point.y + direction.y * radius
+                    )) {
+                        return true
+                    }
+                }
+            }
+            return false
+        }
+
+        /// この指がいま掴むもの。
+        ///
+        /// 選択中の物が指の下にあるなら、ほかの物の中に立っていて最前面に
+        /// 出てこなくてもそれを掴む。そうでなければ、見えているとおり手前の
+        /// 物を掴む。指の下に何もなければ何も掴まない — これが「触っていない
+        /// 物が飛ぶ」を根本から断つ条件。
+        ///
+        /// 数ピクセル外したときの助けは、選択中の物にだけ効かせる。指のまわり
+        /// から誰でも拾えるようにすると、掴んだつもりのない隣の飾りが代わりに
+        /// 動く。掴む相手を変えるには、その飾りに正確に触れてもらう。
+        private func grabCandidate(at point: CGPoint) -> UUID? {
+            if touchReachesSelectedPlacement(at: point) {
+                moveDebug("grab selected-under-finger \(shortID(owner.store.selectedID)) at \(point)")
+                return owner.store.selectedID
+            }
+            if let hit = hitPlacement(at: point) {
+                moveDebug("grab exact-hit \(shortID(hit)) asset=\(assetName(hit)) at \(point) selected=\(shortID(owner.store.selectedID))")
+                return hit
+            }
+            guard selectedPlacementIsNear(point, within: Self.grabSlop) else {
+                moveDebug("grab NONE at \(point) selected=\(shortID(owner.store.selectedID))")
+                return nil
+            }
+            moveDebug("grab selected-near \(shortID(owner.store.selectedID)) at \(point)")
+            return owner.store.selectedID
+        }
+
+        private func shortID(_ id: UUID?) -> String {
+            guard let id else { return "none" }
+            return String(id.uuidString.prefix(8))
+        }
+
+        private func assetName(_ id: UUID) -> String {
+            owner.store.placements.first { $0.id == id }?.assetID ?? "?"
+        }
+
+        /// 指が実際に飾りを引きずっている最中か。
+        private var propGrabInFlight: Bool {
+            selectionMovePanActive
+        }
+
         private func groundPoint(at point: CGPoint) -> SCNVector3? {
             guard let view else { return nil }
             let near = view.unprojectPoint(SCNVector3(Float(point.x), Float(point.y), 0))
@@ -2776,7 +2909,15 @@ struct HomeIslandSceneView: UIViewRepresentable {
             guard abs(direction.y) > 0.0001 else { return nil }
             let distance = (HomeIslandMetrics.surfaceY - near.y) / direction.y
             guard distance >= 0 else { return nil }
-            return near + direction * distance
+            let hit = near + direction * distance
+            // Rays that graze the horizon meet the plane far out at sea. Those
+            // points are geometrically valid and practically useless: anchoring
+            // a drag on one made the next frame's delta enormous.
+            guard hit.x.isFinite, hit.z.isFinite,
+                  hit.x * hit.x + hit.z * hit.z
+                    <= HomeIslandMetrics.groundRaycastLimit * HomeIslandMetrics.groundRaycastLimit
+            else { return nil }
+            return hit
         }
 
         /// A large thumb-reachable region instead of a fixed joystick. The
@@ -2788,13 +2929,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                   !owner.cameraShowcaseActive,
                   !boardingRequested
             else { return false }
-            // While carrying a prop, a touch that starts on it belongs to the
-            // drag even inside the thumb region — otherwise props that happen
-            // to sit low and left could not be picked up.
-            if owner.mode == .edit,
-               owner.movingSelection,
-               let selectedID = owner.store.selectedID,
-               hitPlacement(at: point) == selectedID {
+            // While a prop is being carried the whole screen belongs to it.
+            // Sharing the lower-left corner with the walk control meant a drag
+            // that started there walked the navigator instead of moving what
+            // the player was holding.
+            if owner.mode == .edit, selectionMovePanActive {
                 return false
             }
             let bounds = view.bounds
@@ -2939,29 +3078,49 @@ struct HomeIslandSceneView: UIViewRepresentable {
                   let view
             else { return }
             view.becomeFirstResponder()
+
+            // 新しいドラッグは必ず所有者を決め直す。前のドラッグの残りが
+            // 効いていると、触っていない飾りが動く。
+            if recognizer.state == .began {
+                selectionMovePanActive = false
+                // 指のないパン — トラックパッドのスクロール — で飾りを
+                // 掴んではいけない。あれはカメラの寄り引き。
+                if owner.mode == .edit,
+                   owner.placementAssetID == nil,
+                   recognizer.numberOfTouches > 0 {
+                    // 掴む相手は指が触れた瞬間に決めてある(`shouldReceive`)。
+                    // UIPanのしきい値を超えるまでに指が細い飾りから外れても、
+                    // 掴んだものは変わらない。取りこぼしたときだけ拾い直す。
+                    if selectionMoveTouchPlacementID == nil {
+                        selectionMoveTouchPlacementID = grabCandidate(
+                            at: recognizer.location(in: view)
+                        )
+                    }
+                    selectionMovePanActive = selectionMoveTouchPlacementID != nil
+                }
+            }
+
+            // 掴んでいるあいだ、この指はその飾りのもの。
+            //
+            // 指が離れた瞬間に `numberOfTouches` は 0 へ戻る。下の
+            // ポインタ用の分岐を先に通すと、そこで `.ended` が食われて
+            // `handleSelectionMove` に永久に届かない。移動は一度も確定せず、
+            // ノードはプレビュー位置に取り残され、次の再描画で保存済みの
+            // 座標へ弾き戻される — 「一つ前に触ったものが瞬間移動する」の
+            // 正体はこれだった。確定を待つ側を先に見る。
+            if selectionMovePanActive {
+                handleSelectionMove(recognizer, in: view)
+                if recognizer.state == .ended
+                    || recognizer.state == .cancelled
+                    || recognizer.state == .failed {
+                    selectionMovePanActive = false
+                }
+                return
+            }
+
             if recognizer.numberOfTouches == 0 {
                 handlePointerScroll(recognizer)
                 return
-            }
-            if owner.mode == .edit, owner.movingSelection {
-                if recognizer.state == .began {
-                    // Move mode with something selected means the drag belongs
-                    // to that prop, full stop. Requiring the touch-down hit to
-                    // resolve to the selected prop broke the moment props were
-                    // allowed to overlap: a prop standing inside another is
-                    // never the frontmost hit, so its drag silently turned into
-                    // a camera orbit and it could not be moved at all.
-                    selectionMovePanActive = owner.store.selectedID != nil
-                }
-                if selectionMovePanActive {
-                    handleSelectionMove(recognizer, in: view)
-                    if recognizer.state == .ended
-                        || recognizer.state == .cancelled
-                        || recognizer.state == .failed {
-                        selectionMovePanActive = false
-                    }
-                    return
-                }
             }
             let translation = recognizer.translation(in: view)
             switch recognizer.state {
@@ -3023,21 +3182,48 @@ struct HomeIslandSceneView: UIViewRepresentable {
             elevation = pending.elevation
         }
 
+        /// Opt-in drag tracing: `SIMCTL_CHILD_LANDFALL_MOVE_DEBUG=1`.
+        private static let moveDebugEnabled =
+            ProcessInfo.processInfo.environment["LANDFALL_MOVE_DEBUG"] == "1"
+
+        private func moveDebug(_ message: @autoclosure () -> String) {
+            guard Self.moveDebugEnabled else { return }
+            NSLog("LF_MOVE %@", message())
+        }
+
+        /// The furthest a prop may travel in one drag frame, in world units.
+        /// A fast deliberate drag covers well under half of this in a frame,
+        /// while the old 4.0 allowance still let one bad ground reading throw
+        /// a prop most of the way across the island. A capped frame only lags
+        /// the finger; the next frame catches up.
+        private static let maximumMoveStep: Float = 1.2
+
         private func handleSelectionMove(
             _ recognizer: UIPanGestureRecognizer,
             in view: SCNView
         ) {
-            guard let selected = owner.store.selectedPlacement,
-                  let node = placementNodes[selected.id]
+            let screenPoint = recognizer.location(in: view)
+            if recognizer.state == .began {
+                adoptTouchedPlacementIfNeeded(at: screenPoint)
+            }
+
+            // 動かすのは、この指が掴んだものだけ。「選択中だから」という
+            // 理由だけで画面外の物が動くことは、もうない。
+            guard let targetID = selectionMoveTouchPlacementID ?? moveDragPlacementID,
+                  owner.store.selectedID == targetID,
+                  let selected = owner.store.placements.first(where: { $0.id == targetID }),
+                  let node = placementNodes[targetID]
             else {
                 clearSelectionMoveDrag()
                 return
             }
-
-            let screenPoint = recognizer.location(in: view)
             switch recognizer.state {
             case .began:
-                guard let point = groundPoint(at: screenPoint) else { return }
+                guard let point = groundPoint(at: screenPoint) else {
+                    moveDebug("began NO-GROUND screen=\(screenPoint)")
+                    return
+                }
+                moveDebug("began screen=\(screenPoint) ground=(\(point.x), \(point.z)) prop=(\(selected.transform.x), \(selected.transform.z))")
                 moveDragPlacementID = selected.id
                 moveDragLastGroundPoint = point
                 moveDragPosition = SCNVector3(
@@ -3046,26 +3232,66 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     selected.transform.z
                 )
                 setSelectionMoveBlocked(false)
+                let onMoveBegan = owner.onMoveBegan
+                DispatchQueue.main.async {
+                    onMoveBegan()
+                }
             case .changed:
+                guard let point = groundPoint(at: screenPoint) else { return }
+                // The touch may have started on the sky or out past the usable
+                // ground. Arm the drag on the first frame that does resolve
+                // instead of dead-ending the whole gesture.
                 guard moveDragPlacementID == selected.id,
                       let previousGroundPoint = moveDragLastGroundPoint,
-                      let point = groundPoint(at: screenPoint),
                       let currentPosition = moveDragPosition
-                else { return }
+                else {
+                    moveDragPlacementID = selected.id
+                    moveDragLastGroundPoint = point
+                    moveDragPosition = SCNVector3(
+                        selected.transform.x,
+                        HomeIslandMetrics.surfaceY,
+                        selected.transform.z
+                    )
+                    setSelectionMoveBlocked(false)
+                    moveDebug("armed late ground=(\(point.x), \(point.z))")
+                    return
+                }
                 // Consume pointer deltas even while blocked. Absolute targeting
                 // accumulated distance behind an obstacle and then jumped the
                 // prop across it as soon as the far side became valid.
-                moveDragLastGroundPoint = point
-                let target = SIMD2<Float>(
-                    currentPosition.x + point.x - previousGroundPoint.x,
-                    currentPosition.z + point.z - previousGroundPoint.z
+                // A frame's travel is capped. Camera-relative deltas can spike
+                // when the finger crosses a shallow-angle part of the ground,
+                // and an uncapped delta swept the prop to the far shore in one
+                // frame — the prop simply vanished from under the finger.
+                var delta = SIMD2<Float>(
+                    point.x - previousGroundPoint.x,
+                    point.z - previousGroundPoint.z
                 )
+                let deltaLength = simd_length(delta)
+                if deltaLength > Self.maximumMoveStep {
+                    delta *= Self.maximumMoveStep / deltaLength
+                }
+                let target = SIMD2<Float>(
+                    currentPosition.x + delta.x,
+                    currentPosition.z + delta.y
+                )
+                moveDebug("changed ground=(\(point.x), \(point.z)) target=(\(target.x), \(target.y))")
                 let resolution = resolveSelectionMove(
                     selected: selected,
                     from: SIMD2<Float>(currentPosition.x, currentPosition.z),
                     toward: target
                 )
+                moveDebug("resolved=(\(resolution.transform.x), \(resolution.transform.z)) blocked=\(resolution.wasBlocked)")
                 let transform = resolution.transform
+                // The anchor advances by what the prop actually travelled, not
+                // by what the finger asked for. A frame spent pinned against
+                // the shoreline therefore builds no debt: the prop stays glued
+                // to the finger's motion instead of lurching once it is free.
+                moveDragLastGroundPoint = SCNVector3(
+                    previousGroundPoint.x + (transform.x - currentPosition.x),
+                    HomeIslandMetrics.surfaceY,
+                    previousGroundPoint.z + (transform.z - currentPosition.z)
+                )
                 setSelectionMoveBlocked(resolution.wasBlocked)
                 let worldPosition = SCNVector3(
                     transform.x,
@@ -3080,9 +3306,16 @@ struct HomeIslandSceneView: UIViewRepresentable {
             case .ended:
                 // Fall back to the node's own previewed position: losing the
                 // drag bookkeeping must not silently discard the move.
-                let position = moveDragPosition
-                    ?? (moveDragPlacementID == nil ? nil : node.position)
-                    ?? node.position
+                guard let position = moveDragPosition ?? (moveDragPlacementID == nil ? nil : node.position)
+                else {
+                    // Nothing was ever picked up — a stray touch on the sky, or
+                    // a tap too short to resolve ground. Leave the prop and the
+                    // move mode exactly as they were.
+                    moveDebug("ended unarmed, ignored")
+                    clearSelectionMoveDrag()
+                    return
+                }
+                moveDebug("ended commit=(\(position.x), \(position.z)) node=(\(node.position.x), \(node.position.z)) dragID=\(String(describing: moveDragPlacementID))")
                 guard moveDragPlacementID == nil || moveDragPlacementID == selected.id
                 else {
                     clearSelectionMoveDrag()
@@ -3106,6 +3339,41 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
         }
 
+        /// 指が置かれた先の物を掴み、そのまま編集対象にする。
+        ///
+        /// かつては「移動モード中はどこをドラッグしても選択中の物が動く」
+        /// 作りだった。細い飾りを数ピクセル外して触ると乗り換えが起きず、
+        /// 離れた場所にある — たいていは一つ前に置いたばかりの — 物が
+        /// 指の動きに引きずられて飛んだ。掴む相手は常に指の下にある物。
+        ///
+        /// 掴んだ時点で選択も移るので、続けて別の飾りを触れば、持ち替える
+        /// ための操作を挟まずにそちらの編集へ入れる。
+        private func adoptTouchedPlacementIfNeeded(at point: CGPoint) {
+            guard let touched = selectionMoveTouchPlacementID ?? grabCandidate(at: point)
+            else {
+                selectionMoveTouchPlacementID = nil
+                return
+            }
+            selectionMoveTouchPlacementID = touched
+            guard touched != owner.store.selectedID else { return }
+            owner.store.select(touched)
+        }
+
+        /// 指の下に選択中の物があるか。手前の物に隠れていても数える。
+        private func touchReachesSelectedPlacement(at point: CGPoint) -> Bool {
+            guard let view,
+                  let selectedID = owner.store.selectedID,
+                  let selectedNode = placementNodes[selectedID]
+            else { return false }
+            let hits = view.hitTest(
+                point,
+                options: [.searchMode: SCNHitTestSearchMode.all.rawValue]
+            )
+            return hits.contains { hit in
+                hit.node === selectedNode || isDescendant(hit.node, of: selectedNode)
+            }
+        }
+
         private func clearSelectionMoveDrag() {
             moveDragPlacementID = nil
             moveDragLastGroundPoint = nil
@@ -3124,7 +3392,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
             guard !selectionMovePanActive else { return }
             guard let moveDragPlacementID,
                   owner.mode != .edit
-                    || !owner.movingSelection
                     || owner.cameraInteractionLocked
                     || owner.store.selectedID != moveDragPlacementID
             else { return }
@@ -3167,7 +3434,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
         ) -> (transform: HomeIslandTransform, wasBlocked: Bool) {
             let displacement = target - start
             let distance = simd_length(displacement)
-            let stepCount = max(1, Int(ceil(distance / 0.12)))
+            moveDebug("resolve distance=\(distance) steps=\(distance / 0.12)")
+            let stepCount = min(64, max(1, Int(ceil(min(distance, 8) / 0.12))))
             let increment = displacement / Float(stepCount)
             var current = selected.transform
             current.x = start.x
@@ -3210,7 +3478,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         @objc private func handleTwoFingerPan(_ recognizer: UIPanGestureRecognizer) {
             guard owner.mode == .edit || owner.mode == .camera,
-                  !owner.movingSelection,
                   !owner.cameraInteractionLocked,
                   let view,
                   let target = cameraTarget
@@ -3240,7 +3507,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
         @objc private func handlePinch(_ recognizer: UIPinchGestureRecognizer) {
             guard owner.mode != .arrival,
                   owner.mode != .departure,
-                  !owner.movingSelection,
                   !owner.cameraInteractionLocked,
                   let view,
                   let target = cameraTarget
@@ -3276,7 +3542,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         @objc private func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
             guard owner.mode == .edit || owner.mode == .camera,
                   !owner.cameraInteractionLocked,
-                  !owner.movingSelection,
+                  !selectionMovePanActive,
                   recognizer.state == .began,
                   let view
             else { return }
@@ -3302,7 +3568,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func handlePointerScroll(_ recognizer: UIPanGestureRecognizer) {
             guard owner.mode != .arrival,
                   owner.mode != .departure,
-                  !owner.movingSelection,
+                  !selectionMovePanActive,
                   !owner.cameraInteractionLocked,
                   let view
             else { return }
@@ -5563,7 +5829,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 // thumbstick instead of falling through to camera orbit.
                 let supportsMovement = touch.type == .direct
                     || touch.type == .indirectPointer
-                return supportsMovement && isMovementControlPoint(point, in: view)
+                guard supportsMovement, isMovementControlPoint(point, in: view)
+                else { return false }
+                // 親指の領域に置かれた飾りも、そこから掴んで動かせる。
+                guard owner.mode == .edit, owner.placementAssetID == nil
+                else { return true }
+                return grabCandidate(at: point) == nil
             }
             if gestureRecognizer === runningJumpRecognizer {
                 return touch.type == .direct
@@ -5573,22 +5844,26 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     && !isMovementControlPoint(point, in: view)
                     && !hasExploreInteractiveTarget(at: point)
             }
-            if gestureRecognizer === orbitPanRecognizer,
-               owner.mode == .explore
-                || (owner.mode == .edit && !owner.movingSelection) {
-                return !isMovementControlPoint(point, in: view)
-            }
-            if gestureRecognizer === orbitPanRecognizer,
-               owner.mode == .edit,
-               owner.movingSelection {
-                // The thumb region pans the view even mid-carry, so one hand
-                // can steer the island while the other holds the prop.
-                guard !isMovementControlPoint(point, in: view) else { return false }
+            if gestureRecognizer === orbitPanRecognizer, owner.mode == .edit {
                 // Capture the target before UIPan's movement threshold is met.
                 // This keeps rocks and stumps draggable even when the finger
                 // leaves their small projected mesh during the first few pixels.
-                selectionMoveTouchPlacementID = hitPlacement(at: point)
-                return true
+                // 進行中のドラッグは二本目の指に奪わせない。
+                let dragIsLive = orbitPanRecognizer.map {
+                    $0.state == .began || $0.state == .changed
+                } ?? false
+                if !dragIsLive {
+                    selectionMoveTouchPlacementID = owner.placementAssetID == nil
+                        ? grabCandidate(at: point)
+                        : nil
+                }
+                // 飾りの上から始まったドラッグは、親指の領域でもその飾りの
+                // もの。何もない地面から始まったドラッグは、必ずカメラ。
+                if selectionMoveTouchPlacementID != nil { return true }
+                return !isMovementControlPoint(point, in: view)
+            }
+            if gestureRecognizer === orbitPanRecognizer, owner.mode == .explore {
+                return !isMovementControlPoint(point, in: view)
             }
             if gestureRecognizer === pinchRecognizer,
                owner.mode == .explore,
@@ -5600,12 +5875,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
             if gestureRecognizer === pinchRecognizer,
                owner.mode == .edit,
-               owner.movingSelection {
+               propGrabInFlight {
                 return false
             }
             if gestureRecognizer === twoFingerPanRecognizer {
                 return (owner.mode == .edit || owner.mode == .camera)
-                    && !owner.movingSelection
+                    && !propGrabInFlight
             }
             if gestureRecognizer === longPressRecognizer {
                 return owner.mode == .edit || owner.mode == .camera
@@ -5630,7 +5905,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             )
             if isMovementAndOrbit { return true }
             if owner.mode == .edit,
-               owner.movingSelection,
+               propGrabInFlight,
                (gestureRecognizer === pinchRecognizer
                     || otherGestureRecognizer === pinchRecognizer
                     || gestureRecognizer === twoFingerPanRecognizer

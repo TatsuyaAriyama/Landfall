@@ -164,6 +164,8 @@ final class VoyagePassStore: ObservableObject {
         purchasedProductIDs = active
         expirationDate = latestExpiration
         signedEntitlement = latestSignedTransaction
+        // 航海士の色は描画スレッドからも参照されるため、確かめた結果を控えておく。
+        NavigatorCustomization.updatePassState(isActive)
     }
 
     private static func verified<T>(_ result: VerificationResult<T>) throws -> T {

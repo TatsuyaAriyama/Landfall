@@ -145,6 +145,14 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
         nextPlayer.numberOfLoops = 0
         nextPlayer.volume = 0
         nextPlayer.prepareToPlay()
+        #if DEBUG
+        // 動作確認用: LANDFALL_MUSIC_TAIL=5 で各曲を終わり5秒から始め、
+        // 次曲への自動送りと表示の切り替わりを数秒で確かめられる。
+        if let raw = ProcessInfo.processInfo.environment["LANDFALL_MUSIC_TAIL"],
+           let tail = TimeInterval(raw), tail > 0 {
+            nextPlayer.currentTime = max(0, nextPlayer.duration - tail)
+        }
+        #endif
         player = nextPlayer
         currentTrack = track
 

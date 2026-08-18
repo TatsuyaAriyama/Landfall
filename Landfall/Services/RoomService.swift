@@ -66,6 +66,7 @@ final class RoomService: ObservableObject {
         static let resolve = 80
         static let note = 500
         static let itemName = 60
+        static let monthSessions = 1000
     }
 
     /// 表示名。プレイヤーカードの名前 > Authの表示名 > 「船乗り」。
@@ -254,7 +255,7 @@ final class RoomService: ObservableObject {
 
         // 当月のセッションを項目情報ごと非正規化して共有する。
         let allSessions = (try? context.fetch(FetchDescriptor<StudySession>())) ?? []
-        let monthSessions: [[String: Any]] = allSessions.compactMap { session in
+        var monthSessions: [[String: Any]] = allSessions.compactMap { session in
             let c = calendar.dateComponents([.year, .month, .day], from: session.date)
             guard c.year == year, c.month == month, let day = c.day else { return nil }
             var dict: [String: Any] = ["day": day, "minutes": session.minutes, "date": session.date]
@@ -265,6 +266,12 @@ final class RoomService: ObservableObject {
                 dict["symbolToken"] = item.symbolToken
             }
             return dict
+        }
+        // ルール側の上限(1000)と足並みを揃える。一月にそこまで記録することは
+        // 実際には起きないが、超えたときに一番古い記録から落として直近を守る。
+        if monthSessions.count > Limit.monthSessions {
+            monthSessions.sort { ($0["date"] as? Date ?? .distantPast) > ($1["date"] as? Date ?? .distantPast) }
+            monthSessions = Array(monthSessions.prefix(Limit.monthSessions))
         }
 
         return (docID, [

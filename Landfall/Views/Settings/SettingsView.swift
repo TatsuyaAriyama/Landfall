@@ -114,11 +114,9 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    sectionLabel("Voyage Pass")
-                        .padding(.top, 24)
-                        .padding(.bottom, 12)
-
+                    // 航海証だけは節の見出しを置かない。カード自身が紋章と名前を兼ねる。
                     voyagePassCard
+                        .padding(.top, 4)
 
                     sectionLabel("Feedback")
                         .padding(.top, 28)
@@ -503,59 +501,103 @@ struct SettingsView: View {
 
     // MARK: - Voyage Pass
 
+    /// アイコンの一辺。ホーム画面のアイコンと同じ、辺の22%で角を丸める。
+    private static let voyagePassMarkSide: CGFloat = 50
+
+    private var voyagePassMarkShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Self.voyagePassMarkSide * 0.22, style: .continuous)
+    }
+
+    private var voyagePassCardShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+    }
+
+    private var voyagePassTitle: LocalizedStringKey {
+        voyagePass.isActive ? "Voyage Pass aboard" : "Voyage Pass"
+    }
+
+    private var voyagePassSupport: LocalizedStringKey {
+        voyagePass.isActive ? "Active on this Apple Account" : "Colours, multiplayer, exclusive assets"
+    }
+
+    /// サービスの顔をそのまま置く。輪も座布団も敷かず、角丸だけで見せる。
+    private var voyagePassMark: some View {
+        Image("ServiceMark")
+            .resizable()
+            .interpolation(.high)
+            .aspectRatio(contentMode: .fill)
+            .frame(width: Self.voyagePassMarkSide, height: Self.voyagePassMarkSide)
+            .clipShape(voyagePassMarkShape)
+            .shadow(color: Color.black.opacity(0.16), radius: 6, y: 3)
+            .accessibilityHidden(true)
+    }
+
+    private var voyagePassCopy: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(voyagePassTitle)
+                    .font(LFFont.copy(17))
+                    .foregroundStyle(LFColor.ink)
+                // 携えているときだけの小さな封蝋。売り込みではなく、確認の印。
+                if voyagePass.isActive {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(LFColor.returnOrange)
+                        .accessibilityHidden(true)
+                }
+            }
+            Text(voyagePassSupport)
+                .font(LFFont.label(13))
+                .foregroundStyle(LFColor.ink.opacity(0.52))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+    }
+
+    /// 紙からほんの少しだけ持ち上げる。地は ink の薄がけにして、明所でも暗所でも同じだけ浮かせる。
+    private var voyagePassSurface: some View {
+        ZStack {
+            voyagePassCardShape
+                .fill(LFColor.paper)
+                .shadow(color: Color.black.opacity(0.07), radius: 12, y: 5)
+            voyagePassCardShape
+                .fill(LFColor.ink.opacity(0.05))
+            voyagePassCardShape
+                .stroke(LFColor.ink.opacity(0.09), lineWidth: 1)
+        }
+    }
+
+    private var voyagePassRow: some View {
+        HStack(spacing: 14) {
+            voyagePassMark
+            voyagePassCopy
+
+            Spacer(minLength: 8)
+
+            // 未加入のときだけ、進む先を橙で指す。携えているときは他の行と同じ静かさに戻す。
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(
+                    voyagePass.isActive ? LFColor.ink.opacity(0.28) : LFColor.returnOrange.opacity(0.85)
+                )
+                .accessibilityHidden(true)
+        }
+        .padding(14)
+        .background(voyagePassSurface)
+        .contentShape(voyagePassCardShape)
+    }
+
+    /// この画面でいちばん価値のある入口。設定の一行ではなく、サービスそのものの扉として置く。
     private var voyagePassCard: some View {
         Button {
             showingVoyagePass = true
             Haptics.tap(.light)
         } label: {
-            HStack(spacing: 14) {
-                TileSymbolView(
-                    symbol: .compass,
-                    fg: LFColor.returnOrange,
-                    bg: LFColor.harborTeal
-                )
-                .frame(width: 48, height: 48)
-                .background(LFColor.harborTeal, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(voyagePass.isActive ? "Voyage Pass aboard" : "Open Voyage Pass")
-                        .font(LFFont.copy(16))
-                        .foregroundStyle(LFColor.ink)
-                    Text(
-                        voyagePass.isActive
-                            ? "Active on this Apple Account"
-                            : "Seasonal waters, shared voyages, and special attire"
-                    )
-                    .font(LFFont.label(12))
-                    .foregroundStyle(LFColor.ink.opacity(0.50))
-                    .lineLimit(2)
-                }
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(LFColor.ink.opacity(0.28))
-            }
-            .padding(16)
-            .background(
-                LinearGradient(
-                    colors: [
-                        LFColor.returnOrange.opacity(0.10),
-                        LFColor.harborTeal.opacity(0.08),
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .stroke(LFColor.returnOrange.opacity(0.22), lineWidth: 1)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            voyagePassRow
         }
         .buttonStyle(LFPressableButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(Text("Opens Voyage Pass"))
     }
 
     // MARK: - 到達した島

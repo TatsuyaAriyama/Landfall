@@ -118,9 +118,10 @@
 "Tap the sand to place %@" = "砂地をタップして%@を配置";
 "Tap once on the sand to place %@" = "砂地を1回タップして%@を配置";
 "Tap the new place on the sand" = "砂地の移動先をタップ";
-"Drag the selected asset freely across the island" = "移動モード：選択中のアセットをドラッグ";
-"Slide along the obstacle to find open space" = "障害物に沿って、空いている場所へ動かしてください";
-"Drag lower-left to move · drag to turn · pinch to zoom" = "左下で移動・ドラッグで回転・ピンチで拡大";
+"Release to place it here" = "指を離すとこの位置で決まります";
+"Drag an asset to move it · release to place" = "アセットをドラッグで移動・離すと確定";
+"That way is closed — slide to open ground" = "その先へは動かせません。空いている場所へ滑らせてください";
+"Drag an asset to move it · drag elsewhere to turn · pinch to zoom" = "アセットをドラッグで移動・その他をドラッグで回転・ピンチで拡大";
 "This spot is kept clear" = "ここは通り道として空けてあります";
 "You have placed all of these" = "これはもう置ける数に達しています";
 "Keep the asset inside the sandy build area" = "砂地の配置エリア内に置いてください";
@@ -163,11 +164,12 @@
 "Drag to look around" = "ドラッグして室内を見回す";
 "Tap a tent or cottage to enter · Campfire opens Logbook" = "テントか朽ちた家をタップして入る・焚き火で航海誌を開く";
 "Enter buildings · Campfire opens Logbook" = "建物に入る・焚き火で航海誌を開く";
-"Wooden Desk" = "木製の机";
-"Wooden Chair" = "木製の椅子";
 "Weathered Crate" = "古びた木箱";
 "Harbor Lantern Post" = "港のランタン柱";
 "Driftwood Bench" = "流木のベンチ";
+"Stone Bench" = "石のベンチ";
+"Bookshelf" = "本棚";
+"Stacked Books" = "積まれた本";
 "Weathered Anchor" = "古びた錨";
 "Net Drying Rack" = "漁網の干し台";
 "Navigator's Hammock" = "航海士のハンモック";
@@ -724,23 +726,26 @@
 "Landed on" = "上陸日";
 "Time at sea" = "航海時間";
 
+/* 島のセーブデータ */
+"Islands" = "島";
+"Island %lld" = "%lld番目の島";
+"Sailing" = "航海中";
+"Props" = "設置数";
+"New island" = "新しい島";
+"Sail to this island" = "この島へ渡る";
+
 /* 航海証 */
 "Voyage Pass" = "航海証";
-"Open Voyage Pass" = "航海証をひらく";
+"Colours, multiplayer, exclusive assets" = "カラー・マルチプレイ・限定アセット";
+"Change your navigator's colour" = "航海士のカラーを変える";
+"Open the multiplayer server" = "マルチプレイサーバーの解放";
+"Exclusive assets" = "限定アセット";
+"Ongoing updates" = "その他継続アップデート";
+"Per year" = "年額";
+"Per month" = "月額";
+"Continue" = "購入する";
 "Voyage Pass aboard" = "航海証を携えています";
 "Active on this Apple Account" = "このApple Accountで有効です";
-"Seasonal waters, shared voyages, and special attire" = "季節の海域、共有航海、特別な装い";
-"A wider sea, when you want it." = "もっと広い海へ、行きたいときに。";
-"Your pass is active. Thank you for supporting KeelMira." = "航海証は有効です。KeelMiraの航海を支えてくれてありがとうございます。";
-"Keep the core voyage free. The pass adds richer worlds and ways to sail together." = "基本の航海は無料のまま。航海証で、より豊かな世界と仲間と航海する方法が広がります。";
-"Sail side by side" = "仲間と並走";
-"Shared voyages and richer multiplayer rooms" = "共通タイマーと、より豊かなマルチプレイ";
-"Seasonal waters" = "季節の海域";
-"Special seas that change through the year" = "四季とともに移ろう特別な海";
-"More ways to make it yours" = "さらに自分らしい装い";
-"Special attire for your navigator and boat" = "航海士と船の特別なカスタマイズ";
-"Keepsakes from the voyage" = "航海の記念品";
-"Premium landfall cards and future additions" = "特別な上陸カードと、これから増える機能";
 "Active" = "有効";
 "Renews %@" = "%@に更新";
 "Best value" = "お得";
@@ -776,6 +781,12 @@
 "Twilight" = "トワイライト";
 "Horizon" = "ホライズン";
 "Your navigator" = "あなたの航海士";
+"Navigator color" = "航海士の色";
+"Opens with a Voyage Pass" = "航海証で開きます";
+"Mist" = "ミスト";
+"Iris" = "アイリス";
+"Honey" = "ハニー";
+"Smoke" = "スモーク";
 "Pose" = "仕草";
 "Idle" = "待機";
 "Walk" = "歩く";
@@ -1052,6 +1063,8 @@
 "Swim Ring" = "浮き輪";
 "Sandcastle" = "砂のお城";
 "Watermelon" = "スイカ";
+"Seaside Mailbox" = "海辺のポスト";
+"Seaside Gramophone" = "海辺の蓄音機";
 "Assets" = "アセット";
 "Details" = "詳細";
 "Move panel" = "パネルを左右に移動";

@@ -551,9 +551,16 @@ final class PrivateIslandService: ObservableObject {
         guard let uid = currentUserID else { throw PrivateIslandError.notSignedIn }
         let code = Self.normalizedCode(rawCode)
         guard code.count == 6 else { throw PrivateIslandError.invalidCode }
-        try await db.collection("privateIslands").document(code)
+        let memberRef = db.collection("privateIslands").document(code)
             .collection("members").document(uid)
-            .setData(Self.memberProfileData(joinedAt: false), merge: true)
+        // A merge write with no `joinedAt` becomes a create when the card is
+        // missing, and the rules require `joinedAt` on create — the same
+        // repair this makes in `publishProfileToJoinedIslands` below.
+        let member = try await memberRef.getDocument()
+        try await memberRef.setData(
+            Self.memberProfileData(joinedAt: !member.exists),
+            merge: member.exists
+        )
     }
 
     /// Republishes the current player/boat card to every joined private island.

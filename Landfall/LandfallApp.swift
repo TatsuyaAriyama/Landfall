@@ -137,6 +137,9 @@ struct LandfallApp: App {
             }
             .animation(.easeInOut(duration: 0.28), value: auth.hasResolvedInitialAuthState)
             .environmentObject(auth)
+            // 航海証の状態を起動時に一度確かめる。島や甲板の航海士は、この控えを見て
+            // 証つきの色を着るかどうかを決める(装い画面を開かなくても揃うように)。
+            .task { _ = VoyagePassStore.shared }
             // 端末言語に関わらず、最上位画面(導入・サインイン)もアプリ言語に追従。
             .environment(\.locale, (AppLanguage(rawValue: appLanguage) ?? .system).locale)
             // 端末設定に関わらず、アプリ内の外観(ライト/ダーク)設定に追従。

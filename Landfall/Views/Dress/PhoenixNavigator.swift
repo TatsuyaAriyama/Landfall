@@ -114,10 +114,8 @@ enum PhoenixNavigator {
         secondaryLegPitch: 1.05
     )
 
-    // 配色(Web PhoenixModel と同値)
-    static let coral = UIColor(rgb: 0xF0997B)
-    static let rust = UIColor(rgb: 0x7A3B22)
-    static let rustDeep = UIColor(rgb: 0x4A1B0C)
+    // 配色。ローブの三色(robe/trim/deep)だけが装いで替わり、
+    // 砂色・夜色・ランタンの灯は誰の航海士でも同じままにする。
     static let sand = UIColor(rgb: 0xEADEBD)
     static let midnight = UIColor(rgb: 0x1A1130)
     static let lantern = UIColor(rgb: 0xF3C065)
@@ -143,9 +141,40 @@ enum PhoenixNavigator {
         return m
     }
 
-    private static var coralMat: SCNMaterial { mat(coral, roughness: 0.8) }
-    private static var rustMat: SCNMaterial { mat(rust, roughness: 0.85) }
-    private static var rustDeepMat: SCNMaterial { mat(rustDeep, roughness: 0.9) }
+    // 島で色を替えるときは、船の帆と同じように素材へ名前で当てて塗り替える
+    // (組み直すと歩行の姿勢や結びつけが切れるため)。
+    static let robeMaterialName = "LF_NavRobe"
+    static let trimMaterialName = "LF_NavTrim"
+    static let deepMaterialName = "LF_NavDeep"
+
+    private static func robeMat(_ p: NavigatorPalette) -> SCNMaterial {
+        named(mat(p.robe, roughness: 0.8), robeMaterialName)
+    }
+    private static func trimMat(_ p: NavigatorPalette) -> SCNMaterial {
+        named(mat(p.trim, roughness: 0.85), trimMaterialName)
+    }
+    private static func deepMat(_ p: NavigatorPalette) -> SCNMaterial {
+        named(mat(p.deep, roughness: 0.9), deepMaterialName)
+    }
+    private static func named(_ material: SCNMaterial, _ name: String) -> SCNMaterial {
+        material.name = name
+        return material
+    }
+
+    /// すでに立っている航海士の三色だけを塗り替える。
+    static func applyPalette(_ palette: NavigatorPalette, to navigator: SCNNode) {
+        navigator.enumerateChildNodes { node, _ in
+            guard let materials = node.geometry?.materials else { return }
+            for material in materials {
+                switch material.name {
+                case robeMaterialName: material.diffuse.contents = palette.robe
+                case trimMaterialName: material.diffuse.contents = palette.trim
+                case deepMaterialName: material.diffuse.contents = palette.deep
+                default: continue
+                }
+            }
+        }
+    }
     private static var sandMat: SCNMaterial { mat(sand, roughness: 0.85) }
     private static var ropeMat: SCNMaterial { mat(sand, roughness: 0.95) }
     private static var collarMat: SCNMaterial {
@@ -256,7 +285,11 @@ enum PhoenixNavigator {
 
     // MARK: 航海士の組み立て(名前付きピボット)
 
-    static func makeNavigatorNode() -> SCNNode {
+    /// 自分の航海士は装いで選んだ色で組む。港で見かける他人には自分の色を
+    /// 着せられないので、遠くの航海士は `.default`(熾火)を渡す。
+    static func makeNavigatorNode(
+        palette: NavigatorPalette = NavigatorCustomization.currentPalette
+    ) -> SCNNode {
         let root = SCNNode()
         root.name = "navigator"
         // 正面 +Z で組んだ素体を、船の船首 +X へ向ける。
@@ -286,23 +319,23 @@ enum PhoenixNavigator {
             knee.name = s == 1 ? "kneeR" : "kneeL"
             knee.position = SCNVector3(0, -0.18, 0.02)
 
-            let ankle = SCNNode(geometry: cyl(top: 0.042, bottom: 0.048, h: 0.18, mat: rustDeepMat))
+            let ankle = SCNNode(geometry: cyl(top: 0.042, bottom: 0.048, h: 0.18, mat: deepMat(palette)))
             ankle.position = SCNVector3(0, -0.04, 0)
             knee.addChildNode(ankle)
-            let cuff = SCNNode(geometry: cyl(top: 0.062, bottom: 0.07, h: 0.06, mat: rustMat))
+            let cuff = SCNNode(geometry: cyl(top: 0.062, bottom: 0.07, h: 0.06, mat: trimMat(palette)))
             cuff.position = SCNVector3(0, -0.125, 0.01)
             knee.addChildNode(cuff)
-            let boot = SCNNode(geometry: sphere(0.075, seg: 14, mat: rustDeepMat))
+            let boot = SCNNode(geometry: sphere(0.075, seg: 14, mat: deepMat(palette)))
             boot.position = SCNVector3(0, -0.188, 0.07)
             boot.scale = SCNVector3(0.95, 0.68, 1.55)
             knee.addChildNode(boot)
             let soleGeometry = SCNBox(width: 0.115, height: 0.026, length: 0.2, chamferRadius: 0.006)
-            soleGeometry.firstMaterial = rustMat
+            soleGeometry.firstMaterial = trimMat(palette)
             let sole = SCNNode(geometry: soleGeometry)
             sole.position = SCNVector3(0, -0.224, 0.068)
             knee.addChildNode(sole)
             let heelGeometry = SCNBox(width: 0.1, height: 0.03, length: 0.055, chamferRadius: 0.005)
-            heelGeometry.firstMaterial = rustDeepMat
+            heelGeometry.firstMaterial = deepMat(palette)
             let heel = SCNNode(geometry: heelGeometry)
             heel.position = SCNVector3(0, -0.238, -0.008)
             knee.addChildNode(heel)
@@ -317,14 +350,14 @@ enum PhoenixNavigator {
         // コート: 裾へ広がる袍 + 裾内の深錆の縁
         let skirt = SCNNode()
         skirt.name = "skirt"
-        skirt.addChildNode(SCNNode(geometry: lathe(coatProfile, segments: 22, material: coralMat)))
-        let hem = SCNNode(geometry: lathe(hemProfile, segments: 22, material: rustMat))
+        skirt.addChildNode(SCNNode(geometry: lathe(coatProfile, segments: 22, material: robeMat(palette))))
+        let hem = SCNNode(geometry: lathe(hemProfile, segments: 22, material: trimMat(palette)))
         hem.name = "skirtHem"
         skirt.addChildNode(hem)
         core.addChildNode(skirt)
 
         // 腰のベルトと留め具。Web版と同寸法で、袍の胴位置を明確にする。
-        let belt = SCNNode(geometry: torus(ring: 0.176, pipe: 0.021, mat: rustDeepMat))
+        let belt = SCNNode(geometry: torus(ring: 0.176, pipe: 0.021, mat: deepMat(palette)))
         belt.position = SCNVector3(0, 0.585, 0)
         core.addChildNode(belt)
         let buckleGeometry = SCNBox(width: 0.05, height: 0.038, length: 0.016, chamferRadius: 0.003)
@@ -334,7 +367,7 @@ enum PhoenixNavigator {
         core.addChildNode(buckle)
 
         // 肩マント
-        let mantle = SCNNode(geometry: lathe(mantleProfile, segments: 22, material: coralMat))
+        let mantle = SCNNode(geometry: lathe(mantleProfile, segments: 22, material: robeMat(palette)))
         mantle.position = SCNVector3(0, 0.78, 0)
         core.addChildNode(mantle)
 
@@ -409,7 +442,7 @@ enum PhoenixNavigator {
         let head = SCNNode()
         head.name = "head"
         head.position = SCNVector3(0, 0.98, 0)
-        let hood = SCNNode(geometry: makeHoodGeometry())
+        let hood = SCNNode(geometry: makeHoodGeometry(palette))
         hood.position = SCNVector3(0, -0.02, 0)
         hood.eulerAngles.x = -0.03
         head.addChildNode(hood)
@@ -425,14 +458,14 @@ enum PhoenixNavigator {
         core.addChildNode(head)
 
         // 左腕(手を休める)
-        let armL = makeArm(lantern: false)
+        let armL = makeArm(lantern: false, palette: palette)
         armL.name = "armL"
         armL.position = SCNVector3(-0.163, 0.8, 0.035)
         armL.eulerAngles.z = -0.14
         core.addChildNode(armL)
 
         // 右腕 + ランタン(今日の灯を提げる)
-        let armR = makeArm(lantern: true)
+        let armR = makeArm(lantern: true, palette: palette)
         armR.name = "armR"
         armR.position = SCNVector3(0.163, 0.8, 0.035)
         armR.eulerAngles.z = 0.14
@@ -442,15 +475,15 @@ enum PhoenixNavigator {
         return root
     }
 
-    private static func makeArm(lantern hasLantern: Bool) -> SCNNode {
+    private static func makeArm(lantern hasLantern: Bool, palette: NavigatorPalette) -> SCNNode {
         let arm = SCNNode()
-        let upper = SCNNode(geometry: cyl(top: 0.036, bottom: 0.044, h: 0.22, mat: coralMat))
+        let upper = SCNNode(geometry: cyl(top: 0.036, bottom: 0.044, h: 0.22, mat: robeMat(palette)))
         upper.position = SCNVector3(0, -0.1, 0)
         arm.addChildNode(upper)
-        let sleeve = SCNNode(geometry: cyl(top: 0.046, bottom: 0.064, h: 0.1, mat: rustMat))
+        let sleeve = SCNNode(geometry: cyl(top: 0.046, bottom: 0.064, h: 0.1, mat: trimMat(palette)))
         sleeve.position = SCNVector3(0, -0.22, 0)
         arm.addChildNode(sleeve)
-        let hand = SCNNode(geometry: sphere(0.048, seg: 12, mat: rustDeepMat))
+        let hand = SCNNode(geometry: sphere(0.048, seg: 12, mat: deepMat(palette)))
         hand.position = SCNVector3(0, -0.28, 0)
         arm.addChildNode(hand)
 
@@ -458,10 +491,10 @@ enum PhoenixNavigator {
             let lan = SCNNode()
             lan.name = "lantern"
             lan.position = SCNVector3(0, -0.33, 0)
-            let handle = SCNNode(geometry: cyl(top: 0.008, bottom: 0.008, h: 0.06, mat: rustMat))
+            let handle = SCNNode(geometry: cyl(top: 0.008, bottom: 0.008, h: 0.06, mat: trimMat(palette)))
             handle.position = SCNVector3(0, -0.03, 0)
             lan.addChildNode(handle)
-            let cap = SCNNode(geometry: cone(bottom: 0.058, h: 0.05, seg: 6, mat: rustMat))
+            let cap = SCNNode(geometry: cone(bottom: 0.058, h: 0.05, seg: 6, mat: trimMat(palette)))
             cap.position = SCNVector3(0, -0.075, 0)
             lan.addChildNode(cap)
             let glowMat = mat(self.lantern, roughness: 0.8, emission: self.lantern, emissionIntensity: 1.5)
@@ -469,7 +502,7 @@ enum PhoenixNavigator {
             glow.name = "lanternGlow"
             glow.position = SCNVector3(0, -0.14, 0)
             lan.addChildNode(glow)
-            let base = SCNNode(geometry: cyl(top: 0.045, bottom: 0.05, h: 0.02, mat: rustMat))
+            let base = SCNNode(geometry: cyl(top: 0.045, bottom: 0.05, h: 0.02, mat: trimMat(palette)))
             base.eulerAngles.x = .pi   // 底皿(六角の広い側を下に)
             base.position = SCNVector3(0, -0.19, 0)
             lan.addChildNode(base)
@@ -537,7 +570,7 @@ enum PhoenixNavigator {
     }
 
     /// Web版の「前面が開き、先だけ背へ流れる布フード」を同じ輪郭で生成する。
-    private static func makeHoodGeometry() -> SCNGeometry {
+    private static func makeHoodGeometry(_ palette: NavigatorPalette) -> SCNGeometry {
         let profile: [(r: Float, y: Float)] = [
             (0.148, -0.06), (0.14, 0), (0.126, 0.055),
             (0.104, 0.105), (0.07, 0.15), (0, 0.185),
@@ -572,7 +605,13 @@ enum PhoenixNavigator {
                 indices += [a, d, b, b, d, e]
             }
         }
-        return mesh(verts, indices, material: mat(coral, roughness: 0.85, doubleSided: true))
+        return mesh(
+            verts, indices,
+            material: named(
+                mat(palette.robe, roughness: 0.85, doubleSided: true),
+                robeMaterialName
+            )
+        )
     }
 
     // コート/肩マントの回転体プロフィール(Web LatheGeometry の点列。r=半径, y=高さ)

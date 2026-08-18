@@ -831,22 +831,6 @@ private enum InteriorSceneBuilder {
             addBox(to: root, name: "cottage-rug-stripe", size: SCNVector3(0.025, 0.012, 1.72), position: SCNVector3(-1.28 + Float(index) * 0.52, 0.10, 0.72), material: parchment, chamfer: 0.004)
         }
 
-        // Reuse the player's placeable furniture inside the room for visual continuity.
-        if let desk = AssetPlacementRuntime.makeAssetNode(resourceName: "wooden_desk") {
-            desk.name = "cottage-writing-desk"
-            desk.position = SCNVector3(1.82, 0.08, -2.58)
-            desk.eulerAngles.y = .pi
-            desk.scale = SCNVector3(0.86, 0.86, 0.86)
-            root.addChildNode(desk)
-        }
-        if let chair = AssetPlacementRuntime.makeAssetNode(resourceName: "wooden_chair") {
-            chair.name = "cottage-writing-chair"
-            chair.position = SCNVector3(1.82, 0.08, -1.14)
-            chair.eulerAngles.y = .pi
-            chair.scale = SCNVector3(0.82, 0.82, 0.82)
-            root.addChildNode(chair)
-        }
-
         // Wall shelves, provisions, and a candle make the cottage feel inhabited.
         for (index, y) in [1.12 as Float, 1.92, 2.72].enumerated() {
             addBox(to: root, name: "cottage-shelf-\(index)", size: SCNVector3(0.46, 0.10, 2.65), position: SCNVector3(4.40, y, -0.38), material: wood, chamfer: 0.028)
@@ -934,26 +918,6 @@ private enum InteriorSceneBuilder {
             addBox(to: root, name: "tent-rug-stripe", size: SCNVector3(3.05, 0.012, 0.025), position: SCNVector3(-0.18, 0.128, 0.02 + Float(index) * 0.36), material: parchment, chamfer: 0.004)
         }
 
-        if let desk = AssetPlacementRuntime.makeAssetNode(resourceName: "wooden_desk") {
-            desk.name = "tent-chart-desk"
-            desk.position = SCNVector3(1.72, 0.10, -2.38)
-            desk.eulerAngles.y = .pi
-            desk.scale = SCNVector3(0.88, 0.88, 0.88)
-            root.addChildNode(desk)
-        }
-        if let chair = AssetPlacementRuntime.makeAssetNode(resourceName: "wooden_chair") {
-            chair.name = "tent-chart-chair"
-            chair.position = SCNVector3(1.72, 0.10, -0.82)
-            chair.eulerAngles.y = .pi
-            chair.scale = SCNVector3(0.80, 0.80, 0.80)
-            root.addChildNode(chair)
-        }
-        addBox(to: root, name: "tent-open-chart", size: SCNVector3(0.95, 0.025, 0.58), position: SCNVector3(1.72, 1.24, -2.37), material: parchment, chamfer: 0.018, eulerAngles: SCNVector3(0, 0.08, 0))
-        for index in 0..<3 {
-            addBox(to: root, name: "tent-chart-route", size: SCNVector3(0.32, 0.012, 0.018), position: SCNVector3(1.46 + Float(index) * 0.25, 1.27, -2.37 + Float(index % 2) * 0.12), material: teal, chamfer: 0.004, eulerAngles: SCNVector3(0, Float(index) * 0.42 - 0.35, 0))
-        }
-        addCylinder(to: root, name: "tent-compass", radius: 0.11, height: 0.035, position: SCNVector3(2.03, 1.29, -2.21), material: brass)
-
         // Rolled bedding, supply chest, and stacked charts.
         addCylinder(to: root, name: "tent-bedroll", radius: 0.32, height: 1.42, position: SCNVector3(-2.42, 0.38, -1.68), material: teal, eulerAngles: SCNVector3(0, 0, Float.pi / 2))
         for x in [-2.80 as Float, -2.04] {
@@ -969,6 +933,16 @@ private enum InteriorSceneBuilder {
         addBox(to: root, name: "tent-supply-chest", size: SCNVector3(1.02, 0.68, 0.82), position: SCNVector3(2.88, 0.40, 1.52), material: woodDeep, chamfer: 0.07)
         addBox(to: root, name: "tent-supply-lid", size: SCNVector3(1.10, 0.14, 0.88), position: SCNVector3(2.88, 0.80, 1.52), material: wood, chamfer: 0.055)
         addBox(to: root, name: "tent-chest-latch", size: SCNVector3(0.14, 0.22, 0.035), position: SCNVector3(2.88, 0.60, 1.08), material: brass, chamfer: 0.012)
+
+        // The chart, its plotted route, and the compass work on the chest lid.
+        // They used to lie on a writing desk; the desk is gone, and a chart
+        // left floating at desk height would have been the only thing in the
+        // tent resting on nothing.
+        addBox(to: root, name: "tent-open-chart", size: SCNVector3(0.95, 0.025, 0.58), position: SCNVector3(2.86, 0.895, 1.52), material: parchment, chamfer: 0.018, eulerAngles: SCNVector3(0, 0.08, 0))
+        for index in 0..<3 {
+            addBox(to: root, name: "tent-chart-route", size: SCNVector3(0.32, 0.012, 0.018), position: SCNVector3(2.60 + Float(index) * 0.25, 0.925, 1.52 + Float(index % 2) * 0.12), material: teal, chamfer: 0.004, eulerAngles: SCNVector3(0, Float(index) * 0.42 - 0.35, 0))
+        }
+        addCylinder(to: root, name: "tent-compass", radius: 0.11, height: 0.035, position: SCNVector3(3.17, 0.945, 1.68), material: brass)
 
         // Hanging lantern is the dominant light source and focal point.
         addBox(to: root, name: "tent-lantern-cord", size: SCNVector3(0.025, 0.72, 0.025), position: SCNVector3(-0.72, 4.08, -0.65), material: rope, chamfer: 0.008)
