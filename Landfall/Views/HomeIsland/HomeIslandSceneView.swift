@@ -266,6 +266,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
     /// 写真モードでの増減(EV)。0 のあいだは歩いているときと同じ明るさ。
     var cameraExposureOffset: Float
     var cameraInteractionLocked: Bool
+    /// 文字入力のあいだ、島の描画枚数を落とすための合図。
+    var rendersThrottled = false
     var walkInput: HomeIslandWalkInput
     /// 飾りを掴んだ瞬間。移動は指を離した位置で確定するので、HUDはこの
     /// あいだだけ「動かしています」の顔をしていればよい。
@@ -575,6 +577,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         /// stable ID is suitable for a future multiplayer occupancy record.
         private struct PlacedSeatSlot {
             let placementID: UUID
+            let assetID: String
             let slotID: String
             let motion: HomeIslandContactMotion
             let seatNode: SCNNode
@@ -1234,6 +1237,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         func update(owner: HomeIslandSceneView) {
             self.owner = owner
+            let framesPerSecond = owner.rendersThrottled ? 20 : 60
+            if view?.preferredFramesPerSecond != framesPerSecond {
+                view?.preferredFramesPerSecond = framesPerSecond
+            }
             cancelSelectionMovePreviewIfNeeded()
             if renderedLocalPlayerID != owner.localPlayerID {
                 renderedLocalPlayerID = owner.localPlayerID
@@ -1832,6 +1839,46 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
         }
 
+        /// Stand a prop on whatever it is over. The height is not stored with
+        /// the placement, so this is the one place that decides it and every
+        /// path that positions a node runs through here.
+        private func liftOntoSurface(
+            _ node: SCNNode,
+            placement: HomeIslandPlacement,
+            among placements: [HomeIslandPlacement]
+        ) {
+            node.position.y = HomeIslandMetrics.surfaceY
+                + HomeIslandAssetCatalog.restingHeight(
+                    assetID: placement.assetID,
+                    x: node.position.x,
+                    z: node.position.z,
+                    among: placements,
+                    excluding: placement.id
+                )
+        }
+
+        /// Re-stand everything that rests on a surface, reading the dragged
+        /// host at the position the finger has it at rather than the one the
+        /// store still holds. Without this the laptop hangs in mid-air until
+        /// the finger lifts, instead of coming down onto the sand the moment
+        /// the desk slides out from under it.
+        private func restSurfaceGuests(
+            draggedHost host: HomeIslandPlacement,
+            at position: SCNVector3
+        ) {
+            guard HomeIslandAssetCatalog.isSurfaceHost(assetID: host.assetID) else { return }
+            var placements = owner.store.placements
+            guard let hostIndex = placements.firstIndex(where: { $0.id == host.id })
+            else { return }
+            placements[hostIndex].transform.x = position.x
+            placements[hostIndex].transform.z = position.z
+            for placement in placements
+            where HomeIslandAssetCatalog.surfaceGuestIDs.contains(placement.assetID) {
+                guard let node = placementNodes[placement.id] else { continue }
+                liftOntoSurface(node, placement: placement, among: placements)
+            }
+        }
+
         private func syncPlacements() {
             let visiblePlacements = owner.store.placements.filter {
                 HomeIslandAssetCatalog.isVisibleInCurrentBuild(assetID: $0.assetID)
@@ -1866,6 +1913,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 } else {
                     placement.transform.apply(to: node)
                 }
+                liftOntoSurface(node, placement: placement, among: visiblePlacements)
             }
             walkingObstacles = visiblePlacements.compactMap { placement in
                 guard placement.assetID != "mossy_ruins",
@@ -1906,6 +1954,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     ) else { return nil }
                     return PlacedSeatSlot(
                         placementID: placement.id,
+                        assetID: placement.assetID,
                         slotID: slot.id,
                         motion: slot.motion,
                         seatNode: seatNode,
@@ -1936,6 +1985,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     ) else { return nil }
                     return PlacedSeatSlot(
                         placementID: asset.id,
+                        assetID: asset.assetID,
                         slotID: slot.id,
                         motion: slot.motion,
                         seatNode: seatNode,
@@ -2936,18 +2986,15 @@ struct HomeIslandSceneView: UIViewRepresentable {
             if owner.mode == .edit, selectionMovePanActive {
                 return false
             }
-            let bounds = view.bounds
-            let safeInsets = view.safeAreaInsets
-            let usableTop = max(bounds.minY + safeInsets.top, bounds.minY)
-            let usableBottom = min(bounds.maxY - safeInsets.bottom, bounds.maxY)
-            let usableHeight = max(usableBottom - usableTop, 1)
-            let movementTop = usableTop + usableHeight * 0.54
-            let movementWidthRatio: CGFloat = bounds.width < 600 ? 0.58 : 0.48
-            let movementRight = bounds.minX + bounds.width * movementWidthRatio
-            return point.x >= bounds.minX
-                && point.x <= movementRight
-                && point.y >= movementTop
-                && point.y <= usableBottom
+            let region = HomeIslandTouchLayout.movementRegion(
+                in: view.bounds,
+                safeAreaTop: view.safeAreaInsets.top,
+                safeAreaBottom: view.safeAreaInsets.bottom
+            )
+            return point.x >= region.minX
+                && point.x <= region.maxX
+                && point.y >= region.minY
+                && point.y <= region.maxY
         }
 
         @objc private func handleMovementPan(_ recognizer: UIPanGestureRecognizer) {
@@ -3302,6 +3349,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 node.position.x = worldPosition.x
                 node.position.z = worldPosition.z
                 node.eulerAngles.y = transform.yaw
+                liftOntoSurface(node, placement: selected, among: owner.store.placements)
+                restSurfaceGuests(draggedHost: selected, at: worldPosition)
                 view.setNeedsDisplay()
             case .ended:
                 // Fall back to the node's own previewed position: losing the
@@ -3333,6 +3382,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 Haptics.tap(.medium)
             case .cancelled, .failed:
                 selected.transform.apply(to: node)
+                liftOntoSurface(node, placement: selected, among: owner.store.placements)
                 clearSelectionMoveDrag()
             default:
                 break
@@ -3400,6 +3450,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 $0.id == moveDragPlacementID
             }), let node = placementNodes[moveDragPlacementID] {
                 stored.transform.apply(to: node)
+                liftOntoSurface(node, placement: stored, among: owner.store.placements)
+                restSurfaceGuests(
+                    draggedHost: stored,
+                    at: SCNVector3(stored.transform.x, HomeIslandMetrics.surfaceY, stored.transform.z)
+                )
             }
             self.moveDragPlacementID = nil
             moveDragLastGroundPoint = nil
@@ -4248,9 +4303,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 guard self.owner.mode == .explore else { return }
                 guard self.arrivalFinished else { return }
                 guard !self.seatDemoDidBegin else { return }
-                let requestedSlot = requestedSeat == "stump"
-                    ? self.placedSeatSlots.first(where: { $0.slotID == "stump" })
-                    : self.placedSeatSlots.first
+                // Name an asset ("office_chair") or a slot ("stump") to sit on
+                // that one; anything else takes whichever seat comes first.
+                let requestedSlot = self.placedSeatSlots.first(where: {
+                    $0.assetID == requestedSeat || $0.slotID == requestedSeat
+                }) ?? self.placedSeatSlots.first
                 guard let requestedSlot else { return }
                 self.seatDemoDidBegin = true
                 let approach = requestedSlot.approachWorldPosition

@@ -203,6 +203,80 @@ struct PlayerCardView: View {
 
 /// プロフィール編集シート。名前・アイコン(配色×シンボル)・決意。
 /// 保存でローカルに書き、参加中の全港へも反映する。
+/// カードの配色。選んでいるトークンだけが入力なので、名前や決意を打っても
+/// 描き直されない。
+private struct ProfileStylePicker: View, Equatable {
+    let selected: String
+    let onSelect: (String) -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.selected == rhs.selected }
+
+    var body: some View {
+        // カードの配色は項目タイルより数が多いので、シンボルと同じく横スクロール。
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(TileStyle.allCases) { style in
+                    Button {
+                        onSelect(style.rawValue)
+                    } label: {
+                        Circle()
+                            .fill(style.background)
+                            .frame(width: 40, height: 40)
+                            .overlay(
+                                Circle().stroke(
+                                    selected == style.rawValue
+                                        ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
+                                    lineWidth: selected == style.rawValue ? 3 : 1
+                                )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 4)   // 選択枠が切れないように
+        }
+    }
+}
+
+/// カードのシンボル。中身は一枚ずつ描く図形なので、打鍵のたびに作り直さない。
+private struct ProfileSymbolPicker: View, Equatable {
+    let selected: String
+    let onSelect: (String) -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.selected == rhs.selected }
+
+    var body: some View {
+        // 数が増えたので横スクロール。
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 14) {
+                ForEach(TileSymbol.allCases) { symbol in
+                    Button {
+                        onSelect(symbol.rawValue)
+                    } label: {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(LFColor.ink.opacity(0.06))
+                            TileSymbolView(symbol: symbol, fg: LFColor.ink, bg: LFColor.paper)
+                                .frame(width: 26, height: 26)
+                        }
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(
+                                    selected == symbol.rawValue
+                                        ? LFColor.returnOrange : .clear,
+                                    lineWidth: 3
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 4)   // 選択枠が切れないように
+        }
+    }
+}
+
 struct ProfileEditorSheet: View {
     var onSaved: () -> Void = {}
     /// Rendered inside the island's floating player panel: the form keeps its
@@ -295,70 +369,30 @@ struct ProfileEditorSheet: View {
                     )
                     .padding(.top, 12)
                     .autocorrectionDisabled()
+                    .submitLabel(.done)
+                    .onSubmit(submit)
 
                 sectionLabel("Color")
                     .padding(.top, 28)
-                // カードの配色は項目タイルより数が多いので、シンボルと同じく横スクロール。
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 14) {
-                        ForEach(TileStyle.allCases) { style in
-                            Button {
-                                styleToken = style.rawValue
-                            } label: {
-                                Circle()
-                                    .fill(style.background)
-                                    .frame(width: 40, height: 40)
-                                    .overlay(
-                                        Circle().stroke(
-                                            styleToken == style.rawValue
-                                                ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
-                                            lineWidth: styleToken == style.rawValue ? 3 : 1
-                                        )
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 4)   // 選択枠が切れないように
-                }
-                .padding(.top, 12)
+                // 名前や決意を一文字打つたびに、この二十枚の絵柄まで描き直して
+                // いた。選んでいるトークンだけを見る等値ビューにして、打鍵中は
+                // そのまま据え置く。
+                ProfileStylePicker(selected: styleToken) { styleToken = $0 }
+                    .equatable()
+                    .padding(.top, 12)
 
                 sectionLabel("Symbol")
                     .padding(.top, 28)
-                // 数が増えたので横スクロール。
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 14) {
-                        ForEach(TileSymbol.allCases) { symbol in
-                            Button {
-                                symbolToken = symbol.rawValue
-                            } label: {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(LFColor.ink.opacity(0.06))
-                                    TileSymbolView(symbol: symbol, fg: LFColor.ink, bg: LFColor.paper)
-                                        .frame(width: 26, height: 26)
-                                }
-                                .frame(width: 44, height: 44)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .stroke(
-                                            symbolToken == symbol.rawValue
-                                                ? LFColor.returnOrange : .clear,
-                                            lineWidth: 3
-                                        )
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.vertical, 4)   // 選択枠が切れないように
-                }
-                .padding(.top, 12)
+                ProfileSymbolPicker(selected: symbolToken) { symbolToken = $0 }
+                    .equatable()
+                    .padding(.top, 12)
 
                 sectionLabel("Resolve")
                     .padding(.top, 28)
                 // 打鍵ごとにresolveを書き戻すと、日本語入力の変換中文字(未確定文字列)が
                 // 毎回リセットされ、日本語が一切打てなくなる。上限は保存時にのみ適用する。
+                // 二行に折り返したいので縦書き軸のまま。改行キーは onSubmit を
+                // 呼ばないので、入った改行を取り除いて保存に振り替える。
                 TextField("Write your resolve", text: $resolve, axis: .vertical)
                     .font(LFFont.label(16))
                     .foregroundStyle(LFColor.ink)
@@ -371,29 +405,15 @@ struct ProfileEditorSheet: View {
                             .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
                     )
                     .padding(.top, 12)
-
-                Button {
-                    guard !working else { return }
-                    Task {
-                        working = true
-                        // 上限はここでのみ適用(打鍵中に書き戻すとIME変換が壊れるため)。
-                        PlayerProfile.save(
-                            name: name,
-                            styleToken: styleToken,
-                            symbolToken: symbolToken,
-                            resolve: resolve
-                        )
-                        name = PlayerProfile.name
-                        resolve = PlayerProfile.resolve
-                        // 本人用バックアップを先に更新し、その後に港の公開カードへ反映する。
-                        await SyncService.shared.pushPlayerProfile()
-                        await PrivateIslandService.shared.publishProfileToJoinedIslands()
-                        await PublicHarborService.shared.syncProfile()
-                        Haptics.success()
-                        onSaved()
-                        close()
+                    .onChange(of: resolve) { _, value in
+                        guard value.contains(where: \.isNewline) else { return }
+                        resolve = value
+                            .split(whereSeparator: \.isNewline)
+                            .joined(separator: " ")
+                        submit()
                     }
-                } label: {
+
+                Button(action: submit) {
                     Text("Save this card")
                         .font(LFFont.copy(17))
                         .foregroundStyle(LFColor.paper)
@@ -413,6 +433,30 @@ struct ProfileEditorSheet: View {
             .scrollBounceBehavior(compact ? .basedOnSize : .automatic)
         }
         .background(compact ? Color.clear : LFColor.paper)
+    }
+
+    /// 保存ボタンと、名前・決意の改行キーの行き先。二重に走らせない。
+    private func submit() {
+        guard !working else { return }
+        Task {
+            working = true
+            // 上限はここでのみ適用(打鍵中に書き戻すとIME変換が壊れるため)。
+            PlayerProfile.save(
+                name: name,
+                styleToken: styleToken,
+                symbolToken: symbolToken,
+                resolve: resolve
+            )
+            name = PlayerProfile.name
+            resolve = PlayerProfile.resolve
+            // 本人用バックアップを先に更新し、その後に港の公開カードへ反映する。
+            await SyncService.shared.pushPlayerProfile()
+            await PrivateIslandService.shared.publishProfileToJoinedIslands()
+            await PublicHarborService.shared.syncProfile()
+            Haptics.success()
+            onSaved()
+            close()
+        }
     }
 
     private func close() {

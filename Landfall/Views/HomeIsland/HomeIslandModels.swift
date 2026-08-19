@@ -8,6 +8,35 @@ extension Notification.Name {
     static let homeIslandDidChange = Notification.Name("HomeIslandDidChange")
 }
 
+/// Where the invisible walking thumbstick sits on screen.
+///
+/// The scene reads it to decide whether a touch steers the navigator. The
+/// floating glance panels — ToDo, music, the player card — read it too, so the
+/// transparent tap-catcher they lay over the island can leave that one corner
+/// alone. A glance is not a destination: opening it must never take the walk
+/// away from the player.
+enum HomeIslandTouchLayout {
+    static func movementRegion(
+        in bounds: CGRect,
+        safeAreaTop: CGFloat,
+        safeAreaBottom: CGFloat
+    ) -> CGRect {
+        let usableTop = max(bounds.minY + safeAreaTop, bounds.minY)
+        let usableBottom = min(bounds.maxY - safeAreaBottom, bounds.maxY)
+        let usableHeight = max(usableBottom - usableTop, 1)
+        let top = usableTop + usableHeight * 0.54
+        // A phone is steered with one thumb near the corner; on an iPad the
+        // hand rests further in, so the strip is narrower in proportion.
+        let widthRatio: CGFloat = bounds.width < 600 ? 0.58 : 0.48
+        return CGRect(
+            x: bounds.minX,
+            y: top,
+            width: bounds.width * widthRatio,
+            height: max(usableBottom - top, 0)
+        )
+    }
+}
+
 enum HomeIslandMetrics {
     /// The props every island builds regardless of what the player placed.
     static let fixedSceneryResourceNames = [
@@ -331,6 +360,26 @@ enum HomeIslandAssetCatalog {
         ),
     ]
 
+    /// The desk chair is entered from behind, not from the front: a chair
+    /// pulled up to a desk has no room on its desk side, and that is also the
+    /// side the navigator must end up facing. `facesAwayFromApproach` turns
+    /// the walk-in direction around so they sit looking at the desk.
+    private static let officeChairSeatSlots = [
+        HomeIslandContactSlotDefinition(
+            id: "seat",
+            motion: .sit,
+            seatNodeName: "SeatSocket_Seat",
+            approachNodeName: "SeatApproach_Seat",
+            facesAwayFromApproach: true,
+            // The default inset for a seat faced away from its approach is
+            // 0.10, which is a council stool's depth. On a 0.38 deep desk
+            // chair it perched the navigator on the front lip; 0.02 sets them
+            // in the middle of the pad with the backrest at their back.
+            seatPlanarOffset: -0.02,
+            approachClearance: 0.05
+        ),
+    ]
+
     static func contactSlots(for assetID: String) -> [HomeIslandContactSlotDefinition] {
         switch assetID {
         case "small_stump":
@@ -341,6 +390,8 @@ enum HomeIslandAssetCatalog {
             navigatorHammockContactSlots
         case "council_chair":
             councilChairSeatSlots
+        case "office_chair":
+            officeChairSeatSlots
         default:
             []
         }
@@ -744,9 +795,102 @@ enum HomeIslandAssetCatalog {
             footprintMargin: 0.38,
             unlockLevel: 6
         ),
+        HomeIslandAsset(
+            id: "office_desk",
+            title: String(localized: "Desk"),
+            symbolName: "table.furniture.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.46,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "office_chair",
+            title: String(localized: "Chair"),
+            symbolName: "chair.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.44,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "silver_laptop",
+            title: String(localized: "PC"),
+            symbolName: "laptopcomputer",
+            defaultScale: 1.00,
+            footprintMargin: 0.30,
+            unlockLevel: 2
+        ),
     ]
 
     static var approvedIDs: Set<String> { Set(approved.map(\.id)) }
+
+    /// A prop with a working surface: how high its top stands at scale 1, how
+    /// far the usable rectangle reaches from the prop's centre along its own
+    /// axes, and what is allowed to stand on it.
+    struct Surface {
+        let assetID: String
+        let topHeight: Float
+        let halfWidth: Float
+        let halfDepth: Float
+        let accepts: Set<String>
+    }
+
+    /// Numbers copied from `Tools/Blender/build_office_desk.py`: the top is
+    /// 0.420 high and 1.060 by 0.520 across. The usable rectangle is that top
+    /// pulled in by the laptop's own half-size (0.165 by 0.115), so a laptop
+    /// dropped at the very edge of it still stands wholly on the desk instead
+    /// of hanging over the lip.
+    static let surfaces: [Surface] = [
+        Surface(
+            assetID: "office_desk",
+            topHeight: 0.420,
+            halfWidth: 0.365,
+            halfDepth: 0.145,
+            accepts: ["silver_laptop"]
+        ),
+    ]
+
+    /// Props that stand on something else rather than on the ground.
+    static let surfaceGuestIDs: Set<String> = Set(surfaces.flatMap(\.accepts))
+
+    /// Whether this prop offers a top that other props stand on.
+    static func isSurfaceHost(assetID: String) -> Bool {
+        surfaces.contains { $0.assetID == assetID }
+    }
+
+    /// How high a prop rests, given where everything else on the island stands.
+    ///
+    /// Derived every frame rather than saved with the placement: sliding the
+    /// desk out from under the laptop sets the laptop back down on the sand,
+    /// deleting the desk does the same, and no snapshot — local, synced, or
+    /// from a visitor's island — has to learn a new field.
+    static func restingHeight(
+        assetID: String,
+        x: Float,
+        z: Float,
+        among placements: [HomeIslandPlacement],
+        excluding excludedID: UUID?
+    ) -> Float {
+        var height: Float = 0
+        for surface in surfaces where surface.accepts.contains(assetID) {
+            for host in placements
+            where host.assetID == surface.assetID && host.id != excludedID {
+                let scale = max(0.05, host.transform.scale)
+                // Into the desk's own frame, so a rotated desk still keeps a
+                // rectangular top instead of a diamond.
+                let dx = x - host.transform.x
+                let dz = z - host.transform.z
+                let cosYaw = cos(host.transform.yaw)
+                let sinYaw = sin(host.transform.yaw)
+                let localX = dx * cosYaw - dz * sinYaw
+                let localZ = dx * sinYaw + dz * cosYaw
+                guard abs(localX) <= surface.halfWidth * scale,
+                      abs(localZ) <= surface.halfDepth * scale
+                else { continue }
+                height = max(height, surface.topHeight * scale)
+            }
+        }
+        return height
+    }
 
     /// Temporarily keeps unfinished assets out of customer builds without
     /// deleting their saved placements. Debug tuning can opt them back in.
@@ -916,7 +1060,12 @@ enum HomeIslandAssetCatalog {
              // walking around them.
              "swim_ring",
              "watermelon",
-             "stacked_books":
+             "stacked_books",
+             // A laptop belongs on a desk. Standing on the sand it is small
+             // enough to step over, and standing on a desk it is not on the
+             // ground at all — a collider would fence off the very spot the
+             // navigator has to reach to sit at the desk.
+             "silver_laptop":
             false
         default:
             true

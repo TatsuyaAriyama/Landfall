@@ -66,7 +66,8 @@ private enum HomeIslandAssetCategory: String, CaseIterable, Identifiable {
         case .furniture:
             ["council_table", "council_chair",
              "driftwood_bench", "stone_bench", "wooden_bookshelf",
-             "stacked_books", "navigator_hammock"]
+             "stacked_books", "office_desk", "office_chair", "silver_laptop",
+             "navigator_hammock"]
                 .contains(assetID)
         }
     }
@@ -212,6 +213,9 @@ struct HomeIslandView: View {
     @State private var showingTodoList = false
     @StateObject private var todoStore = HomeIslandTodoStore.shared
     @State private var showingPlayerStats = false
+    @State private var editingPlayerProfile = false
+    /// 週グラフで選んでいる日。開くたび今日から始まる。
+    @State private var selectedRecordDay: Date?
     @State private var showingMusicPicker = false
     @State private var showingSettings = false
     @State private var showingHarborPanel = false
@@ -306,7 +310,6 @@ struct HomeIslandView: View {
             || showingVoyagePass
             || showingLogbook
             || activeInterior != nil
-            || showingTodoList
             || showingPlayerStats
             || showingMusicPicker
             || showingSettings
@@ -427,6 +430,9 @@ struct HomeIslandView: View {
                 mode: mode,
                 cameraExposureOffset: cameraExposureOffset,
                 cameraInteractionLocked: sceneInputLocked,
+                // 文字を打っている間は島を毎秒二十枚に落とす。波は動いたまま
+                // だが、鍵盤の反応に回す余力がその分だけ戻る。
+                rendersThrottled: editingPlayerProfile || privateChatInputFocused,
                 walkInput: sceneInputLocked ? .zero : walkInput,
                 onMoveBegan: {
                     movingSelection = true
@@ -1459,6 +1465,7 @@ struct HomeIslandView: View {
 
     private func openUtility(_ utility: HomeUtility) {
         let alreadyOpen = activeUtility == utility
+        if utility == .player, !alreadyOpen { selectedRecordDay = nil }
         withAnimation(.spring(response: 0.30, dampingFraction: 0.86)) {
             showingTodoList = !alreadyOpen && utility == .todo
             showingMusicPicker = !alreadyOpen && utility == .music
@@ -1473,6 +1480,7 @@ struct HomeIslandView: View {
             showingMusicPicker = false
             showingPlayerStats = false
         }
+        selectedRecordDay = nil
     }
 
     private func utilityPanelWidth(for utility: HomeUtility) -> CGFloat {
@@ -1489,68 +1497,107 @@ struct HomeIslandView: View {
             ZStack(alignment: .topTrailing) {
                 // A transparent catcher, not a dimming scrim: tapping the world
                 // closes the panel without the island ever being covered.
-                Color.black.opacity(0.001)
-                    .ignoresSafeArea()
-                    .contentShape(Rectangle())
-                    .onTapGesture { closeUtilityPanel() }
-
-                VStack(spacing: 0) {
-                    HStack(spacing: 8) {
-                        Image(systemName: utilitySymbol(utility))
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(utilityInk.opacity(0.62))
-                        Text(utilityTitle(utility))
-                            .font(LFFont.label(10))
-                            .tracking(1.1)
-                            .foregroundStyle(utilityInk.opacity(0.72))
-                        Spacer(minLength: 8)
-                        Button {
-                            closeUtilityPanel()
-                            Haptics.tap(.light)
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(utilityInk.opacity(0.6))
-                                .frame(width: 26, height: 26)
-                                .background(utilityInk.opacity(0.06), in: Circle())
-                        }
-                        .buttonStyle(LFPressableButtonStyle())
-                        .accessibilityLabel(Text("Close"))
-                    }
-                    .padding(.horizontal, 12)
-                    .frame(height: 38)
-
-                    Rectangle()
-                        .fill(utilityInk.opacity(0.10))
-                        .frame(height: 1)
-
-                    Group {
-                        switch utility {
-                        case .todo:
-                            HomeIslandTodoCompactList(store: todoStore, ink: utilityInk)
-                        case .music:
-                            HomeIslandMusicPanel(
-                                isEnabled: $homeMusicEnabled,
-                                selectedTrackID: $homeMusicTrack,
-                                music: homeMusic,
-                                compact: true
-                            )
-                        case .player:
-                            HomeIslandPlayerStatsView(sessions: studySessions, compact: true)
-                        }
-                    }
-                    .padding(10)
+                //
+                // The ToDo list is the one glance a player keeps open while
+                // they walk, so its catcher is cut away over the invisible
+                // thumbstick. Without the cut-out the catcher swallowed every
+                // touch in that corner and the navigator stood still with the
+                // list up.
+                GeometryReader { proxy in
+                    // Ignoring the safe area makes this reader the same
+                    // rectangle the scene's own view occupies, so the region
+                    // it computes lines up with the one the scene tests
+                    // touches against.
+                    let walkingThumb: CGRect = utility == .todo
+                        ? HomeIslandTouchLayout.movementRegion(
+                            in: CGRect(origin: .zero, size: proxy.size),
+                            safeAreaTop: proxy.safeAreaInsets.top,
+                            safeAreaBottom: proxy.safeAreaInsets.bottom
+                        )
+                        : .null
+                    Color.black.opacity(0.001)
+                        .contentShape(
+                            HomeUtilityCatcherShape(cutOut: walkingThumb),
+                            eoFill: true
+                        )
+                        .onTapGesture { closeUtilityPanel() }
                 }
-                .frame(width: utilityPanelWidth(for: utility))
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .fill(.regularMaterial)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(utilityInk.opacity(0.12), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+                .ignoresSafeArea()
+
+                VStack(alignment: .leading, spacing: 14) {
+                    VStack(spacing: 0) {
+                        HStack(spacing: 8) {
+                            Image(systemName: utilitySymbol(utility))
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(utilityInk.opacity(0.62))
+                            Text(utilityTitle(utility))
+                                .font(LFFont.label(10))
+                                .tracking(1.1)
+                                .foregroundStyle(utilityInk.opacity(0.72))
+                            Spacer(minLength: 8)
+                            Button {
+                                closeUtilityPanel()
+                                Haptics.tap(.light)
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(utilityInk.opacity(0.6))
+                                    .frame(width: 26, height: 26)
+                                    .background(utilityInk.opacity(0.06), in: Circle())
+                            }
+                            .buttonStyle(LFPressableButtonStyle())
+                            .accessibilityLabel(Text("Close"))
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(height: 38)
+
+                        Rectangle()
+                            .fill(utilityInk.opacity(0.10))
+                            .frame(height: 1)
+
+                        Group {
+                            switch utility {
+                            case .todo:
+                                HomeIslandTodoCompactList(store: todoStore, ink: utilityInk)
+                            case .music:
+                                HomeIslandMusicPanel(
+                                    isEnabled: $homeMusicEnabled,
+                                    selectedTrackID: $homeMusicTrack,
+                                    music: homeMusic,
+                                    compact: true
+                                )
+                            case .player:
+                                HomeIslandPlayerStatsView(
+                                    editingProfile: $editingPlayerProfile,
+                                    sessions: studySessions,
+                                    selectedDay: $selectedRecordDay,
+                                    compact: true
+                                )
+                            }
+                        }
+                        .padding(10)
+                    }
+                    .frame(width: utilityPanelWidth(for: utility))
+                    .background(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(.regularMaterial)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(utilityInk.opacity(0.12), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+
+                    // 選んだ日の中身はカードの外、島の景色の上に置く。パネルを
+                    // 縦に伸ばさずに済み、記録そのものは空の側で読める。
+                    // カードを書き換えている間は下げる。編集の手元と、
+                    // 別の日の記録が同時に出ていても読む相手がいない。
+                    if utility == .player, !editingPlayerProfile {
+                        selectedDayRecords
+                            .allowsHitTesting(false)
+                    }
+                }
+                .frame(width: utilityPanelWidth(for: utility), alignment: .leading)
                 .padding(.trailing, compactTopHUD ? 8 : 12)
                 .padding(.top, 62)
                 .transition(.scale(scale: 0.94, anchor: .topTrailing).combined(with: .opacity))
@@ -1561,6 +1608,114 @@ struct HomeIslandView: View {
 
     private var utilityInk: Color {
         Color(uiColor: VoyageSceneKit.nightBG)
+    }
+
+    /// 週グラフで選んだ日の作業。帯にも枠にも入れず、島の空の上へ直に置く。
+    /// 一日ぶんを覗くための短い書き出しなので、四件までにして残りは数で示す。
+    @ViewBuilder
+    private var selectedDayRecords: some View {
+        let day = selectedRecordDay ?? Calendar.current.startOfDay(for: Date())
+        let entries = recordEntries(on: day)
+
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 8) {
+                Text(verbatim: LF.dayWithWeekday(day))
+                    .font(LFFont.label(11))
+                    .foregroundStyle(homeGlassInk.opacity(0.86))
+                Spacer(minLength: 0)
+                if !entries.isEmpty {
+                    Text(verbatim: LF.duration(minutes: entries.reduce(0) { $0 + $1.minutes }))
+                        .font(LFFont.label(11))
+                        .foregroundStyle(Color(uiColor: VoyageSceneKit.returnOrange))
+                }
+            }
+
+            if entries.isEmpty {
+                Text("No work recorded on this day.")
+                    .font(LFFont.label(11))
+                    .foregroundStyle(homeGlassInk.opacity(0.68))
+            } else {
+                ForEach(entries.prefix(4)) { entry in
+                    recordEntryRow(entry)
+                }
+                if entries.count > 4 {
+                    Text(verbatim: LF.format("%lld more", Int64(entries.count - 4)))
+                        .font(LFFont.label(10))
+                        .foregroundStyle(homeGlassInk.opacity(0.66))
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+        // 帯を敷かないぶん、白い暈で字を浮かせる。海の上でも砂浜の上でも、
+        // 同じ濃さのまま読める。
+        .shadow(color: .white.opacity(0.85), radius: 3)
+        .shadow(color: .white.opacity(0.5), radius: 7)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func recordEntryRow(_ entry: HomeIslandRecordEntry) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(entry.style.background)
+                TileSymbolView(
+                    symbol: entry.symbol,
+                    fg: entry.style.foreground,
+                    bg: entry.style.background
+                )
+                .frame(width: 14, height: 14)
+            }
+            .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(verbatim: entry.title)
+                        .font(LFFont.copy(12.5))
+                        .foregroundStyle(homeGlassInk)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Spacer(minLength: 0)
+
+                    Text(verbatim: LF.duration(minutes: entry.minutes))
+                        .font(LFFont.label(11))
+                        .foregroundStyle(homeGlassInk.opacity(0.78))
+                        .monospacedDigit()
+                        .layoutPriority(1)
+                }
+
+                if let note = entry.note {
+                    Text(verbatim: note)
+                        .font(LFFont.label(10.5))
+                        .foregroundStyle(homeGlassInk.opacity(0.7))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// その日の記録を新しい順に。項目を消したあとの記録も見出しだけは残す。
+    private func recordEntries(on day: Date) -> [HomeIslandRecordEntry] {
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: day)
+        guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return [] }
+
+        return studySessions
+            .filter { $0.date >= start && $0.date < end && $0.minutes > 0 }
+            .sorted(by: StudySession.newestFirst)
+            .map { session in
+                let note = session.note?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return HomeIslandRecordEntry(
+                    id: session.uuid,
+                    title: session.item?.name ?? LF.text("Removed item"),
+                    minutes: session.minutes,
+                    note: (note?.isEmpty ?? true) ? nil : note,
+                    style: TileStyle.from(session.item?.styleToken ?? ""),
+                    symbol: TileSymbol.from(session.item?.symbolToken ?? "")
+                )
+            }
     }
 
     private func utilityTitle(_ utility: HomeUtility) -> LocalizedStringKey {
@@ -2936,9 +3091,13 @@ private struct HomeIslandPlayerStatsView: View {
     @AppStorage(PlayerProfile.styleKey) private var styleToken = TileStyle.midnight.rawValue
     @AppStorage(PlayerProfile.symbolKey) private var symbolToken = TileSymbol.phoenix.rawValue
     @AppStorage(PlayerProfile.resolveKey) private var resolve = ""
-    @State private var showingProfileEditor = false
+    /// 島の側が持つ。文字を打っている間、島の描画枚数を落とすため。
+    @Binding var editingProfile: Bool
 
     let sessions: [StudySession]
+    /// 週グラフで選ばれている日。中身はパネルの外に出るので、選択は
+    /// 島の側が持つ。nil は今日。
+    @Binding var selectedDay: Date?
     /// Rendered inside a floating island panel: no navigation chrome, no
     /// full-screen background — the panel owns both.
     var compact = false
@@ -2953,11 +3112,11 @@ private struct HomeIslandPlayerStatsView: View {
 
     @ViewBuilder
     private var compactBody: some View {
-        if showingProfileEditor {
+        if editingProfile {
             // Editing swaps the panel's content instead of covering the island.
             ProfileEditorSheet(compact: true) {
                 withAnimation(.easeOut(duration: 0.20)) {
-                    showingProfileEditor = false
+                    editingProfile = false
                 }
             }
             .transition(.opacity)
@@ -2998,7 +3157,7 @@ private struct HomeIslandPlayerStatsView: View {
             }
         }
         .preferredColorScheme(.light)
-        .fullScreenCover(isPresented: $showingProfileEditor) {
+        .fullScreenCover(isPresented: $editingProfile) {
             ProfileEditorSheet()
         }
     }
@@ -3025,7 +3184,7 @@ private struct HomeIslandPlayerStatsView: View {
 
             Button {
                 withAnimation(.easeOut(duration: 0.20)) {
-                    showingProfileEditor = true
+                    editingProfile = true
                 }
                 Haptics.tap(.light)
             } label: {
@@ -3091,42 +3250,60 @@ private struct HomeIslandPlayerStatsView: View {
                     .foregroundStyle(panelInk.opacity(0.42))
             }
 
-            HStack(alignment: .bottom, spacing: 7) {
+            HStack(alignment: .bottom, spacing: 5) {
                 ForEach(weekDays) { day in
-                    VStack(spacing: 6) {
-                        Text(verbatim: day.minutes > 0 ? shortMinutes(day.minutes) : "")
-                            .font(LFFont.label(8))
-                            .foregroundStyle(panelInk.opacity(0.48))
-                            .frame(height: 11)
+                    let isSelected = isSelectedDay(day)
+                    Button {
+                        selectedDay = day.date
+                        Haptics.tap(.light)
+                    } label: {
+                        VStack(spacing: 6) {
+                            Text(verbatim: day.minutes > 0 ? shortMinutes(day.minutes) : "")
+                                .font(LFFont.label(8))
+                                .foregroundStyle(panelInk.opacity(0.48))
+                                .frame(height: 11)
 
-                        GeometryReader { proxy in
-                            VStack {
-                                Spacer(minLength: 0)
-                                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .fill(
-                                        day.isToday
-                                            ? Color(uiColor: VoyageSceneKit.returnOrange)
-                                            : panelInk.opacity(day.minutes > 0 ? 0.72 : 0.10)
-                                    )
-                                    .frame(
-                                        height: max(
-                                            5,
-                                            proxy.size.height * CGFloat(day.minutes) / CGFloat(maxWeekdayMinutes)
+                            GeometryReader { proxy in
+                                VStack {
+                                    Spacer(minLength: 0)
+                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                        .fill(
+                                            day.isToday
+                                                ? Color(uiColor: VoyageSceneKit.returnOrange)
+                                                : panelInk.opacity(day.minutes > 0 ? 0.72 : 0.10)
                                         )
-                                    )
+                                        .frame(
+                                            height: max(
+                                                5,
+                                                proxy.size.height * CGFloat(day.minutes) / CGFloat(maxWeekdayMinutes)
+                                            )
+                                        )
+                                }
                             }
-                        }
-                        .frame(height: 78)
+                            .frame(height: 78)
 
-                        Text(verbatim: day.label)
-                            .font(LFFont.label(9))
-                            .foregroundStyle(day.isToday ? panelInk : panelInk.opacity(0.48))
+                            // 選んだ日の印は曜日の名前だけに付ける。棒の背後を
+                            // 塗ると柱が一本太って見え、今日の橙とも張り合う。
+                            Text(verbatim: day.label)
+                                .font(LFFont.label(9))
+                                .foregroundStyle(isSelected || day.isToday ? panelInk : panelInk.opacity(0.48))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(
+                                    Capsule().fill(panelInk.opacity(isSelected ? 0.11 : 0))
+                                )
+                        }
+                        .padding(.vertical, 3)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
                     }
-                    .frame(maxWidth: .infinity)
+                    .buttonStyle(LFPressableButtonStyle())
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(
                         Text(verbatim: "\(day.fullDate), \(LF.duration(minutes: day.minutes))")
                     )
+                    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+                    .accessibilityHint(Text("Shows this day's work below the card"))
                 }
             }
 
@@ -3176,6 +3353,11 @@ private struct HomeIslandPlayerStatsView: View {
         return sessions.filter { interval.contains($0.date) && $0.minutes > 0 }.count
     }
 
+    private func isSelectedDay(_ day: HomeIslandDailyMinutes) -> Bool {
+        guard let selectedDay else { return day.isToday }
+        return Self.calendar.isDate(day.date, inSameDayAs: selectedDay)
+    }
+
     private var maxWeekdayMinutes: Int {
         max(1, weekDays.map(\.minutes).max() ?? 0)
     }
@@ -3219,6 +3401,16 @@ private struct HomeIslandPlayerStatsView: View {
         formatter.setLocalizedDateFormatFromTemplate("EEE")
         return formatter
     }()
+}
+
+/// 週グラフで選んだ日に並べる一件ぶん。
+private struct HomeIslandRecordEntry: Identifiable {
+    let id: UUID
+    let title: String
+    let minutes: Int
+    let note: String?
+    let style: TileStyle
+    let symbol: TileSymbol
 }
 
 private struct HomeIslandDailyMinutes: Identifiable {
@@ -3864,5 +4056,21 @@ private enum HomeIslandAssetThumbnailRenderer {
         )
         renderer.scene = nil
         return image
+    }
+}
+
+/// The glance panels' full-screen tap catcher, with one rectangle punched out
+/// of it. Drawn with the even-odd rule, the inner rectangle becomes a hole the
+/// touch falls straight through — which is how the walking thumb keeps
+/// reaching the island while a panel is open.
+private struct HomeUtilityCatcherShape: Shape {
+    let cutOut: CGRect
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect)
+        if !cutOut.isNull, !cutOut.isEmpty {
+            path.addRect(cutOut)
+        }
+        return path
     }
 }

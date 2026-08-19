@@ -101,6 +101,9 @@ enum Asset3DCatalog {
         "watermelon",
         "seaside_mailbox",
         "seaside_gramophone",
+        "office_desk",
+        "office_chair",
+        "silver_laptop",
         "landfall_boat",
         "navigator_main",
     ]
@@ -177,6 +180,9 @@ enum Asset3DCatalog {
         case "watermelon": return String(localized: "Watermelon")
         case "seaside_mailbox": return String(localized: "Seaside Mailbox")
         case "seaside_gramophone": return String(localized: "Seaside Gramophone")
+        case "office_desk": return String(localized: "Desk")
+        case "office_chair": return String(localized: "Chair")
+        case "silver_laptop": return String(localized: "PC")
         case "landfall_boat": return "Landfall Boat"
         case "navigator_main": return "Navigator"
         default:

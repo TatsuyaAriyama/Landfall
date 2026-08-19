@@ -1065,6 +1065,9 @@
 "Watermelon" = "スイカ";
 "Seaside Mailbox" = "海辺のポスト";
 "Seaside Gramophone" = "海辺の蓄音機";
+"PC" = "PC";
+"Desk" = "デスク";
+"Chair" = "チェア";
 "Assets" = "アセット";
 "Details" = "詳細";
 "Move panel" = "パネルを左右に移動";
@@ -1337,6 +1340,10 @@
 "Edit player card" = "プレイヤーカードを編集";
 "Shows your work history" = "これまでの作業記録を表示します";
 "%lld records" = "%lld件";
+"No work recorded on this day." = "この日の記録はありません。";
+"%lld more" = "ほか%lld件";
+"Removed item" = "削除された項目";
+"Shows this day's work below the card" = "その日の作業をカードの下に表示します";
 "Play" = "再生";
 "Stop" = "停止";
 "Choose a track" = "曲を選択します";
