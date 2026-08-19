@@ -1159,8 +1159,11 @@ enum VoyageSceneKit {
                     material.diffuse.contents = parts.hull.scaled(0.72)
                 case "LF_BoatMainSail":
                     material.diffuse.contents = parts.sail
+                    // 風を受けたときだけ効く。凪の画面では素通り。
+                    VoyageSailFlutter.install(on: node, material: material)
                 case "LF_BoatJib":
                     material.diffuse.contents = parts.jib
+                    VoyageSailFlutter.install(on: node, material: material)
                 case "LF_BoatCockpit":
                     // 帆色の選択とは切り離し、船上のアクセントはブランドの
                     // コーラルへ固定する。元モデルのミッドナイト色もここで上書きする。
@@ -1847,6 +1850,8 @@ enum VoyageSceneKit {
         let boat = makeBoatModel(BoatCustomization.currentParts)
         attachNavigator(to: boat)
         bob.addChildNode(boat)
+        // しぶきは船体と一緒に上下する。甲板が波へ落ちた拍子に上がって見える。
+        bob.addChildNode(VoyageBowSpray.makeNode())
         travel.addChildNode(bob)
         scene.rootNode.addChildNode(travel)
 
@@ -2339,6 +2344,30 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
     private var gulls: [SCNNode] = []
     private let sailor = PhoenixAnimator()
 
+    /// 帆としぶきへ実際に渡している風の強さ。段階が変わっても数秒かけて寄せる。
+    private var windStrength: Float = 0
+    private var sailMaterials: [SCNMaterial] = []
+    private var spraySystems: [SCNParticleSystem] = []
+
+    /// 船の揺れと旗の位相。速さを経過時間に掛けるのではなく、毎フレーム足す。
+    ///
+    /// 掛け算だと、風が変わって周波数が動いた瞬間に位相が `t × Δω` だけ飛ぶ。
+    /// 一時間航海したあとの `t` は大きいので、段階が上がるちょうどその瞬間に
+    /// 船が震えて見えてしまう。休憩の出入りでも同じことが起きる。
+    private var bobPhase: Float = 0
+    private var rollPhase: Float = 0
+    private var pitchPhase: Float = 1.2
+    private var flagPhase: Float = 0
+
+    /// 風の強さが目標へ寄る速さ(時定数・秒)。出航・休憩明けはこの四倍ほど、
+    /// おおよそ二秒半かけて次の絵に落ち着く。
+    private static let windEase: Float = 0.625
+
+    /// 休憩中は帆を緩めて凪へ戻す。再開すれば全力の風に戻る。
+    private var windTarget: Float {
+        resting ? 0.10 : VoyageWind.sailingStrength
+    }
+
     func setElapsedSeconds(_ seconds: Int) {
         elapsedSeconds = max(elapsedSeconds, Float(max(0, seconds)))
         placeApproachingIsland()
@@ -2353,7 +2382,28 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
             .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
             .geometry?.firstMaterial
         gulls = scene.rootNode.childNode(withName: "gulls", recursively: false)?.childNodes ?? []
+        sailMaterials = VoyageSailFlutter.materials(in: scene.rootNode)
+        spraySystems = VoyageBowSpray.systems(in: scene.rootNode)
+        // 作り直したシーンでも、いま吹いている風の続きから始める。
+        applyWind(windStrength, at: 0)
         placeApproachingIsland()
+    }
+
+    /// 風の強さを絵へ配る。帆の孕み、しぶきの量、航跡の白さがここで揃う。
+    private func applyWind(_ wind: Float, at t: Float) {
+        for material in sailMaterials {
+            material.setValue(NSNumber(value: wind), forKey: "uWind")
+        }
+        if !spraySystems.isEmpty {
+            // 一定量を出し続けると霧になる。舳先が波を叩く拍に合わせて波を作り、
+            // 谷でも細く出し続けることで、途切れずに脈を打つ飛沫にする。
+            let surge = max(0, sin(t * 1.9))
+            let beat = 0.34 + 0.66 * powf(surge, 2.2)
+            let rate = CGFloat(wind * beat) * VoyageBowSpray.peakBirthRate
+            for system in spraySystems {
+                system.birthRate = rate
+            }
+        }
     }
 
     private func placeApproachingIsland() {
@@ -2379,14 +2429,33 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
             placeApproachingIsland()
         }
 
-        if let bob {
-            bob.position.y = sin(t * (resting ? 0.34 : 0.8)) * (resting ? 0.025 : 0.06)
-            bob.eulerAngles.z = sin(t * (resting ? 0.28 : 0.6)) * (resting ? 0.012 : 0.03)
-            bob.eulerAngles.x = sin(t * (resting ? 0.25 : 0.5) + 1.2) * (resting ? 0.007 : 0.015)
-            bob.childNode(withName: "boatFlag", recursively: true)?
-                .eulerAngles.y = sin(t * (resting ? 1.2 : 5.2)) * (resting ? 0.07 : 0.22)
+        // 段階が上がった瞬間に絵が飛ばないよう、目標へ 2 秒半かけて寄せる。
+        let target = windTarget
+        if abs(target - windStrength) > 0.0005 {
+            windStrength += (target - windStrength) * min(1, dt / VoyagingHomeAnimator.windEase)
+        } else {
+            windStrength = target
         }
-        wake?.opacity = CGFloat(0.34 + sin(t * 1.4) * 0.07)
+        applyWind(windStrength, at: t)
+
+        // 風が強いほど大きく速く揺れ、風上へわずかに傾く。
+        let swell = 1 + windStrength * 0.55
+        bobPhase += dt * (resting ? 0.34 : 0.8 + windStrength * 0.35)
+        rollPhase += dt * (resting ? 0.28 : 0.6)
+        pitchPhase += dt * (resting ? 0.25 : 0.5)
+        flagPhase += dt * (resting ? 1.2 : 5.2 + windStrength * 3.4)
+
+        if let bob {
+            let heel = windStrength * 0.055
+            bob.position.y = sin(bobPhase) * (resting ? 0.025 : 0.06) * swell
+            bob.eulerAngles.z = sin(rollPhase) * (resting ? 0.012 : 0.03) * swell - heel
+            bob.eulerAngles.x = sin(pitchPhase) * (resting ? 0.007 : 0.015) * swell
+            bob.childNode(withName: "boatFlag", recursively: true)?
+                .eulerAngles.y = sin(flagPhase) * (resting ? 0.07 : 0.22 + windStrength * 0.16)
+        }
+        wake?.opacity = CGFloat(
+            (0.34 + sin(t * 1.4) * 0.07) * (1 + windStrength * 0.62)
+        )
 
         for (index, bird) in gulls.enumerated() {
             guard flock.indices.contains(index) else { continue }
