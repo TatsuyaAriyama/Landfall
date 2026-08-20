@@ -271,9 +271,9 @@ final class HomeVoyageAudio: NSObject, ObservableObject, AVAudioPlayerDelegate {
             waveEngine.prepare()
             try waveEngine.start()
         }
-        // 波音は低域中心かつモノラルなので、楽曲と同じ数値では小さく感じる。
-        // 波形のピークには十分な余裕を残しつつ、聴感上の音量をBGMへ合わせる。
-        wavePlayer.volume = 0.44
+        // iPhone本体スピーカーは低域が出ないため、楽曲より一段大きめにして
+        // 聴感上の音量をBGMへ合わせる。
+        wavePlayer.volume = 0.58
         wavePlayer.scheduleBuffer(waveBuffer, at: nil, options: [.loops])
         wavePlayer.play()
     }
@@ -320,19 +320,26 @@ final class HomeVoyageAudio: NSObject, ObservableObject, AVAudioPlayerDelegate {
         buffer.frameLength = frameCount
         let samples = buffer.floatChannelData![0]
 
+        // 以前は二段のローパス(カットオフ約42Hz)で沈めていたため、iPhone本体
+        // スピーカーが再生できる帯域(実質150Hz超)にほとんど音が残らず、
+        // 波形上の音量は十分でも実際にはほぼ聞こえなかった。
+        // 「芯(body)」はうねりの太さを保ちつつ~600Hzまで残し、そこへ
+        // 「泡(hiss)」として~2.2kHzより上の帯域を重ね、スピーカーで鳴らせる
+        // サーッという質感にする。
         var seed: UInt64 = 0xA17D_E5EA_9234_61C7
-        var low: Float = 0
-        var lower: Float = 0
+        var body: Float = 0
+        var brightPass: Float = 0
         for index in 0..<Int(frameCount) {
             seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
             let white = Float(Int32(truncatingIfNeeded: seed >> 32)) / Float(Int32.max)
-            low += (white - low) * 0.035
-            lower += (low - lower) * 0.006
+            body += (white - body) * 0.09
+            brightPass += (white - brightPass) * 0.32
+            let hiss = white - brightPass
             let time = Float(index) / Float(rate)
             let swell = 0.56 + sin(time * 0.42) * 0.18 + sin(time * 0.71 + 1.1) * 0.12
-            samples[index] = lower * swell * 2.5
+            samples[index] = (body * 0.72 + hiss * 0.34) * swell
         }
-        normalize(samples: samples, count: Int(frameCount), peak: 0.68)
+        normalize(samples: samples, count: Int(frameCount), peak: 0.72)
         return buffer
     }
 
