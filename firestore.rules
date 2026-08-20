@@ -6,22 +6,34 @@ rules_version = '2';
 //  - users/{uid}/** … 本人だけが読み書きできる私的バックアップ。
 //  - privateIslands/{code} … 招待コードで参加するホスト島。
 //                            配置はホストのみ、位置・チャットは本人のみ書ける。
-//  - members/…            … 同じ島のメンバー同士だけがカードを読める。
-//                            学習記録はプライベート島では共有しない。
+//  - publicHarbors/{slug} … 公式5港。書けるのも消せるのも書いた本人だけ。
 //
 // 不変条件(重要):
 //  - 誰も他人のドキュメントを書けない。
 //  - 島の更新は「自分だけを出し入れする」に限定する。島名・ホスト・他メンバーは
 //    改変できない(在港者による乗っ取り・追い出しを防ぐ)。
-//  - 一覧(list)は自分が属する港/共有だけ。コード総当たりでの列挙を防ぐ。
+//  - 一覧(list)は自分が属する港/島だけ。コード総当たりでの列挙を防ぐ。
 //  - 文字列・配列は型と長さを検証し、肥大化した書き込みを弾く。
+//  - 検証ロジックは下の共有ヘルパーに集約する。同じ規則を二度書かない。
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ================================================================
+    // 共有ヘルパー
+    // ================================================================
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
 
     // 開発者例外はFirebaseが検証したメールクレームに限定。
     // クライアント内の文字列書き換えだけでは突破できない。
     function isDeveloper() {
-      return request.auth != null
+      return signedIn()
         && request.auth.token.email == 'ari.initx@gmail.com'
         && request.auth.token.email_verified == true;
     }
@@ -37,7 +49,7 @@ service cloud.firestore {
     function hasVoyagePass() {
       return isDeveloper()
         || (
-          request.auth != null
+          signedIn()
           && (
             entitlementIsActive(request.auth.uid, 'voyagePass')
             || entitlementIsActive(request.auth.uid, 'voyagePassAppStore')
@@ -45,116 +57,176 @@ service cloud.firestore {
         );
     }
 
-    // ---- 私的バックアップ: 本人のみ ----
-    // 航海証(entitlements)だけはStripe Webhook / App Store検証の管理SDK専用。
-    // 広い users/{uid}/** 許可を残すと、クライアントがactive=trueを書けてしまうため、
-    // 本人が編集できる既存コレクションを明示する。
-    match /users/{userId}/gameData/profile {
-      function ownsGameData() {
-        return request.auth != null && request.auth.uid == userId;
-      }
+    // ---- 造形トークン ----
+    // カードの配色と記号。ここに無い値は書き込めない。
 
-      function validProfileBackup() {
-        return request.resource.data.keys().hasOnly([
+    function styleTokens() {
+      return [
+        'midnight', 'coral', 'ink', 'seaGreen', 'violet', 'sunYellow',
+        'harbor', 'sand', 'ember', 'rust', 'lavender', 'sunrise'
+      ];
+    }
+
+    // 自分のプロフィール用。港で配る共有カードより1段狭い。
+    function profileSymbolTokens() {
+      return [
+        'anchor', 'compass', 'wheel', 'lighthouse', 'island', 'phoenix',
+        'book', 'pen', 'sailboat', 'attire'
+      ];
+    }
+
+    // 港・島で他人にも見える共有カード用。
+    function sharedSymbolTokens() {
+      return [
+        'anchor', 'compass', 'wheel', 'lighthouse', 'island', 'phoenix',
+        'book', 'pen', 'sailboat', 'attire', 'wave', 'comet', 'sun'
+      ];
+    }
+
+    // ---- 汎用の型チェック ----
+
+    // 航海のはじまり(yyyy-MM-dd)。任意フィールドだが書式は固定し、
+    // ここが自由文の置き場にならないようにする。
+    function optionalSinceDay(data) {
+      return !('sinceDay' in data)
+        || (data.sinceDay is string
+          && data.sinceDay.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
+    }
+
+    // 船の見た目(部位id)。5部位すべてを同じ規則で見る。
+    // 任意フィールドなので、書かない旧クライアントの書き込みもそのまま通る。
+    function optionalBoatParts(data) {
+      return (!('boatSail' in data)
+          || (data.boatSail is string && data.boatSail.size() <= 24))
+        && (!('boatJib' in data)
+          || (data.boatJib is string && data.boatJib.size() <= 24))
+        && (!('boatHull' in data)
+          || (data.boatHull is string && data.boatHull.size() <= 24))
+        && (!('boatStripe' in data)
+          || (data.boatStripe is string && data.boatStripe.size() <= 24))
+        && (!('boatFlag' in data)
+          || (data.boatFlag is string && data.boatFlag.size() <= 24));
+    }
+
+    // ---- 共有カード / 共有記録 ----
+
+    function memberCardKeys() {
+      return [
+        'displayName', 'styleToken', 'symbolToken', 'resolve', 'sinceDay',
+        'joinedAt', 'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag'
+      ];
+    }
+
+    // 港・島に置く共有カードの共通部分。
+    function validMemberCardShape(data) {
+      return data.keys().hasOnly(memberCardKeys())
+        && data.displayName is string
+        && data.displayName.size() <= 60
+        && data.styleToken in styleTokens()
+        && data.symbolToken in sharedSymbolTokens()
+        && data.resolve is string
+        && data.resolve.size() <= 80
+        && optionalSinceDay(data)
+        && optionalBoatParts(data);
+    }
+
+    // 月ごとの共有記録。日と作業セッションの束。
+    function validMonthPayload(data) {
+      return data.keys().hasOnly(['days', 'sessions', 'updatedAt'])
+        && data.days is list
+        && data.days.size() <= 31
+        && data.sessions is list
+        && data.sessions.size() <= 1000;
+    }
+
+    // 島の配置バックアップ(自分の島・第2の島・ホスト島スナップショット共通)。
+    function validPlacementList(data) {
+      return data.placements is list
+        && data.placements.size() <= 120;
+    }
+
+    // ================================================================
+    // 私的バックアップ: 本人のみ
+    // ================================================================
+    // 航海証(entitlements)だけはStripe Webhook / App Store検証の管理SDK専用。
+    // 広い users/{uid}/** 許可を残すとクライアントがactive=trueを書けてしまうため、
+    // 本人が編集できるドキュメントを明示する。
+
+    match /users/{userId}/gameData/{documentId} {
+      function validProfileBackup(data) {
+        return data.keys().hasOnly([
             'schemaVersion', 'name', 'styleToken', 'symbolToken',
             'resolve', 'sinceDay', 'updatedAt'
           ])
-          && request.resource.data.keys().hasAll([
+          && data.keys().hasAll([
             'schemaVersion', 'name', 'styleToken', 'symbolToken',
             'resolve', 'updatedAt'
           ])
-          && request.resource.data.schemaVersion == 1
-          && request.resource.data.name is string
-          && request.resource.data.name.size() <= 12
-          && request.resource.data.styleToken in [
-            'midnight', 'coral', 'ink', 'seaGreen', 'violet', 'sunYellow',
-            'harbor', 'sand', 'ember', 'rust', 'lavender', 'sunrise'
-          ]
-          && request.resource.data.symbolToken in [
-            'anchor', 'compass', 'wheel', 'lighthouse', 'island', 'phoenix',
-            'book', 'pen', 'sailboat', 'attire'
-          ]
-          && request.resource.data.resolve is string
-          && request.resource.data.resolve.size() <= 60
-          && (!('sinceDay' in request.resource.data)
-            || (request.resource.data.sinceDay is string
-              && request.resource.data.sinceDay.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')))
-          && request.resource.data.updatedAt == request.time;
+          && data.schemaVersion == 1
+          && data.name is string
+          && data.name.size() <= 12
+          && data.styleToken in styleTokens()
+          && data.symbolToken in profileSymbolTokens()
+          && data.resolve is string
+          && data.resolve.size() <= 60
+          && optionalSinceDay(data)
+          && data.updatedAt == request.time;
       }
 
-      allow read: if ownsGameData();
-      allow create, update: if ownsGameData() && validProfileBackup();
-      allow delete: if false;
-    }
-
-    match /users/{userId}/gameData/homeIsland {
-      function ownsGameData() {
-        return request.auth != null && request.auth.uid == userId;
-      }
-
-      function validHomeIslandBackup() {
-        return request.resource.data.keys().hasOnly([
+      // 自分の島と第2の島(Voyage Pass加入者向け)。検証内容は同一で名前だけが違う。
+      // サブスクの有効性はここでは問わない。パスが失効しても既存のバックアップを
+      // 消してはならないため、クライアント側が編集画面を開かせないだけで足りる。
+      function validHomeIslandBackup(data) {
+        return data.keys().hasOnly([
             'schemaVersion', 'placements', 'updatedAt', 'origin'
           ])
-          && request.resource.data.keys().hasAll([
+          && data.keys().hasAll([
             'schemaVersion', 'placements', 'updatedAt'
           ])
-          && request.resource.data.schemaVersion == 1
-          && request.resource.data.placements is list
-          && request.resource.data.placements.size() <= 120
-          && (!request.resource.data.keys().hasAny(['origin'])
-            || (request.resource.data.origin is string
-              && request.resource.data.origin.size() <= 64))
-          && request.resource.data.updatedAt == request.time;
+          && data.schemaVersion == 1
+          && validPlacementList(data)
+          && (!('origin' in data)
+            || (data.origin is string && data.origin.size() <= 64))
+          && data.updatedAt == request.time;
       }
 
-      allow read: if ownsGameData();
-      allow create, update: if ownsGameData() && validHomeIslandBackup();
+      allow read: if isSelf(userId);
+      allow create, update: if isSelf(userId)
+        && (
+          (documentId == 'profile' && validProfileBackup(request.resource.data))
+          || (documentId in ['homeIsland', 'homeIsland2']
+            && validHomeIslandBackup(request.resource.data))
+        );
       allow delete: if false;
     }
 
-    // 第2の島(Voyage Pass加入者向け)。検証内容はhomeIslandと完全に同一で、
-    // ドキュメント名だけが違う。サブスクの有効性はここでは問わない
-    // (パスが失効しても既存のバックアップを消してはならないため。
-    // クライアント側が編集画面を開かせないだけで足りる)。
-    match /users/{userId}/gameData/homeIsland2 {
-      function ownsGameData() {
-        return request.auth != null && request.auth.uid == userId;
-      }
-
-      function validHomeIslandBackup() {
-        return request.resource.data.keys().hasOnly([
-            'schemaVersion', 'placements', 'updatedAt', 'origin'
-          ])
-          && request.resource.data.keys().hasAll([
-            'schemaVersion', 'placements', 'updatedAt'
-          ])
-          && request.resource.data.schemaVersion == 1
-          && request.resource.data.placements is list
-          && request.resource.data.placements.size() <= 120
-          && (!request.resource.data.keys().hasAny(['origin'])
-            || (request.resource.data.origin is string
-              && request.resource.data.origin.size() <= 64))
-          && request.resource.data.updatedAt == request.time;
-      }
-
-      allow read: if ownsGameData();
-      allow create, update: if ownsGameData() && validHomeIslandBackup();
-      allow delete: if false;
-    }
-
+    // 端末間で同期する私的な記録。本人以外は存在も確認できない。
+    // 形はクライアントのDTOに委ねるが、フィールド数の上限だけは置いて、
+    // 自分の領域を無制限に膨らませる書き込みを防ぐ(DTOは最大11フィールド)。
     match /users/{userId}/{collectionId}/{documentId} {
-      allow read, write: if request.auth != null
-        && request.auth.uid == userId
-        && collectionId in ['items', 'sessions', 'days', 'voyageLogs', 'destinations', 'blocks'];
+      allow read, delete: if isSelf(userId)
+        && collectionId in [
+          'items', 'sessions', 'days', 'voyageLogs', 'destinations', 'blocks'
+        ];
+      allow create, update: if isSelf(userId)
+        && collectionId in [
+          'items', 'sessions', 'days', 'voyageLogs', 'destinations', 'blocks'
+        ]
+        && request.resource.data.keys().size() <= 32;
     }
 
     match /users/{userId}/entitlements/{entitlementId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
+      allow read: if isSelf(userId);
       allow write: if false;
     }
 
-    // Stripe顧客IDとWebhook処理履歴は管理SDKだけが使用する。
+    // ================================================================
+    // 管理SDK専用
+    // ================================================================
+    // Stripe顧客ID・Webhook処理履歴・運営キュー・レート制限は、
+    // App Check付きCallableが管理SDKで扱う。クライアントからの直接読み書きは
+    // 運営データ漏洩・制限迂回になるため常に拒否する。
+
     match /billingCustomers/{userId} {
       allow read, write: if false;
     }
@@ -163,8 +235,6 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // 改善案と連投制限はApp Check付きCallableが管理SDKで書く。
-    // クライアントからの直接読み書きは運営データ漏洩・制限迂回になるため常に拒否する。
     match /feedback/{feedbackId} {
       allow read, write: if false;
     }
@@ -177,44 +247,55 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // ---- プライベート島(v2) ----
+    match /publicContentReports/{reportId} {
+      allow read, write: if false;
+    }
+
+    match /publicContentReportLimits/{limitId} {
+      allow read, write: if false;
+    }
+
+    // 出禁リストは運営だけが書き、ルールからの存在確認だけに使う。
+    match /publicHarborBans/{slug}/users/{userId} {
+      allow read, write: if false;
+    }
+
+    // 招待コードの試行回数。端末に見せると上限の残りが読めてしまう。
+    match /privateIslandJoinLimits/{userId} {
+      allow read, write: if false;
+    }
+
+    // ================================================================
+    // プライベート島
+    // ================================================================
     // 招待コードを知る人だけが参加でき、ホストの島を同じ場で散策する。
-    // 以前の学習記録共有・共同タイマーは持ち込まない。
+    // 学習記録は持ち込まない。言葉と位置だけを共有する。
+
     match /privateIslands/{islandId} {
-      function privateIslandData() {
+      function islandData() {
         return get(
           /databases/$(database)/documents/privateIslands/$(islandId)
         ).data;
       }
 
-      function isPrivateIslandMember() {
-        return request.auth != null
-          && request.auth.uid in privateIslandData().memberIds;
+      function isMember() {
+        return signedIn() && request.auth.uid in islandData().memberIds;
       }
 
-      // create/join commits the parent membership and member card in one
-      // transaction. Authorize the card against the post-commit parent state.
-      function isPrivateIslandMemberAfter() {
-        return request.auth != null
+      // create/join は親の参加登録とメンバーカードを1トランザクションで書く。
+      // カードの許可はコミット後の親の状態で判定する。
+      function isMemberAfter() {
+        return signedIn()
           && request.auth.uid in getAfter(
             /databases/$(database)/documents/privateIslands/$(islandId)
           ).data.memberIds;
       }
 
-      function isPrivateIslandHost() {
-        return isPrivateIslandMember()
-          && privateIslandData().hostUid == request.auth.uid;
+      function isHost() {
+        return isMember() && islandData().hostUid == request.auth.uid;
       }
 
-      function addsOnlyPrivateIslandSelf() {
-        return !(request.auth.uid in resource.data.memberIds)
-          && request.auth.uid in request.resource.data.memberIds
-          && request.resource.data.memberIds.hasAll(resource.data.memberIds)
-          && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
-          && request.resource.data.memberIds.size() <= 8;
-      }
-
-      function removesOnlyPrivateIslandSelf() {
+      function removesOnlySelf() {
         return request.auth.uid in resource.data.memberIds
           && request.auth.uid != resource.data.hostUid
           && !(request.auth.uid in request.resource.data.memberIds)
@@ -222,12 +303,13 @@ service cloud.firestore {
           && request.resource.data.memberIds.size() == resource.data.memberIds.size() - 1;
       }
 
-      // get は招待コードで参加するために必要。list は自分の島に限る。
-      allow get: if request.auth != null;
-      allow list: if request.auth != null
-        && request.auth.uid in resource.data.memberIds;
+      // 島は所属が確定してからしか見えない。招待コードでの参加は
+      // `joinPrivateIsland` (App Check + 回数制限付き)が管理SDKで行う。
+      // ここで get を全員に開くと、6文字のコードを総当たりして
+      // 島名と在島者のUIDを収集できてしまう。
+      allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
 
-      allow create: if request.auth != null
+      allow create: if signedIn()
         && hasVoyagePass()
         && request.resource.data.keys().hasOnly([
           'schemaVersion', 'name', 'hostUid', 'memberIds', 'createdAt'
@@ -240,8 +322,10 @@ service cloud.firestore {
         && request.resource.data.memberIds == [request.auth.uid]
         && request.resource.data.createdAt == request.time;
 
-      // 共有ドキュメントで変更できるのは自分の入退島だけ。
-      allow update: if request.auth != null
+      // 端末から変更できるのは「自分が抜ける」ことだけ。
+      // 加入は管理SDK(joinPrivateIsland)専用にし、端末が自分を island に
+      // 書き足せる余地を残さない。
+      allow update: if signedIn()
         && request.resource.data.keys().hasOnly([
           'schemaVersion', 'name', 'hostUid', 'memberIds', 'createdAt'
         ])
@@ -250,17 +334,13 @@ service cloud.firestore {
         && request.resource.data.hostUid == resource.data.hostUid
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.memberIds is list
-        && (
-          addsOnlyPrivateIslandSelf()
-          || removesOnlyPrivateIslandSelf()
-        );
+        && removesOnlySelf();
 
       allow delete: if false;
 
-      // EOS routing material is deliberately separated from the parent room.
-      // The parent permits authenticated get-by-invite-code for the legacy
-      // join transaction, while this document is visible only after membership
-      // has been committed. Secrets are independent 256-bit base64url values.
+      // EOSの経路情報は親ドキュメントから意図的に分ける。
+      // 親は招待コードでのgetを許すが、こちらは参加が確定した後だけ見える。
+      // 秘密値は独立した256bitのbase64url。
       match /runtime/{runtimeId} {
         function validEOSRuntimePayload(data) {
           return data.keys().hasOnly([
@@ -277,8 +357,8 @@ service cloud.firestore {
             && data.createdAt is timestamp;
         }
 
-        function isRuntimeHostAfter() {
-          return request.auth != null
+        function isHostAfter() {
+          return signedIn()
             && request.auth.uid == getAfter(
               /databases/$(database)/documents/privateIslands/$(islandId)
             ).data.hostUid
@@ -287,15 +367,15 @@ service cloud.firestore {
             ).data.memberIds;
         }
 
-        allow read: if runtimeId == 'eos' && isPrivateIslandMember();
+        allow read: if runtimeId == 'eos' && isMember();
         allow create: if runtimeId == 'eos'
-          && isRuntimeHostAfter()
+          && isHostAfter()
           && validEOSRuntimePayload(request.resource.data)
           && request.resource.data.createdAt == request.time;
-        // A host can repair malformed pre-release data, but reopening an island
-        // can never rotate an already valid secret and split active members.
+        // ホストは公開前の壊れたデータを直せるが、島を開き直しても
+        // 有効な秘密値を回して在島メンバーを分断することはできない。
         allow update: if runtimeId == 'eos'
-          && isRuntimeHostAfter()
+          && isHostAfter()
           && !validEOSRuntimePayload(resource.data)
           && validEOSRuntimePayload(request.resource.data)
           && request.resource.data.createdAt == request.time;
@@ -303,84 +383,50 @@ service cloud.firestore {
       }
 
       match /members/{memberId} {
-        function validPrivateIslandMemberPayload() {
-          return request.resource.data.keys().hasOnly([
-              'displayName', 'styleToken', 'symbolToken', 'resolve', 'sinceDay',
-              'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag',
-              'joinedAt'
-            ])
-            && request.resource.data.keys().hasAll([
+        // 島のカードは名前・船・参加時刻まで必須。港より一段厳しい。
+        function validIslandMemberCard(data) {
+          return validMemberCardShape(data)
+            && data.keys().hasAll([
               'displayName', 'styleToken', 'symbolToken', 'resolve',
               'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag',
               'joinedAt'
             ])
-            && request.resource.data.displayName is string
-            && request.resource.data.displayName.size() >= 1
-            && request.resource.data.displayName.size() <= 60
-            && request.resource.data.styleToken is string
-            && request.resource.data.styleToken.size() <= 24
-            && request.resource.data.styleToken in [
-              'midnight', 'coral', 'ink', 'seaGreen', 'violet', 'sunYellow',
-              'harbor', 'sand', 'ember', 'rust', 'lavender', 'sunrise'
-            ]
-            && request.resource.data.symbolToken is string
-            && request.resource.data.symbolToken.size() <= 24
-            && request.resource.data.symbolToken in [
-              'anchor', 'compass', 'wheel', 'lighthouse', 'island', 'phoenix',
-              'book', 'pen', 'sailboat', 'attire', 'wave', 'comet', 'sun'
-            ]
-            && request.resource.data.resolve is string
-            && request.resource.data.resolve.size() <= 80
-            && (!('sinceDay' in request.resource.data)
-              || (request.resource.data.sinceDay is string
-                && request.resource.data.sinceDay.size() == 10))
-            && request.resource.data.boatSail is string
-            && request.resource.data.boatSail.size() <= 24
-            && request.resource.data.boatJib is string
-            && request.resource.data.boatJib.size() <= 24
-            && request.resource.data.boatHull is string
-            && request.resource.data.boatHull.size() <= 24
-            && request.resource.data.boatStripe is string
-            && request.resource.data.boatStripe.size() <= 24
-            && request.resource.data.boatFlag is string
-            && request.resource.data.boatFlag.size() <= 24
-            && request.resource.data.joinedAt is timestamp;
+            && data.displayName.size() >= 1
+            && data.joinedAt is timestamp;
         }
 
-        allow read: if isPrivateIslandMember();
-        allow create: if isPrivateIslandMemberAfter()
+        allow read: if isMember();
+        allow create: if isMemberAfter()
           && request.auth.uid == memberId
-          && validPrivateIslandMemberPayload()
+          && validIslandMemberCard(request.resource.data)
           && request.resource.data.joinedAt == request.time;
-        allow update: if isPrivateIslandMemberAfter()
+        allow update: if isMemberAfter()
           && request.auth.uid == memberId
-          && validPrivateIslandMemberPayload()
+          && validIslandMemberCard(request.resource.data)
           && request.resource.data.joinedAt == resource.data.joinedAt;
-        allow delete: if isPrivateIslandMember()
-          && request.auth.uid == memberId;
+        allow delete: if isMember() && request.auth.uid == memberId;
       }
 
-      // 主の端末で編集した配置の読み取り専用スナップショット。
+      // ホストの端末で編集した配置の読み取り専用スナップショット。
       match /island/{snapshotId} {
-        function validPrivateIslandSnapshotPayload() {
-          return request.resource.data.keys().hasOnly([
+        function validSnapshot(data) {
+          return data.keys().hasOnly([
               'schemaVersion', 'revision', 'placements', 'updatedAt'
             ])
-            && request.resource.data.schemaVersion == 1
-            && request.resource.data.revision is int
-            && request.resource.data.placements is list
-            && request.resource.data.placements.size() <= 120
-            && request.resource.data.updatedAt == request.time;
+            && data.schemaVersion == 1
+            && data.revision is int
+            && validPlacementList(data)
+            && data.updatedAt == request.time;
         }
 
-        allow read: if isPrivateIslandMember();
+        allow read: if isMember();
         allow create: if snapshotId == 'current'
-          && isPrivateIslandHost()
-          && validPrivateIslandSnapshotPayload()
+          && isHost()
+          && validSnapshot(request.resource.data)
           && request.resource.data.revision == 1;
         allow update: if snapshotId == 'current'
-          && isPrivateIslandHost()
-          && validPrivateIslandSnapshotPayload()
+          && isHost()
+          && validSnapshot(request.resource.data)
           && resource.data.revision is int
           && request.resource.data.revision == resource.data.revision + 1;
         allow delete: if false;
@@ -388,63 +434,59 @@ service cloud.firestore {
 
       // 各クライアントは自分の位置だけ書き、島のメンバーだけが読む。
       match /presence/{memberId} {
-        allow read: if isPrivateIslandMember();
-        allow create, update: if isPrivateIslandMember()
+        function validPresence(data) {
+          return data.keys().hasOnly([
+              'uid', 'x', 'z', 'yaw', 'pose', 'scene', 'phase',
+              'seatPlacementId', 'seatSlotId', 'arrivalNonce', 'updatedAt'
+            ])
+            && data.keys().hasAll([
+              'uid', 'x', 'z', 'yaw', 'pose', 'scene', 'phase', 'updatedAt'
+            ])
+            && data.uid == request.auth.uid
+            && data.x is number && data.x >= -80 && data.x <= 80
+            && data.z is number && data.z >= -80 && data.z <= 80
+            && data.yaw is number && data.yaw >= -7 && data.yaw <= 7
+            && data.pose in [
+              'idle', 'walk', 'lookout', 'raise', 'hail', 'point',
+              'stargaze', 'rest', 'sit', 'lie'
+            ]
+            && data.scene in [
+              'island',
+              'interior:weathered_cottage',
+              'interior:navigator_tent'
+            ]
+            && data.phase in [
+              'arrival', 'explore', 'edit', 'camera', 'departure'
+            ]
+            // 席は「配置id + スロットid」を必ず対で書く。片方だけは受け付けない。
+            && (('seatPlacementId' in data) == ('seatSlotId' in data))
+            && (!('seatPlacementId' in data)
+              || (data.seatPlacementId is string
+                && data.seatPlacementId.matches(
+                  '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                )))
+            && (!('seatSlotId' in data)
+              || (data.seatSlotId is string
+                && data.seatSlotId.size() >= 1
+                && data.seatSlotId.size() <= 40))
+            && (!('arrivalNonce' in data)
+              || (data.arrivalNonce is string
+                && data.arrivalNonce.size() >= 1
+                && data.arrivalNonce.size() <= 40))
+            && data.updatedAt == request.time;
+        }
+
+        allow read: if isMember();
+        allow create, update: if isMember()
           && request.auth.uid == memberId
-          && request.resource.data.keys().hasOnly([
-            'uid', 'x', 'z', 'yaw', 'pose', 'scene', 'phase',
-            'seatPlacementId', 'seatSlotId', 'arrivalNonce', 'updatedAt'
-          ])
-          && request.resource.data.keys().hasAll([
-            'uid', 'x', 'z', 'yaw', 'pose', 'scene', 'phase', 'updatedAt'
-          ])
-          && request.resource.data.uid == request.auth.uid
-          && request.resource.data.x is number
-          && request.resource.data.x >= -80
-          && request.resource.data.x <= 80
-          && request.resource.data.z is number
-          && request.resource.data.z >= -80
-          && request.resource.data.z <= 80
-          && request.resource.data.yaw is number
-          && request.resource.data.yaw >= -7
-          && request.resource.data.yaw <= 7
-          && request.resource.data.pose in [
-            'idle', 'walk', 'lookout', 'raise', 'hail', 'point',
-            'stargaze', 'rest', 'sit', 'lie'
-          ]
-          && request.resource.data.scene in [
-            'island',
-            'interior:weathered_cottage',
-            'interior:navigator_tent'
-          ]
-          && request.resource.data.phase in [
-            'arrival', 'explore', 'edit', 'camera', 'departure'
-          ]
-          && (('seatPlacementId' in request.resource.data)
-            == ('seatSlotId' in request.resource.data))
-          && (!('seatPlacementId' in request.resource.data)
-            || (request.resource.data.seatPlacementId is string
-              && request.resource.data.seatPlacementId.size() == 36
-              && request.resource.data.seatPlacementId.matches(
-                '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-              )))
-          && (!('seatSlotId' in request.resource.data)
-            || (request.resource.data.seatSlotId is string
-              && request.resource.data.seatSlotId.size() >= 1
-              && request.resource.data.seatSlotId.size() <= 40))
-          && (!('arrivalNonce' in request.resource.data)
-            || (request.resource.data.arrivalNonce is string
-              && request.resource.data.arrivalNonce.size() >= 1
-              && request.resource.data.arrivalNonce.size() <= 40))
-          && request.resource.data.updatedAt == request.time;
-        allow delete: if isPrivateIslandMember()
-          && request.auth.uid == memberId;
+          && validPresence(request.resource.data);
+        allow delete: if isMember() && request.auth.uid == memberId;
       }
 
       // 島内チャット。学習記録の自動投稿は廃止し、言葉だけを扱う。
       match /chat/{messageId} {
-        allow read: if isPrivateIslandMember();
-        allow create: if isPrivateIslandMember()
+        allow read: if isMember();
+        allow create: if isMember()
           && request.resource.data.keys().hasOnly([
             'uid', 'senderName', 'kind', 'text', 'createdAt'
           ])
@@ -464,534 +506,100 @@ service cloud.firestore {
           )
           && request.resource.data.createdAt == request.time;
         allow update: if false;
-        allow delete: if isPrivateIslandMember()
-          && request.auth.uid == resource.data.uid;
+        allow delete: if isMember() && request.auth.uid == resource.data.uid;
       }
     }
 
-    // ---- 旧プライベート港(v1、管理SDKの移行削除専用) ----
-    // 旧クライアントからの rooms への再書き込みを止めるため、
-    // 従来ルールは到達不可能な legacyRooms 名で保存する。
-    match /legacyRooms/{roomId} {
-
-      // get: コードを知っていれば単票は読める(参加のための存在確認・サインイン必須)。
-      // list: 自分が属する港だけ。コード総当たりでの列挙・メンバーUID収集を防ぐ。
-      allow get: if request.auth != null;
-      allow list: if request.auth != null
-        && request.auth.uid in resource.data.memberIds;
-
-      // 作成: 航海証(または確認済み開発者)だけ。参加には航海証を求めない。
-      allow create: if request.auth != null
-        && hasVoyagePass()
-        && request.resource.data.keys().hasOnly(['name', 'memberIds', 'createdAt', 'ownerUid'])
-        && request.resource.data.name is string
-        && request.resource.data.name.size() >= 1
-        && request.resource.data.name.size() <= 80
-        && request.resource.data.memberIds == [request.auth.uid]
-        && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.createdAt == request.time;
-
-      // 更新: 「自分だけを加える」または「自分だけを外す」に限定。
-      // 港名・作成日時・他メンバーは一切改変できず、余計なフィールドも足せない
-      // (共有ドキュメントへの肥大データ注入を防ぐ)。
-      allow update: if request.auth != null
-        && request.resource.data.keys().hasOnly(['name', 'memberIds', 'createdAt', 'ownerUid'])
-        && request.resource.data.name == resource.data.name
-        && request.resource.data.createdAt == resource.data.createdAt
-        && (
-          ( 'ownerUid' in resource.data
-            && request.resource.data.ownerUid == resource.data.ownerUid )
-          ||
-          ( !('ownerUid' in resource.data)
-            && !('ownerUid' in request.resource.data) )
-        )
-        && request.resource.data.memberIds is list
-        && ( addsOnlySelf() || removesOnlySelf() );
-
-      // 港ドキュメント自体の削除は不可。
-      allow delete: if false;
-
-      // 自分だけを1人加えた(他メンバーは全員そのまま)。人数上限で多重防御。
-      function addsOnlySelf() {
-        return !(request.auth.uid in resource.data.memberIds)
-          && request.auth.uid in request.resource.data.memberIds
-          && request.resource.data.memberIds.hasAll(resource.data.memberIds)
-          && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
-          && request.resource.data.memberIds.size() <= 4;   // プライベートの港は4人まで
-      }
-
-      // 自分だけを1人外した(他メンバーは誰も追加・削除していない)。
-      function removesOnlySelf() {
-        return request.auth.uid in resource.data.memberIds
-          && !(request.auth.uid in request.resource.data.memberIds)
-          && resource.data.memberIds.hasAll(request.resource.data.memberIds)
-          && request.resource.data.memberIds.size() == resource.data.memberIds.size() - 1;
-      }
-
-      function isMember() {
-        return request.auth != null
-          && request.auth.uid in get(/databases/$(database)/documents/rooms/$(roomId)).data.memberIds;
-      }
-
-      function isOwner() {
-        let room = get(/databases/$(database)/documents/rooms/$(roomId)).data;
-        return isMember()
-          && (
-            ( 'ownerUid' in room
-              && room.ownerUid in room.memberIds
-              && room.ownerUid == request.auth.uid )
-            ||
-            ( ( !('ownerUid' in room) || !(room.ownerUid in room.memberIds) )
-              && room.memberIds.size() > 0
-              && room.memberIds[0] == request.auth.uid )
-          );
-      }
-
-      function hasCrewPlan(sessionId, memberId) {
-        return exists(
-          /databases/$(database)/documents/rooms/$(roomId)/crewSessions/$(sessionId)/plans/$(memberId)
-        );
-      }
-
-      function allCrewReady(sessionId) {
-        let memberIds = get(
-          /databases/$(database)/documents/rooms/$(roomId)
-        ).data.memberIds;
-        return memberIds.size() > 0
-          && hasCrewPlan(sessionId, memberIds[0])
-          && (memberIds.size() < 2 || hasCrewPlan(sessionId, memberIds[1]))
-          && (memberIds.size() < 3 || hasCrewPlan(sessionId, memberIds[2]))
-          && (memberIds.size() < 4 || hasCrewPlan(sessionId, memberIds[3]));
-      }
-
-      function crewSessionData(sessionId) {
-        return get(
-          /databases/$(database)/documents/rooms/$(roomId)/crewSessions/$(sessionId)
-        ).data;
-      }
-
-      function crewSessionHasNotStarted(sessionId) {
-        return !('startedAt' in crewSessionData(sessionId));
-      }
-
-      function crewSessionHasFinished(sessionId) {
-        let session = crewSessionData(sessionId);
-        return session.startedAt is timestamp
-          && session.durationMinutes is int
-          && request.time >= session.startedAt
-            + duration.value(session.durationMinutes, 'm');
-      }
-
-      // ---- メンバーのプレイヤーカード ----
-      match /members/{memberId} {
-        // 読めるのは同じ港のメンバーだけ。
-        allow read: if isMember();
-
-        // 書けるのは、その港のメンバー本人だけ。フィールドは既知のものに限り、型と長さを検証する
-        // (未参加の港へのドキュメント設置や、余計なフィールド・肥大データの注入を防ぐ)。
-        // boat* は船の見た目(部位id)、sinceDay は航海のはじまり。いずれも任意フィールド=
-        // hasOnly のサブセット規則により、これらを書かない旧クライアント(iOS)の
-        // 従来5フィールド書き込みもそのまま通る。
-        allow create, update: if request.auth != null
-          && request.auth.uid == memberId
-          && isMember()
-          && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'sinceDay', 'joinedAt', 'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag'])
-          && request.resource.data.displayName is string
-          && request.resource.data.displayName.size() <= 60
-          && request.resource.data.styleToken is string
-          && request.resource.data.styleToken.size() <= 24
-          && request.resource.data.symbolToken is string
-          && request.resource.data.symbolToken.size() <= 24
-          && request.resource.data.resolve is string
-          && request.resource.data.resolve.size() <= 80
-          && ( !('boatSail' in request.resource.data)
-            || (request.resource.data.boatSail is string && request.resource.data.boatSail.size() <= 24) )
-          && ( !('boatJib' in request.resource.data)
-            || (request.resource.data.boatJib is string && request.resource.data.boatJib.size() <= 24) )
-          && ( !('boatHull' in request.resource.data)
-            || (request.resource.data.boatHull is string && request.resource.data.boatHull.size() <= 24) )
-          && ( !('boatStripe' in request.resource.data)
-            || (request.resource.data.boatStripe is string && request.resource.data.boatStripe.size() <= 24) )
-          && ( !('boatFlag' in request.resource.data)
-            || (request.resource.data.boatFlag is string && request.resource.data.boatFlag.size() <= 24) )
-          // 航海のはじまり(yyyy-MM-dd)。任意フィールド。書式を固定して、
-          // ここが自由文の置き場にならないようにする。
-          && ( !('sinceDay' in request.resource.data)
-            || (request.resource.data.sinceDay is string
-              && request.resource.data.sinceDay.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')) );
-
-        // 退港時に自分のカードを消す。
-        allow delete: if request.auth != null && request.auth.uid == memberId;
-
-        // ---- 月ごとの共有記録 ----
-        match /months/{monthId} {
-          allow read: if isMember();
-
-          allow create, update: if request.auth != null
-            && request.auth.uid == memberId
-            && isMember()
-            && request.resource.data.keys().hasOnly(['days', 'sessions', 'updatedAt'])
-            && request.resource.data.days is list
-            && request.resource.data.days.size() <= 31
-            && request.resource.data.sessions is list
-            && request.resource.data.sessions.size() <= 1000;
-
-          allow delete: if request.auth != null && request.auth.uid == memberId;
-        }
-      }
-
-      // ---- 最大4人の共通タイマー ----
-      // 船長が時間を決め、全員が自分の作業項目と意図を準備してから一斉に出航する。
-      // Web/iOS共通: crewSessionsの最新1件を購読し、plans/{uid}は本人だけが書く。
-      match /crewSessions/{sessionId} {
-        allow read: if isMember();
-
-        allow create: if isOwner()
-          && request.resource.data.keys().hasOnly([
-            'durationMinutes', 'createdAt', 'createdBy'
-          ])
-          && request.resource.data.durationMinutes is int
-          && request.resource.data.durationMinutes >= 1
-          && request.resource.data.durationMinutes <= 240
-          && request.resource.data.createdAt == request.time
-          && request.resource.data.createdBy == request.auth.uid;
-
-        // 船長だけが、出航前の時間変更またはstartedAtの一度きりの追加を行える。
-        allow update: if isOwner()
-          && request.resource.data.keys().hasOnly([
-            'durationMinutes', 'createdAt', 'createdBy', 'startedAt'
-          ])
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.createdBy == resource.data.createdBy
-          && request.resource.data.durationMinutes is int
-          && request.resource.data.durationMinutes >= 1
-          && request.resource.data.durationMinutes <= 240
-          && (
-            ( !('startedAt' in resource.data)
-              && !('startedAt' in request.resource.data)
-              && request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(['durationMinutes']) )
-            ||
-            ( !('startedAt' in resource.data)
-              && request.resource.data.startedAt == request.time
-              && request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(['startedAt'])
-              && allCrewReady(sessionId) )
-          );
-
-        // 履歴は消さない。次の航海は新しいcrewSessionsドキュメントを作る。
-        allow delete: if false;
-
-        match /plans/{memberId} {
-          allow read: if isMember();
-
-          // 準備は出航前だけ。本人のplanだけを作成でき、サーバー時刻を使う。
-          allow create: if isMember()
-            && request.auth.uid == memberId
-            && crewSessionHasNotStarted(sessionId)
-            && request.resource.data.keys().hasOnly([
-              'itemId', 'itemName', 'itemStyle', 'itemSymbol',
-              'intention', 'preparedAt', 'recall', 'recordedAt'
-            ])
-            && request.resource.data.itemId is string
-            && request.resource.data.itemId.size() <= 80
-            && request.resource.data.itemName is string
-            && request.resource.data.itemName.size() <= 60
-            && request.resource.data.itemStyle is string
-            && request.resource.data.itemStyle.size() <= 24
-            && request.resource.data.itemSymbol is string
-            && request.resource.data.itemSymbol.size() <= 24
-            && request.resource.data.intention is string
-            && request.resource.data.intention.size() >= 1
-            && request.resource.data.intention.size() <= 80
-            && request.resource.data.preparedAt == request.time
-            && !('recall' in request.resource.data)
-            && !('recordedAt' in request.resource.data);
-
-          // 出航前は準備内容だけを編集可能。到着後は元の準備を変えず、
-          // recall/recordedAtを一度だけ追加できる。早送り・履歴改ざんを防ぐ。
-          allow update: if isMember()
-            && request.auth.uid == memberId
-            && request.resource.data.keys().hasOnly([
-              'itemId', 'itemName', 'itemStyle', 'itemSymbol',
-              'intention', 'preparedAt', 'recall', 'recordedAt'
-            ])
-            && request.resource.data.itemId is string
-            && request.resource.data.itemId.size() <= 80
-            && request.resource.data.itemName is string
-            && request.resource.data.itemName.size() <= 60
-            && request.resource.data.itemStyle is string
-            && request.resource.data.itemStyle.size() <= 24
-            && request.resource.data.itemSymbol is string
-            && request.resource.data.itemSymbol.size() <= 24
-            && request.resource.data.intention is string
-            && request.resource.data.intention.size() >= 1
-            && request.resource.data.intention.size() <= 80
-            && (
-              ( crewSessionHasNotStarted(sessionId)
-                && request.resource.data.preparedAt == request.time
-                && !('recall' in request.resource.data)
-                && !('recordedAt' in request.resource.data) )
-              ||
-              ( crewSessionHasFinished(sessionId)
-                && !('recall' in resource.data)
-                && !('recordedAt' in resource.data)
-                && request.resource.data.diff(resource.data).affectedKeys()
-                  .hasOnly(['recall', 'recordedAt'])
-                && request.resource.data.recall is string
-                && request.resource.data.recall.size() >= 20
-                && request.resource.data.recall.size() <= 500
-                && request.resource.data.recordedAt == request.time )
-            );
-
-          allow delete: if isMember() && request.auth.uid == memberId;
-        }
-      }
-
-      // ---- 共同航海(単一ドキュメント voyage/current) ----
-      // 目的地を決めると seed から海図(3航路)がひらき、選んだ航路を全員で進む。
-      // 航路の中身(海域の位置)は seed からクライアントが決定的に導出するので
-      // ここには置かない。進捗もカウンタを持たず、各メンバーの months から
-      // 閲覧者が導出する。到着(arrivedAt)は在港者の誰かが1回だけ書ける。
-      // 4人の友人港なので、作成・削除は在港者なら誰でも(簡素に)。
-      match /voyage/{voyageId} {
-        allow read: if isMember();
-
-        // 作成: 在港者が、最小のキー集合で。seed・目標時間(分)・航路番号を検証する。
-        allow create: if isMember()
-          && request.resource.data.keys().hasOnly(['seed', 'targetMinutes', 'routeIndex', 'createdAt', 'createdBy'])
-          && request.resource.data.seed is int
-          && request.resource.data.seed >= 0
-          && request.resource.data.targetMinutes is int
-          && request.resource.data.targetMinutes >= 60
-          && request.resource.data.targetMinutes <= 600000
-          && request.resource.data.routeIndex is int
-          && request.resource.data.routeIndex >= 0
-          && request.resource.data.routeIndex <= 2
-          && request.resource.data.createdAt is timestamp
-          && request.resource.data.createdBy == request.auth.uid;
-
-        // 更新: arrivedAt を一度だけ足せる(到着の刻印)。他フィールドは不変。
-        allow update: if isMember()
-          && !('arrivedAt' in resource.data)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['arrivedAt'])
-          && request.resource.data.arrivedAt is timestamp;
-
-        // 削除: 在港者なら誰でも(到着後に「次の航海」で仕舞うため)。
-        allow delete: if isMember();
-      }
-
-      // ---- 旧「港の試練」(quest/current) ----
-      // 共同航海に置き換え済み。デプロイ済みの旧クライアントが読めるよう
-      // しばらく残置する(新規の書き込みはもう発生しない)。
-      match /quest/{questId} {
-        allow read: if isMember();
-
-        // 作成: 在港者が、最小のキー集合で。kind と目標時間(分)を検証する。
-        allow create: if isMember()
-          && request.resource.data.keys().hasOnly(['kind', 'targetMinutes', 'createdAt', 'createdBy'])
-          && request.resource.data.kind in ['kraken', 'storm']
-          && request.resource.data.targetMinutes is int
-          && request.resource.data.targetMinutes >= 60
-          && request.resource.data.targetMinutes <= 600000
-          && request.resource.data.createdAt is timestamp
-          && request.resource.data.createdBy == request.auth.uid;
-
-        // 更新: defeatedAt を一度だけ足せる(討伐の刻印)。他フィールドは不変。
-        allow update: if isMember()
-          && !('defeatedAt' in resource.data)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['defeatedAt'])
-          && request.resource.data.defeatedAt is timestamp;
-
-        // 削除: 在港者なら誰でも(討伐後に「新たな試練」で流すため)。
-        allow delete: if isMember();
-      }
-
-      // ---- チャット(言葉 + 着岸/帰還の自動の行) ----
-      match /chat/{messageId} {
-        allow read: if isMember();
-
-        // 発言・自動の行とも、在港者本人だけが自分の uid で書ける。
-        allow create: if isMember()
-          && request.resource.data.uid == request.auth.uid
-          && request.resource.data.kind in ['text', 'landfall', 'return']
-          && request.resource.data.reactions is map
-          && request.resource.data.reactions.size() == 0
-          && (
-            ( request.resource.data.kind == 'text'
-              && request.resource.data.keys().hasOnly(['uid', 'kind', 'text', 'createdAt', 'reactions'])
-              && request.resource.data.text is string
-              && request.resource.data.text.size() >= 1
-              && request.resource.data.text.size() <= 500
-              && !request.resource.data.text.matches(
-                '(?i).*(kill[ ._-]*yourself|\\bkys\\b|nigger|faggot|死ね|しね|殺す|ころす|自殺しろ).*'
-              ) )
-            ||
-            ( request.resource.data.kind in ['landfall', 'return']
-              && request.resource.data.keys().hasOnly(['uid', 'kind', 'itemName', 'itemStyle', 'itemSymbol', 'minutes', 'gapDays', 'createdAt', 'reactions'])
-              && request.resource.data.itemName is string
-              && request.resource.data.itemName.size() <= 60
-              && request.resource.data.itemStyle is string
-              && request.resource.data.itemStyle.size() <= 24
-              && request.resource.data.itemSymbol is string
-              && request.resource.data.itemSymbol.size() <= 24
-              && request.resource.data.minutes is int
-              && request.resource.data.minutes >= 1
-              && request.resource.data.minutes <= 6000
-              && ( !('gapDays' in request.resource.data)
-                || (request.resource.data.gapDays is int
-                  && request.resource.data.gapDays >= 0
-                  && request.resource.data.gapDays <= 36500) ) )
-          )
-          && request.resource.data.createdAt == request.time;
-
-        // 更新はリアクションのみ。自分の枠(reactions[自分のuid])だけを、許可された印で。
-        allow update: if isMember()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-          && request.resource.data.reactions.diff(resource.data.reactions).affectedKeys().hasOnly([request.auth.uid])
-          && ( !(request.auth.uid in request.resource.data.reactions)
-            || request.resource.data.reactions[request.auth.uid] in ['heart', 'lighthouse'] );
-
-        // 自分の発言だけ、書いてから1時間以内に限り取り下げられる。
-        allow delete: if request.auth != null
-          && request.auth.uid == resource.data.uid
-          && request.time < resource.data.createdAt + duration.value(1, 'h');
-      }
-    }
-
-    // ---- パブリックの港(公式5港) ----
+    // ================================================================
+    // パブリックの港(公式5港)
+    // ================================================================
     // 参加すると、名前・アイコン・作業記録がその港に表示される。
     // 不変条件: 書けるのも消せるのも「書いた本人だけ」。読みはサインイン済みなら誰でも。
+
     match /publicHarbors/{slug} {
-      function validSlug() {
-        return slug in ['language', 'certification', 'student', 'reading', 'making'];
+      function canWriteAs(memberId) {
+        return isSelf(memberId)
+          && slug in ['language', 'certification', 'student', 'reading', 'making']
+          && !exists(
+            /databases/$(database)/documents/publicHarborBans/$(slug)/users/$(memberId)
+          );
       }
 
-      function isBanned(memberId) {
-        return exists(
-          /databases/$(database)/documents/publicHarborBans/$(slug)/users/$(memberId)
-        );
-      }
-
-      // メンバーのプレイヤーカード。
       match /members/{memberId} {
-        allow read: if request.auth != null;
-
-        // boat* は船の見た目(部位id)。任意フィールドなので旧クライアントの書き込みも通る。
-        allow create, update: if request.auth != null
-          && request.auth.uid == memberId
-          && validSlug()
-          && !isBanned(memberId)
-          && request.resource.data.keys().hasOnly(['displayName', 'styleToken', 'symbolToken', 'resolve', 'sinceDay', 'joinedAt', 'boatSail', 'boatJib', 'boatHull', 'boatStripe', 'boatFlag'])
-          && request.resource.data.displayName is string
-          && request.resource.data.displayName.size() <= 60
-          && request.resource.data.styleToken is string
-          && request.resource.data.styleToken.size() <= 24
-          && request.resource.data.styleToken in ['midnight', 'coral', 'ink', 'seaGreen', 'violet', 'sunYellow', 'harbor', 'sand', 'ember', 'rust', 'lavender', 'sunrise']
-          && request.resource.data.symbolToken is string
-          && request.resource.data.symbolToken.size() <= 24
-          && request.resource.data.symbolToken in ['anchor', 'compass', 'wheel', 'lighthouse', 'island', 'phoenix', 'book', 'pen', 'sailboat', 'attire', 'wave', 'comet', 'sun']
-          && request.resource.data.resolve is string
-          && request.resource.data.resolve.size() <= 80
-          && ( !('boatSail' in request.resource.data)
-            || (request.resource.data.boatSail is string && request.resource.data.boatSail.size() <= 24) )
-          && ( !('boatJib' in request.resource.data)
-            || (request.resource.data.boatJib is string && request.resource.data.boatJib.size() <= 24) )
-          && ( !('boatHull' in request.resource.data)
-            || (request.resource.data.boatHull is string && request.resource.data.boatHull.size() <= 24) )
-          && ( !('boatStripe' in request.resource.data)
-            || (request.resource.data.boatStripe is string && request.resource.data.boatStripe.size() <= 24) )
-          && ( !('boatFlag' in request.resource.data)
-            || (request.resource.data.boatFlag is string && request.resource.data.boatFlag.size() <= 24) )
-          // 航海のはじまり(yyyy-MM-dd)。任意フィールド。書式を固定して、
-          // ここが自由文の置き場にならないようにする。
-          && ( !('sinceDay' in request.resource.data)
-            || (request.resource.data.sinceDay is string
-              && request.resource.data.sinceDay.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')) );
-
-        // 退港・削除は本人のみ。
-        allow delete: if request.auth != null && request.auth.uid == memberId;
+        allow read: if signedIn();
+        allow create, update: if canWriteAs(memberId)
+          && validMemberCardShape(request.resource.data);
+        allow delete: if isSelf(memberId);
 
         // 月ごとの共有記録。積み上がって残り、消せるのは本人だけ。
         match /months/{monthId} {
-          allow read: if request.auth != null;
-
-          allow create, update: if request.auth != null
-            && request.auth.uid == memberId
-            && validSlug()
-            && !isBanned(memberId)
-            && request.resource.data.keys().hasOnly(['days', 'sessions', 'updatedAt'])
-            && request.resource.data.days is list
-            && request.resource.data.days.size() <= 31
-            && request.resource.data.sessions is list
-            && request.resource.data.sessions.size() <= 1000;
-
-          allow delete: if request.auth != null && request.auth.uid == memberId;
+          allow read: if signedIn();
+          allow create, update: if canWriteAs(memberId)
+            && validMonthPayload(request.resource.data);
+          allow delete: if isSelf(memberId);
         }
       }
     }
 
-    // ---- 公開誌(一日一頁) ----
+    // ================================================================
+    // 公開誌(一日一頁)
+    // ================================================================
     // 作成・更新・削除はApp Check付きCallableだけがAdmin SDKで行う。
     // 日付、1日1件、所属港、画像サイズをクライアントの直接書込みに委ねない。
+
     match /publicJournalEntries/{entryId} {
-      allow get: if request.auth != null;
-      allow list: if request.auth != null
+      allow get: if signedIn();
+      allow list: if signedIn()
         && request.query.limit != null
         && request.query.limit <= 30;
       allow create, update, delete: if false;
     }
 
-    // 通報内容とレート制限は運営専用。クライアントからは存在確認もさせない。
-    match /publicContentReports/{reportId} {
-      allow read, write: if false;
-    }
-    match /publicContentReportLimits/{limitId} {
-      allow read, write: if false;
-    }
+    // ================================================================
+    // 通報(書き捨て。読めるのは運営=コンソールのみ)
+    // ================================================================
+    // 通報できるのは「自分が居る島で、実在する他人の発言」だけ。
+    // 本文もサーバー側の実データと一致していなければ受け付けない。
 
-    // ---- 通報(書き捨て。読めるのは運営=コンソールのみ) ----
     match /reports/{reportId} {
-      allow create: if request.auth != null
-        && request.resource.data.keys().hasOnly([
-          'source', 'privateIslandCode', 'reporterUid', 'targetUid',
-          'messageId', 'text', 'createdAt'
-        ])
-        && request.resource.data.source == 'privateIsland'
-        && request.resource.data.reporterUid is string
-        && request.resource.data.reporterUid == request.auth.uid
-        && request.resource.data.privateIslandCode is string
-        && request.resource.data.privateIslandCode.matches(
-          '^[A-HJ-NP-Z2-9]{6}$'
-        )
-        && request.resource.data.targetUid is string
-        && request.resource.data.targetUid.size() >= 1
-        && request.resource.data.targetUid.size() <= 128
-        && request.resource.data.targetUid != request.auth.uid
-        && exists(
-          /databases/$(database)/documents/privateIslands/$(request.resource.data.privateIslandCode)
-        )
-        && request.auth.uid in get(
-          /databases/$(database)/documents/privateIslands/$(request.resource.data.privateIslandCode)
-        ).data.memberIds
-        && request.resource.data.targetUid in get(
-          /databases/$(database)/documents/privateIslands/$(request.resource.data.privateIslandCode)
-        ).data.memberIds
-        && request.resource.data.messageId is string
-        && request.resource.data.messageId.size() >= 1
-        && request.resource.data.messageId.size() <= 128
-        && exists(
-          /databases/$(database)/documents/privateIslands/$(request.resource.data.privateIslandCode)/chat/$(request.resource.data.messageId)
-        )
-        && get(
-          /databases/$(database)/documents/privateIslands/$(request.resource.data.privateIslandCode)/chat/$(request.resource.data.messageId)
-        ).data.uid == request.resource.data.targetUid
-        && request.resource.data.text is string
-        && request.resource.data.text.size() <= 500
-        && request.resource.data.text == get(
-          /databases/$(database)/documents/privateIslands/$(request.resource.data.privateIslandCode)/chat/$(request.resource.data.messageId)
-        ).data.text
-        && request.resource.data.createdAt == request.time;
+      // 形と本人性だけを見る。実データ照合の前に、安いチェックで弾く。
+      function validReportShape(data) {
+        return data.keys().hasOnly([
+            'source', 'privateIslandCode', 'reporterUid', 'targetUid',
+            'messageId', 'text', 'createdAt'
+          ])
+          && data.source == 'privateIsland'
+          && data.reporterUid == request.auth.uid
+          && data.privateIslandCode is string
+          && data.privateIslandCode.matches('^[A-HJ-NP-Z2-9]{6}$')
+          && data.targetUid is string
+          && data.targetUid.size() >= 1
+          && data.targetUid.size() <= 128
+          && data.targetUid != request.auth.uid
+          && data.messageId is string
+          && data.messageId.size() >= 1
+          && data.messageId.size() <= 128
+          && data.text is string
+          && data.text.size() <= 500
+          && data.createdAt == request.time;
+      }
+
+      // 通報できるのは「自分が居る島の、実在する他人の発言」だけ。
+      // 本文もサーバー側の実データと一致していなければ受け付けない。
+      function matchesStoredChat(data) {
+        let island = /databases/$(database)/documents/privateIslands/$(data.privateIslandCode);
+        let message = /databases/$(database)/documents/privateIslands/$(data.privateIslandCode)/chat/$(data.messageId);
+        return exists(island)
+          && request.auth.uid in get(island).data.memberIds
+          && data.targetUid in get(island).data.memberIds
+          && exists(message)
+          && get(message).data.uid == data.targetUid
+          && get(message).data.text == data.text;
+      }
+
+      allow create: if signedIn()
+        && validReportShape(request.resource.data)
+        && matchesStoredChat(request.resource.data);
       allow read, update, delete: if false;
     }
   }

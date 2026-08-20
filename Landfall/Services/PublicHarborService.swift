@@ -26,18 +26,43 @@ final class PublicHarborMonthSubscription {
 }
 
 final class PublicHarborMembersSubscription {
-    private var registration: ListenerRegistration?
+    private var registrations: [ListenerRegistration]
 
-    init(_ registration: ListenerRegistration) {
-        self.registration = registration
+    init(_ registrations: [ListenerRegistration]) {
+        self.registrations = registrations
     }
 
     func cancel() {
-        registration?.remove()
-        registration = nil
+        registrations.forEach { $0.remove() }
+        registrations = []
     }
 
     deinit { cancel() }
+}
+
+/// 先頭ページと自分のカードは別々の購読で届く。両方を1つの一覧にまとめ、
+/// 片方だけが更新されたときも欠けのない並びを渡す。
+@MainActor
+private final class PublicHarborMembersMerge {
+    private var page: [DocumentSnapshot] = []
+    private var ownCard: DocumentSnapshot?
+
+    func apply(page: [DocumentSnapshot]) -> [DocumentSnapshot] {
+        self.page = page
+        return merged
+    }
+
+    func apply(ownCard: DocumentSnapshot?) -> [DocumentSnapshot] {
+        self.ownCard = ownCard
+        return merged
+    }
+
+    private var merged: [DocumentSnapshot] {
+        guard let ownCard,
+              !page.contains(where: { $0.documentID == ownCard.documentID })
+        else { return page }
+        return page + [ownCard]
+    }
 }
 
 /// パブリックの港。参加すると、名前・アイコン・作業記録がその港に表示される。
@@ -265,61 +290,63 @@ final class PublicHarborService: ObservableObject {
 
     // MARK: - 港のメンバー
 
-    /// 在港の船乗り(プロフィール一覧)。60件ずつ全ページを読み、最初のページから
-    /// 画面へ渡す。以前の固定200件打ち切りを避けつつ、全件待ちで画面を止めない。
+    /// 板に出す人数の上限。港が何万人になっても、1回の表示で読むのはこの数+自分の1枚。
+    /// 全件読みは港が育つほど際限なく重く高くなるため、入港の新しい順に切り取る。
+    static let memberPageSize = 60
+
+    /// 在港の船乗り(プロフィール一覧)。入港の新しい順に先頭ページだけを読む。
+    /// 自分のカードは順位に関わらず必ず含める(古参が自分を見失わないため)。
     func members(
         of slug: String,
         onPage: (([HarborMember]) -> Void)? = nil
     ) async throws -> [HarborMember] {
-        guard uid != nil else { throw RoomError.notSignedIn }
-        let pageSize = 60
-        let collection = db.collection("publicHarbors").document(slug)
-            .collection("members")
-        var query: Query = collection
-            .order(by: FieldPath.documentID())
-            .limit(to: pageSize)
-        var documents: [QueryDocumentSnapshot] = []
+        guard let uid else { throw RoomError.notSignedIn }
+        let query = recentMembersQuery(slug: slug)
 
-        // Paint a warm cache immediately when available; the authoritative server pages below
-        // replace it moments later, so speed never comes at the cost of remaining stale.
+        // Paint a warm cache immediately when available; the authoritative server page below
+        // replaces it moments later, so speed never comes at the cost of remaining stale.
         if let cached = try? await query.getDocuments(source: .cache), !cached.documents.isEmpty {
-            onPage?(
-                cached.documents
-                    .sorted(by: Self.memberDocumentNewestFirst)
-                    .map(Self.member)
-            )
+            onPage?(Self.members(cached.documents))
         }
 
-        while true {
-            let snapshot = try await query.getDocuments(source: .server)
-            documents.append(contentsOf: snapshot.documents)
-            let resolved = documents
-                .sorted(by: Self.memberDocumentNewestFirst)
-                .map(Self.member)
-            onPage?(resolved)
-            guard snapshot.documents.count == pageSize, let last = snapshot.documents.last else { break }
-            query = collection
-                .order(by: FieldPath.documentID())
-                .start(afterDocument: last)
-                .limit(to: pageSize)
-        }
+        async let page = query.getDocuments(source: .server)
+        async let ownCard = memberRef(slug: slug, uid: uid).getDocument(source: .server)
+        let merge = PublicHarborMembersMerge()
+        _ = merge.apply(page: try await page.documents)
+        let card = try await ownCard
+        let resolved = Self.members(merge.apply(ownCard: card.exists ? card : nil))
+        onPage?(resolved)
+        return resolved
+    }
 
-        // order(by: joinedAt) は古いクライアントが作った joinedAt 無しのカードを
-        // 結果から除外するため、全カードを読み、存在する日時でクライアント側ソートする。
-        return documents
+    /// 入港の新しい順。joinedAt を持たない旧カードはこの並びに乗らないため、
+    /// `backfillPublicHarborJoinedAt` で一度だけ埋めてから運用する。
+    private func recentMembersQuery(slug: String) -> Query {
+        db.collection("publicHarbors").document(slug)
+            .collection("members")
+            .order(by: "joinedAt", descending: true)
+            .limit(to: Self.memberPageSize)
+    }
+
+    private static func members(_ documents: [DocumentSnapshot]) -> [HarborMember] {
+        documents
             .sorted(by: Self.memberDocumentNewestFirst)
             .map(Self.member)
     }
 
     /// Keeps the list current while the harbor is open. A join, departure, or player-card edit
-    /// now appears without closing the board or manually pulling to refresh.
+    /// appears without closing the board or manually pulling to refresh.
+    ///
+    /// 購読するのは先頭ページと自分のカードだけ。港全体を購読すると、在港者が増えるほど
+    /// 初回に読む枚数も、他人の編集で届く更新も青天井になる。
     func observeMembers(
         of slug: String,
         onChange: @escaping (Result<[HarborMember], Error>) -> Void
     ) -> PublicHarborMembersSubscription? {
-        guard uid != nil else { return nil }
-        let registration = db.collection("publicHarbors").document(slug)
-            .collection("members")
+        guard let uid else { return nil }
+        let merge = PublicHarborMembersMerge()
+
+        let pageRegistration = recentMembersQuery(slug: slug)
             .addSnapshotListener { snapshot, error in
                 Task { @MainActor in
                     if let error {
@@ -327,13 +354,19 @@ final class PublicHarborService: ObservableObject {
                         return
                     }
                     guard let snapshot else { return }
-                    let members = snapshot.documents
-                        .sorted(by: Self.memberDocumentNewestFirst)
-                        .map(Self.member)
-                    onChange(.success(members))
+                    onChange(.success(Self.members(merge.apply(page: snapshot.documents))))
                 }
             }
-        return PublicHarborMembersSubscription(registration)
+
+        let ownRegistration = memberRef(slug: slug, uid: uid)
+            .addSnapshotListener { document, _ in
+                Task { @MainActor in
+                    let card = document?.exists == true ? document : nil
+                    onChange(.success(Self.members(merge.apply(ownCard: card))))
+                }
+            }
+
+        return PublicHarborMembersSubscription([pageRegistration, ownRegistration])
     }
 
     /// 詳細を開くたびにメンバーカードを取り直す。
@@ -449,11 +482,11 @@ final class PublicHarborService: ObservableObject {
     }
 
     private static func memberDocumentNewestFirst(
-        _ lhs: QueryDocumentSnapshot,
-        _ rhs: QueryDocumentSnapshot
+        _ lhs: DocumentSnapshot,
+        _ rhs: DocumentSnapshot
     ) -> Bool {
-        let left = (lhs.data()["joinedAt"] as? Timestamp)?.dateValue()
-        let right = (rhs.data()["joinedAt"] as? Timestamp)?.dateValue()
+        let left = (lhs.data()?["joinedAt"] as? Timestamp)?.dateValue()
+        let right = (rhs.data()?["joinedAt"] as? Timestamp)?.dateValue()
         switch (left, right) {
         case let (left?, right?): return left > right
         case (_?, nil): return true

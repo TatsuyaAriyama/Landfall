@@ -5,7 +5,7 @@ import {
   type JWSTransactionDecodedPayload,
 } from "@apple/app-store-server-library";
 import { getApps, initializeApp } from "firebase-admin/app";
-import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
+import { FieldPath, FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import { defineSecret, defineString } from "firebase-functions/params";
 import * as functionsV1 from "firebase-functions/v1";
@@ -759,7 +759,7 @@ async function verifyAppStoreTransaction(
  * Firestoreルールが参照する期限付き航海証を発行する。
  */
 export const syncAppStoreVoyagePass = onCall(
-  { region: REGION },
+  { region: REGION, enforceAppCheck: true },
   async (request) => {
     const uid = requireUid(request.auth);
     if (isDeveloper(request.auth)) return { active: true, developer: true };
@@ -899,6 +899,7 @@ async function existingPassPortalUrl(
 export const createVoyagePassCheckout = onCall(
   {
     region: REGION,
+    enforceAppCheck: true,
     secrets: [stripeRestrictedKey],
   },
   async (request) => {
@@ -938,6 +939,7 @@ export const createVoyagePassCheckout = onCall(
 export const createVoyagePassPortal = onCall(
   {
     region: REGION,
+    enforceAppCheck: true,
     secrets: [stripeRestrictedKey],
   },
   async (request) => {
@@ -1187,6 +1189,151 @@ export const purgeLegacyPrivateRooms = onCall(
       }
     }
     return { deletedRooms };
+  },
+);
+
+// Joining by invite code happens here, never in the client, so the island
+// document itself can stay unreadable to non-members. A client-side join needs
+// read access to any island by id, which turns the six-character code into a
+// space small enough to sweep for island names and member uids.
+//
+// The callable must not become the same oracle in disguise: a wrong code costs
+// an attempt, and attempts are capped per account per hour.
+const PRIVATE_ISLAND_CODE = /^[A-HJ-NP-Z2-9]{6}$/;
+// PrivateIslandRoom.maxMembers / .maxJoined と同じ値。片方だけ動かさないこと。
+const PRIVATE_ISLAND_MAX_MEMBERS = 8;
+const PRIVATE_ISLAND_MAX_JOINED = 3;
+const PRIVATE_ISLAND_JOIN_ATTEMPTS_PER_HOUR = 20;
+
+async function enforceIslandJoinRateLimit(uid: string): Promise<void> {
+  const ref = db.collection("privateIslandJoinLimits").doc(uid);
+  const windowStart = Timestamp.fromMillis(Date.now() - 60 * 60 * 1000);
+  await db.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const since = snapshot.get("windowStartedAt");
+    const withinWindow = since instanceof Timestamp && since.toMillis() > windowStart.toMillis();
+    const attempts = withinWindow ? (snapshot.get("attempts") as number ?? 0) : 0;
+    if (attempts >= PRIVATE_ISLAND_JOIN_ATTEMPTS_PER_HOUR) {
+      throw new HttpsError(
+        "resource-exhausted",
+        "Too many invite codes tried. Please wait a while before trying again.",
+      );
+    }
+    transaction.set(ref, {
+      attempts: attempts + 1,
+      windowStartedAt: withinWindow ? since : Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    });
+  });
+}
+
+export const joinPrivateIsland = onCall(
+  { region: REGION, enforceAppCheck: true },
+  async (request) => {
+    const uid = requireUid(request.auth);
+    const code = typeof request.data?.code === "string"
+      ? request.data.code.trim().toUpperCase()
+      : "";
+    if (!PRIVATE_ISLAND_CODE.test(code)) {
+      throw new HttpsError("invalid-argument", "That invite code is not valid.");
+    }
+
+    await enforceIslandJoinRateLimit(uid);
+
+    // 所属数の確認はトランザクションの外で行う。1件のドキュメントを守る
+    // トランザクションの中に別クエリを混ぜると、読み取りの分離が崩れる。
+    const joined = await db
+      .collection("privateIslands")
+      .where("memberIds", "array-contains", uid)
+      .count()
+      .get();
+
+    const islandRef = db.collection("privateIslands").doc(code);
+    let alreadyMember = false;
+    const memberIds = await db.runTransaction(async (transaction) => {
+      const island = await transaction.get(islandRef);
+      if (!island.exists) {
+        throw new HttpsError("not-found", "No island answers that invite code.");
+      }
+      const current = (island.get("memberIds") as string[] | undefined) ?? [];
+      if (current.includes(uid)) {
+        alreadyMember = true;
+        return current;
+      }
+      if (current.length >= PRIVATE_ISLAND_MAX_MEMBERS) {
+        throw new HttpsError("resource-exhausted", "That island is full.");
+      }
+      if (joined.data().count >= PRIVATE_ISLAND_MAX_JOINED) {
+        throw new HttpsError(
+          "failed-precondition",
+          "You have joined as many islands as one navigator can hold.",
+        );
+      }
+
+      const next = [...current, uid];
+      transaction.update(islandRef, { memberIds: next });
+      return next;
+    });
+
+    const island = await islandRef.get();
+    return {
+      id: code,
+      name: island.get("name") ?? "",
+      hostUid: island.get("hostUid") ?? "",
+      memberIds,
+      // 再訪かどうか。端末はこれを見て joinedAt を書き換えないと判断する。
+      alreadyMember,
+      createdAt: (island.get("createdAt") as Timestamp | undefined)?.toMillis() ?? null,
+    };
+  },
+);
+
+// The harbor board reads members ordered by joinedAt with a page limit, so the
+// board stays cheap no matter how large a harbor grows. Cards written before
+// joinedAt existed carry no value for that ordering and would silently drop out
+// of the query, so stamp them once with their earliest known moment.
+//
+// Developer-only and idempotent: cards that already carry joinedAt are skipped,
+// so it is safe to run again after a partial pass or a timeout.
+export const backfillPublicHarborJoinedAt = onCall(
+  { region: REGION, enforceAppCheck: true, timeoutSeconds: 540, memory: "512MiB" },
+  async (request) => {
+    if (!isDeveloper(request.auth)) {
+      throw new HttpsError("permission-denied", "Developer access is required.");
+    }
+
+    let stamped = 0;
+    let scanned = 0;
+    for (const slug of PUBLIC_HARBORS) {
+      const members = db.collection("publicHarbors").doc(slug).collection("members");
+      let cursor: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+
+      while (true) {
+        let page = members.orderBy(FieldPath.documentId()).limit(200);
+        if (cursor) page = page.startAfter(cursor);
+        const snapshot = await page.get();
+        if (snapshot.empty) break;
+
+        const batch = db.batch();
+        let pending = 0;
+        for (const card of snapshot.docs) {
+          scanned += 1;
+          if (card.get("joinedAt") !== undefined) continue;
+          // 参加日時が分からないカードは、板の最後尾に並ぶ最古の時刻を与える。
+          // 実際より古く見せる分には、誰かの順位を不当に押し上げることがない。
+          batch.update(card.ref, { joinedAt: Timestamp.fromMillis(0) });
+          pending += 1;
+        }
+        if (pending > 0) {
+          await batch.commit();
+          stamped += pending;
+        }
+
+        cursor = snapshot.docs[snapshot.docs.length - 1];
+        if (snapshot.size < 200) break;
+      }
+    }
+    return { scanned, stamped };
   },
 );
 

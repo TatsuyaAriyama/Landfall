@@ -103,6 +103,7 @@ enum PrivateIslandError: LocalizedError {
     case codeUnavailable
     case islandFull
     case tooManyIslands
+    case tooManyJoinAttempts
     case alreadyOwnsIsland
     case hostCannotLeave
     case closeFailed
@@ -128,6 +129,8 @@ enum PrivateIslandError: LocalizedError {
             LF.text("This private island is full (up to 8 sailors).")
         case .tooManyIslands:
             LF.text("You can join up to 3 private islands.")
+        case .tooManyJoinAttempts:
+            LF.text("Too many invite codes were tried. Please wait a while.")
         case .alreadyOwnsIsland:
             LF.text("You already host a private island.")
         case .hostCannotLeave:
@@ -155,6 +158,12 @@ enum PrivateIslandError: LocalizedError {
 @MainActor
 final class PrivateIslandService: ObservableObject {
     static let shared = PrivateIslandService()
+
+    /// 自分が属する島の取得・購読の上限。招待制の島を人が何十も抱えることはないが、
+    /// 上限が無いと参加数がそのまま起動時の読み取り件数になるため、頭を押さえる。
+    static let joinedIslandsLimit = 50
+
+    private static let functionsRegion = "asia-northeast1"
 
     @Published private(set) var islands: [PrivateIslandRoom] = []
     @Published private(set) var currentIsland: PrivateIslandRoom?
@@ -262,6 +271,7 @@ final class PrivateIslandService: ObservableObject {
 
         islandsListener = db.collection("privateIslands")
             .whereField("memberIds", arrayContains: uid)
+            .limit(to: Self.joinedIslandsLimit)
             .addSnapshotListener { [weak self] snapshot, error in
                 Task { @MainActor in
                     guard let self, self.islandsListenerUserID == uid else { return }
@@ -428,51 +438,29 @@ final class PrivateIslandService: ObservableObject {
 
     /// Joins the island identified by the existing six-character invite code.
     /// Room membership and the visitor profile are committed atomically.
+    /// 招待コードでの参加はサーバー側の `joinPrivateIsland` に委ねる。
+    /// 端末が島ドキュメントを直接読めると、6文字のコードを総当たりして
+    /// 島名と在島者のUIDを収集できてしまうため、所属が確定するまで島は見せない。
     func joinIsland(code rawCode: String) async throws -> PrivateIslandRoom {
         guard let uid = currentUserID else { throw PrivateIslandError.notSignedIn }
         let code = Self.normalizedCode(rawCode)
         guard code.count == 6 else { throw PrivateIslandError.invalidCode }
 
-        let joined = try await fetchJoinedIslands(uid: uid)
-        guard joined.contains(where: { $0.id == code }) || joined.count < PrivateIslandRoom.maxJoined else {
-            throw PrivateIslandError.tooManyIslands
-        }
-
         let islandRef = db.collection("privateIslands").document(code)
-        let memberRef = islandRef.collection("members").document(uid)
-        let newMemberData = Self.memberProfileData(joinedAt: true)
-        let existingMemberData = Self.memberProfileData(joinedAt: false)
-
+        let wasMember: Bool
         do {
-            _ = try await db.runTransaction { transaction, errorPointer -> Any? in
-                do {
-                    let document = try transaction.getDocument(islandRef)
-                    guard document.exists else {
-                        errorPointer?.pointee = Self.transactionError(.notFound)
-                        return nil
-                    }
-                    var memberIDs = document.data()?["memberIds"] as? [String] ?? []
-                    if !memberIDs.contains(uid) {
-                        guard memberIDs.count < PrivateIslandRoom.maxMembers else {
-                            errorPointer?.pointee = Self.transactionError(.full)
-                            return nil
-                        }
-                        memberIDs.append(uid)
-                        transaction.updateData(["memberIds": memberIDs], forDocument: islandRef)
-                        transaction.setData(newMemberData, forDocument: memberRef, merge: true)
-                    } else {
-                        // Preserve the original joinedAt on repeat deep links.
-                        transaction.setData(existingMemberData, forDocument: memberRef, merge: true)
-                    }
-                    return true
-                } catch let error as NSError {
-                    errorPointer?.pointee = error
-                    return nil
-                }
-            }
+            let callable = Functions.functions(region: Self.functionsRegion)
+                .httpsCallable("joinPrivateIsland")
+            let response = try await callable.call(["code": code])
+            wasMember = (response.data as? [String: Any])?["alreadyMember"] as? Bool ?? false
         } catch {
-            throw Self.mappedTransactionError(error)
+            throw Self.mappedJoinError(error)
         }
+
+        // 所属はサーバーが確定させた。カードは本人しか書けないので端末から置く。
+        // 再訪(ディープリンクの踏み直し)では joinedAt を書き換えない。
+        try? await islandRef.collection("members").document(uid)
+            .setData(Self.memberProfileData(joinedAt: !wasMember), merge: true)
 
         guard let document = try? await islandRef.getDocument(),
               let baseRoom = Self.decodeRoom(document)
@@ -535,7 +523,7 @@ final class PrivateIslandService: ObservableObject {
         let code = Self.normalizedCode(rawCode)
         guard code.count == 6 else { throw PrivateIslandError.invalidCode }
 
-        let callable = Functions.functions(region: "asia-northeast1")
+        let callable = Functions.functions(region: Self.functionsRegion)
             .httpsCallable("closePrivateIsland")
         do {
             _ = try await callable.call(["code": code])
@@ -980,6 +968,7 @@ final class PrivateIslandService: ObservableObject {
     private func fetchJoinedIslands(uid: String) async throws -> [PrivateIslandRoom] {
         let snapshot = try await db.collection("privateIslands")
             .whereField("memberIds", arrayContains: uid)
+            .limit(to: Self.joinedIslandsLimit)
             .getDocuments()
         let rooms = snapshot.documents.compactMap(Self.decodeRoom).sorted(by: Self.sortRooms)
         return await roomsWithStoredEOSSessions(rooms)
@@ -1293,6 +1282,27 @@ final class PrivateIslandService: ObservableObject {
 
     private static func transactionError(_ failure: TransactionFailure) -> NSError {
         NSError(domain: transactionErrorDomain, code: failure.rawValue)
+    }
+
+    /// `joinPrivateIsland` が返す HttpsError を、画面がすでに扱える失敗へ写す。
+    private static func mappedJoinError(_ error: Error) -> Error {
+        let error = error as NSError
+        guard error.domain == FunctionsErrorDomain,
+              let code = FunctionsErrorCode(rawValue: error.code)
+        else { return PrivateIslandError.islandNotFound }
+        switch code {
+        case .notFound: return PrivateIslandError.islandNotFound
+        case .invalidArgument: return PrivateIslandError.invalidCode
+        // 満員も試行回数超過も resourceExhausted で返る。サーバーの文面で見分ける。
+        case .resourceExhausted:
+            let message = (error.userInfo[NSLocalizedDescriptionKey] as? String) ?? ""
+            return message.contains("invite codes")
+                ? PrivateIslandError.tooManyJoinAttempts
+                : PrivateIslandError.islandFull
+        case .failedPrecondition: return PrivateIslandError.tooManyIslands
+        case .unauthenticated: return PrivateIslandError.notSignedIn
+        default: return PrivateIslandError.islandNotFound
+        }
     }
 
     private static func mappedTransactionError(_ error: Error) -> Error {
