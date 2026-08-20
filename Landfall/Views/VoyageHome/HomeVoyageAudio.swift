@@ -109,7 +109,9 @@ final class HomeVoyageAudio: NSObject, ObservableObject, AVAudioPlayerDelegate {
     private let waveEngine = AVAudioEngine()
     private let wavePlayer = AVAudioPlayerNode()
     private var waveConfigured = false
-    private var waveBuffer: AVAudioPCMBuffer?
+    /// 波音は選べる曲のひとつとして前に出るので、島へ薄く敷くときとは別の音量。
+    /// 楽曲(実効RMS約0.046)の8割ほどに合わせ、並べて選んでも段差を感じない。
+    private static let waveVolume = WaveSound.volume(forOutputPeak: 0.27)
     private var musicPlayer: AVAudioPlayer?
     private enum MusicPlaybackMode {
         case playlist
@@ -184,7 +186,9 @@ final class HomeVoyageAudio: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
             switch sound {
             case .waves:
-                try playWaves()
+                // 波形がまだ生成中なら、出来上がった時点でこの再生要求を
+                // やり直す。失敗ではないので、音が出ない印はつけない。
+                guard try startWaves() else { return }
             case .harborMinuet, .beaconRondo, .celestialNocturne:
                 try playMusic(sound, fadeDuration: 0.35)
             case .off:
@@ -262,20 +266,22 @@ final class HomeVoyageAudio: NSObject, ObservableObject, AVAudioPlayerDelegate {
         }
     }
 
-    private func playWaves() throws {
+    /// 波形が用意できていれば鳴らして true を返す。生成待ちなら false。
+    private func startWaves() throws -> Bool {
         try configureWavesIfNeeded()
-        if waveBuffer == nil { waveBuffer = Self.makeWaveBuffer() }
-        guard let waveBuffer else { throw CocoaError(.fileReadUnknown) }
+        guard let buffer = WaveSound.buffer(whenReady: { [weak self] in
+            guard let self, self.playbackRequested, self.requestedSound == .waves else { return }
+            self.play(HomeVoyageSound.waves.rawValue, musicPlaybackMode: self.musicPlaybackMode)
+        }) else { return false }
 
         if !waveEngine.isRunning {
             waveEngine.prepare()
             try waveEngine.start()
         }
-        // iPhone本体スピーカーは低域が出ないため、楽曲より一段大きめにして
-        // 聴感上の音量をBGMへ合わせる。
-        wavePlayer.volume = 0.58
-        wavePlayer.scheduleBuffer(waveBuffer, at: nil, options: [.loops])
+        wavePlayer.volume = Self.waveVolume
+        wavePlayer.scheduleBuffer(buffer, at: nil, options: [.loops])
         wavePlayer.play()
+        return true
     }
 
     private func stopPlayback(deactivateSession: Bool) {
@@ -305,58 +311,10 @@ final class HomeVoyageAudio: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     private func configureWavesIfNeeded() throws {
         guard !waveConfigured else { return }
-        let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 1)!
+        let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
         waveEngine.attach(wavePlayer)
         waveEngine.connect(wavePlayer, to: waveEngine.mainMixerNode, format: format)
         waveEngine.mainMixerNode.outputVolume = 1
         waveConfigured = true
-    }
-
-    private static func makeWaveBuffer() -> AVAudioPCMBuffer {
-        let rate = 44_100.0
-        let frameCount = AVAudioFrameCount(rate * 6)
-        let format = AVAudioFormat(standardFormatWithSampleRate: rate, channels: 1)!
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
-        buffer.frameLength = frameCount
-        let samples = buffer.floatChannelData![0]
-
-        // 以前は二段のローパス(カットオフ約42Hz)で沈めていたため、iPhone本体
-        // スピーカーが再生できる帯域(実質150Hz超)にほとんど音が残らず、
-        // 波形上の音量は十分でも実際にはほぼ聞こえなかった。
-        // 「芯(body)」はうねりの太さを保ちつつ~600Hzまで残し、そこへ
-        // 「泡(hiss)」として~2.2kHzより上の帯域を重ね、スピーカーで鳴らせる
-        // サーッという質感にする。
-        var seed: UInt64 = 0xA17D_E5EA_9234_61C7
-        var body: Float = 0
-        var brightPass: Float = 0
-        for index in 0..<Int(frameCount) {
-            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-            let white = Float(Int32(truncatingIfNeeded: seed >> 32)) / Float(Int32.max)
-            body += (white - body) * 0.09
-            brightPass += (white - brightPass) * 0.32
-            let hiss = white - brightPass
-            let time = Float(index) / Float(rate)
-            let swell = 0.56 + sin(time * 0.42) * 0.18 + sin(time * 0.71 + 1.1) * 0.12
-            samples[index] = (body * 0.72 + hiss * 0.34) * swell
-        }
-        normalize(samples: samples, count: Int(frameCount), peak: 0.72)
-        return buffer
-    }
-
-    private static func normalize(
-        samples: UnsafeMutablePointer<Float>,
-        count: Int,
-        peak targetPeak: Float
-    ) {
-        guard count > 0 else { return }
-        var sourcePeak: Float = 0
-        for index in 0..<count {
-            sourcePeak = max(sourcePeak, abs(samples[index]))
-        }
-        guard sourcePeak > 0.000_001 else { return }
-        let gain = min(12, targetPeak / sourcePeak)
-        for index in 0..<count {
-            samples[index] = max(-0.95, min(0.95, samples[index] * gain))
-        }
     }
 }
