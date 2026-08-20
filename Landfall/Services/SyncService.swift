@@ -831,7 +831,7 @@ enum LocalAccountData {
         defer { clearing = false }
 
         SyncService.shared.stopSync()
-        HarborChatService.shared.stop()
+        BlockedSailors.shared.reset()
 
         for session in (try? context.fetch(FetchDescriptor<StudySession>())) ?? [] {
             context.delete(session)
@@ -852,7 +852,6 @@ enum LocalAccountData {
         BoatCustomization.reset()
         PhoenixPose.resetSelection()
         NavigatorCustomization.reset()
-        RoomService.shared.resetLocalState()
         PublicHarborService.shared.resetLocalState()
         UserDefaults.standard.removeObject(forKey: ownerKey)
         WidgetBridge.refresh(context: context)

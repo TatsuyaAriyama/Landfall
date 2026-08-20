@@ -115,21 +115,15 @@ struct HarborView: View {
     @State private var publicHarborLeaveError: String?
     private let showsOceanBackground: Bool
     private let onPublicHarborSelected: ((PublicHarbor) -> Void)?
-    private let onRoomSelected: ((HarborRoom) -> Void)?
-    private let onMemberTraceSelected: ((MemberTraceKey) -> Void)?
     private let onPrivateIslandSelected: ((PrivateIslandRoom) -> Void)?
 
     init(
         showsOceanBackground: Bool = true,
         onPublicHarborSelected: ((PublicHarbor) -> Void)? = nil,
-        onRoomSelected: ((HarborRoom) -> Void)? = nil,
-        onMemberTraceSelected: ((MemberTraceKey) -> Void)? = nil,
         onPrivateIslandSelected: ((PrivateIslandRoom) -> Void)? = nil
     ) {
         self.showsOceanBackground = showsOceanBackground
         self.onPublicHarborSelected = onPublicHarborSelected
-        self.onRoomSelected = onRoomSelected
-        self.onMemberTraceSelected = onMemberTraceSelected
         self.onPrivateIslandSelected = onPrivateIslandSelected
     }
 
@@ -158,13 +152,6 @@ struct HarborView: View {
                     }
                     .padding(showsOceanBackground ? LFMetrics.cardPadding : 16)
                 }
-            }
-            .navigationDestination(for: MemberTraceKey.self) { key in
-                MemberTraceView(
-                    roomId: key.roomId,
-                    member: key.member,
-                    showsOceanBackground: showsOceanBackground
-                )
             }
             .navigationDestination(for: PublicHarbor.self) { harbor in
                 PublicHarborView(
@@ -604,241 +591,4 @@ struct HarborView: View {
         }
     }
 
-}
-
-/// ナビゲーション用キー。
-struct MemberTraceKey: Hashable {
-    let roomId: String
-    let member: HarborMember
-}
-
-// MARK: - メンバーの軌跡
-
-/// 港のメンバーの当月の記録。自分の「軌跡」画面と同じ文法で、波形・統計・記録した日を見せる。
-/// 共有されるので、項目・ひとこと・時間まで読める(読み取り専用)。
-struct MemberTraceView: View {
-    let roomId: String
-    let member: HarborMember
-    /// "rooms"(プライベート) / "publicHarbors"(パブリック)。読む場所だけが違う。
-    var root: String = "rooms"
-    var showsOceanBackground = true
-    var onEmbeddedBack: (() -> Void)?
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var days: Set<Int>?
-    @State private var sessions: [SharedSession] = []
-
-    private var yearMonth: (year: Int, month: Int) {
-        let comps = Calendar.current.dateComponents([.year, .month], from: Date())
-        return (comps.year ?? 2026, comps.month ?? 1)
-    }
-
-    var body: some View {
-        ZStack {
-            if showsOceanBackground {
-                HarborOceanBackground()
-            }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // 相手のプレイヤーカード(名前・アイコン・決意)。
-                    PlayerCardView(
-                        name: member.displayName,
-                        styleToken: member.styleToken,
-                        symbolToken: member.symbolToken,
-                        resolve: member.resolve,
-                        sinceDay: member.sinceDay
-                    )
-
-                    CardKicker(
-                        text: "Trace of \(LF.monthName(year: yearMonth.year, month: yearMonth.month))",
-                        color: LFColor.ink.opacity(0.55)
-                    )
-                    .padding(.top, 24)
-
-                    if let month = wrappedMonth {
-                        ZStack {
-                            MonthWaveform(
-                                month: month,
-                                lineColor: LFColor.ink,
-                                gapBarColor: LFColor.coral,
-                                resumeMarkerColor: LFColor.returnOrange,
-                                gapLabelColor: LFColor.deepRust.opacity(0.85),
-                                showDateAxis: true
-                            )
-                            .frame(height: 240)
-
-                            if month.studiedCount == 0 {
-                                Text("Waiting for this month's first mark.")
-                                    .font(LFFont.copy(16))
-                                    .foregroundStyle(LFColor.ink.opacity(0.6))
-                            }
-                        }
-                        .padding(.top, 24)
-
-                        statsRow(for: month)
-                            .padding(.top, 28)
-
-                        recordedDaysSection
-                            .padding(.top, 40)
-                    } else {
-                        ProgressView()
-                            .padding(.top, 60)
-                            .frame(maxWidth: .infinity)
-                    }
-                }
-                .padding(LFMetrics.cardPadding)
-            }
-        }
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    if let onEmbeddedBack {
-                        onEmbeddedBack()
-                    } else {
-                        dismiss()
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "chevron.left")
-                        Text("Harbor")
-                    }
-                    .font(LFFont.label(16))
-                    .foregroundStyle(LFColor.ink)
-                }
-            }
-        }
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .task {
-            let detail = await RoomService.shared.monthDetail(
-                roomId: roomId, memberId: member.id,
-                year: yearMonth.year, month: yearMonth.month, root: root
-            )
-            days = detail.days
-            sessions = detail.sessions
-        }
-    }
-
-    // MARK: - 記録した日(共有されたセッション)
-
-    @ViewBuilder
-    private var recordedDaysSection: some View {
-        // 日ごとにまとめ、新しい日から並べる。
-        let grouped = Dictionary(grouping: sessions, by: \.day)
-        let sortedDays = grouped.keys.sorted(by: >)
-        if !sortedDays.isEmpty {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Days logged")
-                    .font(LFFont.label(13))
-                    .tracking(1)
-                    .foregroundStyle(LFColor.ink.opacity(0.5))
-
-                VStack(spacing: 0) {
-                    ForEach(sortedDays, id: \.self) { day in
-                        if day != sortedDays.first {
-                            Rectangle().fill(LFColor.ink.opacity(0.08)).frame(height: 1)
-                        }
-                        dayBlock(day: day, sessions: grouped[day] ?? [])
-                    }
-                }
-            }
-        }
-    }
-
-    private func dayBlock(day: Int, sessions: [SharedSession]) -> some View {
-        let total = sessions.reduce(0) { $0 + $1.minutes }
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Text(LF.dayWithWeekday(dateFor(day: day)))
-                    .font(LFFont.copy(16))
-                    .foregroundStyle(LFColor.ink)
-                Text(LF.duration(minutes: total))
-                    .font(LFFont.label(13))
-                    .monospacedDigit()
-                    .foregroundStyle(LFColor.ink.opacity(0.5))
-            }
-            ForEach(sessions) { session in
-                sessionRow(session)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 16)
-    }
-
-    private func sessionRow(_ session: SharedSession) -> some View {
-        let style = TileStyle.from(session.styleToken)
-        return HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(style.background)
-                TileSymbolView(symbol: TileSymbol.from(session.symbolToken), fg: style.foreground, bg: style.background)
-                    .frame(width: 22, height: 22)
-            }
-            .frame(width: 38, height: 38)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(verbatim: session.itemName ?? LF.text("No item"))
-                        .font(LFFont.copy(15))
-                        .foregroundStyle(LFColor.ink)
-                        .lineLimit(1)
-                    Text(LF.duration(minutes: session.minutes))
-                        .font(LFFont.label(13))
-                        .monospacedDigit()
-                        .foregroundStyle(LFColor.ink.opacity(0.55))
-                }
-                if let note = session.note {
-                    Text(verbatim: note)
-                        .font(LFFont.label(14))
-                        .foregroundStyle(LFColor.ink.opacity(0.65))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    /// その月の日番号から日付を作る(表示用)。
-    private func dateFor(day: Int) -> Date {
-        Calendar.current.date(from: DateComponents(year: yearMonth.year, month: yearMonth.month, day: day)) ?? Date()
-    }
-
-    private var wrappedMonth: WrappedMonth? {
-        guard let days else { return nil }
-        let (year, month) = yearMonth
-        let calendar = Calendar.current
-        let daysInMonth: Int = {
-            guard let start = calendar.date(from: DateComponents(year: year, month: month, day: 1)),
-                  let range = calendar.range(of: .day, in: .month, for: start) else { return 30 }
-            return range.count
-        }()
-        return WrappedMonth(
-            year: year, month: month, daysInMonth: daysInMonth,
-            studiedDays: days,
-            archetype: MonthStats.diagnose(year: year, month: month, studiedDays: days, calendar: calendar)
-        )
-    }
-
-    private func statsRow(for month: WrappedMonth) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            statBlock(label: "Total", value: month.studiedCount, unit: "days", alignment: .leading)
-            statBlock(label: "Returns", value: month.resumeCount, unit: "times", alignment: .center)
-            statBlock(label: "Times quit", value: month.quitCount, unit: "times", alignment: .trailing)
-        }
-    }
-
-    private func statBlock(label: LocalizedStringKey, value: Int, unit: LocalizedStringKey, alignment: HorizontalAlignment) -> some View {
-        VStack(alignment: alignment, spacing: 6) {
-            Text(label)
-                .font(LFFont.label(13))
-                .foregroundStyle(LFColor.ink.opacity(0.5))
-            HStack(alignment: .lastTextBaseline, spacing: 2) {
-                Text(verbatim: "\(value)")
-                    .font(LFFont.number(30))
-                    .foregroundStyle(LFColor.ink)
-                Text(unit)
-                    .font(LFFont.copy(14))
-                    .foregroundStyle(LFColor.ink)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: alignment == .center ? .center : (alignment == .trailing ? .trailing : .leading))
-    }
 }

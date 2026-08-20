@@ -3672,8 +3672,6 @@ private struct HomeIslandNowPlayingBar: View {
 private struct HomeIslandHarborPanel: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var selectedPublicHarbor: PublicHarbor?
-    @State private var selectedRoom: HarborRoom?
-    @State private var selectedMemberTrace: MemberTraceKey?
     let onPrivateIslandSelected: (PrivateIslandRoom) -> Void
     let onClose: () -> Void
 
@@ -3724,47 +3722,12 @@ private struct HomeIslandHarborPanel: View {
                                     )
                                 }
                             }
-                        } else if let selectedRoom {
-                            NavigationStack {
-                                HarborChatView(
-                                    room: selectedRoom,
-                                    showsOceanBackground: false,
-                                    onEmbeddedBack: {
-                                        withAnimation(.easeOut(duration: 0.18)) {
-                                            self.selectedRoom = nil
-                                        }
-                                    }
-                                )
-                            }
-                        } else if let selectedMemberTrace {
-                            NavigationStack {
-                                MemberTraceView(
-                                    roomId: selectedMemberTrace.roomId,
-                                    member: selectedMemberTrace.member,
-                                    showsOceanBackground: false,
-                                    onEmbeddedBack: {
-                                        withAnimation(.easeOut(duration: 0.18)) {
-                                            self.selectedMemberTrace = nil
-                                        }
-                                    }
-                                )
-                            }
                         } else {
                             HarborView(
                                 showsOceanBackground: false,
                                 onPublicHarborSelected: { harbor in
                                     withAnimation(.easeOut(duration: 0.18)) {
                                         selectedPublicHarbor = harbor
-                                    }
-                                },
-                                onRoomSelected: { room in
-                                    withAnimation(.easeOut(duration: 0.18)) {
-                                        selectedRoom = room
-                                    }
-                                },
-                                onMemberTraceSelected: { trace in
-                                    withAnimation(.easeOut(duration: 0.18)) {
-                                        selectedMemberTrace = trace
                                     }
                                 },
                                 onPrivateIslandSelected: { room in

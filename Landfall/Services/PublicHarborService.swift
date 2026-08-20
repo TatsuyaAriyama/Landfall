@@ -229,7 +229,7 @@ final class PublicHarborService: ObservableObject {
     /// これにより古い3件時点のリクエストが新しい全件の後から到着して巻き戻す競合を防ぐ。
     func publishCurrentMonth(context: ModelContext) {
         guard let uid, !joined.isEmpty else { return }
-        guard let payload = RoomService.monthPayload(context: context) else { return }
+        guard let payload = HarborMonthPayload.currentMonth(context: context) else { return }
         pendingMonthPublish = PendingMonthPublish(
             uid: uid,
             slugs: joined,

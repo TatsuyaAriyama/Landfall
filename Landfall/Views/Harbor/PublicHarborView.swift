@@ -12,7 +12,7 @@ struct PublicHarborView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var auth: AuthService
     @StateObject private var service = PublicHarborService.shared
-    @StateObject private var chat = HarborChatService.shared
+    @StateObject private var blockList = BlockedSailors.shared
     @State private var members: [HarborMember] = []
     @State private var loaded = false
     @State private var working = false
@@ -67,7 +67,7 @@ struct PublicHarborView: View {
 
     /// ブロックした相手は一覧から外す。
     private var visibleMembers: [HarborMember] {
-        members.filter { !chat.blocked.contains($0.id) }
+        members.filter { !blockList.blocked.contains($0.id) }
     }
 
     var body: some View {
@@ -247,7 +247,7 @@ struct PublicHarborView: View {
             loaded = true
             return
         }
-        async let blockedLoad: Void = chat.loadBlocked()
+        async let blockedLoad: Void = blockList.load()
         async let membershipRefresh: Void = service.refresh()
         do {
             members = try await service.members(of: harbor.slug) { partial in
@@ -558,7 +558,7 @@ struct PublicHarborView: View {
         Task {
             defer { blockingMemberID = nil }
             do {
-                try await chat.block(member.id)
+                try await blockList.block(member.id)
                 recentlyBlocked = member
                 Haptics.success()
             } catch {
@@ -574,7 +574,7 @@ struct PublicHarborView: View {
         Task {
             defer { blockingMemberID = nil }
             do {
-                try await chat.unblock(member.id)
+                try await blockList.unblock(member.id)
                 Haptics.tap(.light)
             } catch {
                 blockError = error.localizedDescription

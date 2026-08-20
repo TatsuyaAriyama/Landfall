@@ -13,7 +13,7 @@ struct PublicJournalView: View {
     @EnvironmentObject private var auth: AuthService
     @StateObject private var journal = PublicJournalService.shared
     @StateObject private var harborService = PublicHarborService.shared
-    @StateObject private var chat = HarborChatService.shared
+    @StateObject private var blockList = BlockedSailors.shared
 
     @State private var entries: [PublicJournalEntry] = []
     @State private var todayState: PublicJournalTodayState = .loading
@@ -27,7 +27,7 @@ struct PublicJournalView: View {
     @State private var showingComposer = false
 
     private var visibleEntries: [PublicJournalEntry] {
-        entries.filter { !chat.blocked.contains($0.authorID) }
+        entries.filter { !blockList.blocked.contains($0.authorID) }
     }
 
     var body: some View {
@@ -438,7 +438,7 @@ struct PublicJournalView: View {
             return
         }
         await harborService.refresh()
-        await chat.loadBlocked()
+        await blockList.load()
         async let today: Void = reloadToday()
         async let feed: Void = reloadFeed(for: selectedHarborSlug)
         _ = await (today, feed)
@@ -521,7 +521,7 @@ private struct PublicJournalDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var auth: AuthService
     @StateObject private var journal = PublicJournalService.shared
-    @StateObject private var chat = HarborChatService.shared
+    @StateObject private var blockList = BlockedSailors.shared
     @State private var shareImage: WrappedCardImage?
     @State private var preparingShare = true
     @State private var sharePreparationFailed = false
@@ -725,7 +725,7 @@ private struct PublicJournalDetailView: View {
             working = true
             Task {
                 do {
-                    try await chat.block(entry.authorID)
+                    try await blockList.block(entry.authorID)
                     working = false
                     blockUndoError = nil
                     Haptics.tap()
@@ -779,7 +779,7 @@ private struct PublicJournalDetailView: View {
         working = true
         Task {
             do {
-                try await chat.unblock(entry.authorID)
+                try await blockList.unblock(entry.authorID)
                 working = false
                 blockUndoError = nil
                 Haptics.success()
