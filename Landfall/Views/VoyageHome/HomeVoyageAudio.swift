@@ -16,6 +16,10 @@ enum HomeVoyageSound: String, CaseIterable, Identifiable {
         .celestialNocturne,
     ]
 
+    /// 航海タイマーの一覧だけは無音も選べる。島のBGMパネルは別に有効/無効の
+    /// スイッチを持つので、そちらの一覧(`selectableSounds`)には足さない。
+    static let timerSelectableSounds: [HomeVoyageSound] = [.off] + selectableSounds
+
     static let musicTracks: [HomeVoyageSound] = [
         .harborMinuet,
         .beaconRondo,

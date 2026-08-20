@@ -603,7 +603,7 @@ struct HomeVoyageTimerView: View {
             .padding(.horizontal, 12)
             .frame(height: 28)
 
-            ForEach(HomeVoyageSound.selectableSounds) { sound in
+            ForEach(HomeVoyageSound.timerSelectableSounds) { sound in
                 Button {
                     selectSound(sound)
                 } label: {
@@ -648,7 +648,7 @@ struct HomeVoyageTimerView: View {
                 }
                 .buttonStyle(.plain)
 
-                if sound != HomeVoyageSound.selectableSounds.last {
+                if sound != HomeVoyageSound.timerSelectableSounds.last {
                     Rectangle()
                         .fill(timerGlassInk.opacity(0.09))
                         .frame(height: 1)
