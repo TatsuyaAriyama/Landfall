@@ -450,13 +450,17 @@ service cloud.firestore {
               'idle', 'walk', 'lookout', 'raise', 'hail', 'point',
               'stargaze', 'rest', 'sit', 'lie'
             ]
+            // 'voyage' は同行の航海。島を離れて同じ船に乗っている状態を
+            // 表すだけで、座標は島にいたときのものをそのまま持つ。
             && data.scene in [
               'island',
               'interior:weathered_cottage',
-              'interior:navigator_tent'
+              'interior:navigator_tent',
+              'voyage'
             ]
             && data.phase in [
-              'arrival', 'explore', 'edit', 'camera', 'departure'
+              'arrival', 'explore', 'edit', 'camera', 'departure',
+              'muster', 'sailing'
             ]
             // 席は「配置id + スロットid」を必ず対で書く。片方だけは受け付けない。
             && (('seatPlacementId' in data) == ('seatSlotId' in data))

@@ -61,6 +61,10 @@ struct VoyageHomeView: View {
     @State private var homeIslandSceneGeneration = UUID()
     @State private var privateIslandVisit: PrivateIslandRoom?
     @State private var queuedPrivateIslandVisit: PrivateIslandRoom?
+    /// 同行の航海。仲間が島にいるときだけ、出航の前に参加一覧をはさむ。
+    @State private var companionMusterItem: StudyItem?
+    @State private var companionStage: CompanionVoyageStage?
+    @StateObject private var companionNames = CompanionVoyageNameBook()
     @StateObject private var hostedPrivateIsland = HostedPrivateIslandSessionCoordinator()
     /// Which of the player's islands is live. The pass opens a second one, and
     /// switching has to rebuild the scene, so the identity lives out here
@@ -229,6 +233,37 @@ struct VoyageHomeView: View {
                             .zIndex(12)
                     }
 
+                    if let item = companionMusterItem,
+                       presentedRoute == nil,
+                       !timerWorldActive {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .ignoresSafeArea()
+                            .onTapGesture {}
+                            .accessibilityHidden(true)
+                            .zIndex(13)
+
+                        CompanionVoyageMusterPanel(
+                            itemName: item.name,
+                            crew: companionCrew,
+                            canSetSail: true,
+                            onSetSail: { setSailWithCompanions(item) },
+                            onCancel: cancelCompanionMuster
+                        )
+                        .frame(
+                            maxWidth: .infinity,
+                            maxHeight: .infinity,
+                            alignment: geometry.size.width >= 760 ? .trailing : .top
+                        )
+                        .padding(.horizontal, 12)
+                        .padding(.top, geometry.size.width >= 760 ? 0 : geometry.safeAreaInsets.top + 62)
+                        .transition(
+                            .move(edge: geometry.size.width >= 760 ? .trailing : .top)
+                                .combined(with: .opacity)
+                        )
+                        .zIndex(14)
+                    }
+
                     if let item = timerVoyageItem {
                         HomeVoyageTimerView(
                             item: item,
@@ -245,7 +280,9 @@ struct VoyageHomeView: View {
                                 dismissTimerVoyage()
                             },
                             rendersScene: true,
-                            externalWorldTapToken: timerWorldTapToken
+                            externalWorldTapToken: timerWorldTapToken,
+                            companions: sailingCompanions,
+                            hostsCompanionVoyage: true
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .opacity(timerSceneReady ? 1 : 0)
@@ -744,6 +781,7 @@ struct VoyageHomeView: View {
 
     private func cancelIslandDeparture() {
         guard pendingIslandLaunchItem != nil else { return }
+        endCompanionVoyage()
         pendingIslandLaunchItem = nil
         homeIslandBoardingRequest = nil
         withAnimation(.easeOut(duration: 0.18)) {
@@ -2029,6 +2067,12 @@ struct VoyageHomeView: View {
 
     private func beginVoyage(for item: StudyItem) {
         guard pendingIslandLaunchItem == nil else { return }
+        // 島に仲間がいるなら、船を出す前に参加一覧をはさむ。誰もいなければ
+        // 今まで通り、選んだその足で出航する。
+        if hasCompanionsAshore {
+            openCompanionMuster(for: item)
+            return
+        }
         menuOpen = false
         withAnimation(.easeOut(duration: 0.18)) {
             showingWorkManifest = false
@@ -2036,6 +2080,85 @@ struct VoyageHomeView: View {
         pendingIslandLaunchItem = item
         homeIslandBoardingRequest = HomeIslandBoatBoardingRequest()
         Haptics.tap(.medium)
+    }
+
+    // MARK: - 同行の航海(ホスト)
+
+    private var companionRoom: PrivateIslandRoom? {
+        hostedPrivateIsland.multiplayerSession?.room
+    }
+
+    private var companionPresences: [PrivateIslandPresence] {
+        hostedPrivateIsland.multiplayerSession?.presences ?? []
+    }
+
+    private var hasCompanionsAshore: Bool {
+        guard let room = companionRoom, let uid = auth.user?.uid else { return false }
+        return CompanionVoyageRoster.hasCompanionsAshore(
+            presences: companionPresences,
+            memberIDs: room.memberIds,
+            hostUid: room.hostUid,
+            localID: uid
+        )
+    }
+
+    private var companionCrew: [CompanionVoyageCrewMate] {
+        guard let room = companionRoom, let uid = auth.user?.uid else { return [] }
+        return CompanionVoyageRoster.crew(
+            presences: companionPresences,
+            names: companionNames.names,
+            memberIDs: room.memberIds,
+            hostUid: room.hostUid,
+            localID: uid,
+            localStage: companionStage
+        )
+    }
+
+    /// 甲板に並ぶのは、いま実際に海の上にいる仲間だけ。
+    private var sailingCompanions: [CompanionVoyageCrewMate] {
+        guard companionStage == .sailing else { return [] }
+        return companionCrew.filter { !$0.isLocal && $0.stage == .sailing }
+    }
+
+    private func openCompanionMuster(for item: StudyItem) {
+        guard let room = companionRoom else { return }
+        menuOpen = false
+        companionNames.refresh(code: room.code)
+        companionStage = .muster
+        hostedPrivateIsland.publishCompanionVoyage(stage: .muster)
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+            showingWorkManifest = false
+            companionMusterItem = item
+        }
+        Haptics.tap(.light)
+    }
+
+    private func setSailWithCompanions(_ item: StudyItem) {
+        companionStage = .sailing
+        hostedPrivateIsland.publishCompanionVoyage(stage: .sailing)
+        withAnimation(.easeOut(duration: 0.18)) {
+            companionMusterItem = nil
+        }
+        pendingIslandLaunchItem = item
+        homeIslandBoardingRequest = HomeIslandBoatBoardingRequest()
+        Haptics.tap(.medium)
+    }
+
+    private func cancelCompanionMuster() {
+        guard companionMusterItem != nil else { return }
+        endCompanionVoyage()
+        withAnimation(.easeOut(duration: 0.18)) {
+            companionMusterItem = nil
+            showingWorkManifest = true
+        }
+        Haptics.tap(.light)
+    }
+
+    /// 島へ戻ったことを仲間へ返す。航海を終えたときも、取りやめたときも通る。
+    private func endCompanionVoyage() {
+        guard companionStage != nil else { return }
+        companionStage = nil
+        hostedPrivateIsland.publishCompanionVoyage(stage: nil)
     }
 
     private func presentTimerVoyage(_ item: StudyItem) {
@@ -2049,6 +2172,7 @@ struct VoyageHomeView: View {
 
     private func dismissTimerVoyage() {
         guard timerVoyageItem != nil else { return }
+        endCompanionVoyage()
         // The island leaves the hierarchy while the timer voyage is visible.
         // Give it a new identity on return so SwiftUI cannot restore the
         // pre-voyage departure state (input locked, boarding latched and the

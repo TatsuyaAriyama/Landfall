@@ -395,7 +395,7 @@
 "Sailor" = "船乗り";
 "No harbor found for this code." = "このコードの港は見つからなかった。";
 "Couldn't open a harbor just now. Please try again." = "港をひらけなかった。もう一度試して。";
-"Sail together" = "並走ルーム";
+"Sail together" = "同行の航海";
 "sailors · shared timer and chat" = "人 · 共通タイマー・チャット";
 "sailors sailing together" = "人で並走中";
 "Fleet sea" = "船団の海";
@@ -1373,3 +1373,19 @@
 "Playback unavailable" = "再生できません";
 "Now playing %@" = "%@を再生中";
 "Change language, app icon, and account" = "言語・アプリアイコン・アカウントを設定します";
+
+/* 同行の航海(私設島でホストの航海に付いていく) */
+"Waiting for the host to set sail" = "島の主の出航を待っています。";
+"Stay on the island" = "島に残る";
+"Aboard" = "支度済み";
+"On the island" = "島にいる";
+"Host" = "島の主";
+"%@ is out at sea" = "%@は航海に出ています。";
+"%@ is getting ready to sail" = "%@が出航の支度をしています。";
+"Choose your work and sail along." = "作業項目を選んで、同行しましょう。";
+"Sail along" = "同行する";
+"Dismiss" = "閉じる";
+"What will you work on?" = "何に取り組みますか。";
+"Create a work item on your own island first." = "まず自分の島で作業項目を作りましょう。";
+"Sailing together" = "同乗している仲間";
+", " = "、";

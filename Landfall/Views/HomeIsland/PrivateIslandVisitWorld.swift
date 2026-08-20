@@ -1,4 +1,5 @@
 import FirebaseAuth
+import SwiftData
 import SwiftUI
 
 /// Owns one live private-island visit from entry through the final presence
@@ -28,6 +29,23 @@ struct PrivateIslandVisitWorld: View {
     @State private var pendingPresence: HomeIslandRemotePlayerState?
     @State private var presencePublishTask: Task<Void, Never>?
     @State private var lastPublishedPresence: PrivateIslandTransportPresence?
+
+    // 同行の航海。ホストが出す船に、自分の作業を持って乗る。
+    @StateObject private var companionNames = CompanionVoyageNameBook()
+    @State private var companionStage: CompanionVoyageStage?
+    @State private var companionItem: StudyItem?
+    @State private var showingCompanionPicker = false
+    @State private var companionInviteDismissed = false
+    /// 島へ帰り着いた直後だけ、呼びかけを伏せておく。着岸の演出に札を
+    /// かぶせないためで、落ち着けばまた出す。ホストがまだ海の上なら、
+    /// もう一度でも同行できる。
+    @State private var companionJustReturned = false
+    @State private var lastIslandPlayerState: HomeIslandRemotePlayerState?
+    /// 航海から島へ戻るたびに島の景色を組み直し、船で着く演出をやり直す。
+    @State private var islandGeneration = UUID()
+
+    @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID = ""
 
     private let currentUserID: String
 
@@ -97,24 +115,43 @@ struct PrivateIslandVisitWorld: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            HomeIslandView(
-                ownerID: localOwnerID,
-                levelProgress: levelProgress,
-                startsMooredAtIsland: isHost,
-                boatTapOpensSelection: false,
-                onDepartureCompleted: {
-                    shutDown(thenClose: true)
-                },
-                multiplayerSession: multiplayerSession,
-                onPrivateIslandSelected: onPrivateIslandSelected
-            )
-            .id(sessionIdentity)
+            if companionStage == .sailing, let item = companionItem {
+                // 島の景色はここで畳む。海の上で二つの3D世界を同時に抱えない。
+                CompanionVoyageTimerHost(
+                    item: item,
+                    companions: sailingCompanions,
+                    onReturnHome: finishCompanionVoyage
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
+            } else {
+                HomeIslandView(
+                    ownerID: localOwnerID,
+                    levelProgress: levelProgress,
+                    startsMooredAtIsland: isHost,
+                    boatTapOpensSelection: false,
+                    onDepartureCompleted: {
+                        shutDown(thenClose: true)
+                    },
+                    multiplayerSession: multiplayerSession,
+                    onPrivateIslandSelected: onPrivateIslandSelected
+                )
+                .id("\(sessionIdentity)-\(islandGeneration.uuidString)")
+
+                companionOverlay
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.horizontal, 16)
+                    .safeAreaPadding(.top, 62)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
 
             statusOverlay
                 .padding(.horizontal, 16)
                 .safeAreaPadding(.top, 10)
         }
         .id(sessionIdentity)
+        .animation(.easeOut(duration: 0.22), value: companionStage)
+        .animation(.easeOut(duration: 0.22), value: showingCompanionPicker)
         .onAppear(perform: start)
         .onChange(of: islandService.hasResolvedIslandSnapshot) { _, resolved in
             guard resolved else { return }
@@ -122,6 +159,165 @@ struct PrivateIslandVisitWorld: View {
             guestResolutionTask = nil
             guestWaitIsLong = false
         }
+        .onChange(of: hostCompanionStage) { _, stage in
+            respondToHostStage(stage)
+        }
+        // 島へ着き直すたび、着岸の演出が終わる頃に呼びかけを戻す。
+        .task(id: islandGeneration) {
+            guard companionJustReturned else { return }
+            try? await Task.sleep(for: .seconds(6))
+            guard !Task.isCancelled else { return }
+            companionJustReturned = false
+        }
+    }
+
+    // MARK: - 同行の航海
+
+    private var livePresences: [PrivateIslandPresence] {
+        realtimeClient.state.presences.map {
+            PrivateIslandTransportCodec.legacyPresence(from: $0)
+        }
+    }
+
+    /// ホストがいまどの段階にいるか。出航の合図はこの変化だけで伝わる。
+    private var hostCompanionStage: CompanionVoyageStage? {
+        guard !isHost,
+              let presence = livePresences.first(where: { $0.uid == room.hostUid })
+        else { return nil }
+        return CompanionVoyagePresence.stage(of: presence)
+    }
+
+    private var hostName: String {
+        companionNames.names[room.hostUid] ?? room.name
+    }
+
+    private var companionCrew: [CompanionVoyageCrewMate] {
+        CompanionVoyageRoster.crew(
+            presences: livePresences,
+            names: companionNames.names,
+            memberIDs: (islandService.currentIsland ?? room).memberIds,
+            hostUid: room.hostUid,
+            localID: currentUserID,
+            localStage: companionStage
+        )
+    }
+
+    private var sailingCompanions: [CompanionVoyageCrewMate] {
+        companionCrew.filter { !$0.isLocal && $0.stage == .sailing }
+    }
+
+    @ViewBuilder
+    private var companionOverlay: some View {
+        if isHost || currentUserID.isEmpty {
+            EmptyView()
+        } else if showingCompanionPicker {
+            CompanionVoyageItemPickerHost(
+                onSelect: joinCompanionVoyage,
+                onCancel: {
+                    showingCompanionPicker = false
+                    Haptics.tap(.light)
+                }
+            )
+        } else if companionStage == .muster {
+            CompanionVoyageMusterPanel(
+                itemName: companionItem?.name ?? "",
+                crew: companionCrew,
+                canSetSail: false,
+                onSetSail: {},
+                onCancel: leaveCompanionMuster
+            )
+        } else if let stage = hostCompanionStage,
+                  !companionInviteDismissed,
+                  !companionJustReturned {
+            CompanionVoyageInvitePanel(
+                hostName: hostName,
+                isSailing: stage == .sailing,
+                onJoin: {
+                    companionNames.refresh(code: room.code)
+                    showingCompanionPicker = true
+                    Haptics.tap(.light)
+                },
+                onDismiss: {
+                    companionInviteDismissed = true
+                    Haptics.tap(.light)
+                }
+            )
+        }
+    }
+
+    private func joinCompanionVoyage(_ item: StudyItem) {
+        showingCompanionPicker = false
+        companionItem = item
+        // ホストがもう漕ぎ出していれば、待たずに追いかける。
+        if hostCompanionStage == .sailing {
+            startCompanionSailing(item)
+            return
+        }
+        companionStage = .muster
+        publishCompanionStage(.muster)
+        Haptics.tap(.light)
+    }
+
+    private func startCompanionSailing(_ item: StudyItem) {
+        if timerStart > 0, timerItemID != item.uuid.uuidString {
+            StudyTimer.clearAll()
+        }
+        StudyTimer.begin(itemID: item.uuid.uuidString, itemName: item.name)
+        companionItem = item
+        companionStage = .sailing
+        publishCompanionStage(.sailing)
+        Haptics.tap(.medium)
+    }
+
+    private func leaveCompanionMuster() {
+        guard companionStage == .muster else { return }
+        companionStage = nil
+        companionItem = nil
+        publishCompanionStage(nil)
+        Haptics.tap(.light)
+    }
+
+    /// 航海を終えて島へ戻る。終わる時刻は各々が決めるので、ホストや他の同乗者は
+    /// そのまま海の上に残る。
+    private func finishCompanionVoyage() {
+        companionStage = nil
+        companionItem = nil
+        companionJustReturned = true
+        islandGeneration = UUID()
+        publishCompanionStage(nil)
+    }
+
+    private func respondToHostStage(_ stage: CompanionVoyageStage?) {
+        switch stage {
+        case .sailing:
+            if companionStage == .muster, let item = companionItem {
+                startCompanionSailing(item)
+            }
+        case .muster:
+            break
+        case nil:
+            companionInviteDismissed = false
+            // ホストが取りやめた。支度したまま待ち続けさせない。
+            if companionStage == .muster { leaveCompanionMuster() }
+        }
+    }
+
+    private func publishCompanionStage(_ stage: CompanionVoyageStage?) {
+        guard !currentUserID.isEmpty else { return }
+        let state: HomeIslandRemotePlayerState
+        if let stage {
+            state = CompanionVoyagePresence.state(
+                stage: stage,
+                continuing: lastIslandPlayerState,
+                localID: currentUserID
+            )
+        } else {
+            state = CompanionVoyagePresence.ashoreState(
+                continuing: lastIslandPlayerState,
+                localID: currentUserID
+            )
+        }
+        enqueuePresence(state)
     }
 
     @ViewBuilder
@@ -194,6 +390,7 @@ struct PrivateIslandVisitWorld: View {
 
         listenToDurableIslandState()
         realtimeClient.start()
+        companionNames.load(code: room.code)
 
         Task { @MainActor in
             do {
@@ -303,6 +500,7 @@ struct PrivateIslandVisitWorld: View {
 
     private func enqueuePresence(_ state: HomeIslandRemotePlayerState) {
         guard hasStarted, !isShuttingDown, !currentUserID.isEmpty else { return }
+        if state.scene == "island" { lastIslandPlayerState = state }
         pendingPresence = state
         guard presencePublishTask == nil else { return }
 
@@ -367,6 +565,7 @@ struct PrivateIslandVisitWorld: View {
     private func shutDown(thenClose: Bool) {
         guard !isShuttingDown else { return }
         isShuttingDown = true
+        companionNames.stop()
         guestResolutionTask?.cancel()
         guestResolutionTask = nil
         pendingHostSnapshot = nil

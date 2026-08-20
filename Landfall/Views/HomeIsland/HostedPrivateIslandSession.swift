@@ -22,6 +22,9 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
     private var pendingPresence: HomeIslandRemotePlayerState?
     private var presencePublishTask: Task<Void, Never>?
     private var lastPublishedPresence: PrivateIslandTransportPresence?
+    /// 島の景色がたたまれても、最後に立っていた場所は残しておく。同行の航海の
+    /// あいだ presence に載せ続け、戻ったときも同じ場所から再開できる。
+    private var lastIslandPlayerState: HomeIslandRemotePlayerState?
 
     init(
         realtimeClientFactory: @escaping PrivateIslandRealtimeClientFactory = { room, persistence in
@@ -121,6 +124,31 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
         )
     }
 
+    /// 同行の航海の段階を島の仲間へ知らせる。`nil` は島へ戻ったこと。
+    ///
+    /// 航海中はホームの島ビューが外れていて、位置を送る経路が止まっている。
+    /// この調整役は画面より長く生きているので、ここだけが presence を保てる。
+    func publishCompanionVoyage(stage: CompanionVoyageStage?) {
+        guard let room = activeRoom,
+              let uid = Auth.auth().currentUser?.uid,
+              uid == room.hostUid
+        else { return }
+        let state: HomeIslandRemotePlayerState
+        if let stage {
+            state = CompanionVoyagePresence.state(
+                stage: stage,
+                continuing: lastIslandPlayerState,
+                localID: uid
+            )
+        } else {
+            state = CompanionVoyagePresence.ashoreState(
+                continuing: lastIslandPlayerState,
+                localID: uid
+            )
+        }
+        enqueuePresence(state)
+    }
+
     /// Detaches networking only. The local Home Island view remains alive.
     func deactivate() {
         guard activeRoom != nil || islandService != nil || realtimeClient != nil else { return }
@@ -136,6 +164,7 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
         realtimeState = .disconnected
         pendingPresence = nil
         lastPublishedPresence = nil
+        lastIslandPlayerState = nil
         presencePublishTask = nil
         presenceTask?.cancel()
 
@@ -153,6 +182,7 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
               uid == room.hostUid
         else { return }
 
+        if state.scene == "island" { lastIslandPlayerState = state }
         pendingPresence = state
         guard presencePublishTask == nil else { return }
 

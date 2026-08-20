@@ -233,9 +233,11 @@ final class PrivateIslandService: ObservableObject {
     private static let allowedPoses: Set<String> = [
         "idle", "walk", "lookout", "raise", "hail", "point", "stargaze", "rest", "sit", "lie",
     ]
-    /// Keep these values identical to HomeIslandSceneView's visit phases.
+    /// Keep these values identical to HomeIslandSceneView's visit phases,
+    /// plus the two stages of a companion voyage (`CompanionVoyageStage`).
     private static let allowedPhases: Set<String> = [
         "arrival", "explore", "edit", "camera", "departure",
+        "muster", "sailing",
     ]
 
     init() {}
@@ -575,6 +577,36 @@ final class PrivateIslandService: ObservableObject {
             // Profile synchronization is best-effort and must never roll back a
             // local player-card or boat customization change.
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Reads the display names of an island's members once.
+    ///
+    /// The crew list of a companion voyage needs names, not live data. A room
+    /// holds at most eight members, so this is a bounded one-shot read instead
+    /// of another listener that would grow with the number of sailors aboard.
+    static func memberDisplayNames(code rawCode: String) async -> [String: String] {
+        let code = normalizedCode(rawCode)
+        guard code.count == 6 else { return [:] }
+        do {
+            let snapshot = try await Firestore.firestore()
+                .collection("privateIslands").document(code)
+                .collection("members")
+                .limit(to: PrivateIslandRoom.maxMembers)
+                .getDocuments()
+            var names: [String: String] = [:]
+            for document in snapshot.documents {
+                guard let name = document.data()["displayName"] as? String else { continue }
+                let trimmed = String(
+                    name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .prefix(Limit.displayName)
+                )
+                guard !trimmed.isEmpty else { continue }
+                names[document.documentID] = trimmed
+            }
+            return names
+        } catch {
+            return [:]
         }
     }
 
@@ -1260,6 +1292,7 @@ final class PrivateIslandService: ObservableObject {
         value == "island"
             || value == "interior:weathered_cottage"
             || value == "interior:navigator_tent"
+            || value == CompanionVoyagePresence.scene
     }
 
     private static func memberProfileData(joinedAt: Bool) -> [String: Any] {

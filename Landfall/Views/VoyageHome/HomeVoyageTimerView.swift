@@ -148,6 +148,11 @@ struct HomeVoyageTimerView: View {
     let onReturnHome: () -> Void
     let rendersScene: Bool
     let externalWorldTapToken: Int
+    /// 私設島の同行者。甲板に並び、札には名前だけが出る。
+    let companions: [CompanionVoyageCrewMate]
+    /// 自分がこの航海を出した島の主かどうか。ホストは甲板の正面で
+    /// ランタンを掲げ、船団の先を照らす。
+    let hostsCompanionVoyage: Bool
     /// 初回航海だけ、通常のメモ欄を使いながら指定の文言を必須にする。
     /// nil の通常航海では、従来どおり任意メモとして動作する。
     let firstVoyageRequiredNote: String?
@@ -160,6 +165,8 @@ struct HomeVoyageTimerView: View {
         onReturnHome: @escaping () -> Void,
         rendersScene: Bool = true,
         externalWorldTapToken: Int = 0,
+        companions: [CompanionVoyageCrewMate] = [],
+        hostsCompanionVoyage: Bool = false,
         firstVoyageRequiredNote: String? = nil,
         onFirstVoyageRecorded: (() -> Void)? = nil
     ) {
@@ -169,6 +176,8 @@ struct HomeVoyageTimerView: View {
         self.onReturnHome = onReturnHome
         self.rendersScene = rendersScene
         self.externalWorldTapToken = externalWorldTapToken
+        self.companions = companions
+        self.hostsCompanionVoyage = hostsCompanionVoyage
         self.firstVoyageRequiredNote = firstVoyageRequiredNote
         self.onFirstVoyageRecorded = onFirstVoyageRecorded
     }
@@ -262,6 +271,10 @@ struct HomeVoyageTimerView: View {
                     date: clockNow,
                     resting: isVoyageResting,
                     elapsedSeconds: snapshot.elapsedSeconds(at: clockNow),
+                    companions: companions.map {
+                        VoyageSceneKit.CompanionDeckMember(id: $0.id, isHost: $0.isHost)
+                    },
+                    localSailorPose: hostsCompanionVoyage && !companions.isEmpty ? .raise : nil,
                     onTapWorld: toggleWorldUI
                 )
                 .ignoresSafeArea()
@@ -451,6 +464,12 @@ struct HomeVoyageTimerView: View {
                 .frame(height: 1)
                 .padding(.top, 8)
 
+            if !companions.isEmpty {
+                companionStrip
+                    .padding(.horizontal, 7)
+                    .padding(.top, 7)
+            }
+
             HStack(spacing: 5) {
                 commandButton(
                     title: snapshot.isResting ? "Resume voyage" : "Take a break",
@@ -526,6 +545,29 @@ struct HomeVoyageTimerView: View {
                 .stroke(timerGlassInk.opacity(0.18), lineWidth: 1)
         )
         .shadow(color: timerGlassInk.opacity(0.16), radius: 13, y: 6)
+    }
+
+    /// 同じ船に乗っている仲間。甲板の航海士と同じ並び順で名前を出す。
+    private var companionStrip: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "person.2.fill")
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(timerGlassInk.opacity(0.5))
+            Text(verbatim: companions.map(\.name).joined(separator: LF.text(", ")))
+                .font(LFFont.label(9.5))
+                .foregroundStyle(timerGlassInk.opacity(0.78))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 22)
+        .background(timerGlassInk.opacity(0.05), in: Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text("Sailing together"))
+        .accessibilityValue(
+            Text(verbatim: companions.map(\.name).joined(separator: LF.text(", ")))
+        )
     }
 
     /// Compact command chip: an icon over a short label. The old two-line

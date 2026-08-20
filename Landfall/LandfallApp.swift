@@ -281,6 +281,8 @@ struct ContentView: View {
                 HomeIslandInteriorView(kind: interior)
             } else if ProcessInfo.processInfo.environment["LANDFALL_PRIVATE_PREVIEW"] == "1" {
                 PrivateIslandPreviewView()
+            } else if ProcessInfo.processInfo.environment["LANDFALL_COVOYAGE"] != nil {
+                CompanionVoyagePreviewView()
             } else if ProcessInfo.processInfo.environment["LANDFALL_DRESS_NAV"] != nil {
                 DressView()
             } else {

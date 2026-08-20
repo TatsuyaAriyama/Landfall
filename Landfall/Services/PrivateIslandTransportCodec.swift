@@ -41,7 +41,11 @@ enum PrivateIslandTransportCodec {
             seatPlacementID: presence.seatPlacementID?.uuidString.lowercased(),
             seatSlotID: presence.seatSlotID,
             arrivalNonce: presence.arrivalNonce,
-            isVisible: presence.scene == "island" && presence.phase != "departure",
+            // 出航の支度をしている仲間はまだ船着き場に立っている。島から
+            // 姿が消えるのは、実際に漕ぎ出した航海中だけ。
+            isVisible: (presence.scene == "island"
+                || CompanionVoyagePresence.stage(of: presence) == .muster)
+                && presence.phase != "departure",
             updatedAtMilliseconds: milliseconds(since1970: presence.updatedAt)
         )
     }

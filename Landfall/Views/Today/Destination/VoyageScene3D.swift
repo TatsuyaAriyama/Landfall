@@ -1131,6 +1131,94 @@ enum VoyageSceneKit {
         }
     }
 
+    /// 私設島の同行者が並ぶ甲板の定位置。私設島はホストを入れて4人までなので、
+    /// 席も3つでちょうど埋まる。舳先側の空いた面だけを使い、帆柱・操舵席・
+    /// 自分の航海士の足元は避けている。
+    /// 席は座標を送り合わずに決める。誰がどこに立つかは各端末で同じ並び順から
+    /// 割り当てるので、位置の通信はいらない。
+    /// 席は「写真に撮ったときの並び」として決めている。
+    ///
+    /// 既定のカメラは右舷後方から舳先を見ている。左舷はメインセイルとジブの
+    /// 裏になって誰も見えないので、席は右舷側だけに置く。四人が画面の横方向で
+    /// 重ならないよう、船尾から舳先へ等間隔にずらし、向きも一人ずつ変える。
+    static let companionDeckSlots: [CompanionDeckSeat] = [
+        // 舳先寄りの右舷。こちらへ体を向け、手をかざして右手の海を見渡す。
+        CompanionDeckSeat(position: SCNVector3(0.20, 0.68, 0.42), pose: .lookout, facing: .starboard),
+        // 中ほど。斜め前を向き、腕をゆるめて一息ついている。腰掛けは甲板の
+        // どこにも無いので、座る仕草は使わない(宙に座って見えてしまう)。
+        CompanionDeckSeat(position: SCNVector3(-0.32, 0.68, 0.26), pose: .rest, facing: .bowStarboard),
+        // 船尾の右舷。通り過ぎる島影を指さして、反対側の海を教えている。
+        CompanionDeckSeat(position: SCNVector3(-0.84, 0.68, 0.38), pose: .point, facing: .port),
+    ]
+
+    /// 島の主の席。舳先寄りの右舷で、正面を向いてランタンを掲げる。
+    /// 自分が同行者側のとき(=ホストが甲板にいるとき)だけ使う。
+    static let companionHostDeckSeat = CompanionDeckSeat(
+        position: SCNVector3(0.20, 0.68, 0.40),
+        pose: .raise,
+        facing: .bow
+    )
+
+    /// 甲板の一席。同じ船に四人が乗っても、みな別のことをしている。
+    struct CompanionDeckSeat {
+        /// 航海士が向く方角。素体は正面 +Z で組んであり、+π/2 で船首を向く。
+        enum Facing: Float {
+            case bow = 1.570_796_4
+            case bowStarboard = 0.785_398_2
+            case port = 3.141_592_7
+            case starboard = 0
+        }
+
+        let position: SCNVector3
+        let pose: PhoenixPose
+        let facing: Facing
+    }
+
+    /// 甲板に並べる一人ぶん。ホストだけは席と仕草が決まっている。
+    struct CompanionDeckMember: Equatable {
+        let id: String
+        let isHost: Bool
+
+        init(id: String, isHost: Bool) {
+            self.id = id
+            self.isHost = isHost
+        }
+    }
+
+    /// 誰をどの席に着けるか。ホストはランタンの席、残りは順番どおり。
+    static func companionDeckSeating(
+        for members: [CompanionDeckMember]
+    ) -> [(id: String, seat: CompanionDeckSeat)] {
+        // ホストが乗っているなら、その席は舳先寄りの右舷。残りは船尾側から
+        // 順に詰める。私設島は四人までなので、席が足りなくなることはない。
+        let hostIsAboard = members.contains(where: \.isHost)
+        var remaining = (hostIsAboard ? Array(companionDeckSlots.dropFirst()) : companionDeckSlots)
+            .makeIterator()
+        var seating: [(id: String, seat: CompanionDeckSeat)] = []
+        for member in members {
+            if member.isHost {
+                seating.append((member.id, companionHostDeckSeat))
+            } else if let seat = remaining.next() {
+                seating.append((member.id, seat))
+            }
+        }
+        return seating
+    }
+
+    /// 同行者の航海士。港と同じく、遠くの相手は既定の熾火で描く。
+    /// ノード名は自分の航海士(`navigator`)と必ず変える。同じ名前だと、
+    /// 甲板の自分を動かすアニメータが仲間の体を掴んでしまう。
+    static func makeCompanionNavigator(id: String) -> SCNNode {
+        let sailor = PhoenixNavigator.makeNavigatorNode(palette: .default)
+        sailor.name = "companion-navigator:\(id)"
+        sailor.scale = SCNVector3(
+            navigatorDeckScale,
+            navigatorDeckScale,
+            navigatorDeckScale
+        )
+        return sailor
+    }
+
     /// Webと同じBlenderソースから出力した完成船。簡易プリミティブを組み直さず、
     /// 船体・甲板・舷縁・索具の形と座標系を両プラットフォームで共有する。
     static func makeBoatModel(_ parts: BoatParts) -> SCNNode {
@@ -2344,6 +2432,23 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
     private var gulls: [SCNNode] = []
     private let sailor = PhoenixAnimator()
 
+    /// 同行の航海の同乗者。船のノードの下にぶら下げるので、甲板の揺れも
+    /// 傾きもそのまま受け継ぐ。
+    private final class CompanionVisual {
+        let node: SCNNode
+        let animator = PhoenixAnimator()
+
+        init(node: SCNNode) {
+            self.node = node
+        }
+    }
+
+    private weak var boat: SCNNode?
+    private let companionLock = NSLock()
+    private var desiredCompanions: [VoyageSceneKit.CompanionDeckMember] = []
+    private var companionVisuals: [String: CompanionVisual] = [:]
+    private var companionsAreSeated = true
+
     /// 帆としぶきへ実際に渡している風の強さ。段階が変わっても数秒かけて寄せる。
     private var windStrength: Float = 0
     private var sailMaterials: [SCNMaterial] = []
@@ -2376,6 +2481,12 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
     private func bind(_ scene: SCNScene) {
         self.scene = scene
         bob = scene.rootNode.childNode(withName: "boatBob", recursively: true)
+        boat = scene.rootNode.childNode(withName: "boatModel", recursively: true)
+        // 作り直したシーンでは、前の船に乗せた同乗者のノードごと席を空ける。
+        companionLock.lock()
+        companionVisuals.removeAll()
+        companionsAreSeated = false
+        companionLock.unlock()
         wake = scene.rootNode.childNode(withName: "wake", recursively: true)
         approachingIsland = scene.rootNode.childNode(withName: "approachingIsland", recursively: false)
         seaMaterial = scene.rootNode
@@ -2387,6 +2498,71 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
         // 作り直したシーンでも、いま吹いている風の続きから始める。
         applyWind(windStrength, at: 0)
         placeApproachingIsland()
+    }
+
+    /// Reduce Motion では描画loopが回らない。シーンを差し替えた時点で一度だけ
+    /// 結び直し、同乗者が甲板に現れないままにならないようにする。
+    func attach(to scene: SCNScene) {
+        guard self.scene !== scene else { return }
+        bind(scene)
+        syncCompanions()
+    }
+
+    /// 甲板に並べる同乗者を入れ替える。並び順がそのまま席順になる。
+    ///
+    /// 席を持てるのは `companionDeckSlots` の数まで。あふれた仲間は甲板には
+    /// 出ないが、同乗していること自体は札の名前で伝わる。
+    func setCompanions(_ members: [VoyageSceneKit.CompanionDeckMember]) {
+        companionLock.lock()
+        let unchanged = members == desiredCompanions
+        desiredCompanions = members
+        if !unchanged { companionsAreSeated = false }
+        companionLock.unlock()
+        guard !unchanged else { return }
+        syncCompanions()
+    }
+
+    /// 自分の航海士の仕草を上から決める。同行の航海でホストを務めている間だけ、
+    /// 装いで選んだ仕草の代わりにランタンを掲げる。
+    var localSailorPose: PhoenixPose?
+
+    /// 船のノードが揃ってから呼ぶ。まだ組み上がっていなければ何もせず、
+    /// 次のフレームでもう一度試す。
+    private func syncCompanions() {
+        companionLock.lock()
+        let isSeated = companionsAreSeated
+        companionLock.unlock()
+        guard !isSeated, let boat, let scene else { return }
+
+        companionLock.lock()
+        defer { companionLock.unlock() }
+
+        let seating = VoyageSceneKit.companionDeckSeating(for: desiredCompanions)
+        let seatedIDs = Set(seating.map(\.id))
+        for id in Array(companionVisuals.keys) where !seatedIDs.contains(id) {
+            companionVisuals.removeValue(forKey: id)?.node.removeFromParentNode()
+        }
+        for (id, seat) in seating {
+            if let visual = companionVisuals[id] {
+                visual.node.position = seat.position
+                visual.node.eulerAngles.y = seat.facing.rawValue
+                visual.animator.pose = seat.pose
+                continue
+            }
+            let node = VoyageSceneKit.makeCompanionNavigator(id: id)
+            node.position = seat.position
+            node.eulerAngles.y = seat.facing.rawValue
+            node.opacity = 0
+            boat.addChildNode(node)
+            node.runAction(
+                .fadeIn(duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.4)
+            )
+            let visual = CompanionVisual(node: node)
+            visual.animator.pose = seat.pose
+            visual.animator.bind(to: node, in: scene)
+            companionVisuals[id] = visual
+        }
+        companionsAreSeated = true
     }
 
     /// 風の強さを絵へ配る。帆の孕み、しぶきの量、航跡の白さがここで揃う。
@@ -2481,8 +2657,18 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
         }
 
         sailor.bindIfNeeded(currentScene)
-        sailor.pose = resting ? .sit : PhoenixPose.selected
+        sailor.pose = resting ? .sit : (localSailorPose ?? PhoenixPose.selected)
         sailor.step(t: t, dt: dt)
+
+        // 席が空いたまま、あるいは船が組み上がる前に届いた同乗者をここで拾う。
+        syncCompanions()
+        companionLock.lock()
+        let companions = Array(companionVisuals.values)
+        companionLock.unlock()
+        // 仲間の休憩までは分からない。甲板では立って海を見ている姿にする。
+        for companion in companions {
+            companion.animator.step(t: t, dt: dt)
+        }
     }
 }
 
@@ -2603,6 +2789,10 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
     var date: Date = .now
     var resting: Bool = false
     var elapsedSeconds: Int = 0
+    /// 同行の航海の同乗者。順番がそのまま甲板の席順になる。
+    var companions: [VoyageSceneKit.CompanionDeckMember] = []
+    /// 自分がその航海のホストなら、正面でランタンを掲げる。
+    var localSailorPose: PhoenixPose?
     var azimuthOffset: Float = 0
     var polarOffset: Float = 0
     var distanceScale: Float = 1
@@ -2618,11 +2808,13 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
     func makeUIView(context: Context) -> VoyagingSceneKitView {
         let view = VoyagingSceneKitView()
         let guidedIntroduction = renderingMode == .guidedIntroduction
-        view.scene = VoyageSceneKit.makeVoyagingScene(
+        let scene = VoyageSceneKit.makeVoyagingScene(
             showIsland: showIsland,
             timeOfDay: timeOfDay,
             date: date
         )
+        view.scene = scene
+        context.coordinator.animator.attach(to: scene)
         view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
         view.antialiasingMode = guidedIntroduction ? .multisampling2X : .multisampling4X
         view.preferredFramesPerSecond = guidedIntroduction ? 30 : 60
@@ -2663,6 +2855,8 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         context.coordinator.setDate(date)
         context.coordinator.animator.resting = resting
         context.coordinator.animator.setElapsedSeconds(elapsedSeconds)
+        context.coordinator.animator.localSailorPose = localSailorPose
+        context.coordinator.animator.setCompanions(companions)
         return view
     }
 
@@ -2671,11 +2865,13 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             context.coordinator.timeOfDay != timeOfDay {
             context.coordinator.showIsland = showIsland
             context.coordinator.timeOfDay = timeOfDay
-            view.scene = VoyageSceneKit.makeVoyagingScene(
+            let scene = VoyageSceneKit.makeVoyagingScene(
                 showIsland: showIsland,
                 timeOfDay: timeOfDay,
                 date: date
             )
+            view.scene = scene
+            context.coordinator.animator.attach(to: scene)
             view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
             view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
             context.coordinator.bindCamera()
@@ -2684,6 +2880,8 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         context.coordinator.onTapWorld = onTapWorld
         context.coordinator.animator.resting = resting
         context.coordinator.animator.setElapsedSeconds(elapsedSeconds)
+        context.coordinator.animator.localSailorPose = localSailorPose
+        context.coordinator.animator.setCompanions(companions)
         context.coordinator.setReduceMotion(
             accessibilityReduceMotion || UIAccessibility.isReduceMotionEnabled
         )
