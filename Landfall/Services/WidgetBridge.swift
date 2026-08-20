@@ -23,6 +23,7 @@ enum WidgetBridge {
             .filter { calendar.isDateInToday($0.date) }
             .reduce(0) { $0 + $1.minutes }
 
+        AppLanguage.syncToWidgets()
         let store = KeelMiraWidgetStore.defaults
         store.set(month, forKey: "w_month")
         store.set(studied.count, forKey: "w_studied")

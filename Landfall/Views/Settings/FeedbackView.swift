@@ -248,7 +248,7 @@ struct FeedbackView: View {
                 if let feedbackError = error as? FeedbackSubmissionError {
                     errorMessage = feedbackError.localizedDescription
                 } else {
-                    errorMessage = String(localized: "Your feedback could not be sent. Check your connection and try again.")
+                    errorMessage = LF.text("Your feedback could not be sent. Check your connection and try again.")
                 }
                 Haptics.error()
             }

@@ -868,6 +868,7 @@ struct PrivateIslandChatDock: View {
     var onReport: ((PrivateIslandChatMessage) -> Void)?
     var onBlock: ((PrivateIslandChatMessage) -> Void)?
     var onExpandedChanged: (Bool) -> Void = { _ in }
+    var onMinimizedChanged: (Bool) -> Void = { _ in }
     var onInputFocusChanged: (Bool) -> Void = { _ in }
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -875,6 +876,9 @@ struct PrivateIslandChatDock: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var isExpanded: Bool
+    /// 最小化はその場の気分ではなく好みなので、島を出入りしても覚えておく。
+    /// 未読つきの小さな泡だけは残るので、閉じたまま見失うことはない。
+    @AppStorage("privateIsland.chatMinimized") private var isMinimized = false
     @State private var draft = ""
     @State private var isSending = false
     @State private var sendError: String?
@@ -891,6 +895,7 @@ struct PrivateIslandChatDock: View {
         onReport: ((PrivateIslandChatMessage) -> Void)? = nil,
         onBlock: ((PrivateIslandChatMessage) -> Void)? = nil,
         onExpandedChanged: @escaping (Bool) -> Void = { _ in },
+        onMinimizedChanged: @escaping (Bool) -> Void = { _ in },
         onInputFocusChanged: @escaping (Bool) -> Void = { _ in }
     ) {
         self.islandName = islandName
@@ -903,6 +908,7 @@ struct PrivateIslandChatDock: View {
         self.onReport = onReport
         self.onBlock = onBlock
         self.onExpandedChanged = onExpandedChanged
+        self.onMinimizedChanged = onMinimizedChanged
         self.onInputFocusChanged = onInputFocusChanged
         _isExpanded = State(initialValue: initialExpanded)
     }
@@ -912,6 +918,89 @@ struct PrivateIslandChatDock: View {
     }
 
     var body: some View {
+        Group {
+            if isMinimized {
+                minimizedBubble
+            } else {
+                dock
+            }
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isMinimized)
+        .onChange(of: inputFocused) { _, focused in
+            onInputFocusChanged(focused)
+        }
+        .onChange(of: isExpanded) { _, expanded in
+            if !expanded { inputFocused = false }
+            onExpandedChanged(expanded)
+        }
+        .onChange(of: isMinimized) { _, minimized in
+            if minimized {
+                isExpanded = false
+                inputFocused = false
+            }
+            onMinimizedChanged(minimized)
+        }
+        .onAppear {
+            // Reconcile the parent's input lock with this newly-created dock.
+            // The dock is removed while sailing, so its local state is the
+            // authoritative value when the island scene returns.
+            if isMinimized { isExpanded = false }
+            onExpandedChanged(isExpanded)
+            onMinimizedChanged(isMinimized)
+            onInputFocusChanged(inputFocused)
+        }
+        .onDisappear {
+            inputFocused = false
+            onInputFocusChanged(false)
+            onExpandedChanged(false)
+        }
+    }
+
+    /// 最小化した姿。丸い泡ひとつだけを右下に残す。未読は泡の肩に出るので、
+    /// 畳んでいる間も話が動いたことは分かる。
+    private var minimizedBubble: some View {
+        Button {
+            isMinimized = false
+            Haptics.tap(.light)
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(PrivateIslandGlass.ink)
+                    .frame(width: 46, height: 46)
+                    .privateIslandGlass(cornerRadius: 23, opacity: 0.86)
+                    .shadow(color: .black.opacity(0.12), radius: 12, y: 5)
+
+                if unreadCount > 0 {
+                    Text(verbatim: "\(min(unreadCount, 99))")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 15, minHeight: 15)
+                        .background(LFColor.returnOrange, in: Capsule())
+                        .offset(x: 3, y: -2)
+                } else if !isConnected {
+                    Circle()
+                        .fill(PrivateIslandGlass.ink.opacity(0.24))
+                        .frame(width: 7, height: 7)
+                        .offset(x: -2, y: 2)
+                }
+            }
+            .contentShape(Circle())
+        }
+        .buttonStyle(LFPressableButtonStyle())
+        .padding(.trailing, 16)
+        .padding(.bottom, 6)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .accessibilityLabel(Text("Open chat"))
+        .accessibilityValue(Text(isConnected ? "Connected" : "Reconnecting"))
+        .accessibilityHint(
+            unreadCount > 0
+                ? Text("\(unreadCount) unread messages")
+                : Text(verbatim: islandName)
+        )
+    }
+
+    private var dock: some View {
         VStack(spacing: 0) {
             dockHeader
 
@@ -941,28 +1030,19 @@ struct PrivateIslandChatDock: View {
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity, alignment: dockAlignment)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: isExpanded)
-        .onChange(of: inputFocused) { _, focused in
-            onInputFocusChanged(focused)
-        }
-        .onChange(of: isExpanded) { _, expanded in
-            if !expanded { inputFocused = false }
-            onExpandedChanged(expanded)
-        }
-        .onAppear {
-            // Reconcile the parent's input lock with this newly-created dock.
-            // The dock is removed while sailing, so its local state is the
-            // authoritative value when the island scene returns.
-            onExpandedChanged(isExpanded)
-            onInputFocusChanged(inputFocused)
-        }
-        .onDisappear {
-            inputFocused = false
-            onInputFocusChanged(false)
-            onExpandedChanged(false)
-        }
     }
 
+    /// 開閉は段のどこを押しても効く。畳む一手だけは別のボタンにして、
+    /// 「小さくする」と「開く」を同じ場所で取り違えないようにする。
     private var dockHeader: some View {
+        HStack(spacing: 0) {
+            expandToggle
+            minimizeButton
+        }
+        .frame(height: 52)
+    }
+
+    private var expandToggle: some View {
         Button {
             isExpanded.toggle()
             Haptics.tap(.light)
@@ -1008,10 +1088,10 @@ struct PrivateIslandChatDock: View {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.up")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(PrivateIslandGlass.ink.opacity(0.5))
-                    .frame(width: 32, height: 32)
+                    .frame(width: 28, height: 32)
             }
-            .padding(.horizontal, 9)
-            .frame(height: 52)
+            .padding(.leading, 9)
+            .frame(maxHeight: .infinity)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1022,6 +1102,25 @@ struct PrivateIslandChatDock: View {
                 ? Text("\(unreadCount) unread messages")
                 : Text(verbatim: islandName)
         )
+    }
+
+    /// 泡ひとつまで畳む。開いていても一手で消せるので、航海士の色替えの
+    /// ように足元へ何かを出したいときに、段が邪魔をしたままにならない。
+    private var minimizeButton: some View {
+        Button {
+            isMinimized = true
+            Haptics.tap(.light)
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(PrivateIslandGlass.ink.opacity(0.5))
+                .frame(width: 36, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 6)
+        .accessibilityLabel(Text("Minimize chat"))
+        .accessibilityHint(Text("Leaves a small chat button in the corner"))
     }
 
     private var messageList: some View {

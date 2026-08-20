@@ -13,10 +13,10 @@ enum FeedbackCategory: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .idea: String(localized: "Idea")
-        case .issue: String(localized: "Problem")
-        case .design: String(localized: "Design")
-        case .other: String(localized: "Other")
+        case .idea: LF.text("Idea")
+        case .issue: LF.text("Problem")
+        case .design: LF.text("Design")
+        case .other: LF.text("Other")
         }
     }
 
@@ -37,9 +37,9 @@ enum FeedbackSubmissionError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidResponse:
-            String(localized: "Your feedback could not be sent. Please try again.")
+            LF.text("Your feedback could not be sent. Please try again.")
         case .appVerificationUnavailable:
-            String(localized: "The app could not be verified. Please reopen KeelMira and try again.")
+            LF.text("The app could not be verified. Please reopen KeelMira and try again.")
         }
     }
 }

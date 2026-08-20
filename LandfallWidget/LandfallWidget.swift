@@ -41,21 +41,22 @@ struct Provider: TimelineProvider {
     private var store: UserDefaults { KeelMiraWidgetStore.defaults }
 
     func placeholder(in context: Context) -> LandfallEntry {
-        LandfallEntry(
+        let sampleNames = KeelMiraWidgetCopy.sampleItemNames
+        return LandfallEntry(
             date: Date(),
             month: 7,
             studied: 8,
             rested: 12,
             todayMinutes: 42,
             items: [
-                KeelMiraWidgetItem(id: "preview-reading", name: "読書", styleToken: "midnight", symbolToken: "book"),
-                KeelMiraWidgetItem(id: "preview-writing", name: "執筆", styleToken: "coral", symbolToken: "pen"),
-                KeelMiraWidgetItem(id: "preview-study", name: "勉強", styleToken: "seaGreen", symbolToken: "compass"),
+                KeelMiraWidgetItem(id: "preview-reading", name: sampleNames.0, styleToken: "midnight", symbolToken: "book"),
+                KeelMiraWidgetItem(id: "preview-writing", name: sampleNames.1, styleToken: "coral", symbolToken: "pen"),
+                KeelMiraWidgetItem(id: "preview-study", name: sampleNames.2, styleToken: "seaGreen", symbolToken: "compass"),
             ],
             timer: KeelMiraWidgetTimer(
                 startedAt: Date().addingTimeInterval(-25 * 60).timeIntervalSince1970,
                 itemID: "preview-reading",
-                itemName: "読書",
+                itemName: sampleNames.0,
                 timerMode: "free",
                 pomodoroStartElapsed: 0,
                 breakSeconds: 0,
@@ -162,14 +163,14 @@ struct LandfallWidgetView: View {
                 Circle()
                     .fill(entry.timer.isResting ? Color.wSun : Color.wSea)
                     .frame(width: 7, height: 7)
-                Text(entry.timer.isResting ? "休憩中" : "航海中")
+                Text(entry.timer.isResting ? KeelMiraWidgetCopy.resting : KeelMiraWidgetCopy.sailing)
                     .font(.system(size: 10, weight: .semibold))
                     .tracking(1.1)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Color.wSand.opacity(0.76))
 
-            Text(entry.timer.itemName.isEmpty ? "作業中" : entry.timer.itemName)
+            Text(entry.timer.itemName.isEmpty ? KeelMiraWidgetCopy.working : entry.timer.itemName)
                 .font(.system(size: 15, weight: .semibold))
                 .lineLimit(1)
                 .padding(.top, 7)
@@ -184,13 +185,13 @@ struct LandfallWidgetView: View {
                     Image(systemName: entry.timer.isResting ? "play.fill" : "pause.fill")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .accessibilityLabel(entry.timer.isResting ? "航海を再開" : "休憩")
+                .accessibilityLabel(entry.timer.isResting ? KeelMiraWidgetCopy.resumeVoyage : KeelMiraWidgetCopy.takeABreak)
 
                 Button(intent: MakeKeelMiraLandfallIntent()) {
                     Image(systemName: "flag.checkered")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .accessibilityLabel("着岸")
+                .accessibilityLabel(KeelMiraWidgetCopy.landfall)
             }
             .font(.system(size: 13, weight: .semibold))
             .tint(Color.wSand)
@@ -208,14 +209,14 @@ struct LandfallWidgetView: View {
 
             Spacer(minLength: 5)
 
-            Text("今日の航海")
+            Text(KeelMiraWidgetCopy.todaysVoyage)
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Color.wSand.opacity(0.7))
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(entry.todayMinutes)")
                     .font(.system(size: 31, weight: .medium, design: .rounded))
                     .monospacedDigit()
-                Text("分")
+                Text(KeelMiraWidgetCopy.minuteUnit)
                     .font(.system(size: 12, weight: .medium))
             }
 
@@ -238,9 +239,9 @@ struct LandfallWidgetView: View {
                 }
                 .tint(Color.wSand)
                 .buttonStyle(WidgetActionButtonStyle())
-                .accessibilityLabel("\(item.name)で出航")
+                .accessibilityLabel(KeelMiraWidgetCopy.setSail(with: item.name))
             } else {
-                Text("アプリで作業項目を追加")
+                Text(KeelMiraWidgetCopy.addItemShort)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.wSand.opacity(0.72))
             }
@@ -265,13 +266,13 @@ struct LandfallWidgetView: View {
                     Circle()
                         .fill(entry.timer.isResting ? Color.wSun : Color.wSea)
                         .frame(width: 8, height: 8)
-                    Text(entry.timer.isResting ? "休憩中" : "航海中")
+                    Text(entry.timer.isResting ? KeelMiraWidgetCopy.resting : KeelMiraWidgetCopy.sailing)
                         .font(.system(size: 11, weight: .semibold))
                         .tracking(1.2)
                 }
                 .foregroundStyle(Color.wSand.opacity(0.75))
 
-                Text(entry.timer.itemName.isEmpty ? "作業中" : entry.timer.itemName)
+                Text(entry.timer.itemName.isEmpty ? KeelMiraWidgetCopy.working : entry.timer.itemName)
                     .font(.system(size: 17, weight: .semibold))
                     .lineLimit(1)
                     .padding(.top, 8)
@@ -279,7 +280,7 @@ struct LandfallWidgetView: View {
                 timerText(fontSize: 36)
                     .padding(.top, 1)
 
-                Text("時間だけが、静かに進む。")
+                Text(KeelMiraWidgetCopy.quietTime)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Color.wSand.opacity(0.64))
                     .padding(.top, 4)
@@ -289,14 +290,14 @@ struct LandfallWidgetView: View {
             VStack(spacing: 8) {
                 Button(intent: ToggleKeelMiraBreakIntent()) {
                     Label(
-                        entry.timer.isResting ? "再開" : "休憩",
+                        entry.timer.isResting ? KeelMiraWidgetCopy.resume : KeelMiraWidgetCopy.breakLabel,
                         systemImage: entry.timer.isResting ? "play.fill" : "pause.fill"
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
 
                 Button(intent: MakeKeelMiraLandfallIntent()) {
-                    Label("着岸", systemImage: "flag.checkered")
+                    Label(KeelMiraWidgetCopy.landfall, systemImage: "flag.checkered")
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
@@ -315,13 +316,13 @@ struct LandfallWidgetView: View {
                     .tracking(1.4)
                     .foregroundStyle(Color.wSand.opacity(0.72))
                 Spacer(minLength: 4)
-                Text("ウィジェットから出航")
+                Text(KeelMiraWidgetCopy.setSailFromWidget)
                     .font(.system(size: 19, weight: .semibold))
                     .lineLimit(2)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("今日 \(entry.todayMinutes)")
+                    Text(KeelMiraWidgetCopy.todayCount(entry.todayMinutes))
                         .font(.system(size: 12, weight: .semibold))
-                    Text("分")
+                    Text(KeelMiraWidgetCopy.minuteUnit)
                         .font(.system(size: 10, weight: .medium))
                 }
                 .foregroundStyle(Color.wSand.opacity(0.68))
@@ -330,7 +331,7 @@ struct LandfallWidgetView: View {
             .frame(width: 118, alignment: .leading)
 
             if entry.items.isEmpty {
-                Text("アプリで作業項目を追加してください")
+                Text(KeelMiraWidgetCopy.addItemLong)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Color.wSand.opacity(0.72))
                     .frame(maxWidth: .infinity)
@@ -354,7 +355,7 @@ struct LandfallWidgetView: View {
                         }
                         .tint(Color.wSand)
                         .buttonStyle(WidgetActionButtonStyle(accent: WidgetItemColor.color(item.styleToken)))
-                        .accessibilityLabel("\(item.name)で出航")
+                        .accessibilityLabel(KeelMiraWidgetCopy.setSail(with: item.name))
                     }
                 }
             }
@@ -395,7 +396,7 @@ struct LandfallWidgetView: View {
             } else {
                 VStack(spacing: 0) {
                     Image(systemName: "sailboat.fill")
-                    Text("\(entry.todayMinutes)分")
+                    Text(KeelMiraWidgetCopy.minutes(entry.todayMinutes))
                         .font(.system(size: 13, weight: .semibold))
                         .monospacedDigit()
                 }
@@ -407,7 +408,7 @@ struct LandfallWidgetView: View {
     private var rectangular: some View {
         VStack(alignment: .leading, spacing: 3) {
             if entry.timer.isActive {
-                Text(entry.timer.isResting ? "休憩中" : "航海中")
+                Text(entry.timer.isResting ? KeelMiraWidgetCopy.resting : KeelMiraWidgetCopy.sailing)
                     .font(.system(size: 11, weight: .semibold))
                     .widgetAccentable()
                 Text(entry.timer.itemName)
@@ -417,13 +418,13 @@ struct LandfallWidgetView: View {
                     .font(.system(size: 18, weight: .semibold, design: .rounded))
                     .monospacedDigit()
             } else {
-                Text("今日の航海")
+                Text(KeelMiraWidgetCopy.todaysVoyage)
                     .font(.system(size: 11, weight: .semibold))
                     .widgetAccentable()
-                Text("\(entry.todayMinutes)分")
+                Text(KeelMiraWidgetCopy.minutes(entry.todayMinutes))
                     .font(.system(size: 20, weight: .semibold, design: .rounded))
                     .monospacedDigit()
-                Text("いつでも出航できます")
+                Text(KeelMiraWidgetCopy.readyToSail)
                     .font(.system(size: 10, weight: .regular))
             }
         }
@@ -437,7 +438,7 @@ struct LandfallWidgetView: View {
                 systemImage: entry.timer.isResting ? "pause.circle.fill" : "sailboat.fill"
             )
         } else {
-            Label("今日 \(entry.todayMinutes)分", systemImage: "sailboat")
+            Label(KeelMiraWidgetCopy.todayMinutes(entry.todayMinutes), systemImage: "sailboat")
         }
     }
 }
@@ -574,8 +575,8 @@ struct LandfallWidget: Widget {
         StaticConfiguration(kind: KeelMiraWidgetStore.widgetKind, provider: Provider()) { entry in
             LandfallWidgetView(entry: entry)
         }
-        .configurationDisplayName("KeelMira 航海タイマー")
-        .description("静止した航海の景色から、出航・休憩・着岸を操作できます。")
+        .configurationDisplayName(KeelMiraWidgetCopy.configurationName)
+        .description(KeelMiraWidgetCopy.configurationDescription)
         .supportedFamilies([
             .systemSmall,
             .systemMedium,

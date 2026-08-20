@@ -40,6 +40,8 @@ struct VoyageHomeView: View {
     @State private var manifestLastReorderLocation: CGPoint?
     @State private var manifestSuppressTapItemID: UUID?
     @State private var manifestEditing = false
+    /// 実測したタイル1行の高さ。作業項目パネルを2行ぶんに収めるために使う。
+    @State private var manifestRowHeight: CGFloat?
     @State private var celebrating: Destination?
     @State private var pendingLandingDestination: Destination?
     @State private var pendingCompleteDestination: Destination?
@@ -91,6 +93,8 @@ struct VoyageHomeView: View {
     @AppStorage(HomeBackgroundMusic.enabledKey) private var homeMusicEnabled = false
     @AppStorage("home.island.shipInteractionSeen") private var shipInteractionSeen = false
     @StateObject private var sailAnimator = SailAnimator.shared
+    /// アカウントの記録を取り込み終える前に「まだ何も無い」と見せないための状態。
+    @ObservedObject private var sync = SyncService.shared
     @StateObject private var router = DeepLinkRouter.shared
 
     private let minuteClock = Timer.publish(
@@ -212,22 +216,37 @@ struct VoyageHomeView: View {
                     if showingWorkManifest,
                        presentedRoute == nil,
                        !timerWorldActive {
+                        // パネルの外側を叩いたら閉じる。島は暗幕で覆わず、
+                        // 触れる範囲だけを奪う透明な受け皿にする。
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .ignoresSafeArea()
+                            .onTapGesture {
+                                Haptics.tap(.light)
+                                dismissHomeOverlay()
+                            }
+                            .accessibilityHidden(true)
+                            .zIndex(11)
+
                         workManifest(
                             availableWidth: geometry.size.width,
                             availableHeight: geometry.size.height
                                 - geometry.safeAreaInsets.top
                                 - geometry.safeAreaInsets.bottom
+                                - (geometry.size.width >= 760 ? 0 : 74)
                         )
                             .frame(
                                 maxWidth: .infinity,
                                 maxHeight: .infinity,
-                                alignment: geometry.size.width >= 760 ? .trailing : .bottom
+                                alignment: geometry.size.width >= 760 ? .trailing : .top
                             )
                             .padding(.horizontal, 12)
                             .padding(.trailing, geometry.size.width >= 760 ? 10 : 0)
-                            .padding(.bottom, geometry.size.width >= 760 ? 18 : geometry.safeAreaInsets.bottom + 10)
+                            // 画面下ではなく上部に置き、島と船を隠さない。
+                            .padding(.top, geometry.size.width >= 760 ? 0 : geometry.safeAreaInsets.top + 62)
+                            .padding(.bottom, geometry.size.width >= 760 ? 18 : 0)
                             .transition(
-                                .move(edge: geometry.size.width >= 760 ? .trailing : .bottom)
+                                .move(edge: geometry.size.width >= 760 ? .trailing : .top)
                                     .combined(with: .opacity)
                             )
                             .zIndex(12)
@@ -598,6 +617,12 @@ struct VoyageHomeView: View {
             if ProcessInfo.processInfo.environment["LANDFALL_LOGBOOK"] != nil {
                 presentedRoute = .logbook
             }
+            // 動作確認用: LANDFALL_VOYAGE_DONE=<分> で完了札まで直行する
+            // (DebugSeed が同じ環境変数で航海中のタイマーを1本立てている)。
+            if ProcessInfo.processInfo.environment["LANDFALL_VOYAGE_DONE"] != nil,
+               let item = currentTimerItem {
+                presentTimerVoyage(item)
+            }
             if ProcessInfo.processInfo.environment["LANDFALL_HOME_ISLAND"] != nil {
                 menuOpen = false
                 presentedRoute = .island
@@ -852,13 +877,23 @@ struct VoyageHomeView: View {
     ) -> some View {
         let wide = availableWidth >= 760
         let panelWidth = max(0, min(wide ? 470 : 620, availableWidth - 24))
-        let scrollMaxHeight = min(
-            wide ? 410 : 330,
-            max(80, availableHeight - 64)
+        let columnCount = 4
+        let columnSpacing: CGFloat = 10
+        let rowSpacing: CGFloat = 10
+        let gridPadding: CGFloat = 10
+        let columnWidth = max(
+            40,
+            (panelWidth - gridPadding * 2 - columnSpacing * CGFloat(columnCount - 1))
+                / CGFloat(columnCount)
         )
+        // 既定は2行ぶんの高さ。3行目から先は従来通りスクロールで見せる。
+        // 実測値が来るまでは正方形のアートワーク+2行のラベルで見積もる。
+        let rowHeight = manifestRowHeight ?? (columnWidth + 38)
+        let twoRowHeight = gridPadding * 2 + rowHeight * 2 + rowSpacing
+        let scrollMaxHeight = min(twoRowHeight, max(80, availableHeight - 64))
         let columns = Array(
-            repeating: GridItem(.flexible(), spacing: 10, alignment: .top),
-            count: 4
+            repeating: GridItem(.flexible(), spacing: columnSpacing, alignment: .top),
+            count: columnCount
         )
         let manifestItems = orderedManifestItems
 
@@ -927,10 +962,15 @@ struct VoyageHomeView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 if items.isEmpty {
                     VStack(spacing: 12) {
-                        Image(systemName: "shippingbox")
+                        Image(systemName: sync.isRestoringAccountData ? "arrow.triangle.2.circlepath" : "shippingbox")
                             .font(.system(size: 25, weight: .light))
                             .foregroundStyle(LFColor.harborTeal.opacity(0.42))
-                        Text("Create your first work item, then load it onto the ship.")
+                        // 同期の到着前に作り直すと、同じ作業項目が二重になる。届くまでは待てると伝える。
+                        Text(
+                            sync.isRestoringAccountData
+                                ? "Bringing your work items back from your account."
+                                : "Create your first work item, then load it onto the ship."
+                        )
                             .font(LFFont.copy(13))
                             .foregroundStyle(LFColor.harborTeal.opacity(0.68))
                             .multilineTextAlignment(.center)
@@ -941,7 +981,7 @@ struct VoyageHomeView: View {
                 }
 
                 ZStack(alignment: .topLeading) {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: rowSpacing) {
                         ForEach(manifestItems) { item in
                             manifestItemTile(item)
                         }
@@ -953,14 +993,18 @@ struct VoyageHomeView: View {
                 .coordinateSpace(name: WorkManifestGridSpace.name)
                 .onPreferenceChange(WorkManifestItemFramePreferenceKey.self) { frames in
                     manifestItemFrames = frames
+                    if let measured = frames.values.map(\.height).filter({ $0 > 1 }).max(),
+                       abs((manifestRowHeight ?? 0) - measured) > 0.5 {
+                        manifestRowHeight = measured
+                    }
                 }
                 .animation(
                     .spring(response: 0.24, dampingFraction: 0.84),
                     value: manifestItemOrder
                 )
-                .padding(12)
+                .padding(gridPadding)
             }
-            .frame(minHeight: min(180, scrollMaxHeight), maxHeight: scrollMaxHeight)
+            .frame(minHeight: min(120, scrollMaxHeight), maxHeight: scrollMaxHeight)
         }
         .frame(width: panelWidth)
         .background(
@@ -1511,29 +1555,27 @@ struct VoyageHomeView: View {
     /// 名前だけが編集ボタンになる旧ホーム配置を持ち込まず、選択の迷いをなくす。
     private func manifestItemTile(_ item: StudyItem) -> some View {
         let timing = timerItemID == item.uuid.uuidString
+        // 持ち上がっているのは、指が動いて浮きの札が出ているときだけ。
+        // 長押ししただけの札は、見た目を変えずにその場へ留める。
+        let lifted = manifestDraggedItemID == item.uuid && manifestDragLocation != nil
 
         return ZStack(alignment: .topTrailing) {
             Button {
+                // 並べ替えの指を離した直後は、その札のタップを一度だけ捨てる。
+                // 捨てないと、動かし終えた札が編集シートや出航を道連れに開く。
+                // 判断は「実際に動かしたか」だけで下す。持ち上げ中のIDを見ると、
+                // 取り残されたIDひとつで全部の札が黙ってしまう。
+                guard manifestSuppressTapItemID != item.uuid else { return }
                 if manifestEditing {
                     editingItem = item
                     return
                 }
-                guard manifestDraggedItemID == nil,
-                      manifestSuppressTapItemID != item.uuid
-                else { return }
                 openOrStartVoyage(for: item)
             } label: {
                 manifestItemTileArtwork(item)
                     .contentShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
             }
             .buttonStyle(LFPressableButtonStyle())
-            // Reordering belongs to the explicit edit state. Outside it the
-            // card stays a plain Button, so a quick voyage tap cannot be
-            // swallowed by the long-press recognizer.
-            .simultaneousGesture(
-                manifestReorderGesture(for: item),
-                including: manifestEditing ? .all : .none
-            )
             .accessibilityLabel(
                 Text(
                     manifestEditing
@@ -1545,7 +1587,7 @@ struct VoyageHomeView: View {
             .accessibilityHint(
                 Text(
                     manifestEditing
-                        ? "Long press and drag to rearrange"
+                        ? "Drag the handle to rearrange"
                         : "Opens the voyage timer"
                 )
             )
@@ -1580,16 +1622,31 @@ struct VoyageHomeView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("Edit item"))
-                .opacity(manifestDraggedItemID == item.uuid ? 0 : 1)
-                .disabled(manifestDraggedItemID == item.uuid)
+                .opacity(lifted ? 0 : 1)
+                .disabled(lifted)
                 .transition(.scale(scale: 0.86).combined(with: .opacity))
             }
         }
-        .opacity(
-            manifestDraggedItemID == item.uuid && manifestDragLocation != nil
-                ? 0
-                : 1
-        )
+        // 並べ替えのつまみ。ドラッグを受けるのはこの円だけにする。
+        // 札全体で受けると一覧のスクロールを丸ごと奪ってしまい、
+        // 3行目から先の作業項目へ二度とたどり着けなくなる。
+        .overlay(alignment: .topLeading) {
+            if manifestEditing {
+                Image(systemName: "arrow.up.and.down.and.arrow.left.and.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(LFColor.harborTeal)
+                    .frame(width: 30, height: 30)
+                    .background(Color.white.opacity(0.86), in: Circle())
+                    .overlay(Circle().stroke(LFColor.harborTeal.opacity(0.12), lineWidth: 1))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+                    .gesture(manifestReorderGesture(for: item))
+                    .opacity(lifted ? 0 : 1)
+                    .accessibilityHidden(true)
+                    .transition(.scale(scale: 0.86).combined(with: .opacity))
+            }
+        }
+        .opacity(lifted ? 0 : 1)
         .background {
             GeometryReader { proxy in
                 Color.clear.preference(
@@ -1601,13 +1658,11 @@ struct VoyageHomeView: View {
             }
         }
         .shadow(
-            color: LFColor.harborTeal.opacity(
-                manifestDraggedItemID == item.uuid ? 0.24 : 0
-            ),
-            radius: manifestDraggedItemID == item.uuid ? 14 : 0,
-            y: manifestDraggedItemID == item.uuid ? 8 : 0
+            color: LFColor.harborTeal.opacity(lifted ? 0.24 : 0),
+            radius: lifted ? 14 : 0,
+            y: lifted ? 8 : 0
         )
-        .zIndex(manifestDraggedItemID == item.uuid ? 20 : 0)
+        .zIndex(lifted ? 20 : 0)
     }
 
     private func manifestItemTileArtwork(_ item: StudyItem) -> some View {
@@ -1631,16 +1686,26 @@ struct VoyageHomeView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
 
-            if timing {
-                Text("Return to voyage")
-                    .font(LFFont.label(8))
-                    .foregroundStyle(LFColor.returnOrange)
-                    .lineLimit(1)
-            } else if total > 0 {
-                Text(LF.duration(minutes: total))
+            // 補助行は常に同じ高さを確保する。行の高さが揃うと、
+            // パネルをきっちり2行ぶんに収められる。
+            ZStack {
+                Text(verbatim: "0")
                     .font(LFFont.label(8.5))
-                    .foregroundStyle(LFColor.harborTeal.opacity(0.54))
-                    .monospacedDigit()
+                    .hidden()
+                if timing {
+                    Text("Return to voyage")
+                        .font(LFFont.label(8))
+                        .foregroundStyle(LFColor.returnOrange)
+                        .lineLimit(1)
+                } else {
+                    // 記録が無くても「0分」を出す。全タイルに累計が並ぶ。
+                    Text(LF.duration(minutes: total))
+                        .font(LFFont.label(8.5))
+                        .foregroundStyle(
+                            LFColor.harborTeal.opacity(total > 0 ? 0.54 : 0.34)
+                        )
+                        .monospacedDigit()
+                }
             }
         }
         .padding(6)
@@ -1682,23 +1747,19 @@ struct VoyageHomeView: View {
     private func manifestReorderGesture(
         for item: StudyItem
     ) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.20, maximumDistance: 20)
-            .sequenced(
-                before: DragGesture(
-                    minimumDistance: 0,
-                    coordinateSpace: .named(WorkManifestGridSpace.name)
-                )
-            )
-            .onChanged { value in
-                switch value {
-                case .first(true):
+        DragGesture(
+            minimumDistance: 6,
+            coordinateSpace: .named(WorkManifestGridSpace.name)
+        )
+            .onChanged { drag in
+                if manifestDraggedItemID != item.uuid {
+                    // 前の並べ替えが途中で奪われるとonEndedが来ず、持ち上げ中の
+                    // IDが残る。残ったままだと次の指で札が持ち上がらないので、
+                    // つまみを掴み直すたびに捨ててから始める。
+                    resetManifestDragState()
                     beginManifestDrag(item.uuid)
-                case .second(true, let drag?):
-                    beginManifestDrag(item.uuid)
-                    updateManifestDrag(item.uuid, drag: drag)
-                default:
-                    break
                 }
+                updateManifestDrag(item.uuid, drag: drag)
             }
             .onEnded { _ in
                 finishManifestDrag(item.uuid)
@@ -1718,7 +1779,6 @@ struct VoyageHomeView: View {
         guard manifestItemOrder.contains(itemID) else { return }
         manifestDraggedItemID = itemID
         manifestDragStartOrder = manifestItemOrder
-        manifestSuppressTapItemID = itemID
         manifestLastTargetID = nil
         manifestLastReorderLocation = nil
         Haptics.tap(.rigid)
@@ -1731,6 +1791,12 @@ struct VoyageHomeView: View {
         guard manifestDraggedItemID == itemID,
               let itemFrame = manifestItemFrames[itemID]
         else { return }
+
+        // 指が実際に動いてはじめて並べ替えとして扱う。長押ししただけで
+        // 離した指は、これまで通り編集シートや出航のタップとして届く。
+        let moved = hypot(drag.translation.width, drag.translation.height) >= 6
+        guard moved || manifestDragLocation != nil else { return }
+        manifestSuppressTapItemID = itemID
 
         if manifestDragLocation == nil {
             manifestDragGrabOffset = CGSize(

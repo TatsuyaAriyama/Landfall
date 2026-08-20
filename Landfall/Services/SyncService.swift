@@ -1,3 +1,4 @@
+import Combine
 import FirebaseAuth
 import FirebaseFirestore
 import Foundation
@@ -12,9 +13,14 @@ import SwiftData
 /// 既知の制約: 両端末がオフライン中に同一記録を編集した競合、片方がオフライン中に行われた削除は、
 /// 確実には反映されない場合がある(タイムスタンプ順の解決＋トゥームストーン無しのため)。
 @MainActor
-final class SyncService {
+final class SyncService: ObservableObject {
     static let shared = SyncService()
     private init() {}
+
+    /// アカウントの記録をこの端末へ初めて取り込んでいる間だけ true。
+    /// 取り込み前の空っぽの一覧を「まだ何も無い」と見せると、利用者が同じ作業項目を
+    /// もう一度作ってしまい、それがそのまま重複になる。待っていることを伝えるための印。
+    @Published private(set) var isRestoringAccountData = false
 
     private var db: Firestore { Firestore.firestore() }
     private var uid: String? { Auth.auth().currentUser?.uid }
@@ -22,6 +28,8 @@ final class SyncService {
     private var listeners: [ListenerRegistration] = []
     private var gameDataPreparation: Task<Void, Never>?
     private var gameDataPreparationUID: String?
+    private var reconciliation: Task<Void, Never>?
+    private var reconciliationUID: String?
 
     // MARK: - Push / delete (fire-and-forget)
 
@@ -44,7 +52,10 @@ final class SyncService {
         let dto = SessionDTO(
             date: session.date, minutes: session.minutes,
             extraSeconds: session.extraSeconds, note: session.note,
-            itemUUID: session.item?.uuid.uuidString, updatedAt: Date()
+            // 項目がまだ手元へ届いていない記録を送るときも、繋ぎ先を落とさない。
+            // ここで nil を書くと、他端末では紐付けの切れた記録に化けてしまう。
+            itemUUID: session.item?.uuid.uuidString ?? session.pendingItemUUID,
+            updatedAt: Date()
         )
         try? sessionsCollection(uid).document(session.uuid.uuidString).setData(from: dto)
     }
@@ -101,13 +112,19 @@ final class SyncService {
 
     // MARK: - 同期の開始/停止
 
-    /// サインイン直後と前景復帰で呼ぶ。初回だけローカルをまとめて push し、
-    /// 以降はリスナーで追加・編集・削除をリアルタイムに受信する。多重呼び出しに耐える。
+    /// サインイン直後と前景復帰で呼ぶ。受信(リスナー)を張ってから、この端末のローカル記録を
+    /// アカウントの記録と突き合わせる。多重呼び出しに耐える。
     func performInitialSync(context: ModelContext) async {
         guard let currentUID = uid else { return }
+        // 取り込みが要る端末では、最初の一瞬から「取り込み中」を立てておく。
+        if needsReconciliation(uid: currentUID) { isRestoringAccountData = true }
         await prepareAccountGameData(for: currentUID)
         guard uid == currentUID else { return }
-        migrationPushIfNeeded(context: context)
+        // 購読より先に突き合わせる。「アカウントに今なにがあるか」を読む前に受信も送信も
+        // 始めてしまうと、同じ作業項目が一瞬でも二重に並び、送信すればそのまま複製になる。
+        // 既存の prepareAccountGameData と同じく、ここもサーバー応答を待つ。
+        await reconcileWithAccount(uid: currentUID, context: context)
+        guard uid == currentUID else { return }
         startListening(context: context)
     }
 
@@ -118,6 +135,10 @@ final class SyncService {
         gameDataPreparation?.cancel()
         gameDataPreparation = nil
         gameDataPreparationUID = nil
+        reconciliation?.cancel()
+        reconciliation = nil
+        reconciliationUID = nil
+        isRestoringAccountData = false
     }
 
     // MARK: - Player card / Home Island
@@ -419,17 +440,384 @@ final class SyncService {
         slot == 1 ? "accountGameData.islandPending.\(uid)" : "accountGameData.islandPending.\(uid).slot\(slot)"
     }
 
-    /// v1.0→v1.1 の移行(および新規サインイン)で、この uid につき一度だけローカルを push する。
-    /// 一度だけにすることで、後の削除が「未 push の新規」と誤認されて復活するのを防ぐ。
-    private func migrationPushIfNeeded(context: ModelContext) {
-        guard let uid else { return }
-        let key = "didInitialPush_\(uid)"
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        for item in (try? context.fetch(FetchDescriptor<StudyItem>())) ?? [] { push(item) }
-        for session in (try? context.fetch(FetchDescriptor<StudySession>())) ?? [] { push(session) }
-        for day in (try? context.fetch(FetchDescriptor<StudyDay>())) ?? [] { push(day) }
-        for dest in (try? context.fetch(FetchDescriptor<Destination>())) ?? [] { push(dest) }
-        UserDefaults.standard.set(true, forKey: key)
+    // MARK: - アカウントとの突き合わせ(同じ実体を二重に作らない)
+
+    /// v1.1 までは「この uid で初回なら、ローカルを全件 push」だった。
+    /// そのため、サインインせずに使っていた端末や、まだ同期の届いていない端末で
+    /// 同じ作業項目を持ったままログインすると、同じ項目がもう一組アカウントへ増え、
+    /// 全端末で作業項目が丸ごと複製されてしまった。
+    ///
+    /// ここでは順に、
+    /// 1. アカウントの現状を**必ず読んでから**判断する(読めなければ何も送らない)、
+    /// 2. 同じ実体(同名の作業項目・同じ記録)は、アカウント側のIDへ寄せる、
+    /// 3. 本当に手元にしか無い記録だけを送る、
+    /// 4. すでに複製されてしまったアカウントは、一度だけ畳んで元に戻す。
+    ///
+    /// どの端末が実行しても残す側の選び方は同じなので、実機でもシミュレータでも
+    /// 同時に走って構わない(同じ結果へ収束する)。
+    private func reconcileWithAccount(uid: String, context: ModelContext) async {
+        guard needsReconciliation(uid: uid) else {
+            isRestoringAccountData = false
+            return
+        }
+        if reconciliationUID == uid, let reconciliation {
+            await reconciliation.value
+            return
+        }
+        reconciliation?.cancel()
+        reconciliationUID = uid
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.isRestoringAccountData = false }
+            // ここだけはサーバーの現物を読む。手元のキャッシュを信じて送ると、
+            // 「アカウントには既にある」ことを見落として複製を作ってしまう。
+            guard let snapshot = await self.fetchAccountSnapshot(uid: uid),
+                  !Task.isCancelled,
+                  self.uid == uid
+            else { return }
+
+            let defaults = UserDefaults.standard
+            if !defaults.bool(forKey: Self.initialUploadKey(uid)) {
+                self.uploadLocalData(mergingWith: snapshot, context: context)
+                defaults.set(true, forKey: Self.initialUploadKey(uid))
+            }
+            guard !Task.isCancelled, self.uid == uid else { return }
+            if !defaults.bool(forKey: Self.duplicateRepairKey(uid)) {
+                if await self.collapseDuplicateItems(in: snapshot, uid: uid, context: context) {
+                    defaults.set(true, forKey: Self.duplicateRepairKey(uid))
+                }
+            }
+        }
+        reconciliation = task
+        await task.value
+        if reconciliationUID == uid {
+            reconciliation = nil
+            reconciliationUID = nil
+        }
+    }
+
+    private func needsReconciliation(uid: String) -> Bool {
+        let defaults = UserDefaults.standard
+        return !defaults.bool(forKey: Self.initialUploadKey(uid))
+            || !defaults.bool(forKey: Self.duplicateRepairKey(uid))
+    }
+
+    /// v1.1 と同じキー。既にアップロード済みの端末を、もう一度アップロードさせない。
+    private static func initialUploadKey(_ uid: String) -> String { "didInitialPush_\(uid)" }
+    private static func duplicateRepairKey(_ uid: String) -> String { "didCollapseDuplicateItems.v1.\(uid)" }
+
+    /// このアカウント自身の記録。件数は本人のデータ量にしか比例しない
+    /// (購読も同じ範囲を読むため、読み取りが利用者数に比例することはない)。
+    private struct AccountSnapshot {
+        var items: [String: ItemDTO] = [:]
+        var sessions: [String: SessionDTO] = [:]
+        var days: [String: DayDTO] = [:]
+        var destinations: [String: DestinationDTO] = [:]
+    }
+
+    private func fetchAccountSnapshot(uid: String) async -> AccountSnapshot? {
+        do {
+            async let items = itemsCollection(uid).getDocuments(source: .server)
+            async let sessions = sessionsCollection(uid).getDocuments(source: .server)
+            async let days = daysCollection(uid).getDocuments(source: .server)
+            async let destinations = destinationsCollection(uid).getDocuments(source: .server)
+            var snapshot = AccountSnapshot()
+            for document in try await items.documents {
+                if let dto = try? document.data(as: ItemDTO.self) { snapshot.items[document.documentID] = dto }
+            }
+            for document in try await sessions.documents {
+                if let dto = try? document.data(as: SessionDTO.self) { snapshot.sessions[document.documentID] = dto }
+            }
+            for document in try await days.documents {
+                if let dto = try? document.data(as: DayDTO.self) { snapshot.days[document.documentID] = dto }
+            }
+            for document in try await destinations.documents {
+                if let dto = try? document.data(as: DestinationDTO.self) { snapshot.destinations[document.documentID] = dto }
+            }
+            return snapshot
+        } catch {
+            // 圏外・一時的な失敗を「アカウントは空」と読み違えない。次の前景復帰で出直す。
+            return nil
+        }
+    }
+
+    // MARK: 初回アップロード(手元にしか無い記録だけを送る)
+
+    private func uploadLocalData(mergingWith snapshot: AccountSnapshot, context: ModelContext) {
+        // 目的地を先に寄せてから項目を寄せる。逆にすると、付け替えで送り直した目的地が
+        // 古いIDのまま書類として残り、それ自体が重複になる。
+        mergeLocalDestinations(with: snapshot, context: context)
+        let relinked = mergeLocalItems(with: snapshot, context: context)
+        mergeLocalSessions(with: snapshot, relinked: relinked, context: context)
+        mergeLocalDays(with: snapshot, context: context)
+        try? context.save()
+    }
+
+    /// 戻り値は、畳んだ結果として繋ぎ先が変わった記録。アカウントに既にある記録でも、
+    /// この分だけは送り直さないと、他端末で行き先を失う。
+    @discardableResult
+    private func mergeLocalItems(with snapshot: AccountSnapshot, context: ModelContext) -> Set<UUID> {
+        let locals = (try? context.fetch(FetchDescriptor<StudyItem>())) ?? []
+        guard !locals.isEmpty else { return [] }
+
+        let plan = AccountMergePlan.decisions(
+            local: locals.map {
+                AccountMergePlan.Row(
+                    key: AccountMergePlan.nameKey($0.name),
+                    id: $0.uuid.uuidString,
+                    createdAt: $0.createdAt
+                )
+            },
+            remote: snapshot.items.map {
+                AccountMergePlan.Row(
+                    key: AccountMergePlan.nameKey($0.value.name),
+                    id: $0.key,
+                    createdAt: $0.value.createdAt
+                )
+            },
+            accountIDs: Set(snapshot.items.keys)
+        )
+
+        var relinked: Set<UUID> = []
+        var localByID: [String: StudyItem] = [:]
+        for item in locals {
+            let id = item.uuid.uuidString
+            switch plan[id] ?? .push {
+            case .keep:
+                localByID[id] = item
+            case .adopt(let remoteID):
+                // 同じ作業項目なので、アカウント側のIDへ寄せる。新しい書類は作らない。
+                adopt(remoteID, for: item, context: context)
+                localByID[remoteID] = item
+                if item.updatedAt > (snapshot.items[remoteID]?.updatedAt ?? .distantPast) { push(item) }
+            case .absorb(let remoteID):
+                // アカウント側の同じ項目を、手元の別の行が既に受け持っている。重複を畳む。
+                if let keeper = localByID[remoteID] {
+                    relinked.formUnion(absorb(item, into: keeper, context: context))
+                } else {
+                    push(item)
+                }
+            case .push:
+                push(item)  // 本当に手元にしか無い作業項目
+            }
+        }
+        return relinked
+    }
+
+    private func mergeLocalDestinations(with snapshot: AccountSnapshot, context: ModelContext) {
+        let locals = (try? context.fetch(FetchDescriptor<Destination>())) ?? []
+        guard !locals.isEmpty else { return }
+
+        let plan = AccountMergePlan.decisions(
+            local: locals.map {
+                AccountMergePlan.Row(
+                    key: AccountMergePlan.nameKey($0.name),
+                    id: $0.uuid.uuidString,
+                    createdAt: $0.createdAt
+                )
+            },
+            remote: snapshot.destinations.map {
+                AccountMergePlan.Row(
+                    key: AccountMergePlan.nameKey($0.value.name),
+                    id: $0.key,
+                    createdAt: $0.value.createdAt
+                )
+            },
+            accountIDs: Set(snapshot.destinations.keys)
+        )
+
+        for dest in locals {
+            // 目的地は畳まない。同名でも別の目標なので、行き場を失わせずに送る。
+            guard case .adopt(let remoteID) = plan[dest.uuid.uuidString] ?? .push,
+                  let remoteUUID = UUID(uuidString: remoteID)
+            else {
+                if plan[dest.uuid.uuidString] != .keep { push(dest) }
+                continue
+            }
+            dest.uuid = remoteUUID
+            if dest.updatedAt > (snapshot.destinations[remoteID]?.updatedAt ?? .distantPast) { push(dest) }
+        }
+    }
+
+    private func mergeLocalSessions(
+        with snapshot: AccountSnapshot, relinked: Set<UUID>, context: ModelContext
+    ) {
+        let locals = (try? context.fetch(FetchDescriptor<StudySession>())) ?? []
+        guard !locals.isEmpty else { return }
+
+        let plan = AccountMergePlan.decisions(
+            local: locals.map {
+                AccountMergePlan.Row(
+                    key: AccountMergePlan.sessionKey(
+                        date: $0.date, minutes: $0.minutes, extraSeconds: $0.extraSeconds,
+                        note: $0.note, itemUUID: $0.item?.uuid.uuidString ?? $0.pendingItemUUID
+                    ),
+                    id: $0.uuid.uuidString,
+                    createdAt: $0.date
+                )
+            },
+            remote: snapshot.sessions.map {
+                AccountMergePlan.Row(
+                    key: AccountMergePlan.sessionKey(
+                        date: $0.value.date, minutes: $0.value.minutes,
+                        extraSeconds: $0.value.extraSeconds ?? 0,
+                        note: $0.value.note, itemUUID: $0.value.itemUUID
+                    ),
+                    id: $0.key,
+                    createdAt: $0.value.date
+                )
+            },
+            accountIDs: Set(snapshot.sessions.keys)
+        )
+
+        for session in locals {
+            switch plan[session.uuid.uuidString] ?? .push {
+            case .keep:
+                // 繋ぎ先を移した記録だけは、アカウント側にも新しい行き先を伝える。
+                if relinked.contains(session.uuid) { push(session) }
+            case .adopt(let remoteID):
+                // 同じ記録がアカウントにもある。IDを寄せて1件に収める。
+                if let remoteUUID = UUID(uuidString: remoteID) { session.uuid = remoteUUID }
+            case .absorb, .push:
+                // 記録は決して畳まない。取り違えて消すより、1件多く残す方を選ぶ。
+                push(session)
+            }
+        }
+    }
+
+    private func mergeLocalDays(with snapshot: AccountSnapshot, context: ModelContext) {
+        // 日の書類IDは日付そのものなので重複しない。航海誌が消えないよう、
+        // アカウント側が新しいときは送らずに任せる。
+        for day in (try? context.fetch(FetchDescriptor<StudyDay>())) ?? [] {
+            let id = Self.dayDocID(day.date)
+            guard let remote = snapshot.days[id] else {
+                push(day)
+                continue
+            }
+            if day.updatedAt > (remote.updatedAt ?? .distantPast) { push(day) }
+        }
+    }
+
+    /// 作業項目のIDをアカウント側へ寄せる。IDを文字列で覚えている場所も一緒に付け替える。
+    private func adopt(_ remoteID: String, for item: StudyItem, context: ModelContext) {
+        guard let remoteUUID = UUID(uuidString: remoteID) else { return }
+        let previous = item.uuid.uuidString
+        item.uuid = remoteUUID
+        repointItemReferences(from: previous, to: remoteID, context: context)
+    }
+
+    /// 手元の重複した作業項目を1つに畳む。記録は必ず残す側へ引き継ぐ。
+    @discardableResult
+    private func absorb(_ duplicate: StudyItem, into keeper: StudyItem, context: ModelContext) -> Set<UUID> {
+        let previous = duplicate.uuid.uuidString
+        var moved: Set<UUID> = []
+        for session in Array(duplicate.sessions) {
+            session.item = keeper
+            session.pendingItemUUID = nil
+            session.updatedAt = Date()
+            moved.insert(session.uuid)
+        }
+        repointItemReferences(from: previous, to: keeper.uuid.uuidString, context: context)
+        // 送信済みだったとしても取り下げる(書類が無ければ何も起きない)。
+        delete(duplicate)
+        context.delete(duplicate)
+        return moved
+    }
+
+    /// 作業項目のIDを文字列で持っている場所(記録の繋ぎ先・目的地・計測中のタイマー)を付け替える。
+    private func repointItemReferences(from previous: String, to newID: String, context: ModelContext) {
+        for session in (try? context.fetch(FetchDescriptor<StudySession>())) ?? []
+        where session.pendingItemUUID == previous {
+            session.pendingItemUUID = newID
+        }
+        for dest in (try? context.fetch(FetchDescriptor<Destination>())) ?? []
+        where dest.itemUUID == previous {
+            dest.itemUUID = newID
+            dest.updatedAt = Date()
+            push(dest)
+        }
+        if StudyTimer.defaults.string(forKey: StudyTimer.itemKey) == previous {
+            StudyTimer.defaults.set(newID, forKey: StudyTimer.itemKey)
+        }
+    }
+
+    // MARK: 既にできてしまった複製を畳む
+
+    /// 同じ姿(同名・同じ配色・同じ印)の作業項目がアカウントに複数あるとき、
+    /// 最初に作られた1件へ記録をすべて寄せ、残りを取り下げる。
+    /// 記録(セッション)自体は1件も消さない。全端末で同じ結果になる。
+    /// 完了できたときだけ true(圏外などで書き切れなければ次回やり直す)。
+    private func collapseDuplicateItems(
+        in snapshot: AccountSnapshot, uid: String, context: ModelContext
+    ) async -> Bool {
+        // 同じ姿(同名・同じ配色・同じ印)の項目だけを同一視する。名前だけ同じで
+        // 見た目の違う項目は、利用者が意図して分けたものとして触らない。
+        let duplicates = AccountMergePlan.duplicates(
+            in: snapshot.items.map {
+                AccountMergePlan.Row(
+                    key: "\(AccountMergePlan.nameKey($0.value.name))|\($0.value.styleToken)|\($0.value.symbolToken)",
+                    id: $0.key,
+                    createdAt: $0.value.createdAt
+                )
+            }
+        )
+        guard !duplicates.isEmpty else { return true }
+
+        // 1. アカウント側の記録と目的地を、残す側の項目へ繋ぎ替える。
+        var writes: [(document: DocumentReference, payload: [String: Any]?)] = []
+        for (id, dto) in snapshot.sessions {
+            guard let itemUUID = dto.itemUUID, let keeper = duplicates[itemUUID] else { continue }
+            writes.append((sessionsCollection(uid).document(id), ["itemUUID": keeper, "updatedAt": Date()]))
+        }
+        for (id, dto) in snapshot.destinations {
+            guard let itemUUID = dto.itemUUID, let keeper = duplicates[itemUUID] else { continue }
+            writes.append((destinationsCollection(uid).document(id), ["itemUUID": keeper, "updatedAt": Date()]))
+        }
+        guard await commitInChunks(writes) else { return false }
+        guard self.uid == uid, !Task.isCancelled else { return false }
+
+        // 2. 手元も同じ形にする。先に記録を移すので、項目を消しても記録は巻き込まれない。
+        for (duplicateID, keeperID) in duplicates {
+            guard let duplicate = fetchItem(duplicateID, context) else { continue }
+            let keeper = fetchItem(keeperID, context)
+            for session in Array(duplicate.sessions) {
+                session.item = keeper
+                session.pendingItemUUID = keeper == nil ? keeperID : nil
+                session.updatedAt = Date()
+            }
+            repointItemReferences(from: duplicateID, to: keeperID, context: context)
+            context.delete(duplicate)
+        }
+        try? context.save()
+
+        // 3. 繋ぎ替えが済んだので、複製された作業項目だけを取り下げる。
+        let deletions = duplicates.keys.map {
+            (document: itemsCollection(uid).document($0), payload: [String: Any]?.none)
+        }
+        return await commitInChunks(deletions)
+    }
+
+    /// Firestore の1バッチ上限(500)に余裕を持たせて書き込む。payload が nil なら削除。
+    /// 1件でも失敗したら false を返し、呼び出し側はやり直せる。
+    private func commitInChunks(
+        _ writes: [(document: DocumentReference, payload: [String: Any]?)]
+    ) async -> Bool {
+        for start in stride(from: 0, to: writes.count, by: 400) {
+            let batch = db.batch()
+            for write in writes[start..<min(start + 400, writes.count)] {
+                if let payload = write.payload {
+                    batch.setData(payload, forDocument: write.document, merge: true)
+                } else {
+                    batch.deleteDocument(write.document)
+                }
+            }
+            do {
+                try await batch.commit()
+            } catch {
+                return false
+            }
+        }
+        return true
     }
 
     private func startListening(context: ModelContext) {
@@ -513,6 +901,9 @@ final class SyncService {
         var changed = false
         for change in snap.documentChanges {
             let id = change.document.documentID
+            // 書類IDがUUIDでなければ、手元の行と一対一に結べない。取り込むと
+            // 起動のたびに同じ項目が増え続けるので、触らずに見送る。
+            guard UUID(uuidString: id) != nil else { continue }
             switch change.type {
             case .added, .modified:
                 guard let dto = try? change.document.data(as: ItemDTO.self) else { continue }
@@ -538,23 +929,55 @@ final class SyncService {
                 if let existing = fetchItem(id, context) { context.delete(existing); changed = true }
             }
         }
+        if relinkPendingSessions(context) { changed = true }
         if changed { try? context.save() }
+    }
+
+    /// 項目より先に届いてしまい、宙に浮いた記録を繋ぎ直す。
+    /// 項目が手元へ揃った後に呼ぶ。
+    @discardableResult
+    private func relinkPendingSessions(_ context: ModelContext) -> Bool {
+        let descriptor = FetchDescriptor<StudySession>(
+            predicate: #Predicate { $0.pendingItemUUID != nil }
+        )
+        guard let orphans = try? context.fetch(descriptor), !orphans.isEmpty else { return false }
+        var changed = false
+        for session in orphans {
+            guard let pending = session.pendingItemUUID else { continue }
+            guard let item = fetchItem(pending, context) else { continue }
+            session.item = item
+            session.pendingItemUUID = nil
+            changed = true
+        }
+        return changed
     }
 
     private func applySessions(_ snap: QuerySnapshot, context: ModelContext) {
         var changed = false
         for change in snap.documentChanges {
             let id = change.document.documentID
+            guard UUID(uuidString: id) != nil else { continue }
             switch change.type {
             case .added, .modified:
                 guard let dto = try? change.document.data(as: SessionDTO.self) else { continue }
                 let remoteAt = dto.updatedAt ?? .distantPast
                 let item = dto.itemUUID.flatMap { fetchItem($0, context) }
+                // 作業項目がまだ届いていなければ、繋ぎ先を覚えておく。
+                let pending = item == nil ? dto.itemUUID : nil
                 if let existing = fetchSession(id, context) {
                     if remoteAt > existing.updatedAt {
                         existing.date = dto.date; existing.minutes = dto.minutes
                         existing.extraSeconds = min(59, max(0, dto.extraSeconds ?? 0))
-                        existing.note = dto.note; existing.item = item; existing.updatedAt = remoteAt
+                        existing.note = dto.note; existing.item = item
+                        existing.pendingItemUUID = pending
+                        existing.updatedAt = remoteAt
+                        changed = true
+                    } else if existing.item == nil, dto.itemUUID != nil {
+                        // 更新時刻が進んでいなくても、項目との紐付けが切れたままの
+                        // 記録は繋ぎ直す。これを飛ばすと、購読の到着順で一度でも
+                        // 外れた記録が永久に「0分」の項目として残る。
+                        existing.item = item
+                        existing.pendingItemUUID = pending
                         changed = true
                     }
                 } else {
@@ -566,6 +989,7 @@ final class SyncService {
                         item: item
                     )
                     if let u = UUID(uuidString: id) { session.uuid = u }
+                    session.pendingItemUUID = pending
                     session.updatedAt = remoteAt
                     context.insert(session); changed = true
                 }
@@ -609,6 +1033,7 @@ final class SyncService {
         var changed = false
         for change in snap.documentChanges {
             let id = change.document.documentID
+            guard UUID(uuidString: id) != nil else { continue }
             switch change.type {
             case .added, .modified:
                 guard let dto = try? change.document.data(as: DestinationDTO.self) else { continue }

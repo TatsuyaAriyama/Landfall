@@ -648,7 +648,7 @@ struct AssetPlacementSceneView: UIViewRepresentable {
             }
 
             let textGeometry = SCNText(
-                string: String(localized: "HOME SHIP"),
+                string: LF.text("HOME SHIP"),
                 extrusionDepth: 0.012
             )
             textGeometry.font = .systemFont(ofSize: 8, weight: .heavy)

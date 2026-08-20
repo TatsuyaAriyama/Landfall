@@ -81,6 +81,30 @@ KeelMiraは、集中した時間を3Dの航海として残す作業・学習タ�
 
 ## What's New
 
+### v1.7
+- EN:
+```
+You can now join another player's voyage.
+
+• Fixed duplicate records when accounts are merged at sign-in
+• New assets added (other colors of existing props, different materials)
+• Experience system on completing a session
+• Island brightness setting, and a mute option for the music
+• Widget rebuilt (today's minutes, landfall/break, localization)
+• Smaller download size (music re-encoded to 128kbps AAC)
+```
+- JA:
+```
+他のプレイヤーの航海に参加できるようになりました。
+
+・サインイン時のアカウント統合で記録が重複しない修正
+・新規アセットの追加(既存の他カラー、別の材質)
+・作業完了時の経験値システム
+・島の明るさ設定、音楽のミュート機能
+・ウィジェット刷新(今日の分数・着岸/休憩・ローカライズ)
+・容量削減(音楽128kbps AAC)
+```
+
 ### v1.6
 - EN:
 ```

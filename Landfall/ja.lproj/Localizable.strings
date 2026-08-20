@@ -30,6 +30,7 @@
 "Tap the ship to choose a work item" = "船をタップして作業項目を選択";
 "Tap the notice board to check it" = "掲示板をタップして航海掲示板を確認";
 "Create your first work item, then load it onto the ship." = "最初の作業項目を作り、船へ積み込みましょう。";
+"Bringing your work items back from your account." = "アカウントの作業項目を取り込んでいます。";
 "Manage names, colors, symbols, and order here." = "名前・配色・シンボル・順番をここで編集できます。";
 "No work items yet." = "作業項目はまだありません。";
 "Add work item" = "作業項目を追加";
@@ -441,6 +442,8 @@
 "Chat" = "チャット";
 "Close chat" = "チャットを閉じる";
 "Open chat" = "チャットを開く";
+"Minimize chat" = "チャットを畳む";
+"Leaves a small chat button in the corner" = "隅に小さなチャットのボタンだけが残ります。";
 "Messages still arrive while the chat is closed." = "チャットを閉じている間も、メッセージは届きます。";
 "A word to the harbor (optional)" = "港にひとこと（任意）";
 "Heart" = "ハート";
@@ -1374,6 +1377,23 @@
 "Now playing %@" = "%@を再生中";
 "Change language, app icon, and account" = "言語・アプリアイコン・アカウントを設定します";
 
+/* 序章「忘却の海」 */
+"Somewhere along the way, the sea began taking people's memories,\nand their names, their wishes, even the routes they once sailed sank into the fog." = "いつからか、海は人々の記憶をさらい、\n名も、願いも、かつての航路さえも深い霧の底へ沈めていった。";
+"And so they gave this sea a name.\nThey called it the Forgotten Sea." = "人々はこの海を――\n「忘却の海」と呼んだ。";
+"The stars went out, the lighthouse fires died,\nand no one looked for a new route anymore." = "やがて星は消え、灯台の火は絶え、\n誰も新しい航路を探さなくなった。";
+"Even so, not everything was lost." = "それでも、すべてが失われたわけではない。";
+"You woke aboard an old ship, and in your hands was\na logbook with nothing written in it yet," = "古い船の上で目を覚ました君の手には、\nまだ何も記されていない航海誌と、";
+"and a small flame that had not quite gone out." = "消えかけた小さな炎が残されていた。";
+"Skip the prologue" = "序章をスキップ";
+"Closes the prologue and continues to the next screen" = "序章を閉じて次の画面へ進みます";
+"Begin the voyage" = "航海を始める";
+"Closes the prologue and begins your voyage" = "序章を閉じて、あなたの航海へ進みます";
+"Onward" = "続ける";
+"Tap to continue" = "タップして進む";
+"Finish the last scene" = "最後の場面を終える";
+"Go to the next scene" = "次の場面へ";
+"Scene %lld of %lld" = "場面 %1$lld / %2$lld";
+
 /* 同行の航海(私設島でホストの航海に付いていく) */
 "Waiting for the host to set sail" = "島の主の出航を待っています。";
 "Stay on the island" = "島に残る";
@@ -1389,3 +1409,12 @@
 "Create a work item on your own island first." = "まず自分の島で作業項目を作りましょう。";
 "Sailing together" = "同乗している仲間";
 ", " = "、";
+
+/* 島の明るさ(設定) */
+"Island brightness" = "島の明るさ";
+"The brightness of your island while you walk it." = "島を歩いているときの明るさです。";
+"Dimmest" = "いちばん暗い";
+"Dim" = "暗め";
+"Standard" = "標準";
+"Bright" = "明るめ";
+"Brightest" = "いちばん明るい";

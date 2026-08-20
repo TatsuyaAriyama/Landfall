@@ -340,7 +340,10 @@ final class HomeIslandGroundingController {
 /// collision predicates; this type owns velocity, inertia, gait, and grounding.
 final class HomeIslandLocomotionMotor {
     typealias GroundSampler = (_ x: Float, _ z: Float) -> HomeIslandGroundSample
-    typealias OccupancyTest = (_ x: Float, _ z: Float) -> Bool
+    /// Whether a body may stand at a spot with its feet at that height.
+    /// Height matters because some scenery is only solid up to its own top:
+    /// a rock is a wall to walk into and a floor to land on.
+    typealias OccupancyTest = (_ x: Float, _ z: Float, _ footHeight: Float) -> Bool
 
     let tuning: HomeIslandLocomotionTuning
     private let grounding: HomeIslandGroundingController
@@ -731,8 +734,17 @@ final class HomeIslandLocomotionMotor {
         var point = start
         var referenceGround = currentGroundHeight
 
+        // Somewhere solid may appear around a body that is already standing
+        // there — a prop dropped onto it, or the moment of stepping off a
+        // ledge, when the feet fall back inside the rock's own column. While
+        // that lasts, occupancy stops deciding anything: the way out of a
+        // solid is the only movement left, so it has to be allowed.
+        let startsInsideSolid = !canOccupy(start.x, start.y, currentFootHeight)
+
         func valid(_ candidate: SIMD2<Float>, fromHeight: Float) -> Bool {
-            guard canOccupy(candidate.x, candidate.y) else { return false }
+            guard startsInsideSolid
+                || canOccupy(candidate.x, candidate.y, currentFootHeight)
+            else { return false }
             let sample = sampleGround(candidate.x, candidate.y)
             guard sample.normal.y >= cos(tuning.maximumSlopeDegrees * .pi / 180) else {
                 return false

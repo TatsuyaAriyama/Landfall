@@ -23,6 +23,15 @@ enum KeelMiraWidgetStore {
         static let todayMinutes = "widget.todayMinutes"
         static let lastItemID = "widget.lastItemID"
         static let voyageImageName = "widget-voyage-still.jpg"
+        /// 本体の AppLanguage.storageKey の控え。Widget Extension は本体の
+        /// UserDefaults を読めないので、本体側が更新のたびにここへ写す。
+        static let language = "widget.appLanguage"
+    }
+
+    /// 本体で選ばれている表示言語("system" / "en" / "ja")。
+    static var languageOverride: String {
+        get { defaults.string(forKey: Key.language) ?? "system" }
+        set { defaults.set(newValue, forKey: Key.language) }
     }
 
     static var workItems: [KeelMiraWidgetItem] {
@@ -125,6 +134,71 @@ enum KeelMiraWidgetStore {
         guard let data = try? JSONEncoder().encode(value) else { return }
         defaults.set(data, forKey: key)
         defaults.synchronize()
+    }
+}
+
+/// Widget Extension は本体のローカライズ資源(ja.lproj)を持たない。表示文字列は
+/// ここに英日で並べ、本体の言語設定の控えに合わせて選ぶ。
+/// system のときだけ端末の言語に従う。
+enum KeelMiraWidgetCopy {
+    static var isJapanese: Bool {
+        switch KeelMiraWidgetStore.languageOverride {
+        case "ja": return true
+        case "en": return false
+        default: return Locale.preferredLanguages.first?.hasPrefix("ja") ?? false
+        }
+    }
+
+    private static func pick(_ en: String, _ ja: String) -> String { isJapanese ? ja : en }
+
+    static var sailing: String { pick("Sailing", "航海中") }
+    static var resting: String { pick("Resting", "休憩中") }
+    static var working: String { pick("Working", "作業中") }
+    static var quietTime: String { pick("Only the time moves, quietly.", "時間だけが、静かに進む。") }
+
+    static var resumeVoyage: String { pick("Resume the voyage", "航海を再開") }
+    static var takeABreak: String { pick("Take a break", "休憩") }
+    static var resume: String { pick("Resume", "再開") }
+    static var breakLabel: String { pick("Break", "休憩") }
+    static var landfall: String { pick("Landfall", "着岸") }
+
+    static var todaysVoyage: String { pick("Today's voyage", "今日の航海") }
+    static var minuteUnit: String { pick("min", "分") }
+    static var setSailFromWidget: String { pick("Set sail", "ウィジェットから出航") }
+    static var readyToSail: String { pick("Ready to sail whenever you are", "いつでも出航できます") }
+    static var addItemShort: String { pick("Add a work item in the app", "アプリで作業項目を追加") }
+    static var addItemLong: String { pick("Add a work item in the app first", "アプリで作業項目を追加してください") }
+
+    static func setSail(with name: String) -> String {
+        pick("Set sail with \(name)", "\(name)で出航")
+    }
+
+    /// 「今日 42」/ "Today 42" — 単位は隣に別で置く。
+    static func todayCount(_ minutes: Int) -> String {
+        pick("Today \(minutes)", "今日 \(minutes)")
+    }
+
+    /// 「42分」/ "42m" — 一行に収める狭い場所用。
+    static func minutes(_ minutes: Int) -> String {
+        pick("\(minutes)m", "\(minutes)分")
+    }
+
+    /// 「今日 42分」/ "Today 42m"。
+    static func todayMinutes(_ minutes: Int) -> String {
+        pick("Today \(minutes)m", "今日 \(minutes)分")
+    }
+
+    static var configurationName: String { pick("KeelMira Voyage Timer", "KeelMira 航海タイマー") }
+    static var configurationDescription: String {
+        pick(
+            "Set sail, take a break, and make landfall from a still voyage scene.",
+            "静止した航海の景色から、出航・休憩・着岸を操作できます。"
+        )
+    }
+
+    /// ウィジェットギャラリーの見本に出す作業項目名。
+    static var sampleItemNames: (String, String, String) {
+        isJapanese ? ("読書", "執筆", "勉強") : ("Reading", "Writing", "Study")
     }
 }
 

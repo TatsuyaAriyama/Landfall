@@ -10,51 +10,59 @@ enum PrologueState {
 /// 背景はビートごとに進行する3Dシーンだけで構成し、静止画は使わない。
 struct ForgottenSeaPrologueView: View {
     private struct Beat {
-        let text: String
+        /// 英語ソース文字列。表示のたびにアプリ内の言語設定で引き直す。
+        let key: String
         let duration: TimeInterval
+
+        var text: String { LF.text(key) }
     }
 
+    /// 本文は英語をソース文字列(キー)にし、日本語は ja.lproj で与える。
+    /// duration は日本語・英語のどちらでも読み切れる長さに合わせてある。
     private static let beats: [Beat] = [
         Beat(
-            text: """
-            いつからか、海は人々の記憶をさらい、
-            名も、願いも、かつての航路さえも深い霧の底へ沈めていった。
+            key: """
+            Somewhere along the way, the sea began taking people's memories,
+            and their names, their wishes, even the routes they once sailed sank into the fog.
             """,
             duration: 7.6
         ),
         Beat(
-            text: """
-            人々はこの海を――
-            「忘却の海」と呼んだ。
+            key: """
+            And so they gave this sea a name.
+            They called it the Forgotten Sea.
             """,
             duration: 7.4
         ),
         Beat(
-            text: """
-            やがて星は消え、灯台の火は絶え、
-            誰も新しい航路を探さなくなった。
+            key: """
+            The stars went out, the lighthouse fires died,
+            and no one looked for a new route anymore.
             """,
             duration: 8.1
         ),
         Beat(
-            text: "それでも、すべてが失われたわけではない。",
+            key: "Even so, not everything was lost.",
             duration: 7.0
         ),
         Beat(
-            text: """
-            古い船の上で目を覚ました君の手には、
-            まだ何も記されていない航海誌と、
+            key: """
+            You woke aboard an old ship, and in your hands was
+            a logbook with nothing written in it yet,
             """,
             duration: 7.8
         ),
         Beat(
-            text: "消えかけた小さな炎が残されていた。",
+            key: "and a small flame that had not quite gone out.",
             duration: 8.0
         )
     ]
 
     private let onComplete: () -> Void
-    private static let characterInterval: Duration = .milliseconds(54)
+    private static let characterSeconds = 0.054
+    /// 打ち終えてから次の場面までに残したい間。英語は文字数が多いので、
+    /// 既定の速さでは間に合わない場面だけ自動で詰める(日本語は 54ms のまま)。
+    private static let typingHeadroom = 0.34
 
     private static var launchBeat: Int {
         #if DEBUG
@@ -103,6 +111,11 @@ struct ForgottenSeaPrologueView: View {
 
     private var currentStoryText: String {
         Self.beats[beat].text
+    }
+
+    /// 「場面 2 / 6」/ "Scene 2 of 6"。
+    private var sceneProgressLabel: String {
+        LF.format("Scene %lld of %lld", beat + 1, Self.beats.count)
     }
 
     private var visibleStoryText: String {
@@ -233,15 +246,15 @@ struct ForgottenSeaPrologueView: View {
                 Haptics.tap(.light)
                 finish()
             } label: {
-                Text("スキップ")
+                Text("Skip")
                     .font(LFFont.label(15))
                     .foregroundStyle(Color.white.opacity(0.82))
                     .frame(minWidth: 64, minHeight: 44, alignment: .trailing)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(Text("序章をスキップ"))
-            .accessibilityHint(Text("序章を閉じて次の画面へ進みます"))
+            .accessibilityLabel(Text("Skip the prologue"))
+            .accessibilityHint(Text("Closes the prologue and continues to the next screen"))
         }
         .padding(.horizontal, 24)
         .padding(.top, 8)
@@ -312,7 +325,7 @@ struct ForgottenSeaPrologueView: View {
                     Haptics.success()
                     finish()
                 } label: {
-                    Text("航海を始める")
+                    Text("Begin the voyage")
                         .font(LFFont.copy(18))
                         .foregroundStyle(Color(hex: 0x173F3B))
                         .frame(maxWidth: .infinity)
@@ -322,13 +335,13 @@ struct ForgottenSeaPrologueView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
                 }
                 .buttonStyle(LFPressableButtonStyle())
-                .accessibilityHint(Text("序章を閉じて、あなたの航海へ進みます"))
+                .accessibilityHint(Text("Closes the prologue and begins your voyage"))
                 .accessibilityFocused($finalActionHasAccessibilityFocus)
                 .transition(.opacity.combined(with: .offset(y: 10)))
             } else {
                 Button(action: advance) {
                     HStack(spacing: 12) {
-                        Text(beat == Self.beats.count - 1 ? "続ける" : "タップして進む")
+                        Text(beat == Self.beats.count - 1 ? "Onward" : "Tap to continue")
                             .font(LFFont.label(14))
                             .tracking(0.7)
 
@@ -341,8 +354,8 @@ struct ForgottenSeaPrologueView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text(beat == Self.beats.count - 1 ? "最後の場面を終える" : "次の場面へ"))
-                .accessibilityHint(Text(verbatim: "場面 \(beat + 1) / \(Self.beats.count)"))
+                .accessibilityLabel(Text(beat == Self.beats.count - 1 ? "Finish the last scene" : "Go to the next scene"))
+                .accessibilityHint(Text(verbatim: sceneProgressLabel))
                 .transition(.opacity)
             }
         }
@@ -373,7 +386,7 @@ struct ForgottenSeaPrologueView: View {
             value: beat
         )
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "場面 \(beat + 1) / \(Self.beats.count)"))
+        .accessibilityLabel(Text(verbatim: sceneProgressLabel))
     }
 
     private func advance() {
@@ -467,10 +480,14 @@ struct ForgottenSeaPrologueView: View {
         let typingBeat = beat
         let totalCharacters = currentStoryText.count
         guard totalCharacters > 0 else { return }
+        let interval = Self.typingInterval(
+            characters: totalCharacters,
+            duration: Self.beats[beat].duration
+        )
         typingTask = Task { @MainActor in
             for characterIndex in 1...totalCharacters {
                 do {
-                    try await Task.sleep(for: Self.characterInterval)
+                    try await Task.sleep(for: interval)
                 } catch {
                     return
                 }
@@ -480,6 +497,13 @@ struct ForgottenSeaPrologueView: View {
             }
             typingTask = nil
         }
+    }
+
+    /// 1文字あたりの間隔。場面が切り替わる前に打ち終わるところまでしか遅くしない。
+    private static func typingInterval(characters: Int, duration: TimeInterval) -> Duration {
+        let budget = duration * (1 - typingHeadroom)
+        let perCharacter = budget / Double(characters)
+        return .milliseconds(Int((min(characterSeconds, perCharacter) * 1000).rounded()))
     }
 
     private func revealCurrentBeat() {

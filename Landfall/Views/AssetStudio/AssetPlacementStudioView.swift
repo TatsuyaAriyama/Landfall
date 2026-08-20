@@ -116,7 +116,7 @@ struct AssetPlacementStudioView: View {
             Button("Clear terrain", role: .destructive) {
                 store.clearVisibleTerrain()
                 Haptics.tap(.medium)
-                showToast(String(localized: "Terrain cleared"))
+                showToast(LF.text("Terrain cleared"))
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -127,7 +127,7 @@ struct AssetPlacementStudioView: View {
             Button("Create") {
                 store.createStudio(named: studioNameDraft)
                 store.manipulationMode = .move
-                showToast(String(localized: "New studio created"))
+                showToast(LF.text("New studio created"))
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -137,7 +137,7 @@ struct AssetPlacementStudioView: View {
             TextField("Studio name", text: $studioNameDraft)
             Button("Save") {
                 let renamed = store.renameCurrentStudio(to: studioNameDraft)
-                showToast(String(localized: renamed ? "Studio name saved" : "Could not save"))
+                showToast(LF.text(renamed ? "Studio name saved" : "Could not save"))
             }
             .disabled(studioNameDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             Button("Cancel", role: .cancel) {}
@@ -247,7 +247,7 @@ struct AssetPlacementStudioView: View {
 
                 Button {
                     studioNameDraft = String(
-                        format: String(localized: "Studio %lld"),
+                        format: LF.text("Studio %lld"),
                         Int64(store.studios.count + 1)
                     )
                     showingNewStudioPrompt = true
@@ -265,8 +265,8 @@ struct AssetPlacementStudioView: View {
                         HStack(spacing: 4) {
                             Text(
                                 store.context == .destinationIsland
-                                    ? String(localized: "Island")
-                                    : store.currentStudio?.name ?? String(localized: "Studio")
+                                    ? LF.text("Island")
+                                    : store.currentStudio?.name ?? LF.text("Studio")
                             )
                             .lineLimit(1)
                             Image(systemName: saveStatusSymbol)
@@ -341,7 +341,7 @@ struct AssetPlacementStudioView: View {
                 if store.context == .studio {
                     Button {
                         store.saveCurrentStudio()
-                        showToast(String(localized: store.lastSaveSucceeded ? "Studio saved and applied to game" : "Could not save"))
+                        showToast(LF.text(store.lastSaveSucceeded ? "Studio saved and applied to game" : "Could not save"))
                     } label: {
                         Label("Save & Apply to Game", systemImage: "checkmark.icloud.fill")
                     }
@@ -365,13 +365,13 @@ struct AssetPlacementStudioView: View {
 
                 Button {
                     store.save()
-                    showToast(String(localized: store.lastSaveSucceeded ? "Saved" : "Could not save"))
+                    showToast(LF.text(store.lastSaveSucceeded ? "Saved" : "Could not save"))
                 } label: {
                     Label("Save", systemImage: "checkmark.circle")
                 }
                 Button {
                     UIPasteboard.general.string = store.exportJSONString()
-                    showToast(String(localized: "Placement JSON copied"))
+                    showToast(LF.text("Placement JSON copied"))
                 } label: {
                     Label("Copy placement JSON", systemImage: "doc.on.doc")
                 }
@@ -400,11 +400,11 @@ struct AssetPlacementStudioView: View {
     }
 
     private var saveStatusText: String {
-        if !store.lastSaveSucceeded { return String(localized: "Save failed — retrying") }
-        if store.hasUnsavedChanges { return String(localized: "Saving…") }
-        guard let lastSavedAt = store.lastSavedAt else { return String(localized: "Saved") }
+        if !store.lastSaveSucceeded { return LF.text("Save failed — retrying") }
+        if store.hasUnsavedChanges { return LF.text("Saving…") }
+        guard let lastSavedAt = store.lastSavedAt else { return LF.text("Saved") }
         return String(
-            format: String(localized: "Saved at %@"),
+            format: LF.text("Saved at %@"),
             lastSavedAt.formatted(date: .omitted, time: .shortened)
         )
     }
@@ -538,7 +538,7 @@ struct AssetPlacementStudioView: View {
         Button {
             store.requestCamera(.homeShipMarker)
             Haptics.tap(.medium)
-            showToast(String(localized: "Showing the home ship marker"))
+            showToast(LF.text("Showing the home ship marker"))
         } label: {
             HStack(spacing: 6) {
                 Circle()
@@ -669,11 +669,11 @@ struct AssetPlacementStudioView: View {
                         withAnimation(.easeOut(duration: 0.16)) { activePanel = nil }
                         Haptics.tap(.light)
                         if mode == .select {
-                            showToast(String(localized: "Drag across models, paint, or terrain to box-select"))
+                            showToast(LF.text("Drag across models, paint, or terrain to box-select"))
                         } else if mode == .paint {
-                            showToast(String(localized: "Drag on the surface to paint"))
+                            showToast(LF.text("Drag on the surface to paint"))
                         } else if mode == .terrain {
-                            showToast(String(localized: "Choose a shape, then tap or drag on the terrain"))
+                            showToast(LF.text("Choose a shape, then tap or drag on the terrain"))
                         }
                     }
                 }
@@ -910,7 +910,7 @@ struct AssetPlacementStudioView: View {
                 .foregroundStyle(Color(uiColor: VoyageSceneKit.ember))
             Text(
                 store.placementBrushAssetID.map(Asset3DCatalog.displayName(for:))
-                    ?? String(localized: "Asset")
+                    ?? LF.text("Asset")
             )
             .font(.system(size: 10, weight: .bold, design: .rounded))
             .foregroundStyle(.white.opacity(0.88))
@@ -1120,9 +1120,9 @@ struct AssetPlacementStudioView: View {
             Haptics.tap(.medium)
             showToast(
                 isSavedStudio
-                    ? String(format: String(localized: "%@ is now the game world"), asset.displayName)
+                    ? String(format: LF.text("%@ is now the game world"), asset.displayName)
                     : String(
-                        format: String(localized: "Tap the world to place %@"),
+                        format: LF.text("Tap the world to place %@"),
                         asset.displayName
                     )
             )
@@ -1292,7 +1292,7 @@ struct AssetPlacementStudioView: View {
             Button {
                 store.recolorVisibleTerrain(to: store.terrainMaterial)
                 Haptics.tap(.medium)
-                showToast(String(localized: "Applied material to all terrain"))
+                showToast(LF.text("Applied material to all terrain"))
             } label: {
                 Label("Apply to all terrain", systemImage: "paintbrush.fill")
                     .font(.system(size: 9, weight: .bold, design: .rounded))
@@ -1860,7 +1860,7 @@ struct AssetPlacementStudioView: View {
         store.followsPlacementSurface = true
         store.requestSurfaceSnap()
         Haptics.tap(.light)
-        showToast(String(localized: "Placed on surface"))
+        showToast(LF.text("Placed on surface"))
     }
 
     private func useCurrentStudioInGame() {
@@ -1873,7 +1873,7 @@ struct AssetPlacementStudioView: View {
         Haptics.tap(.medium)
         showToast(
             String(
-                format: String(localized: "%@ is now the game world"),
+                format: LF.text("%@ is now the game world"),
                 studioName
             )
         )
@@ -1883,7 +1883,7 @@ struct AssetPlacementStudioView: View {
         guard store.selectionCount == 1, store.selectedPlacement != nil else { return }
         store.duplicateSelected()
         Haptics.tap(.medium)
-        showToast(String(localized: "Duplicated"))
+        showToast(LF.text("Duplicated"))
     }
 
     private func deleteSelection() {
@@ -1892,7 +1892,7 @@ struct AssetPlacementStudioView: View {
         store.deleteSelected()
         Haptics.tap(.medium)
         let message = String(
-            format: String(localized: "Deleted %lld items"),
+            format: LF.text("Deleted %lld items"),
             Int64(count)
         )
         showToast(message)
@@ -1979,15 +1979,15 @@ struct AssetPlacementStudioView: View {
     private var modeStatusTitle: String {
         let mode: String
         switch store.manipulationMode {
-        case .select: mode = String(localized: "Select")
-        case .paint: mode = String(localized: "Paint")
-        case .terrain: mode = String(localized: "Terrain")
-        case .place: mode = String(localized: "Place")
-        case .move: mode = String(localized: "Move")
-        case .height: mode = String(localized: "Height")
-        case .rotate: mode = String(localized: "Rotate")
-        case .scale: mode = String(localized: "Scale")
-        case .camera: mode = String(localized: "Camera")
+        case .select: mode = LF.text("Select")
+        case .paint: mode = LF.text("Paint")
+        case .terrain: mode = LF.text("Terrain")
+        case .place: mode = LF.text("Place")
+        case .move: mode = LF.text("Move")
+        case .height: mode = LF.text("Height")
+        case .rotate: mode = LF.text("Rotate")
+        case .scale: mode = LF.text("Scale")
+        case .camera: mode = LF.text("Camera")
         }
 
         switch store.manipulationMode {
@@ -2006,23 +2006,23 @@ struct AssetPlacementStudioView: View {
     private var modeHelpText: String {
         switch store.manipulationMode {
         case .select:
-            return String(localized: "Drag across models, paint, or terrain to box-select")
+            return LF.text("Drag across models, paint, or terrain to box-select")
         case .paint:
-            return String(localized: "Paint with one finger. Move the camera with two fingers.")
+            return LF.text("Paint with one finger. Move the camera with two fingers.")
         case .terrain:
-            return String(localized: "Tap to add the chosen landform. Drag Ridge to build a mountain range.")
+            return LF.text("Tap to add the chosen landform. Drag Ridge to build a mountain range.")
         case .place:
-            return String(localized: "Tap the world repeatedly to place the chosen asset.")
+            return LF.text("Tap the world repeatedly to place the chosen asset.")
         case .move:
-            return String(localized: "Drag the selected model across surfaces. It stays grounded automatically.")
+            return LF.text("Drag the selected model across surfaces. It stays grounded automatically.")
         case .height:
-            return String(localized: "Drag vertically to change height without moving sideways.")
+            return LF.text("Drag vertically to change height without moving sideways.")
         case .rotate:
-            return String(localized: "Drag sideways to rotate the selected model.")
+            return LF.text("Drag sideways to rotate the selected model.")
         case .scale:
-            return String(localized: "Drag or pinch to resize the selected model.")
+            return LF.text("Drag or pinch to resize the selected model.")
         case .camera:
-            return String(localized: "One finger orbits, two fingers pan, and pinch zooms.")
+            return LF.text("One finger orbits, two fingers pan, and pinch zooms.")
         }
     }
 
@@ -2042,21 +2042,21 @@ struct AssetPlacementStudioView: View {
 
     private func localizedPaintToolName(_ tool: AssetPaintTool) -> String {
         switch tool {
-        case .sand: return String(localized: "Sand")
-        case .grass: return String(localized: "Grass")
-        case .path: return String(localized: "Path")
-        case .rock: return String(localized: "Bedrock")
-        case .snow: return String(localized: "Snow")
-        case .eraser: return String(localized: "Eraser")
+        case .sand: return LF.text("Sand")
+        case .grass: return LF.text("Grass")
+        case .path: return LF.text("Path")
+        case .rock: return LF.text("Bedrock")
+        case .snow: return LF.text("Snow")
+        case .eraser: return LF.text("Eraser")
         }
     }
 
     private func localizedTerrainShapeName(_ shape: AssetTerrainShape) -> String {
         switch shape {
-        case .hill: return String(localized: "Hill")
-        case .mountain: return String(localized: "Mountain")
-        case .plateau: return String(localized: "Plateau")
-        case .ridge: return String(localized: "Ridge")
+        case .hill: return LF.text("Hill")
+        case .mountain: return LF.text("Mountain")
+        case .plateau: return LF.text("Plateau")
+        case .ridge: return LF.text("Ridge")
         }
     }
 
@@ -2085,26 +2085,26 @@ struct AssetPlacementStudioView: View {
         omittingEmpty: Bool
     ) -> String {
         let values: [(Int, String)] = [
-            (models, String(localized: "Models: %lld")),
-            (paint, String(localized: "Paint: %lld")),
-            (terrain, String(localized: "Terrain: %lld"))
+            (models, LF.text("Models: %lld")),
+            (paint, LF.text("Paint: %lld")),
+            (terrain, LF.text("Terrain: %lld"))
         ]
         let parts = values.compactMap { count, format -> String? in
             guard !omittingEmpty || count > 0 else { return nil }
             return String(format: format, Int64(count))
         }
-        return parts.isEmpty ? String(localized: "No selection") : parts.joined(separator: " · ")
+        return parts.isEmpty ? LF.text("No selection") : parts.joined(separator: " · ")
     }
 
     private var selectionSummary: String {
         guard store.selectionCount > 1 else {
             if let placement = store.selectedPlacement { return placement.name }
-            if !store.selectedPaintStrokes.isEmpty { return String(localized: "Paint stroke") }
-            if !store.selectedTerrainStrokes.isEmpty { return String(localized: "Terrain stroke") }
-            return String(localized: "Selected")
+            if !store.selectedPaintStrokes.isEmpty { return LF.text("Paint stroke") }
+            if !store.selectedTerrainStrokes.isEmpty { return LF.text("Terrain stroke") }
+            return LF.text("Selected")
         }
         return String(
-            format: String(localized: "%lld items selected"),
+            format: LF.text("%lld items selected"),
             Int64(store.selectionCount)
         )
     }
@@ -2118,17 +2118,17 @@ struct AssetPlacementStudioView: View {
 
     private var deleteConfirmationTitle: String {
         guard store.selectionCount > 1 else {
-            return String(localized: "Delete selected item?")
+            return LF.text("Delete selected item?")
         }
         return String(
-            format: String(localized: "Delete %lld selected items?"),
+            format: LF.text("Delete %lld selected items?"),
             Int64(store.selectionCount)
         )
     }
 
     private var deleteConfirmationDetail: String {
         String(
-            format: String(localized: "This will delete %@. You can undo this afterward."),
+            format: LF.text("This will delete %@. You can undo this afterward."),
             selectionBreakdown
         )
     }

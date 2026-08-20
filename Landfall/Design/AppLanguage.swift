@@ -1,4 +1,5 @@
 import Foundation
+import WidgetKit
 
 /// アプリ内の表示言語。端末設定に関わらず切り替えられる。
 /// system = 端末の言語に従う / en / ja。
@@ -40,5 +41,16 @@ enum AppLanguage: String, CaseIterable, Identifiable {
         guard let raw = UserDefaults.standard.string(forKey: storageKey),
               let value = AppLanguage(rawValue: raw) else { return .system }
         return value
+    }
+}
+
+extension AppLanguage {
+    /// Widget Extension は本体の UserDefaults を読めない。選んだ言語を App Group へ写し、
+    /// ホーム画面に出ているウィジェットも同じ言語で描き直させる。
+    static func syncToWidgets() {
+        let value = current.rawValue
+        guard KeelMiraWidgetStore.languageOverride != value else { return }
+        KeelMiraWidgetStore.languageOverride = value
+        WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
     }
 }

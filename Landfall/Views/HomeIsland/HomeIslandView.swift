@@ -208,6 +208,8 @@ struct HomeIslandView: View {
     @State private var showingSettings = false
     @State private var showingHarborPanel = false
     @State private var privateChatExpanded = false
+    /// 泡ひとつまで畳んだチャット。足元のHUDはその分だけ下に戻る。
+    @State private var privateChatMinimized = false
     @State private var privateChatInputFocused = false
     /// 目的地の残り時間だけを刻む時計。島の距離と期日表示をそっと進める。
     @State private var destinationClock = Date()
@@ -221,6 +223,13 @@ struct HomeIslandView: View {
     @AppStorage(HomeBackgroundMusic.enabledKey) private var homeMusicEnabled = false
     @AppStorage(HomeBackgroundMusic.selectedTrackKey)
     private var homeMusicTrack = HomeVoyageSound.harborMinuet.rawValue
+    /// 設定で選んだ島の明るさ。歩いているときの明るさそのものを5段でずらす。
+    @AppStorage(HomeIslandBrightness.storageKey)
+    private var islandBrightnessToken = HomeIslandBrightness.fallback.rawValue
+
+    private var islandBrightness: HomeIslandBrightness {
+        HomeIslandBrightness.resolve(islandBrightnessToken)
+    }
 
     /// 期日の目的地は残り一週間から少しずつ近づく。分ごとで十分に足りる。
     private let destinationMinuteClock = Timer.publish(
@@ -390,7 +399,7 @@ struct HomeIslandView: View {
                     placementMoveBlocked = false
                     showTransientNotice(
                         removedTitle.map { LF.format("Removed %@ · Undo is available", $0) }
-                            ?? String(localized: "Removed · Undo is available")
+                            ?? LF.text("Removed · Undo is available")
                     )
                     Haptics.tap(.medium)
                 }
@@ -419,6 +428,8 @@ struct HomeIslandView: View {
             // an SCNScene background made My Island noticeably darker even
             // though both cameras used the same exposure.
             Color(uiColor: UIColor(rgb: 0x8BCFDB))
+                // 空だけは色調整の外にいるので、島の明るさと同じ向きへ寄せる。
+                .brightness(islandBrightness.skyBrightness)
                 .ignoresSafeArea()
 
             HomeIslandSceneView(
@@ -431,6 +442,7 @@ struct HomeIslandView: View {
                 boatBoardingRequest: externalBoatBoardingRequest ?? boatBoardingRequest,
                 mode: mode,
                 cameraExposureOffset: cameraExposureOffset,
+                islandExposureOffset: islandBrightness.exposureOffset,
                 cameraInteractionLocked: sceneInputLocked,
                 // 文字を打っている間は島を毎秒二十枚に落とす。波は動いたまま
                 // だが、鍵盤の反応に回す余力がその分だけ戻る。
@@ -451,7 +463,7 @@ struct HomeIslandView: View {
                 onPlacementRejected: reportPlacementRejection,
                 onAssetActivated: activateAsset,
                 onAssetInteractionDenied: { assetID in
-                    let notice = String(localized: "Move closer to interact")
+                    let notice = LF.text("Move closer to interact")
                     showTransientNotice(notice)
                     UIAccessibility.post(notification: .announcement, argument: notice)
                     if assetID == "home_boat", startsMooredAtIsland {
@@ -583,6 +595,16 @@ struct HomeIslandView: View {
                     onBlock: multiplayerSession.onBlockChatMessage,
                     onExpandedChanged: { expanded in
                         privateChatExpanded = expanded
+                        // 開いたチャットは色替えの段を覆う。どちらか一方だけが
+                        // 足元に残るよう、開いた側が古い段を引き取って閉じる。
+                        if expanded, showingNavigatorColors {
+                            withAnimation(.easeOut(duration: 0.22)) {
+                                showingNavigatorColors = false
+                            }
+                        }
+                    },
+                    onMinimizedChanged: { minimized in
+                        privateChatMinimized = minimized
                     },
                     onInputFocusChanged: { focused in
                         privateChatInputFocused = focused
@@ -635,8 +657,7 @@ struct HomeIslandView: View {
                     } else if mode == .explore, isNavigatorOnArrivalJetty {
                         noticePill(
                             symbol: "sailboat.fill",
-                            text: String(
-                                localized: boatTapOpensSelection
+                            text: LF.text(boatTapOpensSelection
                                     ? "Tap the ship to choose a work item"
                                     : "Walk to the boat and tap it to return home"
                             )
@@ -652,7 +673,7 @@ struct HomeIslandView: View {
                         // only appears where tapping it actually works.
                         noticePill(
                             symbol: "signpost.right.and.left.fill",
-                            text: String(localized: "Tap the notice board to check it")
+                            text: LF.text("Tap the notice board to check it")
                         )
                         .padding(.top, compactTopHUD ? 8 : 10)
                     }
@@ -1444,6 +1465,8 @@ struct HomeIslandView: View {
     /// the left and the chat dock on the right.
     private var homeIslandClockBottomPadding: CGFloat {
         guard multiplayerSession != nil else { return 16 }
+        // 畳んだチャットは右下の泡ひとつ。時計は左下へ戻してよい。
+        if privateChatMinimized { return 16 }
         guard privateChatExpanded, horizontalSizeClass == .compact else { return 76 }
         if dynamicTypeSize.isAccessibilitySize { return 406 }
         if verticalSizeClass == .compact { return 266 }
@@ -1947,9 +1970,15 @@ struct HomeIslandView: View {
         )
         .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
         .padding(.horizontal, 12)
-        .safeAreaPadding(.bottom, 8)
+        .safeAreaPadding(.bottom, navigatorColorDockBottomPadding)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Navigator color"))
+    }
+
+    /// 誰かの島にいる間は足元にチャットの段(畳んでいれば泡)が居座る。色替えは
+    /// その一段上に座らせて、どちらも押せるようにする。
+    private var navigatorColorDockBottomPadding: CGFloat {
+        multiplayerSession == nil ? 8 : 66
     }
 
     /// 既定のコーラル以外は航海証で開く。鍵つきの色も並べ、押すと航海証へ渡す。
@@ -2187,8 +2216,8 @@ struct HomeIslandView: View {
     private var saveFailureHint: some View {
         hintPill(
             symbol: "exclamationmark.triangle.fill",
-            text: String(localized: "Island changes could not be saved"),
-            actionTitle: String(localized: "Retry")
+            text: LF.text("Island changes could not be saved"),
+            actionTitle: LF.text("Retry")
         ) {
             store.save()
             Haptics.tap(.medium)
@@ -2291,13 +2320,13 @@ struct HomeIslandView: View {
         let notice: String
         switch reason {
         case .reserved:
-            notice = String(localized: "This spot is kept clear")
+            notice = LF.text("This spot is kept clear")
         case .limitReached:
-            notice = String(localized: "You have placed all of these")
+            notice = LF.text("You have placed all of these")
         case .outsideBuildArea:
-            notice = String(localized: "Keep the asset inside the sandy build area")
+            notice = LF.text("Keep the asset inside the sandy build area")
         case .coastRequired:
-            notice = String(localized: "Place the jetty along the island edge")
+            notice = LF.text("Place the jetty along the island edge")
         }
         showTransientNotice(notice)
     }
@@ -2339,7 +2368,7 @@ struct HomeIslandView: View {
     /// by design, so they have to be said out loud at least once.
     private func announceBuildControls() {
         showTransientNotice(
-            String(localized: "Drag an asset to move it · drag elsewhere to turn · pinch to zoom")
+            LF.text("Drag an asset to move it · drag elsewhere to turn · pinch to zoom")
         )
     }
 
@@ -2446,7 +2475,7 @@ struct HomeIslandView: View {
             let didSave = await HomeIslandPhotoLibrary.save(rendered)
             guard activePhotoSaveRequestID == requestID else { return }
             photoSaveState = didSave ? .saved : .failed
-            let announcement = String(localized: didSave ? "Photo saved" : "Photo could not be saved")
+            let announcement = LF.text(didSave ? "Photo saved" : "Photo could not be saved")
             UIAccessibility.post(notification: .announcement, argument: announcement)
         }
     }
@@ -2472,7 +2501,7 @@ struct HomeIslandView: View {
             hintPill(
                 symbol: "exclamationmark.circle.fill",
                 text: transientNotice,
-                actionTitle: String(localized: "OK")
+                actionTitle: LF.text("OK")
             ) {
                 self.transientNotice = nil
             }
@@ -2490,8 +2519,8 @@ struct HomeIslandView: View {
                     ? LF.format("Unlocks at Level %lld", Int64(asset.unlockLevel))
                     : placedCount >= placementLimit
                     ? LF.format("Placement limit reached · %lld/%lld", Int64(placedCount), Int64(placementLimit))
-                    : String(localized: "The island has reached its object limit"),
-                actionTitle: String(localized: "OK")
+                    : LF.text("The island has reached its object limit"),
+                actionTitle: LF.text("OK")
             ) {
                 self.lockedAssetID = nil
             }
@@ -2500,9 +2529,9 @@ struct HomeIslandView: View {
             hintPill(
                 symbol: placementAssetID == "wooden_jetty" ? "water.waves" : "hand.tap.fill",
                 text: placementAssetID == "wooden_jetty"
-                    ? String(localized: "Tap the island edge to extend the jetty toward the sea")
+                    ? LF.text("Tap the island edge to extend the jetty toward the sea")
                     : LF.format("Tap once on the sand to place %@", asset.title),
-                actionTitle: String(localized: "Cancel")
+                actionTitle: LF.text("Cancel")
             ) {
                 self.placementAssetID = nil
             }
@@ -2513,14 +2542,14 @@ struct HomeIslandView: View {
                 symbol: placementMoveBlocked
                     ? "exclamationmark.triangle.fill"
                     : "arrow.up.and.down.and.arrow.left.and.right",
-                text: String(localized: placementMoveBlocked
+                text: LF.text(placementMoveBlocked
                     ? "That way is closed — slide to open ground"
                     : "Release to place it here")
             )
         } else if store.selectedPlacement != nil {
             hintPill(
                 symbol: "hand.draw.fill",
-                text: String(localized: "Drag an asset to move it · release to place")
+                text: LF.text("Drag an asset to move it · release to place")
             )
         }
     }
@@ -2680,7 +2709,7 @@ struct HomeIslandView: View {
         showingSizeControls = false
         placementMoveBlocked = false
         lockedAssetID = nil
-        showTransientNotice(String(localized: "The island is clear · Undo is available"))
+        showTransientNotice(LF.text("The island is clear · Undo is available"))
         Haptics.tap(.heavy)
     }
 

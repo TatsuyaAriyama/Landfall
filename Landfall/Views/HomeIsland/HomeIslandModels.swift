@@ -503,7 +503,7 @@ enum HomeIslandAssetCatalog {
         // Nature: trees first, then what grows low, then flowers, stone, water.
         HomeIslandAsset(
             id: "conifer_tree",
-            title: String(localized: "Conifer"),
+            title: LF.text("Conifer"),
             symbolName: "tree.fill",
             defaultScale: 1.20,
             footprintMargin: 0.40,
@@ -511,7 +511,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "palm_tree",
-            title: String(localized: "Palm Tree"),
+            title: LF.text("Palm Tree"),
             symbolName: "tree.fill",
             defaultScale: 1.00,
             footprintMargin: 0.85,
@@ -519,7 +519,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "small_stump",
-            title: String(localized: "Small Stump"),
+            title: LF.text("Small Stump"),
             symbolName: "tree.fill",
             defaultScale: 0.66,
             footprintMargin: 0.60,
@@ -527,7 +527,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "dune_grass_patch",
-            title: String(localized: "Dune Grass Patch"),
+            title: LF.text("Dune Grass Patch"),
             symbolName: "leaf.fill",
             defaultScale: 0.82,
             footprintMargin: 0.78,
@@ -535,7 +535,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "hibiscus_bush_red",
-            title: String(localized: "Red Hibiscus"),
+            title: LF.text("Red Hibiscus"),
             symbolName: "camera.macro",
             defaultScale: 1.00,
             footprintMargin: 0.42,
@@ -543,7 +543,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "hibiscus_bush_pink",
-            title: String(localized: "Pink Hibiscus"),
+            title: LF.text("Pink Hibiscus"),
             symbolName: "camera.macro",
             defaultScale: 1.00,
             footprintMargin: 0.42,
@@ -551,7 +551,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "hibiscus_bush_orange",
-            title: String(localized: "Orange Hibiscus"),
+            title: LF.text("Orange Hibiscus"),
             symbolName: "camera.macro",
             defaultScale: 1.00,
             footprintMargin: 0.42,
@@ -559,7 +559,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "rose_bush_white",
-            title: String(localized: "White Roses"),
+            title: LF.text("White Roses"),
             symbolName: "camera.macro",
             defaultScale: 1.00,
             footprintMargin: 0.42,
@@ -568,7 +568,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "rose_bush_red",
-            title: String(localized: "Red Roses"),
+            title: LF.text("Red Roses"),
             symbolName: "camera.macro",
             defaultScale: 1.00,
             footprintMargin: 0.42,
@@ -577,7 +577,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "rose_bush_yellow",
-            title: String(localized: "Yellow Roses"),
+            title: LF.text("Yellow Roses"),
             symbolName: "camera.macro",
             defaultScale: 1.00,
             footprintMargin: 0.42,
@@ -586,7 +586,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "small_rock",
-            title: String(localized: "Small Rock"),
+            title: LF.text("Small Rock"),
             symbolName: "mountain.2.fill",
             defaultScale: 0.70,
             footprintMargin: 0.55,
@@ -594,7 +594,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "coastal_rocks",
-            title: String(localized: "Coastal Rocks"),
+            title: LF.text("Coastal Rocks"),
             symbolName: "mountain.2.fill",
             defaultScale: 0.72,
             footprintMargin: 1.90,
@@ -602,7 +602,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "small_lake",
-            title: String(localized: "Small Lake"),
+            title: LF.text("Small Lake"),
             symbolName: "water.waves",
             defaultScale: 0.82,
             footprintMargin: 0.88,
@@ -611,7 +611,7 @@ enum HomeIslandAssetCatalog {
         // Structures: somewhere to sleep, then to see by, then the landmarks.
         HomeIslandAsset(
             id: "navigator_tent",
-            title: String(localized: "Navigator's Tent"),
+            title: LF.text("Navigator's Tent"),
             symbolName: "tent.fill",
             defaultScale: 0.62,
             footprintMargin: 1.98,
@@ -619,7 +619,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "weathered_cottage",
-            title: String(localized: "Weathered Cottage"),
+            title: LF.text("Weathered Cottage"),
             symbolName: "house.fill",
             defaultScale: 0.78,
             footprintMargin: 0.92,
@@ -628,7 +628,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "small_lighthouse",
-            title: String(localized: "Small Lighthouse"),
+            title: LF.text("Small Lighthouse"),
             symbolName: "light.beacon.max.fill",
             defaultScale: 0.72,
             footprintMargin: 0.68,
@@ -636,7 +636,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "weathered_lighthouse",
-            title: String(localized: "Stone Lighthouse"),
+            title: LF.text("Stone Lighthouse"),
             symbolName: "light.beacon.max.fill",
             defaultScale: 0.68,
             footprintMargin: 0.82,
@@ -644,7 +644,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "stone_well",
-            title: String(localized: "Stone Well"),
+            title: LF.text("Stone Well"),
             symbolName: "drop.fill",
             defaultScale: 0.76,
             footprintMargin: 1.14,
@@ -652,7 +652,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "cliff_lookout",
-            title: String(localized: "Cliff Lookout"),
+            title: LF.text("Cliff Lookout"),
             symbolName: "binoculars.fill",
             defaultScale: 0.72,
             footprintMargin: 1.90,
@@ -660,7 +660,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "mossy_ruins",
-            title: String(localized: "Mossy Ruins"),
+            title: LF.text("Mossy Ruins"),
             symbolName: "building.columns.fill",
             defaultScale: 0.70,
             footprintMargin: 1.62,
@@ -670,7 +670,7 @@ enum HomeIslandAssetCatalog {
         // marks, and finally the things a beach day leaves behind.
         HomeIslandAsset(
             id: "campfire_circle",
-            title: String(localized: "Campfire"),
+            title: LF.text("Campfire"),
             symbolName: "flame.fill",
             defaultScale: 0.72,
             // The seating used to be part of this prop, and the margin had to
@@ -682,7 +682,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "harbor_lantern_post",
-            title: String(localized: "Harbor Lantern Post"),
+            title: LF.text("Harbor Lantern Post"),
             symbolName: "lightbulb.fill",
             defaultScale: 0.76,
             footprintMargin: 0.68,
@@ -690,7 +690,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "weathered_crate",
-            title: String(localized: "Weathered Crate"),
+            title: LF.text("Weathered Crate"),
             symbolName: "shippingbox.fill",
             defaultScale: 0.88,
             footprintMargin: 0.46,
@@ -698,7 +698,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "supply_barrels",
-            title: String(localized: "Supply Barrels"),
+            title: LF.text("Supply Barrels"),
             symbolName: "cylinder.split.1x2",
             defaultScale: 0.80,
             footprintMargin: 0.92,
@@ -706,7 +706,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "weathered_anchor",
-            title: String(localized: "Weathered Anchor"),
+            title: LF.text("Weathered Anchor"),
             symbolName: "anchor",
             defaultScale: 0.76,
             footprintMargin: 0.86,
@@ -714,7 +714,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "net_drying_rack",
-            title: String(localized: "Net Drying Rack"),
+            title: LF.text("Net Drying Rack"),
             symbolName: "grid",
             defaultScale: 0.74,
             footprintMargin: 1.18,
@@ -722,7 +722,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "voyage_flagpole",
-            title: String(localized: "Voyage Flagpole"),
+            title: LF.text("Voyage Flagpole"),
             symbolName: "flag.fill",
             defaultScale: 0.72,
             footprintMargin: 1.10,
@@ -730,7 +730,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "voyage_signal_bell",
-            title: String(localized: "Voyage Signal Bell"),
+            title: LF.text("Voyage Signal Bell"),
             symbolName: "bell.fill",
             defaultScale: 0.76,
             footprintMargin: 0.72,
@@ -738,7 +738,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "beach_parasol",
-            title: String(localized: "Beach Parasol"),
+            title: LF.text("Beach Parasol"),
             symbolName: "umbrella.fill",
             defaultScale: 1.00,
             footprintMargin: 0.56,
@@ -746,7 +746,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "swim_ring",
-            title: String(localized: "Swim Ring"),
+            title: LF.text("Swim Ring"),
             symbolName: "lifepreserver.fill",
             defaultScale: 1.00,
             footprintMargin: 0.24,
@@ -754,7 +754,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "sandcastle",
-            title: String(localized: "Sandcastle"),
+            title: LF.text("Sandcastle"),
             symbolName: "building.2.fill",
             defaultScale: 1.60,
             footprintMargin: 0.48,
@@ -762,7 +762,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "watermelon",
-            title: String(localized: "Watermelon"),
+            title: LF.text("Watermelon"),
             symbolName: "leaf.fill",
             defaultScale: 1.00,
             footprintMargin: 0.26,
@@ -770,7 +770,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "seaside_mailbox",
-            title: String(localized: "Seaside Mailbox"),
+            title: LF.text("Seaside Mailbox"),
             symbolName: "envelope.fill",
             defaultScale: 1.00,
             footprintMargin: 0.40,
@@ -778,7 +778,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "seaside_gramophone",
-            title: String(localized: "Seaside Gramophone"),
+            title: LF.text("Seaside Gramophone"),
             symbolName: "music.note",
             defaultScale: 1.00,
             footprintMargin: 0.38,
@@ -787,7 +787,7 @@ enum HomeIslandAssetCatalog {
         // Paths: the three pieces that join up, then the inlay they lead to.
         HomeIslandAsset(
             id: "stone_path_straight",
-            title: String(localized: "Stone Path — Straight"),
+            title: LF.text("Stone Path — Straight"),
             symbolName: "square.grid.3x3.fill",
             defaultScale: 0.78,
             footprintMargin: 1.50,
@@ -795,7 +795,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "stone_path_curve",
-            title: String(localized: "Stone Path — Curve"),
+            title: LF.text("Stone Path — Curve"),
             symbolName: "square.grid.3x3.fill",
             defaultScale: 0.78,
             footprintMargin: 1.62,
@@ -803,7 +803,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "stone_path_fork",
-            title: String(localized: "Stone Path — Fork"),
+            title: LF.text("Stone Path — Fork"),
             symbolName: "square.grid.3x3.fill",
             defaultScale: 0.78,
             footprintMargin: 1.60,
@@ -811,7 +811,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "compass_rose_inlay",
-            title: String(localized: "Compass Rose Inlay"),
+            title: LF.text("Compass Rose Inlay"),
             symbolName: "location.north.circle.fill",
             defaultScale: 0.78,
             footprintMargin: 1.18,
@@ -821,7 +821,7 @@ enum HomeIslandAssetCatalog {
         // benches, then reading.
         HomeIslandAsset(
             id: "office_desk",
-            title: String(localized: "Desk"),
+            title: LF.text("Desk"),
             symbolName: "table.furniture.fill",
             defaultScale: 1.00,
             footprintMargin: 0.46,
@@ -829,7 +829,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "office_desk_pink",
-            title: String(localized: "Desk (Pink)"),
+            title: LF.text("Desk (Pink)"),
             symbolName: "table.furniture.fill",
             defaultScale: 1.00,
             footprintMargin: 0.46,
@@ -837,7 +837,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "office_chair",
-            title: String(localized: "Chair"),
+            title: LF.text("Chair"),
             symbolName: "chair.fill",
             defaultScale: 1.00,
             footprintMargin: 0.44,
@@ -845,7 +845,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "office_chair_pink",
-            title: String(localized: "Chair (Pink)"),
+            title: LF.text("Chair (Pink)"),
             symbolName: "chair.fill",
             defaultScale: 1.00,
             footprintMargin: 0.44,
@@ -853,7 +853,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "silver_laptop",
-            title: String(localized: "PC"),
+            title: LF.text("PC"),
             symbolName: "laptopcomputer",
             defaultScale: 1.00,
             footprintMargin: 0.30,
@@ -865,7 +865,7 @@ enum HomeIslandAssetCatalog {
         // bottle on a desk reads.
         HomeIslandAsset(
             id: "spring_water_bottle",
-            title: String(localized: "Water Bottle"),
+            title: LF.text("Water Bottle"),
             symbolName: "waterbottle.fill",
             defaultScale: 1.00,
             footprintMargin: 0.18,
@@ -873,7 +873,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "sparkling_water_bottle",
-            title: String(localized: "Sparkling Water"),
+            title: LF.text("Sparkling Water"),
             symbolName: "waterbottle.fill",
             defaultScale: 1.00,
             footprintMargin: 0.18,
@@ -881,7 +881,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "canned_coffee",
-            title: String(localized: "Canned Coffee"),
+            title: LF.text("Canned Coffee"),
             symbolName: "cup.and.saucer.fill",
             defaultScale: 1.00,
             footprintMargin: 0.16,
@@ -889,7 +889,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "council_table",
-            title: String(localized: "Council Table"),
+            title: LF.text("Council Table"),
             symbolName: "table.furniture.fill",
             defaultScale: 0.72,
             footprintMargin: 0.92,
@@ -897,7 +897,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "council_chair",
-            title: String(localized: "Council Chair"),
+            title: LF.text("Council Chair"),
             symbolName: "chair.fill",
             defaultScale: 0.72,
             footprintMargin: 0.62,
@@ -905,7 +905,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "driftwood_bench",
-            title: String(localized: "Driftwood Bench"),
+            title: LF.text("Driftwood Bench"),
             symbolName: "chair.fill",
             defaultScale: 0.62,
             footprintMargin: 1.08,
@@ -913,7 +913,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "stone_bench",
-            title: String(localized: "Stone Bench"),
+            title: LF.text("Stone Bench"),
             symbolName: "chair.fill",
             defaultScale: 0.62,
             footprintMargin: 1.08,
@@ -921,7 +921,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "log_stool",
-            title: String(localized: "Log Stool"),
+            title: LF.text("Log Stool"),
             symbolName: "chair.fill",
             defaultScale: 1.00,
             footprintMargin: 0.62,
@@ -929,7 +929,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "wooden_bookshelf",
-            title: String(localized: "Bookshelf"),
+            title: LF.text("Bookshelf"),
             symbolName: "books.vertical.fill",
             defaultScale: 1.00,
             footprintMargin: 0.42,
@@ -938,7 +938,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "stacked_books",
-            title: String(localized: "Stacked Books"),
+            title: LF.text("Stacked Books"),
             symbolName: "book.closed.fill",
             defaultScale: 1.00,
             footprintMargin: 0.24,
@@ -947,7 +947,7 @@ enum HomeIslandAssetCatalog {
         ),
         HomeIslandAsset(
             id: "navigator_hammock",
-            title: String(localized: "Navigator's Hammock"),
+            title: LF.text("Navigator's Hammock"),
             symbolName: "bed.double.fill",
             defaultScale: 0.52,
             footprintMargin: 1.45,
@@ -956,6 +956,66 @@ enum HomeIslandAssetCatalog {
     ]
 
     static var approvedIDs: Set<String> { Set(approved.map(\.id)) }
+
+    /// A flat top the navigator can stand on, once they are high enough to be
+    /// on it. Rocks are what this is for: their sides are far taller than a
+    /// step, so the only way up is a jump — which is the point of a rock being
+    /// there at all.
+    ///
+    /// The shape is an ellipse in the asset's own frame, because a rock is
+    /// round and a rectangle would offer corners the model does not have.
+    /// Heights and half-axes are authored units; the placement's scale
+    /// multiplies them, so a bigger rock really is a harder climb.
+    struct StandableLedge {
+        let assetID: String
+        var x: Float = 0
+        var z: Float = 0
+        let halfWidth: Float
+        let halfDepth: Float
+        let topHeight: Float
+    }
+
+    /// Measured off the models themselves, at the height where each mesh has
+    /// already flattened out, so standing on a ledge is standing on rock
+    /// rather than hovering over it.
+    static let standableLedges: [StandableLedge] = [
+        // One dome, one perch, right at the top.
+        StandableLedge(
+            assetID: "small_rock",
+            halfWidth: 0.45,
+            halfDepth: 0.40,
+            topHeight: 0.70
+        ),
+        // The cluster is climbed in two hops. Its summit is out of reach from
+        // the sand on purpose: the shoulder that rings it is the first step,
+        // and the top is the second.
+        StandableLedge(
+            assetID: "coastal_rocks",
+            z: -0.30,
+            halfWidth: 1.35,
+            halfDepth: 0.82,
+            topHeight: 0.80
+        ),
+        StandableLedge(
+            assetID: "coastal_rocks",
+            z: -0.25,
+            halfWidth: 0.70,
+            halfDepth: 0.55,
+            topHeight: 1.36
+        ),
+    ]
+
+    private static let standableLedgesByAssetID: [String: [StandableLedge]] = {
+        var index: [String: [StandableLedge]] = [:]
+        for ledge in standableLedges {
+            index[ledge.assetID, default: []].append(ledge)
+        }
+        return index
+    }()
+
+    static func standableLedges(for assetID: String) -> [StandableLedge] {
+        standableLedgesByAssetID[assetID] ?? []
+    }
 
     /// A prop with a working surface: how high its top stands at scale 1, how
     /// far the usable rectangle reaches from the prop's centre along its own
@@ -1127,104 +1187,122 @@ enum HomeIslandAssetCatalog {
         // the tile is tapped.
         HomeIslandAssetFamily(
             id: "tree",
-            title: String(localized: "Tree"),
+            title: LF.text("Tree"),
             symbolName: "tree.fill",
             variants: [
                 HomeIslandAssetVariant(
                     assetID: "conifer_tree",
-                    name: String(localized: "Conifer")
+                    name: LF.text("Conifer")
                 ),
                 HomeIslandAssetVariant(
                     assetID: "palm_tree",
-                    name: String(localized: "Palm Tree")
+                    name: LF.text("Palm Tree")
+                ),
+            ]
+        ),
+        // Same question as the tree: a player clearing a shore is looking for
+        // "a rock". Whether it is one boulder or a whole reef is what the
+        // chooser is for.
+        HomeIslandAssetFamily(
+            id: "rock",
+            title: LF.text("Rock"),
+            symbolName: "mountain.2.fill",
+            variants: [
+                HomeIslandAssetVariant(
+                    assetID: "small_rock",
+                    name: LF.text("Small Rock")
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "coastal_rocks",
+                    name: LF.text("Coastal Rocks")
                 ),
             ]
         ),
         HomeIslandAssetFamily(
             id: "hibiscus",
-            title: String(localized: "Hibiscus"),
+            title: LF.text("Hibiscus"),
             variants: [
                 HomeIslandAssetVariant(
                     assetID: "hibiscus_bush_red",
-                    name: String(localized: "Red"),
+                    name: LF.text("Red"),
                     swatch: 0xD5495A
                 ),
                 HomeIslandAssetVariant(
                     assetID: "hibiscus_bush_pink",
-                    name: String(localized: "Pink"),
+                    name: LF.text("Pink"),
                     swatch: 0xE9779E
                 ),
                 HomeIslandAssetVariant(
                     assetID: "hibiscus_bush_orange",
-                    name: String(localized: "Orange"),
+                    name: LF.text("Orange"),
                     swatch: 0xE8853C
                 ),
             ]
         ),
         HomeIslandAssetFamily(
             id: "rose",
-            title: String(localized: "Roses"),
+            title: LF.text("Roses"),
             variants: [
                 HomeIslandAssetVariant(
                     assetID: "rose_bush_white",
-                    name: String(localized: "White"),
+                    name: LF.text("White"),
                     swatch: 0xF2EDE2
                 ),
                 HomeIslandAssetVariant(
                     assetID: "rose_bush_red",
-                    name: String(localized: "Red"),
+                    name: LF.text("Red"),
                     swatch: 0xC33A45
                 ),
                 HomeIslandAssetVariant(
                     assetID: "rose_bush_yellow",
-                    name: String(localized: "Yellow"),
+                    name: LF.text("Yellow"),
                     swatch: 0xE8C44E
                 ),
             ]
         ),
         HomeIslandAssetFamily(
             id: "lighthouse",
-            title: String(localized: "Lighthouse"),
+            title: LF.text("Lighthouse"),
             symbolName: "light.beacon.max.fill",
             variants: [
                 HomeIslandAssetVariant(
                     assetID: "small_lighthouse",
-                    name: String(localized: "White")
+                    name: LF.text("White")
                 ),
                 HomeIslandAssetVariant(
                     assetID: "weathered_lighthouse",
-                    name: String(localized: "Stone")
+                    name: LF.text("Stone")
                 ),
             ]
         ),
         HomeIslandAssetFamily(
             id: "bench",
-            title: String(localized: "Bench"),
+            title: LF.text("Bench"),
             variants: [
                 HomeIslandAssetVariant(
                     assetID: "driftwood_bench",
-                    name: String(localized: "Wood"),
+                    name: LF.text("Wood"),
                     swatch: 0x6A513D
                 ),
                 HomeIslandAssetVariant(
                     assetID: "stone_bench",
-                    name: String(localized: "Stone"),
+                    name: LF.text("Stone"),
                     swatch: 0x9AA09C
                 ),
             ]
         ),
         HomeIslandAssetFamily(
             id: "office_chair",
-            title: String(localized: "Chair"),
+            title: LF.text("Chair"),
             variants: [
                 HomeIslandAssetVariant(
                     assetID: "office_chair",
-                    name: String(localized: "Black"),
+                    name: LF.text("Black"),
                     swatch: 0x23272B
                 ),
                 HomeIslandAssetVariant(
                     assetID: "office_chair_pink",
-                    name: String(localized: "Pink"),
+                    name: LF.text("Pink"),
                     swatch: 0xEE9DB4
                 ),
             ]
@@ -1233,35 +1311,35 @@ enum HomeIslandAssetCatalog {
         // chooser shows the models: which drink it is, is the whole question.
         HomeIslandAssetFamily(
             id: "drink",
-            title: String(localized: "Drinks"),
+            title: LF.text("Drinks"),
             symbolName: "waterbottle.fill",
             variants: [
                 HomeIslandAssetVariant(
                     assetID: "spring_water_bottle",
-                    name: String(localized: "Water")
+                    name: LF.text("Water")
                 ),
                 HomeIslandAssetVariant(
                     assetID: "sparkling_water_bottle",
-                    name: String(localized: "Sparkling")
+                    name: LF.text("Sparkling")
                 ),
                 HomeIslandAssetVariant(
                     assetID: "canned_coffee",
-                    name: String(localized: "Coffee")
+                    name: LF.text("Coffee")
                 ),
             ]
         ),
         HomeIslandAssetFamily(
             id: "office_desk",
-            title: String(localized: "Desk"),
+            title: LF.text("Desk"),
             variants: [
                 HomeIslandAssetVariant(
                     assetID: "office_desk",
-                    name: String(localized: "Black"),
+                    name: LF.text("Black"),
                     swatch: 0x23272B
                 ),
                 HomeIslandAssetVariant(
                     assetID: "office_desk_pink",
-                    name: String(localized: "Pink"),
+                    name: LF.text("Pink"),
                     swatch: 0xEE9DB4
                 ),
             ]
@@ -1399,6 +1477,11 @@ enum HomeIslandAssetCatalog {
              // stairs are a walk surface, and its own rail line does the
              // blocking. A body-sized obstacle here would seal the stairs.
              "cliff_lookout",
+             // Rocks are climbed too. Their ledges are solid up to their own
+             // tops and open above them, so a flat body-sized cylinder here
+             // would be a lid: nothing could ever land on one.
+             "small_rock",
+             "coastal_rocks",
              "stone_path_straight",
              "stone_path_curve",
              "stone_path_fork",

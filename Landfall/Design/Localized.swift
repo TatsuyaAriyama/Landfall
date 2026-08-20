@@ -41,7 +41,9 @@ enum LF {
         let formatter = DateComponentsFormatter()
         formatter.allowedUnits = minutes >= 60 ? [.hour, .minute] : [.minute]
         formatter.unitsStyle = .abbreviated
-        formatter.zeroFormattingBehavior = .dropAll
+        // 0分は落とすと空文字になる。まだ記録の無い作業項目には
+        // 「0分」と書きたいので、0のときだけ単位を残す。
+        formatter.zeroFormattingBehavior = minutes > 0 ? .dropAll : .default
         var calendar = Calendar.current
         calendar.locale = appLocale
         formatter.calendar = calendar

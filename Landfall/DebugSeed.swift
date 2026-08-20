@@ -204,6 +204,14 @@ enum DebugSeed {
         }
 
         try? context.save()
+
+        // LANDFALL_VOYAGE_DONE=<分> の確認は完了札まで進んだ状態が要る。
+        // 航海中のタイマーを1本立て、ホームがそのまま航海画面を開くようにする。
+        if ProcessInfo.processInfo.environment["LANDFALL_VOYAGE_DONE"] != nil {
+            StudyTimer.defaults.set(Date().timeIntervalSince1970, forKey: StudyTimer.startKey)
+            StudyTimer.defaults.set(development.uuid.uuidString, forKey: StudyTimer.itemKey)
+        }
+
         WidgetBridge.refresh(context: context)
     }
 }

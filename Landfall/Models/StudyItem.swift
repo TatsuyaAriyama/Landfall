@@ -56,6 +56,11 @@ final class StudySession {
     var extraSeconds: Int = 0
     var note: String?
     var item: StudyItem?
+    /// 同期で受け取ったのに、作業項目がまだ手元へ届いていないときの紐付け先。
+    /// セッションの購読が項目の購読より先に返ると item が nil のまま固定されて
+    /// しまうので、繋ぎ先を覚えておき、項目が届いた時点で結び直す。
+    /// 既定値付きなので、この列を持たない旧ストアからも軽量移行できる。
+    var pendingItemUUID: String? = nil
     /// 端末間の競合解決(Last-Write-Wins)に使う最終更新時刻。
     var updatedAt: Date = Date.distantPast
 

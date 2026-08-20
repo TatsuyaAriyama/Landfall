@@ -265,6 +265,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
     static let baseExposureOffset: Float = 0.82
     /// 写真モードでの増減(EV)。0 のあいだは歩いているときと同じ明るさ。
     var cameraExposureOffset: Float
+    /// 設定で選んだ島の明るさ(EV)。歩いていても写真モードでも土台になる。
+    var islandExposureOffset: Float = 0
     var cameraInteractionLocked: Bool
     /// 文字入力のあいだ、島の描画枚数を落とすための合図。
     var rendersThrottled = false
@@ -461,6 +463,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var ruinsWalkObstacles: [RuinsWalkObstacle] = []
         private var jettyWalkSurfaces: [JettyWalkSurface] = []
         private var lookoutWalkSurfaces: [LookoutWalkSurface] = []
+        private var ledgeWalkSurfaces: [LedgeWalkSurface] = []
         private var placedSeatSlots: [PlacedSeatSlot] = []
 #if DEBUG
         private var seatDemoDidBegin = false
@@ -882,6 +885,57 @@ struct HomeIslandSceneView: UIViewRepresentable {
             }
         }
 
+        /// One flat top of a placed prop, in world terms. Rocks are the only
+        /// props with these so far: solid up to the ledge, open above it.
+        ///
+        /// The two halves work together. `blocks` makes the rock a wall to
+        /// anyone whose feet are below its top, which is what stops it being
+        /// walked up like a hill; `height` makes it a floor to anyone who
+        /// jumped high enough, which is what makes standing on it possible.
+        private struct LedgeWalkSurface {
+            let transform: HomeIslandTransform
+            let ledge: HomeIslandAssetCatalog.StandableLedge
+
+            private var scale: Float { max(transform.scale, 0.05) }
+
+            /// Standing exactly on the ledge must not read as being below it,
+            /// and the motor settles the feet to within a hair of the ground.
+            private static let footTolerance: Float = 0.015
+
+            var topY: Float {
+                HomeIslandMetrics.surfaceY + ledge.topHeight * scale
+            }
+
+            /// Distance from the ledge's centre, measured in units of its own
+            /// half-axes: 1 is exactly on the rim.
+            private func ellipseDistance(x: Float, z: Float, margin: Float) -> Float {
+                let dx = x - transform.x
+                let dz = z - transform.z
+                let cosine = cos(transform.yaw)
+                let sine = sin(transform.yaw)
+                let localX = dx * cosine - dz * sine - ledge.x * scale
+                let localZ = dx * sine + dz * cosine - ledge.z * scale
+                let halfWidth = ledge.halfWidth * scale + margin
+                let halfDepth = ledge.halfDepth * scale + margin
+                let u = localX / max(halfWidth, 0.01)
+                let v = localZ / max(halfDepth, 0.01)
+                return sqrt(u * u + v * v)
+            }
+
+            /// Where the feet find rock instead of sand.
+            func containsGroundSurface(x: Float, z: Float) -> Bool {
+                ellipseDistance(x: x, z: z, margin: 0) <= 1
+            }
+
+            /// Solid to a body whose feet are still below the top. The margin
+            /// keeps the navigator's width outside the rock rather than
+            /// letting the model sink into its side.
+            func blocks(x: Float, z: Float, playerRadius: Float, footHeight: Float) -> Bool {
+                guard footHeight < topY - Self.footTolerance else { return false }
+                return ellipseDistance(x: x, z: z, margin: playerRadius) <= 1
+            }
+        }
+
         private struct JettyWalkSurface {
             let transform: HomeIslandTransform
 
@@ -1283,10 +1337,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
             // 写真モードは構図を決める場所であって、暗くする場所ではない。
             // スライダは歩いているときの明るさからの増減として扱い、
             // 入った瞬間は同じ明るさのままにする(±0 EV)。
+            let base = HomeIslandSceneView.baseExposureOffset + owner.islandExposureOffset
             let target = CGFloat(
-                owner.mode == .camera
-                    ? HomeIslandSceneView.baseExposureOffset + owner.cameraExposureOffset
-                    : HomeIslandSceneView.baseExposureOffset
+                owner.mode == .camera ? base + owner.cameraExposureOffset : base
             )
             guard let sceneCamera = camera?.camera,
                   abs(sceneCamera.exposureOffset - target) > 0.001
@@ -1685,7 +1738,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
             // Exploration stays bright, while photo mode can lower the exposure
             // to preserve detail in pale sand and sunlit props.
             cameraComponent.wantsHDR = true
-            cameraComponent.exposureOffset = CGFloat(HomeIslandSceneView.baseExposureOffset)
+            cameraComponent.exposureOffset = CGFloat(
+                HomeIslandSceneView.baseExposureOffset + owner.islandExposureOffset
+            )
             cameraComponent.contrast = 0.05
             cameraNode.camera = cameraComponent
             scene.rootNode.addChildNode(cameraNode)
@@ -2024,6 +2079,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 placement -> LookoutWalkSurface? in
                 guard placement.assetID == "cliff_lookout" else { return nil }
                 return LookoutWalkSurface(transform: placement.transform)
+            }
+            ledgeWalkSurfaces = visiblePlacements.flatMap { placement in
+                HomeIslandAssetCatalog.standableLedges(for: placement.assetID).map {
+                    LedgeWalkSurface(transform: placement.transform, ledge: $0)
+                }
             }
             updateSelectionOutline()
             view?.setNeedsDisplay()
@@ -4826,7 +4886,13 @@ struct HomeIslandSceneView: UIViewRepresentable {
             return true
         }
 
+        /// Ground-level walkability, for everything that asks where a body
+        /// could be put rather than where one is moving.
         private func isWalkable(x: Float, z: Float) -> Bool {
+            isWalkable(x: x, z: z, footHeight: HomeIslandMetrics.surfaceY)
+        }
+
+        private func isWalkable(x: Float, z: Float, footHeight: Float) -> Bool {
             let playerRadius = NavigatorCollision.radius
             let isOnSand = HomeIslandMetrics.containsWalkableSand(
                 x: x,
@@ -4854,8 +4920,18 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let minimumDistance = playerRadius + obstacle.radius
                 return dx * dx + dz * dz >= minimumDistance * minimumDistance
             }) else { return false }
-            return ruinsWalkObstacles.allSatisfy {
+            guard ruinsWalkObstacles.allSatisfy({
                 !$0.blocks(x: x, z: z, playerRadius: playerRadius)
+            }) else { return false }
+            // A rock is solid only up to its own top. Below that it is a wall;
+            // at or above it, it is somewhere to stand.
+            return ledgeWalkSurfaces.allSatisfy {
+                !$0.blocks(
+                    x: x,
+                    z: z,
+                    playerRadius: playerRadius,
+                    footHeight: footHeight
+                )
             }
         }
 
@@ -5026,8 +5102,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     self?.groundSample(x: x, z: z)
                         ?? HomeIslandGroundSample(height: HomeIslandMetrics.surfaceY)
                 },
-                canOccupy: { [weak self] x, z in
-                    self?.isWalkable(x: x, z: z) ?? false
+                canOccupy: { [weak self] x, z, footHeight in
+                    self?.isWalkable(x: x, z: z, footHeight: footHeight) ?? false
                 }
             )
             locomotionFrame = frame
@@ -5625,6 +5701,21 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     ),
                     normal: SIMD3<Float>(0, 1, 0),
                     surface: .wood
+                )
+            }
+            // The highest ledge underfoot wins, so a cluster's summit is the
+            // ground while standing on it and its shoulder is the ground the
+            // moment you step off. Ledges report level rock: the model's own
+            // sides are far too steep to be walked on, and treating them as
+            // ground is what would let a rock be climbed without jumping.
+            if let ledgeTop = ledgeWalkSurfaces
+                .filter({ $0.containsGroundSurface(x: x, z: z) })
+                .map(\.topY)
+                .max(), ledgeTop > foundation.height {
+                return HomeIslandGroundSample(
+                    height: ledgeTop,
+                    normal: SIMD3<Float>(0, 1, 0),
+                    surface: .stone
                 )
             }
             return HomeIslandGroundSample(

@@ -183,7 +183,10 @@ struct HomeVoyageTimerView: View {
     }
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \StudyDay.date, order: .reverse) private var days: [StudyDay]
+    /// 完了札の経験値バーは、記録済みの全セッションからレベルを導く。
+    @Query private var sessions: [StudySession]
 
     @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
     @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID = ""
@@ -351,6 +354,14 @@ struct HomeVoyageTimerView: View {
             } else {
                 playVoyageAudio(migratedSound.rawValue)
             }
+            #if DEBUG
+            // 動作確認用: LANDFALL_VOYAGE_DONE=<分> で、記録せずに完了札だけを開く。
+            if let raw = ProcessInfo.processInfo.environment["LANDFALL_VOYAGE_DONE"],
+               let minutes = Int(raw) {
+                HomeVoyageAudio.shared.stop()
+                completion = HomeVoyageCompletion(minutes: minutes, note: nil)
+            }
+            #endif
         }
         .onChange(of: soundMode) { _, value in
             if isVoyageResting {
@@ -384,23 +395,23 @@ struct HomeVoyageTimerView: View {
             Spacer(minLength: 18)
             recordingPanel
         }
-        .padding(.horizontal, 16)
-        .safeAreaPadding(.top, 12)
+        .padding(.horizontal, compactHUD ? 12 : 16)
+        .safeAreaPadding(.top, compactHUD ? 10 : 12)
         .safeAreaPadding(.bottom, 10)
     }
 
     private var timerHeader: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: compactHUD ? 6 : 8) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: compactHUD ? 8 : 9, style: .continuous)
                         .fill(timerGlassInk.opacity(0.07))
                     ItemTileArt(item: item)
-                        .padding(4)
+                        .padding(compactHUD ? 3 : 4)
                 }
-                .frame(width: 28, height: 28)
+                .frame(width: compactHUD ? 24 : 28, height: compactHUD ? 24 : 28)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: compactHUD ? 8 : 9, style: .continuous)
                         .stroke(timerGlassInk.opacity(0.14), lineWidth: 1)
                 )
 
@@ -425,16 +436,16 @@ struct HomeVoyageTimerView: View {
                     .foregroundStyle(timerGlassInk.opacity(0.62))
 
                     Text(item.name)
-                        .font(LFFont.copy(12))
+                        .font(LFFont.copy(compactHUD ? 11 : 12))
                         .foregroundStyle(timerGlassInk)
                         .lineLimit(1)
                 }
 
-                Spacer(minLength: 6)
+                Spacer(minLength: compactHUD ? 4 : 6)
 
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(Self.clock(snapshot.elapsedSeconds(at: context.date)))
-                        .font(LFFont.copy(19))
+                        .font(LFFont.copy(compactHUD ? 16 : 19))
                         .monospacedDigit()
                         .foregroundStyle(timerClockInk)
                         .contentTransition(.numericText())
@@ -447,30 +458,33 @@ struct HomeVoyageTimerView: View {
                         Haptics.tap(.rigid)
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: compactHUD ? 9 : 10, weight: .medium))
                             .foregroundStyle(timerGlassInk)
-                            .frame(width: 26, height: 26)
+                            .frame(
+                                width: compactHUD ? 22 : 26,
+                                height: compactHUD ? 22 : 26
+                            )
                             .background(timerGlassInk.opacity(0.07), in: Circle())
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .accessibilityLabel(Text("Discard voyage"))
                 }
             }
-            .padding(.horizontal, 9)
-            .padding(.top, 8)
+            .padding(.horizontal, compactHUD ? 8 : 9)
+            .padding(.top, compactHUD ? 7 : 8)
 
             Rectangle()
                 .fill(timerGlassInk.opacity(0.12))
                 .frame(height: 1)
-                .padding(.top, 8)
+                .padding(.top, compactHUD ? 7 : 8)
 
             if !companions.isEmpty {
                 companionStrip
-                    .padding(.horizontal, 7)
-                    .padding(.top, 7)
+                    .padding(.horizontal, chipTrayPadding)
+                    .padding(.top, chipTrayPadding)
             }
 
-            HStack(spacing: 5) {
+            HStack(spacing: compactHUD ? 4 : 5) {
                 commandButton(
                     title: snapshot.isResting ? "Resume voyage" : "Take a break",
                     systemImage: snapshot.isResting ? "play.fill" : "pause.fill",
@@ -516,12 +530,12 @@ struct HomeVoyageTimerView: View {
                 )
                 .accessibilityLabel(Text("ToDo list"))
             }
-            .padding(7)
+            .padding(chipTrayPadding)
 
             if showingSoundPicker {
                 soundPicker
-                    .padding(.horizontal, 7)
-                    .padding(.bottom, 7)
+                    .padding(.horizontal, chipTrayPadding)
+                    .padding(.bottom, chipTrayPadding)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
@@ -531,14 +545,14 @@ struct HomeVoyageTimerView: View {
                 HomeIslandTodoCompactList(
                     store: todoStore,
                     ink: timerGlassInk,
-                    maxListHeight: 196
+                    maxListHeight: compactHUD ? 176 : 196
                 )
-                .padding(.horizontal, 7)
-                .padding(.bottom, 7)
+                .padding(.horizontal, chipTrayPadding)
+                .padding(.bottom, chipTrayPadding)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .frame(maxWidth: 320)
+        .frame(maxWidth: compactHUD ? 258 : 320)
         .background(whiteGlassBackground(cornerRadius: 17, opacity: 0.80))
         .overlay(
             RoundedRectangle(cornerRadius: 17, style: .continuous)
@@ -570,6 +584,21 @@ struct HomeVoyageTimerView: View {
         )
     }
 
+    /// iPhone は画面が狭いぶん、この札だけで空の半分近くを塞いでしまう。
+    /// コンパクト幅では文字も間隔も一段落として、海と船を見せたまま操作できるようにする。
+    /// iPad は元の余裕のある寸法のまま。
+    private var compactHUD: Bool {
+        horizontalSizeClass == .compact
+    }
+
+    private var chipTrayPadding: CGFloat {
+        compactHUD ? 6 : 7
+    }
+
+    private var chipCornerRadius: CGFloat {
+        compactHUD ? 12 : 13
+    }
+
     /// Compact command chip: an icon over a short label. The old two-line
     /// version carried its current value as a third line, which is what made
     /// the timer card wide enough to need the middle of the screen.
@@ -581,11 +610,11 @@ struct HomeVoyageTimerView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 3) {
+            VStack(spacing: compactHUD ? 2 : 3) {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: systemImage)
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(width: 22, height: 16)
+                        .font(.system(size: compactHUD ? 12 : 13, weight: .medium))
+                        .frame(width: compactHUD ? 20 : 22, height: compactHUD ? 15 : 16)
                     if badge > 0 {
                         Text(verbatim: badge > 9 ? "9+" : "\(badge)")
                             .font(LFFont.label(7))
@@ -603,21 +632,21 @@ struct HomeVoyageTimerView: View {
                     }
                 }
                 Text(title)
-                    .font(LFFont.label(8))
+                    .font(LFFont.label(compactHUD ? 7 : 8))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
             .foregroundStyle(active ? timerGlassInk : timerGlassInk.opacity(0.74))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 6)
+            .padding(.horizontal, compactHUD ? 4 : 6)
+            .padding(.vertical, compactHUD ? 5 : 6)
             .frame(maxWidth: .infinity)
-            .frame(height: 46)
+            .frame(height: compactHUD ? 38 : 46)
             .background(
                 active ? LFColor.returnOrange.opacity(0.10) : timerGlassInk.opacity(0.05),
-                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                in: RoundedRectangle(cornerRadius: chipCornerRadius, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: chipCornerRadius, style: .continuous)
                     .stroke(
                         active
                             ? LFColor.returnOrange.opacity(0.52)
@@ -642,8 +671,8 @@ struct HomeVoyageTimerView: View {
                     .foregroundStyle(timerGlassInk.opacity(0.46))
             }
             .foregroundStyle(timerGlassInk.opacity(0.68))
-            .padding(.horizontal, 12)
-            .frame(height: 28)
+            .padding(.horizontal, compactHUD ? 10 : 12)
+            .frame(height: compactHUD ? 25 : 28)
 
             ForEach(HomeVoyageSound.timerSelectableSounds) { sound in
                 Button {
@@ -654,13 +683,13 @@ struct HomeVoyageTimerView: View {
                             sound: sound,
                             selected: sound == displayedSound
                         )
-                        .frame(width: 24, height: 24)
+                        .frame(width: compactHUD ? 21 : 24, height: compactHUD ? 21 : 24)
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(sound.title)
-                                .font(LFFont.copy(12))
+                                .font(LFFont.copy(compactHUD ? 11 : 12))
                             Text(sound.subtitle)
-                                .font(LFFont.label(9))
+                                .font(LFFont.label(compactHUD ? 8 : 9))
                                 .foregroundStyle(timerGlassInk.opacity(0.48))
                         }
 
@@ -679,8 +708,8 @@ struct HomeVoyageTimerView: View {
                         }
                     }
                     .foregroundStyle(timerGlassInk)
-                    .padding(.horizontal, 12)
-                    .frame(height: 43)
+                    .padding(.horizontal, compactHUD ? 10 : 12)
+                    .frame(height: compactHUD ? 38 : 43)
                     .background(
                         sound == displayedSound
                             ? timerGlassInk.opacity(0.07)
@@ -694,7 +723,7 @@ struct HomeVoyageTimerView: View {
                     Rectangle()
                         .fill(timerGlassInk.opacity(0.09))
                         .frame(height: 1)
-                        .padding(.leading, 48)
+                        .padding(.leading, compactHUD ? 43 : 48)
                 }
             }
         }
@@ -1014,6 +1043,13 @@ struct HomeVoyageTimerView: View {
                     .monospacedDigit()
                     .padding(.top, 12)
 
+                VoyageLevelBar(
+                    gainedMinutes: result.minutes,
+                    after: PlayerLevelProgress(sessions: sessions),
+                    ink: palette.inkColor
+                )
+                .padding(.top, 20)
+
                 Button {
                     onReturnHome()
                     Haptics.tap(.light)
@@ -1050,6 +1086,114 @@ struct HomeVoyageTimerView: View {
         return hours > 0
             ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
             : String(format: "%02d:%02d", minutes, remainder)
+    }
+}
+
+/// 完了札の中で、この航海のぶんだけ伸びる経験値バー。
+/// 10時間で1レベル。累積なので休んでも減らず、反ストリークの原則には触れない。
+/// バーは「前の位置」から描き始め、今回のぶんだけ伸びる様子をその場で見せる。
+private struct VoyageLevelBar: View {
+    let gainedMinutes: Int
+    let after: PlayerLevelProgress
+    let ink: Color
+
+    private let before: PlayerLevelProgress
+
+    @State private var displayedLevel: Int
+    @State private var fill: Double
+    @State private var leveledUp = false
+    @State private var animated = false
+
+    init(gainedMinutes: Int, after: PlayerLevelProgress, ink: Color) {
+        self.gainedMinutes = gainedMinutes
+        self.after = after
+        self.ink = ink
+        let before = PlayerLevelProgress(totalMinutes: after.totalMinutes - max(0, gainedMinutes))
+        self.before = before
+        _displayedLevel = State(initialValue: before.level)
+        _fill = State(initialValue: before.fractionToNextLevel)
+    }
+
+    var body: some View {
+        VStack(spacing: 9) {
+            HStack(spacing: 8) {
+                Text(verbatim: "LV \(displayedLevel)")
+                    .font(LFFont.label(10))
+                    .tracking(1.5)
+                    .monospacedDigit()
+                    .foregroundStyle(leveledUp ? LFColor.returnOrange : ink.opacity(0.62))
+
+                Spacer(minLength: 0)
+
+                Text(verbatim: "+\(LF.duration(minutes: max(0, gainedMinutes)))")
+                    .font(LFFont.label(10))
+                    .tracking(1.5)
+                    .monospacedDigit()
+                    .foregroundStyle(ink.opacity(0.48))
+            }
+
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(ink.opacity(0.13))
+
+                    Capsule()
+                        .fill(LFColor.returnOrange)
+                        .frame(width: max(0, geo.size.width * fill))
+                }
+            }
+            .frame(height: 6)
+
+            Text(caption)
+                .font(LFFont.label(10))
+                .tracking(leveledUp ? 2 : 0.4)
+                .foregroundStyle(leveledUp ? LFColor.returnOrange : ink.opacity(0.44))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: "Level \(after.level)"))
+        .accessibilityValue(Text(caption))
+        .task { await runFill() }
+    }
+
+    private var caption: String {
+        leveledUp
+            ? LF.text("LEVEL UP")
+            : LF.format(
+                "%@ to Level %lld",
+                LF.duration(minutes: after.minutesToNextLevel),
+                after.level + 1
+            )
+    }
+
+    /// 札が落ち着いてからバーを伸ばす。レベルが上がるぶんだけ、満たして空にするのを繰り返す。
+    private func runFill() async {
+        guard !animated else { return }
+        animated = true
+
+        try? await Task.sleep(for: .milliseconds(420))
+
+        // 手入力で何段も飛ぶ場合まで律儀に見せると長いので、演出は3段までにする。
+        var level = before.level
+        var cycles = 0
+        while level < after.level, cycles < 3 {
+            withAnimation(.easeOut(duration: 0.68)) { fill = 1 }
+            try? await Task.sleep(for: .milliseconds(720))
+
+            level += 1
+            cycles += 1
+            Haptics.success()
+            // 空にする瞬間だけはアニメーションを外し、右端から左端へ戻る動きを見せない。
+            withTransaction(Transaction(animation: nil)) {
+                displayedLevel = level
+                fill = 0
+            }
+            withAnimation(.easeOut(duration: 0.3)) { leveledUp = true }
+            try? await Task.sleep(for: .milliseconds(300))
+        }
+
+        // 3段を超えて飛んだときも、最終的な表示は必ず実際のレベルに合わせる。
+        displayedLevel = after.level
+        withAnimation(.easeOut(duration: 0.82)) { fill = after.fractionToNextLevel }
     }
 }
 

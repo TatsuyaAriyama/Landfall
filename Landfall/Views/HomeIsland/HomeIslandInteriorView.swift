@@ -15,15 +15,15 @@ enum HomeIslandInteriorKind: String, Identifiable {
 
     var title: String {
         switch self {
-        case .weatheredCottage: String(localized: "Inside the Weathered Cottage")
-        case .navigatorTent: String(localized: "Inside the Navigator's Tent")
+        case .weatheredCottage: LF.text("Inside the Weathered Cottage")
+        case .navigatorTent: LF.text("Inside the Navigator's Tent")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .weatheredCottage: String(localized: "A quiet room kept warm by the old hearth")
-        case .navigatorTent: String(localized: "Charts, supplies, and a lantern for the next voyage")
+        case .weatheredCottage: LF.text("A quiet room kept warm by the old hearth")
+        case .navigatorTent: LF.text("Charts, supplies, and a lantern for the next voyage")
         }
     }
 
@@ -358,7 +358,9 @@ private struct HomeIslandInteriorSceneView: UIViewRepresentable {
             camera.zNear = 0.025
             camera.zFar = 120
             camera.wantsHDR = true
-            camera.exposureOffset = owner.kind == .weatheredCottage ? -0.28 : -0.18
+            // 家の中も島の一部なので、設定で選んだ明るさをそのまま持ち込む。
+            let base: Float = owner.kind == .weatheredCottage ? -0.28 : -0.18
+            camera.exposureOffset = CGFloat(base + HomeIslandBrightness.current.exposureOffset)
             camera.bloomIntensity = 0.28
             camera.bloomThreshold = 0.72
             camera.vignettingIntensity = 0.24
