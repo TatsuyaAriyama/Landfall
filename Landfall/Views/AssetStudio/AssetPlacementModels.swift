@@ -56,13 +56,13 @@ enum Asset3DCatalog {
     private static let preferredOrder = [
         "island_base",
         "home_island_foundation",
-        "small_tree",
         "conifer_tree",
         "small_lake",
         "weathered_cottage",
         "weathered_lighthouse",
         "wooden_jetty",
         "campfire_circle",
+        "log_stool",
         "stone_well",
         "voyage_flagpole",
         "cliff_lookout",
@@ -102,7 +102,9 @@ enum Asset3DCatalog {
         "seaside_mailbox",
         "seaside_gramophone",
         "office_desk",
+        "office_desk_pink",
         "office_chair",
+        "office_chair_pink",
         "silver_laptop",
         "landfall_boat",
         "navigator_main",
@@ -135,13 +137,13 @@ enum Asset3DCatalog {
         switch resourceName {
         case "island_base": return String(localized: "Island Foundation")
         case "home_island_foundation": return String(localized: "Home Island Foundation")
-        case "small_tree": return String(localized: "Broadleaf Tree")
         case "conifer_tree": return String(localized: "Conifer")
         case "small_lake": return String(localized: "Small Lake")
         case "weathered_cottage": return String(localized: "Weathered Cottage")
         case "weathered_lighthouse": return String(localized: "Stone Lighthouse")
         case "wooden_jetty": return String(localized: "Wooden Jetty")
-        case "campfire_circle": return String(localized: "Campfire Circle")
+        case "campfire_circle": return String(localized: "Campfire")
+        case "log_stool": return String(localized: "Log Stool")
         case "stone_well": return String(localized: "Stone Well")
         case "voyage_flagpole": return String(localized: "Voyage Flagpole")
         case "cliff_lookout": return String(localized: "Cliff Lookout")
@@ -181,7 +183,9 @@ enum Asset3DCatalog {
         case "seaside_mailbox": return String(localized: "Seaside Mailbox")
         case "seaside_gramophone": return String(localized: "Seaside Gramophone")
         case "office_desk": return String(localized: "Desk")
+        case "office_desk_pink": return String(localized: "Desk (Pink)")
         case "office_chair": return String(localized: "Chair")
+        case "office_chair_pink": return String(localized: "Chair (Pink)")
         case "silver_laptop": return String(localized: "PC")
         case "landfall_boat": return "Landfall Boat"
         case "navigator_main": return "Navigator"

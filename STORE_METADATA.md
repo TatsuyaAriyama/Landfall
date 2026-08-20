@@ -81,6 +81,24 @@ KeelMiraは、集中した時間を3Dの航海として残す作業・学習タ�
 
 ## What's New
 
+### v1.6
+- EN:
+```
+New furniture for your Home Island, and a few fixes along the way.
+
+• A desk, chair, and laptop have joined the furniture catalog. Set a laptop on the desk and it rests right on the surface.
+• Sails now fill and the bow throws spray from the moment a voyage starts.
+• Fixed the ToDo panel blocking the navigator's walking controls while it was open.
+```
+- JA:
+```
+自分の島に新しい家具を追加し、あわせて細かな不具合も直しました。
+
+・デスク、椅子、PCを家具カタログに追加しました。デスクの上にPCを置くと、天板の上にきちんと乗ります。
+・航海を始めた瞬間から帆が孕み、舳先にしぶきが上がるようにしました。
+・ToDoパネルを開いている間、航海士の移動操作が効かなくなる不具合を修正しました。
+```
+
 ### v1.5
 - EN:
 ```

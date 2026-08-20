@@ -25,12 +25,14 @@ final class VoyagePassStore: ObservableObject {
     private var signedEntitlement: String?
 
     var isActive: Bool {
-        if AccessPolicy.isDeveloper() { return true }
         #if DEBUG
-        if ProcessInfo.processInfo.environment["LANDFALL_PASS_ACTIVE"] == "1" {
-            return true
+        // 開発者アカウントでは証が常に有効なので、鍵が掛かったままの画面を
+        // 確かめる手段がない。"0" を渡したときは開発者判定より先に切る。
+        if let forced = ProcessInfo.processInfo.environment["LANDFALL_PASS_ACTIVE"] {
+            return forced == "1"
         }
         #endif
+        if AccessPolicy.isDeveloper() { return true }
         return !purchasedProductIDs.isDisjoint(with: Self.productIDs)
     }
 

@@ -1,4 +1,13 @@
-"""Build Landfall's campfire circle with log seats as a reusable 3D asset."""
+"""Build Landfall's campfire: the fire alone, with nothing to sit on.
+
+The asset used to be a whole scene — a fire ring with three log benches placed
+around it and a cup left on one of them. That made it one big fixed
+arrangement: a player could not put the fire where they wanted without also
+accepting the seating, or seat anyone anywhere else. The logs now ship
+separately as ``log_stool`` (``Tools/Blender/build_log_stool.py``), which
+carries the seat socket, and this builds only what burns: ash bed, stone ring,
+charred logs, embers, flames and the moss around them.
+"""
 
 from __future__ import annotations
 
@@ -297,47 +306,12 @@ for index, (x, y, z, size) in enumerate(((-0.18, 0.02, 1.27, 0.035), (0.14, -0.0
     bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=size, location=(x, y, z))
     keep(bpy.context.object, f"Rising_Spark_{index + 1:02}", MATS["flame_core"])
 
-# Three log benches face the fire while keeping one side open as an entrance.
-bench_specs = ((math.radians(28), 1.38), (math.radians(152), 1.38), (math.radians(270), 1.42))
-for index, (angle, distance) in enumerate(bench_specs):
-    center = Vector((math.cos(angle) * distance, math.sin(angle) * distance, 0.36))
-    tangent = Vector((-math.sin(angle), math.cos(angle), 0))
-    start = center - tangent * 0.58
-    end = center + tangent * 0.58
-    add_beam(
-        f"Seat_Log_{index + 1:02}",
-        tuple(start),
-        tuple(end),
-        0.19,
-        MATS["wood"] if index != 1 else MATS["wood_light"],
-        vertices=12,
-    )
-    direction = (end - start).normalized()
-    for side, point in (("A", start - direction * 0.008), ("B", end + direction * 0.008)):
-        add_beam(
-            f"Seat_Cut_{index + 1:02}_{side}",
-            tuple(point - direction * 0.006),
-            tuple(point + direction * 0.006),
-            0.155,
-            MATS["cut"],
-            vertices=12,
-        )
-    radial = Vector((math.cos(angle), math.sin(angle), 0))
-    for support_index, along in enumerate((-0.34, 0.34)):
-        support_center = center + tangent * along - Vector((0, 0, 0.22))
-        add_beam(
-            f"Seat_Support_{index + 1:02}_{support_index + 1:02}",
-            tuple(support_center - radial * 0.16),
-            tuple(support_center + radial * 0.16),
-            0.105,
-            MATS["wood_deep"],
-            vertices=9,
-        )
-
-# Sparse moss and a forgotten enamel cup add quiet lived-in detail.
+# Sparse moss around the ring. It used to spread as far as the benches;
+# with them gone it stays close, so the fire reads as one clump of prop
+# rather than a fire plus some litter on the sand.
 for index in range(9):
     angle = RNG.uniform(0, math.tau)
-    radius = RNG.uniform(0.82, 1.80)
+    radius = RNG.uniform(0.78, 1.12)
     add_box(
         f"Ground_Moss_{index + 1:02}",
         (math.cos(angle) * radius, math.sin(angle) * radius, 0.018),
@@ -346,13 +320,6 @@ for index in range(9):
         (0, 0, RNG.uniform(0, math.tau)),
         0.018,
     )
-
-cup_angle = math.radians(152)
-cup_center = (math.cos(cup_angle) * 1.38 + 0.22, math.sin(cup_angle) * 1.38, 0.61)
-add_cylinder("Enamel_Cup", cup_center, 0.075, 0.14, MATS["stone_light"], vertices=12)
-add_torus("Enamel_Cup_Rim", (cup_center[0], cup_center[1], cup_center[2] + 0.075), 0.073, 0.012, MATS["iron"], major_segments=12, minor_segments=4)
-add_torus("Enamel_Cup_Handle", (cup_center[0] + 0.08, cup_center[1], cup_center[2]), 0.055, 0.012, MATS["iron"], major_segments=10, minor_segments=4)
-
 
 def look_at(obj: bpy.types.Object, target: tuple[float, float, float]) -> None:
     obj.rotation_euler = (Vector(target) - obj.location).to_track_quat("-Z", "Y").to_euler()

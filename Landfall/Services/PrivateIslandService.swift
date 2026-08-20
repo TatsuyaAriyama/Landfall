@@ -1187,7 +1187,8 @@ final class PrivateIslandService: ObservableObject {
             else { continue }
 
             let count = counts[placement.assetID, default: 0]
-            guard count < HomeIslandAssetCatalog.placementLimit(for: placement.assetID) else { continue }
+            guard count < HomeIslandAssetCatalog.placementLimit(for: placement.assetID)
+            else { continue }
 
             var copy = placement
             copy.transform.scale = HomeIslandAssetCatalog.persistedScale(

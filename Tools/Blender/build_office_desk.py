@@ -13,6 +13,10 @@ one, change the other.
 Black laminate on a steel frame, with a two-drawer pedestal on the right. The
 island is driftwood and rope everywhere else; this is deliberately the one thing
 on it that came from a shop.
+
+The same desk is also emitted in pink (``office_desk_pink``). Only the palette
+differs — every dimension, socket and mesh below is shared — so the two are one
+prop in two colours in the build drawer, and a laptop stands on either.
 """
 
 from __future__ import annotations
@@ -34,7 +38,8 @@ import build_home_island_asset_set_02 as kit  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_DIR = ROOT / "Landfall/Resources"
 
-# The authored envelope. HomeIslandSurface mirrors TOP_Z and the usable span.
+# The authored envelope. HomeIslandSurface mirrors TOP_Z, and its usable
+# rectangle is the whole top: half of TOP_W by half of TOP_D.
 TOP_W = 1.060           # across, X
 TOP_D = 0.520           # front to back, Y
 TOP_T = 0.030
@@ -53,28 +58,66 @@ def finish(asset_id: str, root: bpy.types.Object, objects: list[bpy.types.Object
     shutil.copy2(kit.READY_DIR / f"{asset_id}.usdz", RUNTIME_DIR / f"{asset_id}.usdz")
 
 
-def desk_materials() -> dict[str, bpy.types.Material]:
-    return {
+# One palette per colour. The keys are the desk's parts; only the hex values
+# change between variants, which is what keeps the two desks the same desk.
+PALETTES = {
+    "office_desk": {
+        "suffix": "",
         # Laminate, not lacquer: black that still shows its edge against the
         # island's pale sand instead of reading as a hole in the ground.
-        "top": kit.material("LF_DeskTop", "#23272B", 0.52),
-        "top_edge": kit.material("LF_DeskTopEdge", "#15181B", 0.58),
-        "frame": kit.material("LF_DeskFrame", "#2E3339", 0.56, metallic=0.30),
-        "frame_dark": kit.material("LF_DeskFrameDark", "#1B1F23", 0.60, metallic=0.26),
-        "foot": kit.material("LF_DeskFoot", "#101315", 0.72),
-        "panel": kit.material("LF_DeskPanel", "#20252A", 0.62),
-        "drawer": kit.material("LF_DeskDrawer", "#262B31", 0.56),
-        "handle": kit.material("LF_DeskHandle", "#98A0A7", 0.40, metallic=0.42),
-        "grommet": kit.material("LF_DeskGrommet", "#0E1113", 0.66),
+        "top": "#23272B",
+        "top_edge": "#15181B",
+        "frame": "#2E3339",
+        "frame_dark": "#1B1F23",
+        "foot": "#101315",
+        "panel": "#20252A",
+        "drawer": "#262B31",
+        "handle": "#98A0A7",
+        "grommet": "#0E1113",
+    },
+    "office_desk_pink": {
+        "suffix": "Pink",
+        # A painted desk, not a plastic one: the top is the only saturated
+        # surface, and the frame stays a warm grey-mauve so the piece still
+        # reads as furniture beside the island's driftwood.
+        "top": "#EE9DB4",
+        "top_edge": "#C8788F",
+        "frame": "#8A6A74",
+        "frame_dark": "#6B4F58",
+        "foot": "#4A353C",
+        "panel": "#DE8AA2",
+        "drawer": "#E799AE",
+        "handle": "#F1DCE2",
+        "grommet": "#5A3F47",
+    },
+}
+
+
+def desk_materials(asset_id: str) -> dict[str, bpy.types.Material]:
+    palette = PALETTES[asset_id]
+    suffix = palette["suffix"]
+    return {
+        key: kit.material(f"LF_Desk{key.title().replace('_', '')}{suffix}", value, roughness, metallic=metallic)
+        for key, value, roughness, metallic in (
+            ("top", palette["top"], 0.52, 0.0),
+            ("top_edge", palette["top_edge"], 0.58, 0.0),
+            ("frame", palette["frame"], 0.56, 0.30),
+            ("frame_dark", palette["frame_dark"], 0.60, 0.26),
+            ("foot", palette["foot"], 0.72, 0.0),
+            ("panel", palette["panel"], 0.62, 0.0),
+            ("drawer", palette["drawer"], 0.56, 0.0),
+            ("handle", palette["handle"], 0.40, 0.42),
+            ("grommet", palette["grommet"], 0.66, 0.0),
+        )
     }
 
 
-def build_office_desk() -> None:
+def build_office_desk(asset_id: str = "office_desk") -> None:
     kit.reset_scene()
-    root = kit.make_root("office_desk", "Office_Desk", "medium")
+    root = kit.make_root(asset_id, asset_id.title().replace("_", "_"), "medium")
     root["surface_schema"] = 1
     objects: list[bpy.types.Object] = []
-    mats = desk_materials()
+    mats = desk_materials(asset_id)
 
     # The top, with a darker band under its lip. One board reads as a slab; the
     # band is what makes it a laminated top with an edge.
@@ -210,8 +253,9 @@ def build_office_desk() -> None:
         purpose="surface",
     )
 
-    finish("office_desk", root, objects, (top_socket,))
+    finish(asset_id, root, objects, (top_socket,))
 
 
-build_office_desk()
-print("OFFICE_DESK_COMPLETE=1")
+for desk_id in PALETTES:
+    build_office_desk(desk_id)
+print(f"OFFICE_DESK_COMPLETE={len(PALETTES)}")

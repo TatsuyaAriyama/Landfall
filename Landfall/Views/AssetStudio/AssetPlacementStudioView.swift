@@ -165,7 +165,7 @@ struct AssetPlacementStudioView: View {
                 store.updatePlacement(id: foundationID) { placement in
                     placement.transform = AssetTransform(x: 0, y: 0, z: 0, scale: 1)
                 }
-                let treeID = store.add(assetID: "small_tree")
+                let treeID = store.add(assetID: "conifer_tree")
                 store.updatePlacement(id: treeID) { placement in
                     placement.transform = AssetTransform(x: 0, y: 0, z: 0, scale: 1)
                 }
@@ -174,11 +174,11 @@ struct AssetPlacementStudioView: View {
             }
             if ProcessInfo.processInfo.environment["LANDFALL_ASSET_STUDIO_MULTISELECT"] == "1" {
                 store.setContext(.studio)
-                let firstID = store.add(assetID: "small_tree")
+                let firstID = store.add(assetID: "conifer_tree")
                 store.updatePlacement(id: firstID) { placement in
                     placement.transform = AssetTransform(x: -1.15, y: 0, z: 0, scale: 0.72)
                 }
-                let secondID = store.add(assetID: "small_tree")
+                let secondID = store.add(assetID: "conifer_tree")
                 store.updatePlacement(id: secondID) { placement in
                     placement.transform = AssetTransform(x: 1.05, y: 0, z: 0.15, scale: 0.82)
                 }

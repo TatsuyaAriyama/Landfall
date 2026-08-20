@@ -244,6 +244,49 @@ struct HomeIslandAsset: Identifiable, Hashable {
     var requiresPass = false
 }
 
+/// One member of a prop that ships in several. `swatch` is the dot the drawer
+/// paints, and it is the prop's own colour rather than a UI accent — the row
+/// of dots under a tile has to look like the thing it will place.
+///
+/// Leave `swatch` out when the members differ in shape rather than colour: no
+/// dot can tell a conifer from a palm, so the drawer shows those variants as
+/// the models themselves.
+struct HomeIslandAssetVariant: Identifiable, Hashable, Sendable {
+    let assetID: String
+    let name: String
+    var swatch: UInt?
+
+    var id: String { assetID }
+}
+
+/// A prop the player thinks of as one thing that comes in several. Without
+/// this the drawer showed three hibiscus tiles, three rose tiles and two
+/// benches, and the shelf read as a spreadsheet instead of a catalogue.
+struct HomeIslandAssetFamily: Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String
+    /// The icon the chooser row wears. Colours get a palette; a family that
+    /// differs in shape gets its own silhouette instead.
+    var symbolName = "paintpalette.fill"
+    let variants: [HomeIslandAssetVariant]
+
+    var assetIDs: [String] { variants.map(\.assetID) }
+
+    /// Whether a row of dots can stand in for the models. It can only when
+    /// every member carries its own colour.
+    var showsSwatches: Bool { variants.allSatisfy { $0.swatch != nil } }
+}
+
+/// The shelves of the build drawer, in the order the chips show them.
+/// Membership lives in `HomeIslandAssetCatalog.group(of:)`.
+enum HomeIslandAssetGroup: String, CaseIterable, Sendable {
+    case nature
+    case structures
+    case decor
+    case paths
+    case furniture
+}
+
 /// アセット側が要求するキャラモーション。寝具を追加するときも接触ソケットと
 /// モーションをカタログへ登録するだけで判別できる。
 enum HomeIslandContactMotion: String, Codable, Hashable, Sendable {
@@ -262,6 +305,15 @@ struct HomeIslandContactSlotDefinition: Identifiable, Hashable, Sendable {
     let facesAwayFromApproach: Bool
     let seatPlanarOffset: Float?
     let approachClearance: Float?
+    /// Whether the player may walk into this seat from any side.
+    ///
+    /// A slot normally has one standing spot — its approach socket — and the
+    /// player has to be on it to sit. That is right for a bench built into a
+    /// row, and wrong for a chair standing in the open: a desk chair that can
+    /// only be entered from behind sends the player walking a circle around
+    /// it. When this is set the approach socket still says which way the
+    /// navigator ends up facing, but no longer says where they must stand.
+    let allowsEntryFromAnySide: Bool
 
     init(
         id: String,
@@ -270,7 +322,8 @@ struct HomeIslandContactSlotDefinition: Identifiable, Hashable, Sendable {
         approachNodeName: String,
         facesAwayFromApproach: Bool = false,
         seatPlanarOffset: Float? = nil,
-        approachClearance: Float? = nil
+        approachClearance: Float? = nil,
+        allowsEntryFromAnySide: Bool = false
     ) {
         self.id = id
         self.motion = motion
@@ -279,6 +332,7 @@ struct HomeIslandContactSlotDefinition: Identifiable, Hashable, Sendable {
         self.facesAwayFromApproach = facesAwayFromApproach
         self.seatPlanarOffset = seatPlanarOffset
         self.approachClearance = approachClearance
+        self.allowsEntryFromAnySide = allowsEntryFromAnySide
     }
 }
 
@@ -360,10 +414,11 @@ enum HomeIslandAssetCatalog {
         ),
     ]
 
-    /// The desk chair is entered from behind, not from the front: a chair
-    /// pulled up to a desk has no room on its desk side, and that is also the
-    /// side the navigator must end up facing. `facesAwayFromApproach` turns
-    /// the walk-in direction around so they sit looking at the desk.
+    /// The desk chair is entered from wherever the player happens to be. Its
+    /// approach socket sits behind the backrest and `facesAwayFromApproach`
+    /// turns that around into a facing, so the navigator always ends up
+    /// looking over the front of the chair — at the desk, if there is one —
+    /// no matter which side they walked in from.
     private static let officeChairSeatSlots = [
         HomeIslandContactSlotDefinition(
             id: "seat",
@@ -376,6 +431,22 @@ enum HomeIslandAssetCatalog {
             // chair it perched the navigator on the front lip; 0.02 sets them
             // in the middle of the pad with the backrest at their back.
             seatPlanarOffset: -0.02,
+            approachClearance: 0.05,
+            allowsEntryFromAnySide: true
+        ),
+    ]
+
+    /// The log that used to sit in the campfire's ring. No backrest, so it is
+    /// entered from the front and sat on facing back out, exactly like the
+    /// benches — and like them the body belongs on the socket rather than
+    /// pushed forward off a backrest that is not there.
+    private static let logStoolSeatSlots = [
+        HomeIslandContactSlotDefinition(
+            id: "seat",
+            motion: .sit,
+            seatNodeName: "SeatSocket_Seat",
+            approachNodeName: "SeatApproach_Seat",
+            seatPlanarOffset: 0,
             approachClearance: 0.05
         ),
     ]
@@ -390,8 +461,10 @@ enum HomeIslandAssetCatalog {
             navigatorHammockContactSlots
         case "council_chair":
             councilChairSeatSlots
-        case "office_chair":
+        case "office_chair", "office_chair_pink":
             officeChairSeatSlots
+        case "log_stool":
+            logStoolSeatSlots
         default:
             []
         }
@@ -409,7 +482,6 @@ enum HomeIslandAssetCatalog {
     /// saved instance as well as becoming the default for new placements.
     /// Add an asset ID here when its final simulator percentage is approved.
     private static let calibratedScaleAssetIDs: Set<String> = [
-        "small_tree",
         "small_stump",
         "small_rock",
         // Sizes the operator set by eye in the simulator. Listing them here
@@ -420,15 +492,15 @@ enum HomeIslandAssetCatalog {
     /// Only these operator-approved assets can enter player-authored islands.
     /// Keeping this allowlist independent from 3D Studio prevents developer or
     /// terrain tools from leaking into the consumer placement experience.
+    ///
+    /// The order here is the order the build drawer shows: category by
+    /// category in the same sequence as the category chips, and inside each
+    /// one grouped into sets rather than sorted by unlock level. Level and
+    /// the Voyage Pass are applied on top of this by the drawer itself, which
+    /// sends anything the player cannot place today to the back — so this list
+    /// is free to read as a furniture catalogue instead of a progression table.
     static let approved: [HomeIslandAsset] = [
-        HomeIslandAsset(
-            id: "small_tree",
-            title: String(localized: "Broadleaf Tree"),
-            symbolName: "tree.fill",
-            defaultScale: 1.32,
-            footprintMargin: 0.38,
-            unlockLevel: 1
-        ),
+        // Nature: trees first, then what grows low, then flowers, stone, water.
         HomeIslandAsset(
             id: "conifer_tree",
             title: String(localized: "Conifer"),
@@ -436,6 +508,14 @@ enum HomeIslandAssetCatalog {
             defaultScale: 1.20,
             footprintMargin: 0.40,
             unlockLevel: 1
+        ),
+        HomeIslandAsset(
+            id: "palm_tree",
+            title: String(localized: "Palm Tree"),
+            symbolName: "tree.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.85,
+            unlockLevel: 4
         ),
         HomeIslandAsset(
             id: "small_stump",
@@ -446,231 +526,36 @@ enum HomeIslandAssetCatalog {
             unlockLevel: 4
         ),
         HomeIslandAsset(
-            id: "small_lighthouse",
-            title: String(localized: "Small Lighthouse"),
-            symbolName: "light.beacon.max.fill",
-            defaultScale: 0.72,
-            footprintMargin: 0.68,
-            unlockLevel: 4
-        ),
-        HomeIslandAsset(
-            id: "small_rock",
-            title: String(localized: "Small Rock"),
-            symbolName: "mountain.2.fill",
-            defaultScale: 0.70,
-            footprintMargin: 0.55,
-            unlockLevel: 1
-        ),
-        HomeIslandAsset(
-            id: "weathered_cottage",
-            title: String(localized: "Weathered Cottage"),
-            symbolName: "house.fill",
-            defaultScale: 0.78,
-            footprintMargin: 0.92,
-            unlockLevel: 4,
-            requiresPass: true
-        ),
-        HomeIslandAsset(
-            id: "weathered_crate",
-            title: String(localized: "Weathered Crate"),
-            symbolName: "shippingbox.fill",
-            defaultScale: 0.88,
-            footprintMargin: 0.46,
-            unlockLevel: 4
-        ),
-        HomeIslandAsset(
-            id: "small_lake",
-            title: String(localized: "Small Lake"),
-            symbolName: "water.waves",
-            defaultScale: 0.82,
-            footprintMargin: 0.88,
-            unlockLevel: 5
-        ),
-        HomeIslandAsset(
-            id: "weathered_lighthouse",
-            title: String(localized: "Stone Lighthouse"),
-            symbolName: "light.beacon.max.fill",
-            defaultScale: 0.68,
-            footprintMargin: 0.82,
-            unlockLevel: 6
-        ),
-        HomeIslandAsset(
-            id: "campfire_circle",
-            title: String(localized: "Campfire Circle"),
-            symbolName: "flame.fill",
-            defaultScale: 0.72,
-            footprintMargin: 1.62,
-            unlockLevel: 1
-        ),
-        HomeIslandAsset(
-            id: "stone_well",
-            title: String(localized: "Stone Well"),
-            symbolName: "drop.fill",
-            defaultScale: 0.76,
-            footprintMargin: 1.14,
-            unlockLevel: 7
-        ),
-        HomeIslandAsset(
-            id: "voyage_flagpole",
-            title: String(localized: "Voyage Flagpole"),
-            symbolName: "flag.fill",
-            defaultScale: 0.72,
-            footprintMargin: 1.10,
-            unlockLevel: 8
-        ),
-        HomeIslandAsset(
-            id: "cliff_lookout",
-            title: String(localized: "Cliff Lookout"),
-            symbolName: "binoculars.fill",
-            defaultScale: 0.72,
-            footprintMargin: 1.90,
-            unlockLevel: 9
-        ),
-        HomeIslandAsset(
-            id: "mossy_ruins",
-            title: String(localized: "Mossy Ruins"),
-            symbolName: "building.columns.fill",
-            defaultScale: 0.70,
-            footprintMargin: 1.62,
-            unlockLevel: 10
-        ),
-        HomeIslandAsset(
-            id: "stone_path_straight",
-            title: String(localized: "Stone Path — Straight"),
-            symbolName: "square.grid.3x3.fill",
-            defaultScale: 0.78,
-            footprintMargin: 1.50,
-            unlockLevel: 12
-        ),
-        HomeIslandAsset(
-            id: "stone_path_curve",
-            title: String(localized: "Stone Path — Curve"),
-            symbolName: "square.grid.3x3.fill",
-            defaultScale: 0.78,
-            footprintMargin: 1.62,
-            unlockLevel: 12
-        ),
-        HomeIslandAsset(
-            id: "stone_path_fork",
-            title: String(localized: "Stone Path — Fork"),
-            symbolName: "square.grid.3x3.fill",
-            defaultScale: 0.78,
-            footprintMargin: 1.60,
-            unlockLevel: 12
-        ),
-        HomeIslandAsset(
-            id: "coastal_rocks",
-            title: String(localized: "Coastal Rocks"),
-            symbolName: "mountain.2.fill",
-            defaultScale: 0.72,
-            footprintMargin: 1.90,
-            unlockLevel: 13
-        ),
-        HomeIslandAsset(
-            id: "navigator_tent",
-            title: String(localized: "Navigator's Tent"),
-            symbolName: "tent.fill",
-            defaultScale: 0.62,
-            footprintMargin: 1.98,
-            unlockLevel: 2
-        ),
-        HomeIslandAsset(
-            id: "harbor_lantern_post",
-            title: String(localized: "Harbor Lantern Post"),
-            symbolName: "lightbulb.fill",
-            defaultScale: 0.76,
-            footprintMargin: 0.68,
-            unlockLevel: 6
-        ),
-        HomeIslandAsset(
-            id: "driftwood_bench",
-            title: String(localized: "Driftwood Bench"),
-            symbolName: "chair.fill",
-            defaultScale: 0.62,
-            footprintMargin: 1.08,
-            unlockLevel: 3
-        ),
-        HomeIslandAsset(
-            id: "stone_bench",
-            title: String(localized: "Stone Bench"),
-            symbolName: "chair.fill",
-            defaultScale: 0.62,
-            footprintMargin: 1.08,
-            unlockLevel: 5
-        ),
-        HomeIslandAsset(
-            id: "wooden_bookshelf",
-            title: String(localized: "Bookshelf"),
-            symbolName: "books.vertical.fill",
-            defaultScale: 1.00,
-            footprintMargin: 0.42,
-            unlockLevel: 4,
-            requiresPass: true
-        ),
-        HomeIslandAsset(
-            id: "stacked_books",
-            title: String(localized: "Stacked Books"),
-            symbolName: "book.closed.fill",
-            defaultScale: 1.00,
-            footprintMargin: 0.24,
-            unlockLevel: 3,
-            requiresPass: true
-        ),
-        HomeIslandAsset(
-            id: "weathered_anchor",
-            title: String(localized: "Weathered Anchor"),
-            symbolName: "anchor",
-            defaultScale: 0.76,
-            footprintMargin: 0.86,
-            unlockLevel: 7
-        ),
-        HomeIslandAsset(
-            id: "net_drying_rack",
-            title: String(localized: "Net Drying Rack"),
-            symbolName: "grid",
-            defaultScale: 0.74,
-            footprintMargin: 1.18,
-            unlockLevel: 8
-        ),
-        HomeIslandAsset(
-            id: "navigator_hammock",
-            title: String(localized: "Navigator's Hammock"),
-            symbolName: "bed.double.fill",
-            defaultScale: 0.52,
-            footprintMargin: 1.45,
-            unlockLevel: 9
-        ),
-        HomeIslandAsset(
-            id: "voyage_signal_bell",
-            title: String(localized: "Voyage Signal Bell"),
-            symbolName: "bell.fill",
-            defaultScale: 0.76,
-            footprintMargin: 0.72,
-            unlockLevel: 10
-        ),
-        HomeIslandAsset(
-            id: "supply_barrels",
-            title: String(localized: "Supply Barrels"),
-            symbolName: "cylinder.split.1x2",
-            defaultScale: 0.80,
-            footprintMargin: 0.92,
-            unlockLevel: 8
-        ),
-        HomeIslandAsset(
-            id: "compass_rose_inlay",
-            title: String(localized: "Compass Rose Inlay"),
-            symbolName: "location.north.circle.fill",
-            defaultScale: 0.78,
-            footprintMargin: 1.18,
-            unlockLevel: 11
-        ),
-        HomeIslandAsset(
             id: "dune_grass_patch",
             title: String(localized: "Dune Grass Patch"),
             symbolName: "leaf.fill",
             defaultScale: 0.82,
             footprintMargin: 0.78,
             unlockLevel: 4
+        ),
+        HomeIslandAsset(
+            id: "hibiscus_bush_red",
+            title: String(localized: "Red Hibiscus"),
+            symbolName: "camera.macro",
+            defaultScale: 1.00,
+            footprintMargin: 0.42,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "hibiscus_bush_pink",
+            title: String(localized: "Pink Hibiscus"),
+            symbolName: "camera.macro",
+            defaultScale: 1.00,
+            footprintMargin: 0.42,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "hibiscus_bush_orange",
+            title: String(localized: "Orange Hibiscus"),
+            symbolName: "camera.macro",
+            defaultScale: 1.00,
+            footprintMargin: 0.42,
+            unlockLevel: 2
         ),
         HomeIslandAsset(
             id: "rose_bush_white",
@@ -700,52 +585,156 @@ enum HomeIslandAssetCatalog {
             requiresPass: true
         ),
         HomeIslandAsset(
-            id: "hibiscus_bush_red",
-            title: String(localized: "Red Hibiscus"),
-            symbolName: "camera.macro",
-            defaultScale: 1.00,
-            footprintMargin: 0.42,
-            unlockLevel: 2
+            id: "small_rock",
+            title: String(localized: "Small Rock"),
+            symbolName: "mountain.2.fill",
+            defaultScale: 0.70,
+            footprintMargin: 0.55,
+            unlockLevel: 1
         ),
         HomeIslandAsset(
-            id: "hibiscus_bush_pink",
-            title: String(localized: "Pink Hibiscus"),
-            symbolName: "camera.macro",
-            defaultScale: 1.00,
-            footprintMargin: 0.42,
-            unlockLevel: 2
-        ),
-        HomeIslandAsset(
-            id: "council_table",
-            title: String(localized: "Council Table"),
-            symbolName: "table.furniture.fill",
+            id: "coastal_rocks",
+            title: String(localized: "Coastal Rocks"),
+            symbolName: "mountain.2.fill",
             defaultScale: 0.72,
+            footprintMargin: 1.90,
+            unlockLevel: 13
+        ),
+        HomeIslandAsset(
+            id: "small_lake",
+            title: String(localized: "Small Lake"),
+            symbolName: "water.waves",
+            defaultScale: 0.82,
+            footprintMargin: 0.88,
+            unlockLevel: 5
+        ),
+        // Structures: somewhere to sleep, then to see by, then the landmarks.
+        HomeIslandAsset(
+            id: "navigator_tent",
+            title: String(localized: "Navigator's Tent"),
+            symbolName: "tent.fill",
+            defaultScale: 0.62,
+            footprintMargin: 1.98,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "weathered_cottage",
+            title: String(localized: "Weathered Cottage"),
+            symbolName: "house.fill",
+            defaultScale: 0.78,
             footprintMargin: 0.92,
-            unlockLevel: 3
+            unlockLevel: 4,
+            requiresPass: true
         ),
         HomeIslandAsset(
-            id: "council_chair",
-            title: String(localized: "Council Chair"),
-            symbolName: "chair.fill",
+            id: "small_lighthouse",
+            title: String(localized: "Small Lighthouse"),
+            symbolName: "light.beacon.max.fill",
             defaultScale: 0.72,
-            footprintMargin: 0.62,
-            unlockLevel: 3
-        ),
-        HomeIslandAsset(
-            id: "hibiscus_bush_orange",
-            title: String(localized: "Orange Hibiscus"),
-            symbolName: "camera.macro",
-            defaultScale: 1.00,
-            footprintMargin: 0.42,
-            unlockLevel: 2
-        ),
-        HomeIslandAsset(
-            id: "palm_tree",
-            title: String(localized: "Palm Tree"),
-            symbolName: "tree.fill",
-            defaultScale: 1.00,
-            footprintMargin: 0.85,
+            footprintMargin: 0.68,
             unlockLevel: 4
+        ),
+        HomeIslandAsset(
+            id: "weathered_lighthouse",
+            title: String(localized: "Stone Lighthouse"),
+            symbolName: "light.beacon.max.fill",
+            defaultScale: 0.68,
+            footprintMargin: 0.82,
+            unlockLevel: 6
+        ),
+        HomeIslandAsset(
+            id: "stone_well",
+            title: String(localized: "Stone Well"),
+            symbolName: "drop.fill",
+            defaultScale: 0.76,
+            footprintMargin: 1.14,
+            unlockLevel: 7
+        ),
+        HomeIslandAsset(
+            id: "cliff_lookout",
+            title: String(localized: "Cliff Lookout"),
+            symbolName: "binoculars.fill",
+            defaultScale: 0.72,
+            footprintMargin: 1.90,
+            unlockLevel: 9
+        ),
+        HomeIslandAsset(
+            id: "mossy_ruins",
+            title: String(localized: "Mossy Ruins"),
+            symbolName: "building.columns.fill",
+            defaultScale: 0.70,
+            footprintMargin: 1.62,
+            unlockLevel: 10
+        ),
+        // Decor: firelight, then working harbour gear, then the voyage's own
+        // marks, and finally the things a beach day leaves behind.
+        HomeIslandAsset(
+            id: "campfire_circle",
+            title: String(localized: "Campfire"),
+            symbolName: "flame.fill",
+            defaultScale: 0.72,
+            // The seating used to be part of this prop, and the margin had to
+            // clear the whole ring of benches. What is left is the fire and
+            // the moss around it. The saved ID stays `campfire_circle` so
+            // every island that already has one keeps it.
+            footprintMargin: 0.86,
+            unlockLevel: 1
+        ),
+        HomeIslandAsset(
+            id: "harbor_lantern_post",
+            title: String(localized: "Harbor Lantern Post"),
+            symbolName: "lightbulb.fill",
+            defaultScale: 0.76,
+            footprintMargin: 0.68,
+            unlockLevel: 6
+        ),
+        HomeIslandAsset(
+            id: "weathered_crate",
+            title: String(localized: "Weathered Crate"),
+            symbolName: "shippingbox.fill",
+            defaultScale: 0.88,
+            footprintMargin: 0.46,
+            unlockLevel: 4
+        ),
+        HomeIslandAsset(
+            id: "supply_barrels",
+            title: String(localized: "Supply Barrels"),
+            symbolName: "cylinder.split.1x2",
+            defaultScale: 0.80,
+            footprintMargin: 0.92,
+            unlockLevel: 8
+        ),
+        HomeIslandAsset(
+            id: "weathered_anchor",
+            title: String(localized: "Weathered Anchor"),
+            symbolName: "anchor",
+            defaultScale: 0.76,
+            footprintMargin: 0.86,
+            unlockLevel: 7
+        ),
+        HomeIslandAsset(
+            id: "net_drying_rack",
+            title: String(localized: "Net Drying Rack"),
+            symbolName: "grid",
+            defaultScale: 0.74,
+            footprintMargin: 1.18,
+            unlockLevel: 8
+        ),
+        HomeIslandAsset(
+            id: "voyage_flagpole",
+            title: String(localized: "Voyage Flagpole"),
+            symbolName: "flag.fill",
+            defaultScale: 0.72,
+            footprintMargin: 1.10,
+            unlockLevel: 8
+        ),
+        HomeIslandAsset(
+            id: "voyage_signal_bell",
+            title: String(localized: "Voyage Signal Bell"),
+            symbolName: "bell.fill",
+            defaultScale: 0.76,
+            footprintMargin: 0.72,
+            unlockLevel: 10
         ),
         HomeIslandAsset(
             id: "beach_parasol",
@@ -795,9 +784,52 @@ enum HomeIslandAssetCatalog {
             footprintMargin: 0.38,
             unlockLevel: 6
         ),
+        // Paths: the three pieces that join up, then the inlay they lead to.
+        HomeIslandAsset(
+            id: "stone_path_straight",
+            title: String(localized: "Stone Path — Straight"),
+            symbolName: "square.grid.3x3.fill",
+            defaultScale: 0.78,
+            footprintMargin: 1.50,
+            unlockLevel: 12
+        ),
+        HomeIslandAsset(
+            id: "stone_path_curve",
+            title: String(localized: "Stone Path — Curve"),
+            symbolName: "square.grid.3x3.fill",
+            defaultScale: 0.78,
+            footprintMargin: 1.62,
+            unlockLevel: 12
+        ),
+        HomeIslandAsset(
+            id: "stone_path_fork",
+            title: String(localized: "Stone Path — Fork"),
+            symbolName: "square.grid.3x3.fill",
+            defaultScale: 0.78,
+            footprintMargin: 1.60,
+            unlockLevel: 12
+        ),
+        HomeIslandAsset(
+            id: "compass_rose_inlay",
+            title: String(localized: "Compass Rose Inlay"),
+            symbolName: "location.north.circle.fill",
+            defaultScale: 0.78,
+            footprintMargin: 1.18,
+            unlockLevel: 11
+        ),
+        // Furniture, in sets: the desk and what stands on it, the council pair,
+        // benches, then reading.
         HomeIslandAsset(
             id: "office_desk",
             title: String(localized: "Desk"),
+            symbolName: "table.furniture.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.46,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "office_desk_pink",
+            title: String(localized: "Desk (Pink)"),
             symbolName: "table.furniture.fill",
             defaultScale: 1.00,
             footprintMargin: 0.46,
@@ -812,12 +844,86 @@ enum HomeIslandAssetCatalog {
             unlockLevel: 2
         ),
         HomeIslandAsset(
+            id: "office_chair_pink",
+            title: String(localized: "Chair (Pink)"),
+            symbolName: "chair.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.44,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
             id: "silver_laptop",
             title: String(localized: "PC"),
             symbolName: "laptopcomputer",
             defaultScale: 1.00,
             footprintMargin: 0.30,
             unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "council_table",
+            title: String(localized: "Council Table"),
+            symbolName: "table.furniture.fill",
+            defaultScale: 0.72,
+            footprintMargin: 0.92,
+            unlockLevel: 3
+        ),
+        HomeIslandAsset(
+            id: "council_chair",
+            title: String(localized: "Council Chair"),
+            symbolName: "chair.fill",
+            defaultScale: 0.72,
+            footprintMargin: 0.62,
+            unlockLevel: 3
+        ),
+        HomeIslandAsset(
+            id: "driftwood_bench",
+            title: String(localized: "Driftwood Bench"),
+            symbolName: "chair.fill",
+            defaultScale: 0.62,
+            footprintMargin: 1.08,
+            unlockLevel: 3
+        ),
+        HomeIslandAsset(
+            id: "stone_bench",
+            title: String(localized: "Stone Bench"),
+            symbolName: "chair.fill",
+            defaultScale: 0.62,
+            footprintMargin: 1.08,
+            unlockLevel: 5
+        ),
+        HomeIslandAsset(
+            id: "log_stool",
+            title: String(localized: "Log Stool"),
+            symbolName: "chair.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.62,
+            unlockLevel: 1
+        ),
+        HomeIslandAsset(
+            id: "wooden_bookshelf",
+            title: String(localized: "Bookshelf"),
+            symbolName: "books.vertical.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.42,
+            unlockLevel: 4,
+            requiresPass: true
+        ),
+        HomeIslandAsset(
+            id: "stacked_books",
+            title: String(localized: "Stacked Books"),
+            symbolName: "book.closed.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.24,
+            unlockLevel: 3,
+            requiresPass: true
+        ),
+        HomeIslandAsset(
+            id: "navigator_hammock",
+            title: String(localized: "Navigator's Hammock"),
+            symbolName: "bed.double.fill",
+            defaultScale: 0.52,
+            footprintMargin: 1.45,
+            unlockLevel: 9
         ),
     ]
 
@@ -835,16 +941,31 @@ enum HomeIslandAssetCatalog {
     }
 
     /// Numbers copied from `Tools/Blender/build_office_desk.py`: the top is
-    /// 0.420 high and 1.060 by 0.520 across. The usable rectangle is that top
-    /// pulled in by the laptop's own half-size (0.165 by 0.115), so a laptop
-    /// dropped at the very edge of it still stands wholly on the desk instead
-    /// of hanging over the lip.
+    /// 0.420 high and 1.060 by 0.520 across, so the usable rectangle is that
+    /// whole top — 0.530 by 0.260 from the centre.
+    ///
+    /// It used to be the top pulled in by the laptop's own half-size, which
+    /// kept a laptop from ever hanging over the lip but left only the middle
+    /// two thirds of the desk usable: dragging one toward either end, or
+    /// toward the front rail, dropped it off the desk onto the sand well
+    /// before it looked like it had left the desk. The whole top now counts,
+    /// and a laptop set right at the edge overhangs it, exactly as one set
+    /// down at the edge of a real desk does.
     static let surfaces: [Surface] = [
         Surface(
             assetID: "office_desk",
             topHeight: 0.420,
-            halfWidth: 0.365,
-            halfDepth: 0.145,
+            halfWidth: 0.530,
+            halfDepth: 0.260,
+            accepts: ["silver_laptop"]
+        ),
+        // The pink desk is the same desk in another palette, so it carries the
+        // same top. Painting one does not stop a laptop standing on it.
+        Surface(
+            assetID: "office_desk_pink",
+            topHeight: 0.420,
+            halfWidth: 0.530,
+            halfDepth: 0.260,
             accepts: ["silver_laptop"]
         ),
     ]
@@ -939,7 +1060,7 @@ enum HomeIslandAssetCatalog {
     /// authored with, so jetties, paths and furniture stay square.
     static func naturalFacing(assetID: String, id: UUID) -> Float {
         switch assetID {
-        case "small_tree", "conifer_tree", "palm_tree", "small_rock",
+        case "conifer_tree", "palm_tree", "small_rock",
              "small_stump", "coastal_rocks", "dune_grass_patch",
              "rose_bush_white", "rose_bush_red", "rose_bush_yellow",
              "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange":
@@ -952,24 +1073,203 @@ enum HomeIslandAssetCatalog {
 
     /// Most props are intentionally scarce. Natural ground details can be
     /// repeated more freely so players can shape a convincing island edge.
-    static func placementLimit(for assetID: String) -> Int {
+    /// How many of one prop a player may place, stated per group because that
+    /// is how the rule reads: ten of anything that grows or paves, three of
+    /// everything else.
+    ///
+    /// Nature and paths are the two things an island is *made* of — a grove,
+    /// a border, a path that actually reaches somewhere — so they get the
+    /// room. Everything else is furniture and landmarks, where three is
+    /// already a set and more only makes an island look like a warehouse.
+    /// Props that come in more than one. A family's tile sits where its first
+    /// variant would have, and the rest never get a tile of their own.
+    ///
+    /// Each member stays its own asset with its own saved placements and its
+    /// own limit — this only changes how they are offered. Nothing already
+    /// placed moves or changes.
+    static let families: [HomeIslandAssetFamily] = [
+        // A player looking for somewhere to plant is looking for "a tree",
+        // not for a conifer: the kind is the second question, asked after
+        // the tile is tapped.
+        HomeIslandAssetFamily(
+            id: "tree",
+            title: String(localized: "Tree"),
+            symbolName: "tree.fill",
+            variants: [
+                HomeIslandAssetVariant(
+                    assetID: "conifer_tree",
+                    name: String(localized: "Conifer")
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "palm_tree",
+                    name: String(localized: "Palm Tree")
+                ),
+            ]
+        ),
+        HomeIslandAssetFamily(
+            id: "hibiscus",
+            title: String(localized: "Hibiscus"),
+            variants: [
+                HomeIslandAssetVariant(
+                    assetID: "hibiscus_bush_red",
+                    name: String(localized: "Red"),
+                    swatch: 0xD5495A
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "hibiscus_bush_pink",
+                    name: String(localized: "Pink"),
+                    swatch: 0xE9779E
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "hibiscus_bush_orange",
+                    name: String(localized: "Orange"),
+                    swatch: 0xE8853C
+                ),
+            ]
+        ),
+        HomeIslandAssetFamily(
+            id: "rose",
+            title: String(localized: "Roses"),
+            variants: [
+                HomeIslandAssetVariant(
+                    assetID: "rose_bush_white",
+                    name: String(localized: "White"),
+                    swatch: 0xF2EDE2
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "rose_bush_red",
+                    name: String(localized: "Red"),
+                    swatch: 0xC33A45
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "rose_bush_yellow",
+                    name: String(localized: "Yellow"),
+                    swatch: 0xE8C44E
+                ),
+            ]
+        ),
+        HomeIslandAssetFamily(
+            id: "lighthouse",
+            title: String(localized: "Lighthouse"),
+            symbolName: "light.beacon.max.fill",
+            variants: [
+                HomeIslandAssetVariant(
+                    assetID: "small_lighthouse",
+                    name: String(localized: "White")
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "weathered_lighthouse",
+                    name: String(localized: "Stone")
+                ),
+            ]
+        ),
+        HomeIslandAssetFamily(
+            id: "bench",
+            title: String(localized: "Bench"),
+            variants: [
+                HomeIslandAssetVariant(
+                    assetID: "driftwood_bench",
+                    name: String(localized: "Wood"),
+                    swatch: 0x6A513D
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "stone_bench",
+                    name: String(localized: "Stone"),
+                    swatch: 0x9AA09C
+                ),
+            ]
+        ),
+        HomeIslandAssetFamily(
+            id: "office_chair",
+            title: String(localized: "Chair"),
+            variants: [
+                HomeIslandAssetVariant(
+                    assetID: "office_chair",
+                    name: String(localized: "Black"),
+                    swatch: 0x23272B
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "office_chair_pink",
+                    name: String(localized: "Pink"),
+                    swatch: 0xEE9DB4
+                ),
+            ]
+        ),
+        HomeIslandAssetFamily(
+            id: "office_desk",
+            title: String(localized: "Desk"),
+            variants: [
+                HomeIslandAssetVariant(
+                    assetID: "office_desk",
+                    name: String(localized: "Black"),
+                    swatch: 0x23272B
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "office_desk_pink",
+                    name: String(localized: "Pink"),
+                    swatch: 0xEE9DB4
+                ),
+            ]
+        ),
+    ]
+
+    private static let familyByAssetID: [String: HomeIslandAssetFamily] = {
+        var index: [String: HomeIslandAssetFamily] = [:]
+        for family in families {
+            for variant in family.variants {
+                index[variant.assetID] = family
+            }
+        }
+        return index
+    }()
+
+    static func family(containing assetID: String) -> HomeIslandAssetFamily? {
+        familyByAssetID[assetID]
+    }
+
+    /// Which shelf of the build drawer a prop belongs on. The drawer's chips
+    /// read this, and so does `placementLimit`, so the two can never drift
+    /// into disagreeing about what counts as "nature".
+    static func group(of assetID: String) -> HomeIslandAssetGroup? {
         switch assetID {
-        case "small_stump", "small_rock", "small_tree", "conifer_tree",
-             "palm_tree", "dune_grass_patch",
+        case "conifer_tree", "palm_tree", "small_stump",
+             "dune_grass_patch",
+             "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange",
              "rose_bush_white", "rose_bush_red", "rose_bush_yellow",
-             "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange":
-            // Planting is what an island is made of. Overlap is allowed now,
-            // so a believable grove or border needs real numbers.
-            16
-        case "stone_path_straight", "stone_path_curve", "stone_path_fork":
-            // A path of three tiles never reaches anywhere.
-            12
-        case "weathered_cottage", "small_lighthouse", "weathered_lighthouse",
-             "cliff_lookout", "mossy_ruins", "stone_well", "navigator_tent":
-            // Landmarks stay rare on purpose.
-            3
+             "small_rock", "coastal_rocks", "small_lake":
+            .nature
+        case "navigator_tent", "weathered_cottage",
+             "small_lighthouse", "weathered_lighthouse",
+             "stone_well", "cliff_lookout", "mossy_ruins":
+            .structures
+        case "campfire_circle", "harbor_lantern_post",
+             "weathered_crate", "supply_barrels", "weathered_anchor",
+             "net_drying_rack",
+             "voyage_flagpole", "voyage_signal_bell",
+             "beach_parasol", "swim_ring", "sandcastle", "watermelon",
+             "seaside_mailbox", "seaside_gramophone":
+            .decor
+        case "stone_path_straight", "stone_path_curve", "stone_path_fork",
+             "compass_rose_inlay":
+            .paths
+        case "office_desk", "office_desk_pink",
+             "office_chair", "office_chair_pink", "silver_laptop",
+             "council_table", "council_chair",
+             "driftwood_bench", "stone_bench", "log_stool",
+             "wooden_bookshelf", "stacked_books",
+             "navigator_hammock":
+            .furniture
         default:
-            6
+            nil
+        }
+    }
+
+    static func placementLimit(for assetID: String) -> Int {
+        switch group(of: assetID) {
+        case .nature, .paths:
+            10
+        default:
+            3
         }
     }
 
@@ -1089,7 +1389,8 @@ enum HomeIslandAssetCatalog {
             let scaleRatio = max(scale, 0.05) / max(asset.defaultScale, 0.05)
             return max(0.18, 0.30 * scaleRatio)
         }
-        if assetID == "driftwood_bench" || assetID == "stone_bench" {
+        if assetID == "driftwood_bench" || assetID == "stone_bench"
+            || assetID == "log_stool" {
             guard let asset = asset(id: assetID) else { return 0.30 }
             let scaleRatio = max(scale, 0.05) / max(asset.defaultScale, 0.05)
             return max(0.18, 0.30 * scaleRatio)
@@ -1138,7 +1439,7 @@ enum HomeIslandAssetCatalog {
              "compass_rose_inlay", "dune_grass_patch",
              "rose_bush_white", "rose_bush_red", "rose_bush_yellow",
              "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange",
-             "small_tree", "conifer_tree", "palm_tree":
+             "conifer_tree", "palm_tree":
             false
         default:
             true
@@ -1275,9 +1576,11 @@ enum HomeIslandPersistence {
             else { continue }
 
             let count = counts[placement.assetID, default: 0]
-            guard count < HomeIslandAssetCatalog.placementLimit(for: placement.assetID) else {
-                continue
-            }
+            // The limit is the limit, including for islands built under the
+            // older, larger numbers: anything past it is dropped on load and
+            // not written back. Placing and keeping answer to one rule.
+            guard count < HomeIslandAssetCatalog.placementLimit(for: placement.assetID)
+            else { continue }
 
             var copy = placement
             copy.transform.scale = HomeIslandAssetCatalog.persistedScale(
@@ -1689,6 +1992,18 @@ final class HomeIslandStore: ObservableObject {
         let previous = editState
         placements.removeAll { $0.id == selectedID }
         self.selectedID = nil
+        finishEdit(from: previous)
+    }
+
+    /// Takes every placed prop back and leaves the island bare. The props
+    /// are not consumed by placing them, so there is no inventory to return
+    /// them to; clearing the layout is all "putting them back" means. This
+    /// goes through `finishEdit`, so one undo brings the whole island back.
+    func removeAllPlacements() {
+        guard !isReadOnly, !placements.isEmpty else { return }
+        let previous = editState
+        placements.removeAll()
+        selectedID = nil
         finishEdit(from: previous)
     }
 

@@ -8,7 +8,9 @@ navigator who is about 0.95 tall. The seat is 0.400 across against the desk's
 
 Same palette as the desk, down to the hex values: black laminate over a steel
 frame, with the silver only on the small hardware. Standing them side by side
-should read as one bought set, not two black props.
+should read as one bought set, not two black props. The desk's pink is matched
+the same way, so ``office_chair_pink`` pairs with ``office_desk_pink`` — only
+the palette differs, every dimension and socket below is shared.
 
 The chair carries one seat socket. It faces -Y like every other seated prop,
 and its approach socket is behind the backrest: a chair pulled up to a desk is
@@ -57,24 +59,52 @@ def finish(asset_id: str, root: bpy.types.Object, objects: list[bpy.types.Object
     shutil.copy2(kit.READY_DIR / f"{asset_id}.usdz", RUNTIME_DIR / f"{asset_id}.usdz")
 
 
-def chair_materials() -> dict[str, bpy.types.Material]:
-    # The desk's own hex values. A chair is upholstered rather than laminated,
-    # so only the roughness moves: the same black, less of a sheen on it.
+# One palette per colour, taken from the desk of the same colour. A chair is
+# upholstered rather than laminated, so only the roughness moves.
+PALETTES = {
+    "office_chair": {
+        "suffix": "",
+        "pad": "#23272B",
+        "pad_edge": "#15181B",
+        "frame": "#2E3339",
+        "frame_dark": "#1B1F23",
+        "caster": "#101315",
+        "lever": "#98A0A7",
+    },
+    "office_chair_pink": {
+        "suffix": "Pink",
+        # office_desk_pink's top and frame, so the pair reads as one set.
+        "pad": "#EE9DB4",
+        "pad_edge": "#C8788F",
+        "frame": "#8A6A74",
+        "frame_dark": "#6B4F58",
+        "caster": "#4A353C",
+        "lever": "#F1DCE2",
+    },
+}
+
+
+def chair_materials(asset_id: str) -> dict[str, bpy.types.Material]:
+    palette = PALETTES[asset_id]
+    suffix = palette["suffix"]
     return {
-        "pad": kit.material("LF_ChairPad", "#23272B", 0.68),
-        "pad_edge": kit.material("LF_ChairPadEdge", "#15181B", 0.62),
-        "frame": kit.material("LF_ChairFrame", "#2E3339", 0.56, metallic=0.30),
-        "frame_dark": kit.material("LF_ChairFrameDark", "#1B1F23", 0.60, metallic=0.26),
-        "caster": kit.material("LF_ChairCaster", "#101315", 0.72),
-        "lever": kit.material("LF_ChairLever", "#98A0A7", 0.40, metallic=0.42),
+        key: kit.material(f"LF_Chair{name}{suffix}", palette[key], roughness, metallic=metallic)
+        for key, name, roughness, metallic in (
+            ("pad", "Pad", 0.68, 0.0),
+            ("pad_edge", "PadEdge", 0.62, 0.0),
+            ("frame", "Frame", 0.56, 0.30),
+            ("frame_dark", "FrameDark", 0.60, 0.26),
+            ("caster", "Caster", 0.72, 0.0),
+            ("lever", "Lever", 0.40, 0.42),
+        )
     }
 
 
-def build_office_chair() -> None:
+def build_office_chair(asset_id: str = "office_chair") -> None:
     kit.reset_scene()
-    root = kit.make_root("office_chair", "Office_Chair", "small")
+    root = kit.make_root(asset_id, asset_id.title(), "small")
     objects: list[bpy.types.Object] = []
-    mats = chair_materials()
+    mats = chair_materials(asset_id)
 
     # The seat: a pad over a thin shell, the same two-layer trick the desk top
     # uses to stop a single box from reading as a slab.
@@ -243,8 +273,9 @@ def build_office_chair() -> None:
         ),
     )
 
-    finish("office_chair", root, objects, sockets)
+    finish(asset_id, root, objects, sockets)
 
 
-build_office_chair()
-print(f"OFFICE_CHAIR_COMPLETE=1 DESK_TOP_Z={DESK_TOP_Z}")
+for chair_id in PALETTES:
+    build_office_chair(chair_id)
+print(f"OFFICE_CHAIR_COMPLETE={len(PALETTES)} DESK_TOP_Z={DESK_TOP_Z}")

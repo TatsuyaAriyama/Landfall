@@ -1,15 +1,14 @@
-"""Build the modular island foundation and small tree used by 3D Studio.
+"""Build the modular island foundation used by 3D Studio.
 
-Both assets are authored as independent, origin-grounded props. The island stays
-deliberately shallow so several foundations can be combined without looking like
-thick cylinders; the tree uses a slim branching trunk and a dense, faceted crown.
-Editable .blend sources, runtime USDZ files, and review renders are generated.
+The foundation is authored as an independent, origin-grounded prop, and stays
+deliberately shallow so several of them can be combined without looking like
+thick cylinders. An editable .blend source, the runtime USDZ file, and a review
+render are generated.
 """
 
 from __future__ import annotations
 
 import math
-import random
 from pathlib import Path
 
 import bpy
@@ -20,7 +19,6 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE_DIR = ROOT / "Assets3D/source"
 RESOURCE_DIR = ROOT / "Landfall/Resources"
 RENDER_DIR = ROOT / "marketing/3d"
-RNG = random.Random(81327)
 
 
 def rgba(value: str, alpha: float = 1.0) -> tuple[float, float, float, float]:
@@ -342,138 +340,4 @@ def build_island_base() -> None:
     )
 
 
-def add_branch(
-    name: str,
-    start: tuple[float, float, float],
-    end: tuple[float, float, float],
-    radius_start: float,
-    radius_end: float,
-    material: bpy.types.Material,
-    root: bpy.types.Object,
-    objects: list[bpy.types.Object],
-) -> bpy.types.Object:
-    start_vector = Vector(start)
-    end_vector = Vector(end)
-    direction = end_vector - start_vector
-    midpoint = (start_vector + end_vector) * 0.5
-    bpy.ops.mesh.primitive_cone_add(
-        vertices=9,
-        radius1=radius_start,
-        radius2=radius_end,
-        depth=direction.length,
-        end_fill_type="NGON",
-        location=midpoint,
-    )
-    branch = bpy.context.object
-    branch.name = name
-    branch.rotation_mode = "QUATERNION"
-    branch.rotation_quaternion = direction.to_track_quat("Z", "Y")
-    branch.data.materials.append(material)
-    branch.parent = root
-    objects.append(branch)
-    return branch
-
-
-def build_small_tree() -> None:
-    reset_scene()
-    root = make_root("Small_Tree")
-    objects: list[bpy.types.Object] = []
-    bark_deep = make_material("LF_SmallTreeBarkDeep", "#3B2C25", 0.97)
-    bark = make_material("LF_SmallTreeBark", "#5A4030", 0.94)
-    bark_light = make_material("LF_SmallTreeBarkLight", "#745440", 0.92)
-    leaf_materials = (
-        make_material("LF_SmallTreeLeafDeep", "#20483B", 0.86),
-        make_material("LF_SmallTreeLeafShadow", "#2C5B46", 0.83),
-        make_material("LF_SmallTreeLeaf", "#3D7052", 0.80),
-        make_material("LF_SmallTreeLeafLight", "#5C8A61", 0.78),
-        make_material("LF_SmallTreeLeafSun", "#78A06F", 0.76),
-    )
-
-    trunk_points = (
-        (0.00, 0.00, 0.02),
-        (0.025, 0.00, 0.38),
-        (-0.035, 0.012, 0.73),
-        (0.035, -0.010, 1.04),
-        (0.015, 0.000, 1.34),
-    )
-    trunk_radii = (0.090, 0.074, 0.057, 0.040, 0.022)
-    trunk_materials = (bark_deep, bark, bark_light, bark)
-    for index in range(len(trunk_points) - 1):
-        add_branch(
-            f"SmallTree_Trunk_{index + 1:02}", trunk_points[index], trunk_points[index + 1],
-            trunk_radii[index], trunk_radii[index + 1], trunk_materials[index], root, objects,
-        )
-
-    branch_paths = (
-        ((-0.015, 0.006, 0.61), (-0.24, 0.015, 0.88), (-0.48, 0.045, 1.06)),
-        ((0.005, -0.004, 0.76), (0.25, -0.035, 1.00), (0.49, -0.080, 1.15)),
-        ((0.015, 0.000, 0.92), (-0.19, -0.10, 1.18), (-0.34, -0.17, 1.38)),
-        ((0.025, -0.006, 1.05), (0.22, 0.10, 1.27), (0.37, 0.16, 1.43)),
-        ((0.018, 0.000, 1.18), (-0.11, 0.16, 1.40), (-0.18, 0.25, 1.54)),
-    )
-    for path_index, path in enumerate(branch_paths):
-        add_branch(
-            f"SmallTree_Branch_{path_index + 1:02}_A", path[0], path[1],
-            0.043, 0.025, bark, root, objects,
-        )
-        add_branch(
-            f"SmallTree_Branch_{path_index + 1:02}_B", path[1], path[2],
-            0.025, 0.010, bark_light, root, objects,
-        )
-
-    # Small radial roots settle the thin trunk into any foundation without a bulky pedestal.
-    for index in range(5):
-        angle = math.tau * index / 5 + 0.18
-        add_branch(
-            f"SmallTree_Root_{index + 1:02}",
-            (math.cos(angle) * 0.026, math.sin(angle) * 0.026, 0.055),
-            (math.cos(angle) * 0.18, math.sin(angle) * 0.18, 0.012),
-            0.040, 0.010, bark_deep if index % 2 else bark, root, objects,
-        )
-
-    # Overlapping faceted clusters create a full crown while preserving small-tree scale.
-    clusters = (
-        (-0.48, 0.04, 1.08, 0.25), (-0.39, -0.10, 1.22, 0.24),
-        (-0.31, 0.14, 1.30, 0.27), (-0.20, -0.18, 1.40, 0.25),
-        (-0.15, 0.20, 1.49, 0.25), (-0.03, -0.08, 1.54, 0.29),
-        (0.02, 0.18, 1.63, 0.25), (0.13, -0.19, 1.49, 0.27),
-        (0.18, 0.11, 1.58, 0.28), (0.28, -0.08, 1.42, 0.27),
-        (0.37, 0.17, 1.43, 0.24), (0.48, -0.08, 1.18, 0.25),
-        (0.42, 0.10, 1.28, 0.26), (0.24, 0.24, 1.30, 0.25),
-        (0.03, 0.31, 1.39, 0.27), (-0.25, 0.31, 1.28, 0.24),
-        (-0.35, -0.26, 1.12, 0.22), (0.30, -0.29, 1.24, 0.24),
-        (-0.08, -0.31, 1.33, 0.26), (0.08, 0.02, 1.28, 0.30),
-        (-0.22, 0.02, 1.18, 0.27), (0.23, -0.01, 1.20, 0.28),
-    )
-    for index, (x, y, z, radius) in enumerate(clusters):
-        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=2, radius=radius, location=(x, y, z))
-        foliage = bpy.context.object
-        foliage.name = f"SmallTree_Foliage_{index + 1:02}"
-        foliage.scale = (
-            0.92 + RNG.uniform(-0.12, 0.15),
-            0.78 + RNG.uniform(-0.10, 0.12),
-            0.82 + RNG.uniform(-0.08, 0.16),
-        )
-        foliage.rotation_euler = (
-            RNG.uniform(-0.45, 0.45),
-            RNG.uniform(-0.45, 0.45),
-            RNG.uniform(-math.pi, math.pi),
-        )
-        foliage.data.materials.append(leaf_materials[(index * 3 + index // 4) % len(leaf_materials)])
-        for polygon in foliage.data.polygons:
-            polygon.use_smooth = False
-        foliage.parent = root
-        objects.append(foliage)
-
-    add_preview_stage((0, 0, 0.82), (3.0, -4.9, 2.45), "#294B42")
-    export_asset(
-        root,
-        objects,
-        SOURCE_DIR / "small_tree.blend",
-        RESOURCE_DIR / "small_tree.usdz",
-        RENDER_DIR / "small-tree.png",
-    )
-
-
 build_island_base()
-build_small_tree()

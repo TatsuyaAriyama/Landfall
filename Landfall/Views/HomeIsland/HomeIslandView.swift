@@ -41,34 +41,15 @@ private enum HomeIslandAssetCategory: String, CaseIterable, Identifiable {
         case .all:
             true
         case .nature:
-            ["small_tree", "conifer_tree", "small_stump", "small_rock", "small_lake",
-             "coastal_rocks", "dune_grass_patch",
-             "rose_bush_white", "rose_bush_red", "rose_bush_yellow",
-             "hibiscus_bush_red", "hibiscus_bush_pink", "hibiscus_bush_orange",
-             "palm_tree"]
-                .contains(assetID)
+            HomeIslandAssetCatalog.group(of: assetID) == .nature
         case .structures:
-            ["weathered_cottage", "small_lighthouse", "weathered_lighthouse",
-             "stone_well", "cliff_lookout", "mossy_ruins",
-             "navigator_tent"]
-                .contains(assetID)
+            HomeIslandAssetCatalog.group(of: assetID) == .structures
         case .decor:
-            ["weathered_crate", "campfire_circle", "voyage_flagpole",
-             "harbor_lantern_post", "weathered_anchor", "net_drying_rack",
-             "voyage_signal_bell", "supply_barrels",
-             "beach_parasol", "swim_ring", "sandcastle", "watermelon",
-             "seaside_mailbox", "seaside_gramophone"]
-                .contains(assetID)
+            HomeIslandAssetCatalog.group(of: assetID) == .decor
         case .paths:
-            ["stone_path_straight", "stone_path_curve", "stone_path_fork",
-             "compass_rose_inlay"]
-                .contains(assetID)
+            HomeIslandAssetCatalog.group(of: assetID) == .paths
         case .furniture:
-            ["council_table", "council_chair",
-             "driftwood_bench", "stone_bench", "wooden_bookshelf",
-             "stacked_books", "office_desk", "office_chair", "silver_laptop",
-             "navigator_hammock"]
-                .contains(assetID)
+            HomeIslandAssetCatalog.group(of: assetID) == .furniture
         }
     }
 }
@@ -167,6 +148,7 @@ struct HomeIslandView: View {
     @State private var placementMoveBlocked = false
     @State private var showingSizeControls = false
     @State private var showingSelectionActions = false
+    @State private var showingIslandResetConfirm = false
     @State private var lockedAssetID: String?
     @State private var cameraResetToken = 0
     @State private var cameraRequest: HomeIslandCameraRequest?
@@ -213,6 +195,12 @@ struct HomeIslandView: View {
     @State private var showingTodoList = false
     @StateObject private var todoStore = HomeIslandTodoStore.shared
     @State private var showingPlayerStats = false
+    /// The family whose variants are open, and the one each family is
+    /// showing. Both are per-session: a drawer that reopened on "pink desk"
+    /// a week later would be a surprise, but switching twice in one build
+    /// session should not mean re-picking every time.
+    @State private var expandedFamilyID: String?
+    @State private var familySelection: [String: String] = [:]
     @State private var editingPlayerProfile = false
     /// 週グラフで選んでいる日。開くたび今日から始まる。
     @State private var selectedRecordDay: Date?
@@ -316,6 +304,7 @@ struct HomeIslandView: View {
             || showingIslandShare
             || showingCaptureError
             || showingSelectionActions
+            || showingIslandResetConfirm
     }
 
     var body: some View {
@@ -407,6 +396,19 @@ struct HomeIslandView: View {
                 }
 
                 Button("Cancel", role: .cancel) {}
+            }
+            .confirmationDialog(
+                "Clear the island?",
+                isPresented: $showingIslandResetConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Clear the island", role: .destructive) {
+                    clearIsland()
+                }
+
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Every prop you placed goes back and the island is left bare. Undo is available.")
             }
     }
 
@@ -981,16 +983,18 @@ struct HomeIslandView: View {
                     .accessibilityLabel(Text("Redo"))
 
                     Button {
-                        cameraResetToken &+= 1
+                        showingIslandResetConfirm = true
                         Haptics.tap(.light)
                     } label: {
-                        Image(systemName: "scope")
+                        Image(systemName: "trash")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(homeGlassInk)
+                            .foregroundStyle(homeGlassInk.opacity(store.placements.isEmpty ? 0.30 : 1))
                             .frame(width: 44, height: 44)
                     }
                     .buttonStyle(LFPressableButtonStyle())
-                    .accessibilityLabel(Text("Return view to navigator"))
+                    .disabled(store.placements.isEmpty)
+                    .accessibilityLabel(Text("Clear the island"))
+                    .accessibilityHint(Text("Removes every placed prop"))
 
                     Button {
                         enterExploreMode()
@@ -2229,6 +2233,7 @@ struct HomeIslandView: View {
         movingSelection = false
         showingSizeControls = false
         showingSelectionActions = false
+        showingIslandResetConfirm = false
         lockedAssetID = nil
         showingBoatCustomization = false
         store.replaceRemoteSnapshot(resolvedSnapshot)
@@ -2450,6 +2455,7 @@ struct HomeIslandView: View {
         showingBoatCustomization = false
         showingDestinationSetup = false
         placementAssetID = nil
+        expandedFamilyID = nil
         movingSelection = false
         showingSizeControls = false
         lockedAssetID = nil
@@ -2664,6 +2670,20 @@ struct HomeIslandView: View {
         showingSizeControls = false
     }
 
+    /// 島を更地に戻す。置いたものは減るわけではないので、取り除くだけで
+    /// また好きに置き直せる。取り消しは一手で効くので、その旨も伝える。
+    private func clearIsland() {
+        guard !store.placements.isEmpty else { return }
+        store.removeAllPlacements()
+        placementAssetID = nil
+        movingSelection = false
+        showingSizeControls = false
+        placementMoveBlocked = false
+        lockedAssetID = nil
+        showTransientNotice(String(localized: "The island is clear · Undo is available"))
+        Haptics.tap(.heavy)
+    }
+
     @ViewBuilder
     private var sizeControls: some View {
         if let selected = store.selectedPlacement {
@@ -2802,13 +2822,21 @@ struct HomeIslandView: View {
                 }
             }
 
+            if let family = expandedFamily {
+                assetVariantRow(family)
+                    .transition(
+                        .move(edge: .bottom)
+                            .combined(with: .opacity)
+                    )
+            }
+
             ScrollView(.horizontal, showsIndicators: false) {
                 // Lazy: a tile's thumbnail is rendered from its USDZ the first
                 // time it appears, so opening build mode only pays for the few
                 // tiles on screen instead of the whole catalog.
                 LazyHStack(spacing: 10) {
-                    ForEach(visibleAssets) { asset in
-                        assetButton(asset)
+                    ForEach(visibleShelfEntries) { entry in
+                        assetButton(entry.asset, family: entry.family)
                     }
                 }
             }
@@ -2837,8 +2865,13 @@ struct HomeIslandView: View {
         .safeAreaPadding(.bottom, 3)
     }
 
-    private func assetButton(_ asset: HomeIslandAsset) -> some View {
+    private func assetButton(
+        _ asset: HomeIslandAsset,
+        family: HomeIslandAssetFamily? = nil
+    ) -> some View {
+        let familyIDs = family?.assetIDs ?? []
         let selected = placementAssetID == asset.id
+        let expanded = expandedFamilyID == family?.id
         let unlocked = HomeIslandAssetCatalog.isUnlocked(
             asset,
             playerLevel: levelProgress.level
@@ -2852,6 +2885,17 @@ struct HomeIslandView: View {
         let awaitsPass = passLocked && unlocked && !atLimit && store.canAdd
         let canPlace = unlocked && !passLocked && !atLimit && store.canAdd
         return Button {
+            // A prop that comes in several opens its row first. Tapping it
+            // again shuts the row: a tile that only ever opened something
+            // would be a trap on a shelf the player is scrolling through.
+            if let family, family.variants.count > 1 {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                    expandedFamilyID = expanded ? nil : family.id
+                }
+                Haptics.tap(.light)
+                return
+            }
+            expandedFamilyID = nil
             selectBuildAsset(asset, canPlace: canPlace, opensVoyagePass: awaitsPass)
         } label: {
             VStack(spacing: 4) {
@@ -2869,22 +2913,74 @@ struct HomeIslandView: View {
                         atLimit: atLimit
                     )
                 }
-                Text(verbatim: asset.title)
+                Text(verbatim: family?.title ?? asset.title)
                     .font(LFFont.label(10))
                     .foregroundStyle(.white.opacity(canPlace ? (selected ? 1 : 0.72) : 0.34))
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    // A family name is short by design, so it keeps to one
+                    // line and leaves the row below for the variant.
+                    .lineLimit(family == nil ? 2 : 1)
                     .minimumScaleFactor(0.78)
+                if let family, family.variants.count > 1 {
+                    // The dots say "this one comes in several"; the name says
+                    // which one is loaded. Without the name a player who picked
+                    // pink had only a ringed dot and the thumbnail to go on, and
+                    // on a shelf that scrolls past that is not an answer to
+                    // "what am I about to place?".
+                    HStack(spacing: 4) {
+                        if family.showsSwatches {
+                            HStack(spacing: 3) {
+                                ForEach(family.variants) { variant in
+                                    let current = variant.assetID == asset.id
+                                    Circle()
+                                        .fill(Color(uiColor: UIColor(rgb: variant.swatch ?? 0)))
+                                        .frame(width: current ? 6 : 5, height: current ? 6 : 5)
+                                        .overlay {
+                                            Circle()
+                                                .stroke(
+                                                    .white.opacity(current ? 0.9 : 0.22),
+                                                    lineWidth: 1
+                                                )
+                                        }
+                                }
+                            }
+                        } else {
+                            // A family of shapes has nothing to paint dots
+                            // with, so the arrow carries the same promise:
+                            // there is more than one of these under the tile.
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 7, weight: .bold))
+                                .foregroundStyle(.white.opacity(selected ? 0.8 : 0.5))
+                        }
+                        if let variant = family.variants.first(where: { $0.assetID == asset.id }) {
+                            Text(verbatim: variant.name)
+                                .font(LFFont.label(8))
+                                .foregroundStyle(
+                                    .white.opacity(canPlace ? (selected ? 0.92 : 0.58) : 0.3)
+                                )
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                    }
+                    .opacity(canPlace ? 1 : 0.4)
+                }
             }
             .padding(6)
             .frame(width: assetTileSide, height: assetTileHeight)
             .background(
-                selected ? Color(uiColor: VoyageSceneKit.ember).opacity(0.24) : .white.opacity(canPlace ? 0.045 : 0.018),
+                selected || expanded
+                    ? Color(uiColor: VoyageSceneKit.ember).opacity(selected ? 0.24 : 0.14)
+                    : .white.opacity(canPlace ? 0.045 : 0.018),
                 in: RoundedRectangle(cornerRadius: 15)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 15)
-                    .stroke(selected ? Color(uiColor: VoyageSceneKit.sand).opacity(0.58) : .white.opacity(0.07), lineWidth: 1)
+                    .stroke(
+                        selected || expanded
+                            ? Color(uiColor: VoyageSceneKit.sand).opacity(selected ? 0.58 : 0.34)
+                            : .white.opacity(0.07),
+                        lineWidth: 1
+                    )
             }
             .overlay(alignment: .topTrailing) {
                 assetTagText(
@@ -2904,7 +3000,7 @@ struct HomeIslandView: View {
             }
         }
         .buttonStyle(LFPressableButtonStyle())
-        .accessibilityLabel(Text(verbatim: asset.title))
+        .accessibilityLabel(Text(verbatim: family.map { _ in asset.title } ?? asset.title))
         .accessibilityValue(
             assetTagText(
                 asset,
@@ -3028,27 +3124,266 @@ struct HomeIslandView: View {
         HomeIslandAssetCategory(rawValue: selectedAssetCategoryToken) ?? .all
     }
 
+    /// どの引き出しでも並びは「いま置けるか」で三段に分かれる。
+    ///
+    /// 0 = 今日置けるもの。1 = 続けていれば開くもの。2 = 航海証で開くもの。
+    /// 証は買わないと開かない鍵なので、レベルの鍵より後ろへ置く。棚の先頭を
+    /// 占めるのは、いつでも手に取れるものだけにしたい。
+    private func assetOrderTier(_ asset: HomeIslandAsset) -> Int {
+        if isPassLocked(asset) { return 2 }
+        return HomeIslandAssetCatalog.isUnlocked(
+            asset,
+            playerLevel: levelProgress.level
+        ) ? 0 : 1
+    }
+
+    /// 段のなかは、カタログに書いた順(=種類ごとのまとまり)のまま。ただし
+    /// 「これから開く」段だけは近いレベルから並べる。次に何が来るのかが
+    /// 一覧の頭に出るほうが、まとまりよりも役に立つ。
+    ///
+    /// 並べ替えの最後にカタログ順を必ず見るので、同点の並びは毎回同じになる。
     private var visibleAssets: [HomeIslandAsset] {
         assets
             .filter { selectedAssetCategory.contains($0.id) }
+            .enumerated()
             .sorted { lhs, rhs in
-                let lhsUnlocked = HomeIslandAssetCatalog.isUnlocked(
-                    lhs,
-                    playerLevel: levelProgress.level
-                )
-                let rhsUnlocked = HomeIslandAssetCatalog.isUnlocked(
-                    rhs,
-                    playerLevel: levelProgress.level
-                )
-                if lhsUnlocked != rhsUnlocked { return lhsUnlocked && !rhsUnlocked }
-                return lhs.unlockLevel < rhs.unlockLevel
+                let lhsTier = assetOrderTier(lhs.element)
+                let rhsTier = assetOrderTier(rhs.element)
+                if lhsTier != rhsTier { return lhsTier < rhsTier }
+                if lhsTier == 1, lhs.element.unlockLevel != rhs.element.unlockLevel {
+                    return lhs.element.unlockLevel < rhs.element.unlockLevel
+                }
+                return lhs.offset < rhs.offset
             }
+            .map(\.element)
+    }
+
+    /// One slot on the shelf. A prop that comes in several occupies a single
+    /// slot and carries its family; everything else is itself.
+    private struct HomeIslandShelfEntry: Identifiable {
+        let asset: HomeIslandAsset
+        let family: HomeIslandAssetFamily?
+
+        var id: String { family?.id ?? asset.id }
+    }
+
+    /// The tiles the shelf actually shows: `visibleAssets`, with each family
+    /// collapsed into the one slot its best-placed variant earned.
+    private var visibleShelfEntries: [HomeIslandShelfEntry] {
+        var seenFamilies: Set<String> = []
+        var entries: [HomeIslandShelfEntry] = []
+        for asset in visibleAssets {
+            guard let family = HomeIslandAssetCatalog.family(containing: asset.id) else {
+                entries.append(HomeIslandShelfEntry(asset: asset, family: nil))
+                continue
+            }
+            guard seenFamilies.insert(family.id).inserted else { continue }
+            entries.append(
+                HomeIslandShelfEntry(
+                    asset: shelfVariant(of: family, fallback: asset),
+                    family: family
+                )
+            )
+        }
+        return entries
+    }
+
+    /// Which variant a family's tile wears: the one the player last chose, or
+    /// the one the sort put first — which is the cheapest to reach, since a
+    /// locked or pass-only variant is sorted to the back.
+    private func shelfVariant(
+        of family: HomeIslandAssetFamily,
+        fallback: HomeIslandAsset
+    ) -> HomeIslandAsset {
+        guard let chosen = familySelection[family.id],
+              family.assetIDs.contains(chosen),
+              let asset = HomeIslandAssetCatalog.asset(id: chosen)
+        else { return fallback }
+        return asset
+    }
+
+    private var expandedFamily: HomeIslandAssetFamily? {
+        guard let expandedFamilyID else { return nil }
+        return HomeIslandAssetCatalog.families.first { $0.id == expandedFamilyID }
+    }
+
+    /// The chooser row. It opens above the shelf rather than as a popover
+    /// over the island: the player is choosing before placing, and the world
+    /// they are about to place into should stay in view the whole time.
+    private func assetVariantRow(_ family: HomeIslandAssetFamily) -> some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 5) {
+                Image(systemName: family.symbolName)
+                    .font(.system(size: 10, weight: .semibold))
+                Text(verbatim: family.title)
+                    .font(LFFont.label(10))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(Color(uiColor: VoyageSceneKit.sand).opacity(0.86))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(family.variants) { variant in
+                        assetVariantChip(variant, in: family)
+                    }
+                }
+                .padding(.trailing, 2)
+            }
+
+            Button {
+                withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
+                    expandedFamilyID = nil
+                }
+                Haptics.tap(.light)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .frame(width: 24, height: 24)
+                    .background(.white.opacity(0.07), in: Circle())
+            }
+            .buttonStyle(LFPressableButtonStyle())
+            .accessibilityLabel(Text("Close"))
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(.white.opacity(0.09), lineWidth: 1)
+        }
+    }
+
+    /// One variant. The dot is the prop's own colour — or the model itself,
+    /// where colour is not what separates them — and the line under the name
+    /// is the same count the tile carries, so choosing never hides how many of
+    /// it the island can still take.
+    @ViewBuilder
+    private func assetVariantChip(
+        _ variant: HomeIslandAssetVariant,
+        in family: HomeIslandAssetFamily
+    ) -> some View {
+        if let asset = HomeIslandAssetCatalog.asset(id: variant.assetID) {
+            let unlocked = HomeIslandAssetCatalog.isUnlocked(
+                asset,
+                playerLevel: levelProgress.level
+            )
+            let passLocked = isPassLocked(asset)
+            let placedCount = store.placementCount(assetID: asset.id)
+            let placementLimit = HomeIslandAssetCatalog.placementLimit(for: asset.id)
+            let atLimit = placedCount >= placementLimit
+            let awaitsPass = passLocked && unlocked && !atLimit && store.canAdd
+            let canPlace = unlocked && !passLocked && !atLimit && store.canAdd
+            let armed = placementAssetID == asset.id
+            Button {
+                familySelection[family.id] = asset.id
+                if canPlace || awaitsPass {
+                    withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
+                        expandedFamilyID = nil
+                    }
+                }
+                selectBuildAsset(asset, canPlace: canPlace, opensVoyagePass: awaitsPass)
+            } label: {
+                HStack(spacing: 7) {
+                    ZStack {
+                        if let swatch = variant.swatch {
+                            Circle()
+                                .fill(Color(uiColor: UIColor(rgb: swatch)))
+                                .frame(width: 20, height: 20)
+                            Circle()
+                                .stroke(
+                                    armed
+                                        ? Color(uiColor: VoyageSceneKit.sand)
+                                        : .white.opacity(0.30),
+                                    lineWidth: armed ? 2 : 1
+                                )
+                                .frame(width: 20, height: 20)
+                        } else {
+                            // Shapes, not colours: the chip carries the model
+                            // so the player picks the tree they can see.
+                            HomeIslandAssetThumbnail(
+                                assetID: asset.id,
+                                fallbackSymbol: asset.symbolName
+                            )
+                                .frame(width: 24, height: 24)
+                                .background(
+                                    .white.opacity(armed ? 0.14 : 0.06),
+                                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                )
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .stroke(
+                                            armed
+                                                ? Color(uiColor: VoyageSceneKit.sand)
+                                                : .white.opacity(0.20),
+                                            lineWidth: armed ? 2 : 1
+                                        )
+                                }
+                        }
+                        if !unlocked || passLocked {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white)
+                                .shadow(radius: 1)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(verbatim: variant.name)
+                            .font(LFFont.label(10))
+                            .foregroundStyle(.white.opacity(canPlace ? 0.92 : 0.42))
+                        assetTagText(
+                            asset,
+                            unlocked: unlocked,
+                            passLocked: passLocked,
+                            placedCount: placedCount,
+                            placementLimit: placementLimit
+                        )
+                        .font(LFFont.label(8))
+                        .monospacedDigit()
+                        .foregroundStyle(assetTagTint(unlocked: unlocked, passLocked: passLocked))
+                    }
+                    .lineLimit(1)
+                }
+                .padding(.leading, 7)
+                .padding(.trailing, 11)
+                .frame(height: 34)
+                .background(
+                    armed
+                        ? Color(uiColor: VoyageSceneKit.ember).opacity(0.26)
+                        : .white.opacity(0.05),
+                    in: Capsule()
+                )
+                .overlay {
+                    Capsule()
+                        .stroke(
+                            armed
+                                ? Color(uiColor: VoyageSceneKit.sand).opacity(0.55)
+                                : .white.opacity(0.08),
+                            lineWidth: 1
+                        )
+                }
+            }
+            .buttonStyle(LFPressableButtonStyle())
+            .accessibilityLabel(Text(verbatim: "\(family.title) · \(variant.name)"))
+            .accessibilityValue(
+                assetTagText(
+                    asset,
+                    unlocked: unlocked,
+                    passLocked: passLocked,
+                    placedCount: placedCount,
+                    placementLimit: placementLimit
+                )
+            )
+        }
     }
 
     private func categoryButton(_ category: HomeIslandAssetCategory) -> some View {
         let selected = selectedAssetCategory == category
         return Button {
             selectedAssetCategoryToken = category.rawValue
+            withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
+                expandedFamilyID = nil
+            }
             Haptics.tap(.light)
         } label: {
             Label(category.title, systemImage: category.symbol)

@@ -1063,53 +1063,167 @@ def grass_blade(
     mat: bpy.types.Material,
     root: bpy.types.Object,
     objects: list[bpy.types.Object],
+    *,
+    segments: int = 5,
+    curl: float = 0.55,
 ) -> None:
+    """One blade: a strip that narrows to a point and bends over as it rises.
+
+    The first version was a single quad with a straight lean, which read as a
+    paper flag from the side. A blade is built from `segments` rings instead:
+    each ring is narrower and leans further out than the one below, so the
+    silhouette tapers and droops the way beach grass does under its own
+    weight. The tip is one vertex, never a blunt edge.
+
+    `curl` is how much of the lean is spent near the tip rather than spread
+    evenly — 0 gives a straight blade, 1 a blade that stands up then folds.
+    """
     x, y, z = base
     lx, ly = lean
-    vertices = [
-        (x - width, y, z), (x + width, y, z),
-        (x + lx + width * 0.30, y + ly, z + height * 0.72),
-        (x + lx, y + ly, z + height),
-    ]
-    faces = [(0, 1, 2, 3), (3, 2, 1, 0)]
+    # The blade's flat face follows the way it leans: width runs across the
+    # lean, never along a fixed world axis. Without this every blade in a
+    # clump presents the same face and the tuft reads as a row of planks.
+    lean_length = math.hypot(lx, ly)
+    if lean_length < 1e-5:
+        across_x, across_y = 1.0, 0.0
+    else:
+        across_x, across_y = -ly / lean_length, lx / lean_length
+    vertices: list[tuple[float, float, float]] = []
+    for index in range(segments):
+        t = index / segments
+        # Width falls away faster than height, so the blade is a spear, not a
+        # wedge; the small floor keeps the last ring from collapsing early.
+        # The very base is pinched in as well — a blade leaves the sand
+        # narrower than it is a third of the way up.
+        ring_width = width * max(0.10, (1.0 - t) ** 1.20)
+        if index == 0:
+            ring_width *= 0.74
+        # Lean is t**(1+curl): little at the base, most of it near the top.
+        reach = t ** (1.0 + curl)
+        # Height is spent early and the climb flattens off, so the blade
+        # actually arcs over instead of standing up at a slant.
+        rise = height * (1.0 - (1.0 - t) ** 1.55)
+        vertices.append((
+            x + lx * reach - across_x * ring_width,
+            y + ly * reach - across_y * ring_width,
+            z + rise,
+        ))
+        vertices.append((
+            x + lx * reach + across_x * ring_width,
+            y + ly * reach + across_y * ring_width,
+            z + rise,
+        ))
+    tip_reach = 1.0
+    vertices.append((x + lx * tip_reach, y + ly * tip_reach, z + height))
+
+    faces: list[tuple[int, ...]] = []
+    for index in range(segments - 1):
+        a, b = index * 2, index * 2 + 1
+        c, d = a + 2, b + 2
+        faces.append((a, b, d, c))
+        faces.append((c, d, b, a))
+    last = (segments - 1) * 2
+    tip = len(vertices) - 1
+    faces.append((last, last + 1, tip))
+    faces.append((tip, last + 1, last))
     mesh_object(name, vertices, faces, mat, root, objects)
 
 
 def build_dune_grass_patch() -> None:
+    """Grass only: no sand mound under it.
+
+    The patch used to sit on its own dune — a sand ico with a highlight and
+    three shells. On an island that is already sand it read as a saucer someone
+    had set down, and two patches side by side showed their rims. What the
+    player wanted was grass growing out of the ground they already have, so the
+    mound, its highlight and the shells are gone and the blades start just
+    below zero.
+    """
     reset_scene()
     root = make_root("dune_grass_patch", "Dune_Grass_Patch")
     objects: list[bpy.types.Object] = []
     mats = {
-        "sand": material("LF_DuneGrassSand", "#C8B482", 1.0),
-        "sand_light": material("LF_DuneGrassSandLight", "#DCCB9C", 0.99),
         "grass_deep": material("LF_DuneGrassDeep", "#3E5D45", 1.0, double_sided=True),
         "grass": material("LF_DuneGrass", "#66805A", 0.99, double_sided=True),
         "grass_light": material("LF_DuneGrassLight", "#87966A", 0.98, double_sided=True),
-        "shell": material("LF_DuneGrassShell", "#E2D8BA", 0.96),
+        # The sun-bleached tone the tallest blades take at the shore. It is the
+        # colour that keeps a clump from reading as one flat green shape.
+        "grass_dry": material("LF_DuneGrassDry", "#A8AC7C", 0.98, double_sided=True),
     }
-    add_ico("Dune_Mound", (0, 0, 0.05), (0.91, 0.68, 0.13), mats["sand"], root, objects, subdivisions=2, irregularity=0.10)
-    add_ico("Dune_Highlight", (-0.22, -0.18, 0.15), (0.45, 0.25, 0.025), mats["sand_light"], root, objects, irregularity=0.12)
-    clusters = [(-0.42, -0.10), (0.07, 0.12), (0.46, -0.04)]
-    palette = (mats["grass_deep"], mats["grass"], mats["grass_light"])
+    palette = (
+        mats["grass_deep"],
+        mats["grass"],
+        mats["grass_light"],
+        mats["grass_dry"],
+    )
+    # A fixed seed: the clump is hand-authored, it just uses a generator to
+    # write the numbers. Rebuilding the asset must not reshuffle it.
+    rng = random.Random(20_260_820)
+    # Three tufts of unequal weight — one leading clump, two smaller ones —
+    # rather than three matching rosettes on a ring.
+    clusters = (
+        (-0.34, -0.06, 13, 1.00),
+        (0.20, 0.16, 10, 0.86),
+        (0.44, -0.22, 8, 0.72),
+    )
     blade_index = 0
-    for cluster_index, (cx, cy) in enumerate(clusters):
-        for local_index in range(8):
+    for cluster_index, (cx, cy, count, vigour) in enumerate(clusters):
+        # Every tuft leans one way, as if the same sea wind had shaped it.
+        wind = 0.55 + cluster_index * 0.9
+        for local_index in range(count):
             blade_index += 1
-            angle = math.tau * local_index / 8 + cluster_index * 0.43
-            radius = 0.05 + 0.08 * (local_index % 3)
-            height = 0.42 + 0.10 * ((local_index * 3 + cluster_index) % 4)
+            angle = math.tau * local_index / count + cluster_index * 0.43
+            angle += rng.uniform(-0.22, 0.22)
+            radius = rng.uniform(0.015, 0.105)
+            height = vigour * rng.uniform(0.34, 0.62)
+            # Blades lean out of the clump, then the wind biases them further.
+            lean_angle = angle + rng.uniform(-0.35, 0.35)
+            reach = rng.uniform(0.16, 0.38) * (height / 0.48)
+            lean = (
+                math.cos(lean_angle) * reach + math.cos(wind) * 0.06,
+                math.sin(lean_angle) * reach + math.sin(wind) * 0.06,
+            )
+            # The tallest blades are the dry ones, as they are on a real dune.
+            weights = (4, 5, 3, 1) if height < 0.52 else (2, 4, 4, 2)
             grass_blade(
                 f"Grass_Blade_{blade_index:02}",
-                (cx + math.cos(angle) * radius, cy + math.sin(angle) * radius, 0.12),
+                (
+                    cx + math.cos(angle) * radius,
+                    cy + math.sin(angle) * radius,
+                    -0.012,
+                ),
                 height,
-                0.018,
-                (math.cos(angle) * 0.14, math.sin(angle) * 0.14),
-                palette[(local_index + cluster_index) % len(palette)],
+                rng.uniform(0.016, 0.023),
+                lean,
+                rng.choices(palette, weights=weights)[0],
                 root,
                 objects,
+                curl=rng.uniform(0.35, 0.85),
             )
-    for index, (x, y, s) in enumerate(((-0.63, 0.28, 0.09), (0.28, -0.40, 0.07), (0.69, 0.22, 0.06)), 1):
-        add_ico(f"Dune_Shell_{index}", (x, y, 0.17), (s, s * 0.66, s * 0.35), mats["shell"], root, objects, irregularity=0.08)
+    # New growth: short blades filling the centre of each tuft, so the clump
+    # is dense where it leaves the ground instead of showing daylight through.
+    for cluster_index, (cx, cy, _, vigour) in enumerate(clusters):
+        for local_index in range(5):
+            blade_index += 1
+            angle = math.tau * local_index / 5 + cluster_index * 1.1
+            radius = rng.uniform(0.0, 0.045)
+            height = vigour * rng.uniform(0.14, 0.24)
+            grass_blade(
+                f"Grass_Sprout_{blade_index:02}",
+                (
+                    cx + math.cos(angle) * radius,
+                    cy + math.sin(angle) * radius,
+                    -0.012,
+                ),
+                height,
+                rng.uniform(0.013, 0.018),
+                (math.cos(angle) * 0.05, math.sin(angle) * 0.05),
+                rng.choice((mats["grass_deep"], mats["grass"])),
+                root,
+                objects,
+                segments=3,
+                curl=rng.uniform(0.2, 0.5),
+            )
     export_asset("dune_grass_patch", root, objects)
 
 
