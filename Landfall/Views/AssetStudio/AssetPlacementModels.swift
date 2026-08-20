@@ -32,6 +32,8 @@ struct Asset3DDescriptor: Identifiable, Hashable {
         if lowercased.contains("stone_path") { return "square.grid.3x3.fill" }
         if lowercased.contains("coastal_rocks") { return "mountain.2.fill" }
         if lowercased.contains("tent") { return "tent.fill" }
+        if lowercased.contains("bottle") { return "waterbottle.fill" }
+        if lowercased.contains("coffee") { return "cup.and.saucer.fill" }
         if lowercased.contains("desk") || lowercased.contains("table") { return "table.furniture.fill" }
         if lowercased.contains("chair") { return "chair.fill" }
         if lowercased.contains("bench") { return "chair.fill" }
@@ -106,6 +108,9 @@ enum Asset3DCatalog {
         "office_chair",
         "office_chair_pink",
         "silver_laptop",
+        "spring_water_bottle",
+        "sparkling_water_bottle",
+        "canned_coffee",
         "landfall_boat",
         "navigator_main",
     ]
@@ -187,6 +192,9 @@ enum Asset3DCatalog {
         case "office_chair": return String(localized: "Chair")
         case "office_chair_pink": return String(localized: "Chair (Pink)")
         case "silver_laptop": return String(localized: "PC")
+        case "spring_water_bottle": return String(localized: "Water Bottle")
+        case "sparkling_water_bottle": return String(localized: "Sparkling Water")
+        case "canned_coffee": return String(localized: "Canned Coffee")
         case "landfall_boat": return "Landfall Boat"
         case "navigator_main": return "Navigator"
         default:
@@ -1710,6 +1718,9 @@ enum AssetPlacementRuntime {
             body.contactTestBitMask = 0
             node.physicsBody = body
         }
+        if resourceName == "spring_water_bottle" {
+            clearThePlastic(on: node)
+        }
         if resourceName == "weathered_lighthouse", !UIAccessibility.isReduceMotionEnabled {
             let beacon = node.childNode(withName: "LF_LighthouseBeaconRotor_Mesh", recursively: true)
                 ?? node.childNode(withName: "LF_LighthouseBeaconRotor", recursively: true)
@@ -1749,6 +1760,33 @@ enum AssetPlacementRuntime {
             }
         }
         return node
+    }
+
+    /// Turn the water bottle's shell to clear plastic.
+    ///
+    /// The bottle is authored as ordinary opaque plastic and made transparent
+    /// here rather than in Blender: USD's own opacity arrives in SceneKit as a
+    /// material that still writes depth, which hides the water standing inside
+    /// the very shell it is meant to be seen through. Set in code, the shell
+    /// stops writing depth and is drawn after everything else, so the water,
+    /// the label and the ribs on the far wall all read through it.
+    ///
+    /// The material names come from `Tools/Blender/build_drink_set.py`, which
+    /// merges each prop's meshes by material — so one name is one surface.
+    private static func clearThePlastic(on node: SCNNode) {
+        for name in ["LF_DrinkPetShell", "LF_DrinkPetShellShade"] {
+            let part = node.childNode(withName: "\(name)_Mesh", recursively: true)
+                ?? node.childNode(withName: name, recursively: true)
+            guard let part else { continue }
+            part.renderingOrder = 40
+            for material in part.geometry?.materials ?? [] {
+                material.transparency = 0.34
+                material.blendMode = .alpha
+                material.transparencyMode = .dualLayer
+                material.writesToDepthBuffer = false
+                material.isDoubleSided = true
+            }
+        }
     }
 
     /// 保存・複製・ゲーム反映ができるコード生成の小さな湖。

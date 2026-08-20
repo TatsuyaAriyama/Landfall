@@ -8,10 +8,11 @@ between a book and the thing they work on.
 
 The lid carries the phoenix instead of a maker's mark. It is the same silhouette
 the app draws for the player's own icon — `PhoenixShape` in
-`Views/Wrapped/ArchetypeSymbols.swift` — sampled from those exact control points
-so the emblem on the island and the emblem on the player card are one shape, not
-two drawings that happen to resemble each other. Coral body, midnight eye, as
-everywhere else the bird appears.
+`Views/Wrapped/ArchetypeSymbols.swift` — taken from `phoenix_emblem.py`, the one
+transcription of those control points, so the emblem on the island and the
+emblem on the player card are one shape, not two drawings that happen to
+resemble each other. Coral body, midnight eye, as everywhere else the bird
+appears.
 
 The screen is not black. It holds the horizon: night sky above, harbour water
 below, which is what the island itself looks like at the hour most of this app
@@ -34,6 +35,7 @@ from mathutils import Vector
 os.environ["KEELMIRA_ASSET_IDS"] = "__silver_laptop_helpers_only__"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_home_island_asset_set_02 as kit  # noqa: E402
+import phoenix_emblem  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -58,25 +60,7 @@ LID_CENTRE = HINGE + Vector((
     math.cos(LEAN) * (LID_GAP + LID_LENGTH * 0.5),
 ))
 
-# The phoenix, transcribed from PhoenixShape's 200x200 design space. Each entry
-# is (control, end) for one quadratic segment; the run starts at the head.
-PHOENIX_START = (100.0, 12.0)
-PHOENIX_CURVES = (
-    ((112.0, 28.0), (124.0, 54.0)),     # 頭の右斜面
-    ((172.0, 58.0), (193.0, 98.0)),     # 丸い肩から右翼の先端へ
-    ((150.0, 100.0), (127.0, 116.0)),   # 翼の下側は深い凹
-    ((135.0, 150.0), (143.0, 192.0)),   # 右尾の先端へ
-    ((112.0, 162.0), (100.0, 148.0)),   # 尾の間の谷
-    ((88.0, 162.0), (57.0, 192.0)),     # 左尾の先端へ
-    ((65.0, 150.0), (73.0, 116.0)),     # 左尾から翼の下側へ
-    ((50.0, 100.0), (7.0, 98.0)),       # 左翼の先端へ
-    ((28.0, 58.0), (76.0, 54.0)),       # 左翼の上側、丸い肩
-    ((88.0, 28.0), (100.0, 12.0)),      # 頭の左斜面
-)
-PHOENIX_SAMPLES = 7          # per segment; 70 points around the whole bird
 PHOENIX_HEIGHT = 0.078       # head to tail on the lid
-PHOENIX_CENTRE_Y = 102.0     # design-space midpoint, so the bird sits centred
-PHOENIX_EYE = (100.0, 50.0, 8.0)  # centre x, centre y, radius
 
 
 def finish(asset_id: str, root: bpy.types.Object, objects: list[bpy.types.Object]) -> None:
@@ -119,36 +103,6 @@ def lid_point(lx: float, ly: float, lz: float) -> tuple[float, float, float]:
         LID_CENTRE.y + ly * math.cos(LEAN) + lz * math.sin(LEAN),
         LID_CENTRE.z - ly * math.sin(LEAN) + lz * math.cos(LEAN),
     )
-
-
-def quad_bezier(p0, p1, p2, samples: int) -> list[tuple[float, float]]:
-    """Points along one quadratic segment, excluding the start."""
-    points = []
-    for step in range(1, samples + 1):
-        t = step / samples
-        inv = 1.0 - t
-        points.append((
-            inv * inv * p0[0] + 2 * inv * t * p1[0] + t * t * p2[0],
-            inv * inv * p0[1] + 2 * inv * t * p1[1] + t * t * p2[1],
-        ))
-    return points
-
-
-def phoenix_outline() -> list[tuple[float, float]]:
-    """The bird's outline in lid-local (x, z), head up, centred on the lid."""
-    scale = PHOENIX_HEIGHT / 180.0   # design-space head (12) to tail (192)
-    design = [PHOENIX_START]
-    cursor = PHOENIX_START
-    for control, end in PHOENIX_CURVES:
-        design.extend(quad_bezier(cursor, control, end, PHOENIX_SAMPLES))
-        cursor = end
-    # The last segment closes back onto the head; drop the duplicate point.
-    design.pop()
-    # Design space has y running down the screen. The lid has z running up.
-    return [
-        ((x - 100.0) * scale, (PHOENIX_CENTRE_Y - y) * scale)
-        for x, y in design
-    ]
 
 
 def extruded_on_lid(
@@ -195,16 +149,6 @@ def extruded_on_lid(
     obj.rotation_euler = (-LEAN, 0.0, 0.0)
     obj.location = LID_CENTRE
     return obj
-
-
-def circle_outline(radius: float, centre_z: float, segments: int = 12) -> list[tuple[float, float]]:
-    return [
-        (
-            math.cos(2 * math.pi * index / segments) * radius,
-            centre_z + math.sin(2 * math.pi * index / segments) * radius,
-        )
-        for index in range(segments)
-    ]
 
 
 def build_base(mats, root, objects) -> None:
@@ -422,18 +366,16 @@ def build_lid(mats, root, objects) -> None:
     outer = LID_T * 0.5
     extruded_on_lid(
         "Laptop_Lid_Phoenix",
-        phoenix_outline(),
+        phoenix_emblem.outline(PHOENIX_HEIGHT),
         outer + 0.0002,
         outer + 0.0019,
         mats["emblem"],
         root,
         objects,
     )
-    scale = PHOENIX_HEIGHT / 180.0
-    eye_x, eye_y, eye_r = PHOENIX_EYE
     extruded_on_lid(
         "Laptop_Lid_Phoenix_Eye",
-        circle_outline(eye_r * scale, (PHOENIX_CENTRE_Y - eye_y) * scale),
+        phoenix_emblem.eye_circle(PHOENIX_HEIGHT),
         outer + 0.0019,
         outer + 0.0028,
         mats["emblem_eye"],

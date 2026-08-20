@@ -859,6 +859,34 @@ enum HomeIslandAssetCatalog {
             footprintMargin: 0.30,
             unlockLevel: 2
         ),
+        // Something to put down beside the laptop. The three share one tile in
+        // the drawer, and each is authored at the size the real thing is: the
+        // water bottle stands 0.190 against the desk's 0.420, which is how a
+        // bottle on a desk reads.
+        HomeIslandAsset(
+            id: "spring_water_bottle",
+            title: String(localized: "Water Bottle"),
+            symbolName: "waterbottle.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.18,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "sparkling_water_bottle",
+            title: String(localized: "Sparkling Water"),
+            symbolName: "waterbottle.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.18,
+            unlockLevel: 2
+        ),
+        HomeIslandAsset(
+            id: "canned_coffee",
+            title: String(localized: "Canned Coffee"),
+            symbolName: "cup.and.saucer.fill",
+            defaultScale: 1.00,
+            footprintMargin: 0.16,
+            unlockLevel: 2
+        ),
         HomeIslandAsset(
             id: "council_table",
             title: String(localized: "Council Table"),
@@ -957,7 +985,10 @@ enum HomeIslandAssetCatalog {
             topHeight: 0.420,
             halfWidth: 0.530,
             halfDepth: 0.260,
-            accepts: ["silver_laptop"]
+            accepts: [
+                "silver_laptop",
+                "spring_water_bottle", "sparkling_water_bottle", "canned_coffee",
+            ]
         ),
         // The pink desk is the same desk in another palette, so it carries the
         // same top. Painting one does not stop a laptop standing on it.
@@ -966,7 +997,10 @@ enum HomeIslandAssetCatalog {
             topHeight: 0.420,
             halfWidth: 0.530,
             halfDepth: 0.260,
-            accepts: ["silver_laptop"]
+            accepts: [
+                "silver_laptop",
+                "spring_water_bottle", "sparkling_water_bottle", "canned_coffee",
+            ]
         ),
     ]
 
@@ -1195,6 +1229,27 @@ enum HomeIslandAssetCatalog {
                 ),
             ]
         ),
+        // Three different drinks rather than three colours of one, so the
+        // chooser shows the models: which drink it is, is the whole question.
+        HomeIslandAssetFamily(
+            id: "drink",
+            title: String(localized: "Drinks"),
+            symbolName: "waterbottle.fill",
+            variants: [
+                HomeIslandAssetVariant(
+                    assetID: "spring_water_bottle",
+                    name: String(localized: "Water")
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "sparkling_water_bottle",
+                    name: String(localized: "Sparkling")
+                ),
+                HomeIslandAssetVariant(
+                    assetID: "canned_coffee",
+                    name: String(localized: "Coffee")
+                ),
+            ]
+        ),
         HomeIslandAssetFamily(
             id: "office_desk",
             title: String(localized: "Desk"),
@@ -1254,6 +1309,7 @@ enum HomeIslandAssetCatalog {
             .paths
         case "office_desk", "office_desk_pink",
              "office_chair", "office_chair_pink", "silver_laptop",
+             "spring_water_bottle", "sparkling_water_bottle", "canned_coffee",
              "council_table", "council_chair",
              "driftwood_bench", "stone_bench", "log_stool",
              "wooden_bookshelf", "stacked_books",
@@ -1365,7 +1421,11 @@ enum HomeIslandAssetCatalog {
              // enough to step over, and standing on a desk it is not on the
              // ground at all — a collider would fence off the very spot the
              // navigator has to reach to sit at the desk.
-             "silver_laptop":
+             "silver_laptop",
+             // Same for what stands next to it: a bottle is ankle height on
+             // the sand and is not on the ground at all once it is on the
+             // desk, so neither is worth a collider.
+             "spring_water_bottle", "sparkling_water_bottle", "canned_coffee":
             false
         default:
             true

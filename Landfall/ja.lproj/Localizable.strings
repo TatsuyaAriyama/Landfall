@@ -187,6 +187,7 @@
 "Level %lld" = "レベル%lld";
 "Unlocks at Level %lld" = "レベル%lldで開放";
 "%@ to Level %lld" = "レベル%2$lldまであと%1$@";
+"LEVEL UP" = "レベルアップ";
 "Tap the sand to place this asset" = "砂地をタップしてこのアセットを配置";
 "Tap the island edge to extend the jetty toward the sea" = "島の端をタップして、海へ向かう桟橋を設置";
 "Place only at the island edge; it automatically faces the sea" = "島の端にのみ設置でき、自動で海を向きます";
@@ -1082,6 +1083,13 @@
 "Stone" = "石";
 "Chair" = "チェア";
 "Chair (Pink)" = "チェア(ピンク)";
+"Water Bottle" = "水のボトル";
+"Sparkling Water" = "炭酸水";
+"Canned Coffee" = "缶コーヒー";
+"Drinks" = "飲料水";
+"Water" = "水";
+"Sparkling" = "炭酸";
+"Coffee" = "コーヒー";
 "Assets" = "アセット";
 "Details" = "詳細";
 "Move panel" = "パネルを左右に移動";
