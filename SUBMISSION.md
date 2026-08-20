@@ -50,7 +50,8 @@ https://appstoreconnect.apple.com で新規アプリを作成し、以下を入�
 - **Category**: Productivity(第2カテゴリは任意で Education など)
 - **Age Rating**: プライベート港にチャットがあるため、Messaging and Chat /
   User-Generated Content を実態どおり回答する。推測で「該当なし」にしない。
-- **App Privacy**: ⚠️ **「Data Not Collected」は誤り。** STORE_METADATA.md の「App Privacy」節の通り、
+- **App Privacy**: ✅ 2026-08-20に是正・公開済み(11データタイプ)。以下は変更時の参照用。
+  ⚠️ **「Data Not Collected」は誤り。** STORE_METADATA.md の「App Privacy」節の通り、
   アプリ自身のデータに加え、Google Sign-In / Firebaseのマニフェストが宣言するデータも回答すること。
   マニフェスト `PrivacyInfo.xcprivacy` と一致させる。**審査中でも修正可能なので最優先で直す。**
 - **Privacy Policy URL**: `https://aftide.app/privacy`

@@ -208,6 +208,9 @@ KeelMiraの航海体験を新しくしました。
 
 **「Data Not Collected」は誤り。以下を App Store Connect に入力すること。**
 
+> 2026-08-20: 上記11種類をApp Store Connectに入力・公開済み(写真またはビデオの追加、
+> デバイスIDへのApp Functionality追加、その他の診断データをLinked+App Functionalityに是正)。
+
 - Tracking: **No**(トラッキングなし。IDFA/広告なし)
 - KeelMira自身が扱うデータ(いずれも **Linked to identity=Yes / Used for tracking=No /
   用途=App Functionality**):
@@ -224,7 +227,8 @@ KeelMiraの航海体験を新しくしました。
   3. **Identifiers → User ID**(Google Sign-In / Linked / Analytics。App Functionalityと併記)
   4. **Identifiers → Device ID**(Google Sign-In / Linked / Analytics)
   5. **Usage Data → Other Usage Data**(Google Sign-In / Linked / Analytics)
-  6. **Diagnostics → Other Diagnostic Data**(Firebase Auth/Firestore / Not Linked / Analytics)
+  6. **Diagnostics → Other Diagnostic Data**(Firebase Auth/Firestore / Analytics。KeelMira自身の改善案送信ぶんと合算し、
+     App Store Connectでは **Linked / App Functionality + Analytics** で回答済み)
   7. **Other Data → Other Data Types**(Google Sign-In / Linked / App Functionality + Analytics)
 
 > Google Sign-Inの電話番号・概算位置などはKeelMiraの画面やFirestoreで直接保存しないが、
