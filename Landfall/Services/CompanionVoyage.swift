@@ -226,11 +226,19 @@ enum CompanionVoyageRoster {
                 isLocal: uid == localID
             )
         }
+        // memberIds は Cloud Function が参加時に末尾へ追加する永続的な参加順。
+        // local / remote や presence の到着順で並べ替えないため、全端末で同じ
+        // 1〜4番が得られ、甲板の役割を追加通信なしで固定できる。
+        var memberOrder: [String: Int] = [:]
+        for (index, uid) in memberIDs.enumerated() where memberOrder[uid] == nil {
+            memberOrder[uid] = index
+        }
         return mates.sorted { lhs, rhs in
             if lhs.isHost != rhs.isHost { return lhs.isHost }
-            if lhs.isAboard != rhs.isAboard { return lhs.isAboard }
-            if lhs.isLocal != rhs.isLocal { return lhs.isLocal }
-            return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            let lhsOrder = memberOrder[lhs.id] ?? Int.max
+            let rhsOrder = memberOrder[rhs.id] ?? Int.max
+            if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+            return lhs.id < rhs.id
         }
     }
 

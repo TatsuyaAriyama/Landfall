@@ -85,14 +85,14 @@ struct CompanionVoyagePreviewView: View {
     private var deckMembers: [VoyageSceneKit.CompanionDeckMember] {
         deckMode == "deck-guest"
             ? [
-                VoyageSceneKit.CompanionDeckMember(id: "preview-host", isHost: true),
-                VoyageSceneKit.CompanionDeckMember(id: "preview-akari", isHost: false),
-                VoyageSceneKit.CompanionDeckMember(id: "preview-nagi", isHost: false),
+                VoyageSceneKit.CompanionDeckMember(id: "preview-host", role: .lantern),
+                VoyageSceneKit.CompanionDeckMember(id: "preview-akari", role: .seated),
+                VoyageSceneKit.CompanionDeckMember(id: "preview-nagi", role: .chart),
             ]
             : [
-                VoyageSceneKit.CompanionDeckMember(id: "preview-akari", isHost: false),
-                VoyageSceneKit.CompanionDeckMember(id: "preview-nagi", isHost: false),
-                VoyageSceneKit.CompanionDeckMember(id: "preview-umi", isHost: false),
+                VoyageSceneKit.CompanionDeckMember(id: "preview-akari", role: .lookout),
+                VoyageSceneKit.CompanionDeckMember(id: "preview-nagi", role: .seated),
+                VoyageSceneKit.CompanionDeckMember(id: "preview-umi", role: .chart),
             ]
     }
 

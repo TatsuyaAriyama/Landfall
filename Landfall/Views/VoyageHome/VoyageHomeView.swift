@@ -2206,10 +2206,10 @@ struct VoyageHomeView: View {
         )
     }
 
-    /// 甲板に並ぶのは、いま実際に海の上にいる仲間だけ。
+    /// 甲板の役割番号を全端末で揃えるため、ローカル本人も含めた参加順を渡す。
     private var sailingCompanions: [CompanionVoyageCrewMate] {
         guard companionStage == .sailing else { return [] }
-        return companionCrew.filter { !$0.isLocal && $0.stage == .sailing }
+        return companionCrew.filter { $0.stage == .sailing }
     }
 
     private func openCompanionMuster(for item: StudyItem) {

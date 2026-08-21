@@ -204,7 +204,7 @@ struct PrivateIslandVisitWorld: View {
     }
 
     private var sailingCompanions: [CompanionVoyageCrewMate] {
-        companionCrew.filter { !$0.isLocal && $0.stage == .sailing }
+        companionCrew.filter { $0.stage == .sailing }
     }
 
     @ViewBuilder

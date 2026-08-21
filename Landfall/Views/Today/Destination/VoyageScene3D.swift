@@ -1133,8 +1133,19 @@ enum VoyageSceneKit {
 
     /// 甲板の4人は「役割 = 仕草 + 色」を固定する。ホスト側で見ても同行者側で
     /// 見ても、ランタン・見張り・座る・海図読みの4つが一度ずつだけ現れる。
-    enum CompanionDeckRole: String, Equatable {
+    enum CompanionDeckRole: String, Hashable {
         case lantern, lookout, seated, chart
+
+        /// 島の参加順と役割は全端末で同じ。見た目のための追加通信は行わない。
+        static func participant(at index: Int) -> CompanionDeckRole? {
+            switch index {
+            case 0: .lantern
+            case 1: .lookout
+            case 2: .seated
+            case 3: .chart
+            default: nil
+            }
+        }
 
         var pose: PhoenixPose {
             switch self {
@@ -1159,31 +1170,36 @@ enum VoyageSceneKit {
         }
     }
 
-    /// 私設島の同行者が並ぶ甲板の定位置。私設島はホストを入れて4人までなので、
-    /// 席も3つでちょうど埋まる。本人の航海士と合わせて左右2人ずつになるよう、
-    /// 帆柱を挟んで前後へ少しずつずらす。
-    /// 席は座標を送り合わずに決める。誰がどこに立つかは各端末で同じ並び順から
-    /// 割り当てるので、位置の通信はいらない。
+    /// 私設島の同行者が並ぶ甲板の定位置。ホストを含む4役を前後左右へ固定し、
+    /// 本人か同行者かに関係なく同じ席を使う。座標を送り合う必要はない。
     /// 席は「写真に撮ったときの並び」として決めている。
     ///
-    /// 船首側は本人と左舷の一人、船尾側は左右に一人ずつ。
+    /// 船首側はランタンと見張り、船尾側は座る役と海図役を左右に一人ずつ。
     /// 上から見ると2×2の菱形になり、どちらか一方の舷へ人が固まらない。
     static let companionDeckSlots: [CompanionDeckSeat] = [
-        // 船首寄りの左舷。右舷寄りの本人と対になる。
-        CompanionDeckSeat(position: SCNVector3(0.56, 0.68, -0.42), role: .lookout, facing: .port),
+        // 船首寄りの右舷。柵と帆から一歩内側で、右舷の水平線を見渡す。
+        CompanionDeckSeat(position: SCNVector3(0.42, 0.68, 0.25), role: .lookout, facing: .starboard),
         // 船尾寄りの右舷。舷側へ腰を下ろして海を見る。
         CompanionDeckSeat(position: SCNVector3(-0.28, 0.68, 0.42), role: .seated, facing: .starboard),
-        // 船尾寄りの左舷。3/4背面で海図を覗き込み、後列も2人で揃える。
-        CompanionDeckSeat(position: SCNVector3(-0.24, 0.62, -0.56), role: .chart, facing: .bowStarboard),
+        // 船尾寄りの左舷。柵から離れた甲板上で海図を読み、後列も2人で揃える。
+        CompanionDeckSeat(position: SCNVector3(-0.36, 0.62, -0.38), role: .chart, facing: .bowStarboard),
     ]
 
-    /// 島の主の席。船首寄りの左舷で、正面を向いてランタンを掲げる。
-    /// 自分が同行者側のとき(=ホストが甲板にいるとき)だけ使う。
+    /// 島の主の席。船首寄りの左舷内側で、正面を向いてランタンを掲げる。
     static let companionHostDeckSeat = CompanionDeckSeat(
-        position: SCNVector3(0.56, 0.68, -0.42),
+        position: SCNVector3(0.42, 0.68, -0.25),
         role: .lantern,
         facing: .bow
     )
+
+    static func companionDeckSeat(for role: CompanionDeckRole) -> CompanionDeckSeat {
+        switch role {
+        case .lantern: companionHostDeckSeat
+        case .lookout: companionDeckSlots[0]
+        case .seated: companionDeckSlots[1]
+        case .chart: companionDeckSlots[2]
+        }
+    }
 
     /// 甲板の一席。同じ船に四人が乗っても、みな別のことをしている。
     struct CompanionDeckSeat {
@@ -1200,33 +1216,26 @@ enum VoyageSceneKit {
         let facing: Facing
     }
 
-    /// 甲板に並べる一人ぶん。ホストだけは席と仕草が決まっている。
+    /// 甲板に並べる一人ぶん。参加順から確定した役割だけを渡す。
     struct CompanionDeckMember: Equatable {
         let id: String
-        let isHost: Bool
+        let role: CompanionDeckRole
 
-        init(id: String, isHost: Bool) {
+        init(id: String, role: CompanionDeckRole) {
             self.id = id
-            self.isHost = isHost
+            self.role = role
         }
     }
 
-    /// 誰をどの席に着けるか。ホストはランタンの席、残りは順番どおり。
+    /// 役割ごとの席は固定。同じ役割が重複して届いても一人だけを描く。
     static func companionDeckSeating(
         for members: [CompanionDeckMember]
     ) -> [(id: String, seat: CompanionDeckSeat)] {
-        // ホストが乗っているなら、その席は舳先寄りの右舷。残りは船尾側から
-        // 順に詰める。私設島は四人までなので、席が足りなくなることはない。
-        let hostIsAboard = members.contains(where: \.isHost)
-        var remaining = (hostIsAboard ? Array(companionDeckSlots.dropFirst()) : companionDeckSlots)
-            .makeIterator()
         var seating: [(id: String, seat: CompanionDeckSeat)] = []
+        var occupiedRoles: Set<CompanionDeckRole> = []
         for member in members {
-            if member.isHost {
-                seating.append((member.id, companionHostDeckSeat))
-            } else if let seat = remaining.next() {
-                seating.append((member.id, seat))
-            }
+            guard occupiedRoles.insert(member.role).inserted else { continue }
+            seating.append((member.id, companionDeckSeat(for: member.role)))
         }
         return seating
     }
@@ -2576,9 +2585,20 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
             localSailorRole?.palette ?? NavigatorCustomization.currentPalette,
             to: localSailor
         )
-        // 同行者側の本人はホストと並んで正面を向かず、左舷の水平線を見る。
-        // 通常航海とランタン役は船首向きへ戻す。
-        localSailor.eulerAngles.y = localSailorRole == .lookout ? .pi : .pi / 2
+        if let localSailorRole {
+            // ローカル航海士も役割の定位置へ移す。誰の端末で見ても、同じ人が
+            // 同じ席・色・仕草になる。座標は既存アンカーからの相対差分。
+            let seat = VoyageSceneKit.companionDeckSeat(for: localSailorRole)
+            localSailor.position = SCNVector3(
+                seat.position.x - VoyageSceneKit.navigatorDeckPosition.x,
+                seat.position.y - VoyageSceneKit.navigatorDeckPosition.y,
+                seat.position.z - VoyageSceneKit.navigatorDeckPosition.z
+            )
+            localSailor.eulerAngles.y = seat.facing.rawValue
+        } else {
+            localSailor.position = SCNVector3Zero
+            localSailor.eulerAngles.y = .pi / 2
+        }
     }
 
     /// 船のノードが揃ってから呼ぶ。まだ組み上がっていなければ何もせず、

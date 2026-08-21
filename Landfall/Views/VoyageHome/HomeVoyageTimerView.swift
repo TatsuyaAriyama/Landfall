@@ -265,6 +265,28 @@ struct HomeVoyageTimerView: View {
         return normalizedNote == firstVoyageRequiredNote
     }
 
+    /// 参加順はホストから1〜4番。全端末で同じ配列を使い、ローカルかどうかは
+    /// 描画ノードを自分用・同行者用に分けるときだけ見る。
+    private var localCompanionRole: VoyageSceneKit.CompanionDeckRole? {
+        guard let index = companions.firstIndex(where: \.isLocal) else {
+            return companions.isEmpty || !hostsCompanionVoyage ? nil : .lantern
+        }
+        return VoyageSceneKit.CompanionDeckRole.participant(at: index)
+    }
+
+    private var remoteCompanions: [CompanionVoyageCrewMate] {
+        companions.filter { !$0.isLocal }
+    }
+
+    private var companionDeckMembers: [VoyageSceneKit.CompanionDeckMember] {
+        companions.enumerated().compactMap { index, mate in
+            guard !mate.isLocal,
+                  let role = VoyageSceneKit.CompanionDeckRole.participant(at: index)
+            else { return nil }
+            return VoyageSceneKit.CompanionDeckMember(id: mate.id, role: role)
+        }
+    }
+
     private var notePlaceholder: String {
         firstVoyageRequiredNote ?? LF.text("What you worked on (optional)")
     }
@@ -283,12 +305,8 @@ struct HomeVoyageTimerView: View {
                     elapsedSeconds: snapshot.elapsedSeconds(at: clockNow),
                     boatParts: boatParts ?? BoatCustomization.currentParts,
                     boatAppearanceKey: boatAppearanceKey ?? BoatCustomization.voyageRenderingKey,
-                    companions: companions.map {
-                        VoyageSceneKit.CompanionDeckMember(id: $0.id, isHost: $0.isHost)
-                    },
-                    localSailorRole: companions.isEmpty
-                        ? nil
-                        : (hostsCompanionVoyage ? .lantern : .lookout),
+                    companions: companionDeckMembers,
+                    localSailorRole: localCompanionRole,
                     onTapWorld: toggleWorldUI
                 )
                 .ignoresSafeArea()
@@ -489,7 +507,7 @@ struct HomeVoyageTimerView: View {
                 .frame(height: 1)
                 .padding(.top, compactHUD ? 7 : 8)
 
-            if !companions.isEmpty {
+            if !remoteCompanions.isEmpty {
                 companionStrip
                     .padding(.horizontal, chipTrayPadding)
                     .padding(.top, chipTrayPadding)
@@ -578,7 +596,7 @@ struct HomeVoyageTimerView: View {
             Image(systemName: "person.2.fill")
                 .font(.system(size: 8, weight: .medium))
                 .foregroundStyle(timerGlassInk.opacity(0.5))
-            Text(verbatim: companions.map(\.name).joined(separator: LF.text(", ")))
+            Text(verbatim: remoteCompanions.map(\.name).joined(separator: LF.text(", ")))
                 .font(LFFont.label(9.5))
                 .foregroundStyle(timerGlassInk.opacity(0.78))
                 .lineLimit(1)
@@ -591,7 +609,7 @@ struct HomeVoyageTimerView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Sailing together"))
         .accessibilityValue(
-            Text(verbatim: companions.map(\.name).joined(separator: LF.text(", ")))
+            Text(verbatim: remoteCompanions.map(\.name).joined(separator: LF.text(", ")))
         )
     }
 
