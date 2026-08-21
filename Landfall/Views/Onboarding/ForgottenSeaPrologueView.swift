@@ -230,12 +230,12 @@ struct ForgottenSeaPrologueView: View {
                 .frame(width: 42, height: 1)
 
             Text(verbatim: visibleOpeningText)
-                .font(.system(size: 22, weight: .regular, design: .serif))
-                .tracking(0.7)
+                .font(.system(size: 18, weight: .regular, design: .serif))
+                .tracking(0.45)
                 .foregroundStyle(Color(hex: 0xF1E8CF))
-                .lineSpacing(9)
+                .lineSpacing(7)
                 .multilineTextAlignment(.leading)
-                .frame(minHeight: 72, alignment: .topLeading)
+                .frame(minHeight: 62, alignment: .topLeading)
         }
         .frame(maxWidth: 520, alignment: .leading)
         .padding(.horizontal, 28)
