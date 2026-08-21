@@ -331,7 +331,7 @@ struct VoyageHomeView: View {
                         }
                         .transition(.opacity)
                     } else {
-                        ForgottenSeaPrologueView {
+                        ForgottenSeaPrologueView(mode: .replay) {
                             HomeVoyageAudio.shared.play(
                                 HomeVoyageSound.initialTimerSound.rawValue
                             )

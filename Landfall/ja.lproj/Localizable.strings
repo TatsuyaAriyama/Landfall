@@ -236,6 +236,7 @@
 "View the basics again." = "基本の操作をもう一度見る。";
 "Opening story" = "オープニングストーリー";
 "Watch the Forgotten Sea again." = "「忘却の海」をもう一度見る。";
+"Watch the opening story again." = "オープニングストーリーをもう一度見る。";
 "Help" = "ヘルプ";
 "See how to use the main features." = "主な機能の使い方を確認する。";
 "Quick guide to the main controls." = "主な操作を、短く確認できます。";
@@ -1384,6 +1385,16 @@
 "Change language, app icon, and account" = "言語・アプリアイコン・アカウントを設定します";
 
 /* 序章「忘却の海」 */
+"Beyond the sea, there is nothing.\nIt ends before the horizon." = "海の向こうには、何もない。\n水平線の手前で終わっている。";
+"This island is not the whole world." = "この島が世界の全てではない。";
+"Someone who knows you is waiting beyond." = "君を知る者が、その先で待っている。";
+"Write your name, and sail beyond the sea." = "名前を記し、海の向こうへ進め。";
+"A letter from beyond" = "遠くから届いた手紙";
+"A glowing bottle lies on the beach" = "光る瓶が海辺に落ちている";
+"Open the letter" = "手紙を開く";
+"Your name" = "あなたの名前";
+"Up to %lld characters" = "%lld文字まで";
+"Set sail" = "航海を始める";
 "Somewhere along the way, the sea began taking people's memories,\nand their names, their wishes, even the routes they once sailed sank into the fog." = "いつからか、海は人々の記憶をさらい、\n名も、願いも、かつての航路さえも深い霧の底へ沈めていった。";
 "And so they gave this sea a name.\nThey called it the Forgotten Sea." = "人々はこの海を――\n「忘却の海」と呼んだ。";
 "The stars went out, the lighthouse fires died,\nand no one looked for a new route anymore." = "やがて星は消え、灯台の火は絶え、\n誰も新しい航路を探さなくなった。";

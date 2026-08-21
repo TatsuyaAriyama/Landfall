@@ -239,7 +239,7 @@ struct SettingsView: View {
                                 Text("Opening story")
                                     .font(LFFont.copy(16))
                                     .foregroundStyle(LFColor.ink)
-                                Text("Watch the Forgotten Sea again.")
+                                Text("Watch the opening story again.")
                                     .font(LFFont.label(13))
                                     .foregroundStyle(LFColor.ink.opacity(0.52))
                             }
@@ -378,7 +378,7 @@ struct SettingsView: View {
                         }
                         .transition(.opacity)
                     } else {
-                        ForgottenSeaPrologueView {
+                        ForgottenSeaPrologueView(mode: .replay) {
                             HomeVoyageAudio.shared.play(
                                 HomeVoyageSound.initialTimerSound.rawValue
                             )

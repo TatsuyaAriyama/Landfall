@@ -81,7 +81,7 @@ struct LandfallApp: App {
             Group {
                 if !hasCompletedPrologue || (Self.forcePrologue && !dismissedForcedPrologue) {
                     if isLaunchingFirstVoyage {
-                        // 序章の古船から、タイマーと同じ航海中の世界へ連続して入る。
+                        // 序章の灯台島から、タイマーと同じ航海中の世界へ連続して入る。
                         PrologueVoyageLaunchSceneView {
                             withAnimation(.easeInOut(duration: 0.52)) {
                                 hasCompletedPrologue = true
@@ -168,7 +168,15 @@ struct LandfallApp: App {
                         await SyncService.shared.performInitialSync(
                             context: container.mainContext
                         )
+                        if PrologueIdentity.adoptPendingNameIfProfileIsBlank() {
+                            await SyncService.shared.pushPlayerProfile()
+                        }
                     }
+                } else if auth.canEnterApp {
+                    // Local and Simulator modes have no remote profile to
+                    // reconcile. The name written in the opening can become
+                    // the device profile as soon as the gate has opened.
+                    PrologueIdentity.adoptPendingNameIfProfileIsBlank()
                 }
             }
             .onChange(of: auth.user?.uid) { oldUID, newUID in
@@ -185,6 +193,9 @@ struct LandfallApp: App {
                         await SyncService.shared.performInitialSync(
                             context: container.mainContext
                         )
+                        if PrologueIdentity.adoptPendingNameIfProfileIsBlank() {
+                            await SyncService.shared.pushPlayerProfile()
+                        }
                     }
                 } else {
                     SyncService.shared.stopSync()
@@ -196,6 +207,14 @@ struct LandfallApp: App {
                         }
                     }
                 }
+            }
+            .onChange(of: auth.isUsingLocalMode) { _, isUsingLocalMode in
+                guard isUsingLocalMode else { return }
+                PrologueIdentity.adoptPendingNameIfProfileIsBlank()
+            }
+            .onChange(of: auth.isSimulatorPreviewing) { _, isPreviewing in
+                guard isPreviewing else { return }
+                PrologueIdentity.adoptPendingNameIfProfileIsBlank()
             }
             // 前面復帰のたびに再同期。他端末で追加された記録を取り込み、
             // 保留中の書き込みも送信される。ローカルは常に真実の源のまま。
