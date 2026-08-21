@@ -3,7 +3,8 @@ import Foundation
 import SwiftData
 
 /// 動作確認専用のサンプル投入。Releaseビルドには含まれない(#if DEBUG)。
-/// 環境変数 LANDFALL_SEED を渡したときだけ実行する。本番の起動経路には一切影響しない。
+/// 環境変数 LANDFALL_SEED=1 を渡したときだけ実行する。
+/// サンプルはメモリ内ストアだけに保存し、アカウントと同期しない。
 enum DebugSeed {
     /// 1プロセスにつき一度だけ投入する。App の init が複数回走っても重複を作らない。
     private static var didSeed = false
@@ -12,7 +13,7 @@ enum DebugSeed {
     /// 別コンテキストだと mainContext が削除を認識せず、autosave で項目が復活して重複する。
     @MainActor
     static func seedIfRequested(into container: ModelContainer) {
-        guard ProcessInfo.processInfo.environment["LANDFALL_SEED"] != nil else { return }
+        guard ProcessInfo.processInfo.environment["LANDFALL_SEED"] == "1" else { return }
         guard !didSeed else { return }
         didSeed = true
 
@@ -20,7 +21,7 @@ enum DebugSeed {
         let calendar = Calendar.current
         let today = Date()
 
-        // ストアは投入前に makeContainer 側で消去済み。念のため残っていれば消してから入れる。
+        // 一時ストアは空で始まる。念のため残っていれば消してから入れる。
         for session in (try? context.fetch(FetchDescriptor<StudySession>())) ?? [] { context.delete(session) }
         for day in (try? context.fetch(FetchDescriptor<StudyDay>())) ?? [] { context.delete(day) }
         for item in (try? context.fetch(FetchDescriptor<StudyItem>())) ?? [] { context.delete(item) }
@@ -75,7 +76,7 @@ enum DebugSeed {
                    !calendar.isDate(date, inSameDayAs: today),
                    date <= today {
                     context.insert(StudySession(date: date, minutes: minutes, note: note, item: item))
-                    StudyDayStore.markDay(date, context: context)
+                    StudyDayStore.markDay(date, context: context, syncsToAccount: false)
                 }
             }
         }
@@ -104,14 +105,15 @@ enum DebugSeed {
                 let date = calendar.date(byAdding: .hour, value: hours[index % hours.count], to: dayStart) ?? today
                 context.insert(StudySession(date: date, minutes: minutes, note: note, item: item))
             }
-            StudyDayStore.markDay(today, context: context)
+            StudyDayStore.markDay(today, context: context, syncsToAccount: false)
             // setComment は既存の StudyDay を引いて書き換えるので、先に確定させる。
             try? context.save()
             // その日のカード用のひとこと(記録ごとのメモとは別物)。
             StudyDayStore.setComment(
                 isJapanese ? "久しぶりに読書に没頭できた。"
                            : "Lost myself in a book for the first time in a while.",
-                for: today, context: context
+                for: today, context: context,
+                syncsToAccount: false
             )
         }
 
@@ -127,7 +129,7 @@ enum DebugSeed {
                 note: nil,
                 item: development
             ))
-            StudyDayStore.markDay(backdated, context: context)
+            StudyDayStore.markDay(backdated, context: context, syncsToAccount: false)
             try? context.save()
         }
 
@@ -139,13 +141,14 @@ enum DebugSeed {
                 note: nil,
                 item: reading
             ))
-            StudyDayStore.markDay(yesterday, context: context)
+            StudyDayStore.markDay(yesterday, context: context, syncsToAccount: false)
             try? context.save()
             StudyDayStore.setComment(
                 isJapanese ? "急がずに進んだら、景色をよく見られた。"
                            : "Going slowly let me notice more of the view.",
                 for: yesterday,
-                context: context
+                context: context,
+                syncsToAccount: false
             )
         }
 
@@ -157,7 +160,7 @@ enum DebugSeed {
                 note: nil,
                 item: development
             ))
-            StudyDayStore.markDay(pastDate, context: context)
+            StudyDayStore.markDay(pastDate, context: context, syncsToAccount: false)
             try? context.save()
             var descriptor = FetchDescriptor<StudyDay>(predicate: #Predicate { $0.date == pastStart })
             descriptor.fetchLimit = 1
@@ -173,7 +176,8 @@ enum DebugSeed {
                     "This must not overwrite a sealed page.",
                     for: pastDate,
                     context: context,
-                    now: today
+                    now: today,
+                    syncsToAccount: false
                 )
                 assert(!accepted && pastDay.note == sealedReflection)
             }
@@ -214,7 +218,7 @@ enum DebugSeed {
             for offset in [0, 1, 2, 9, 10, 13, 14, 15, 21, 22, 23, 24, 28, 29] {
                 if let date = calendar.date(byAdding: .day, value: offset, to: prevStart) {
                     context.insert(StudySession(date: date, minutes: 30, note: nil, item: development))
-                    StudyDayStore.markDay(date, context: context)
+                    StudyDayStore.markDay(date, context: context, syncsToAccount: false)
                 }
             }
         }

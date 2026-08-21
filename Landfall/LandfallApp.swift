@@ -41,14 +41,16 @@ struct LandfallApp: App {
     /// 控えがあり、次回サインイン時の同期で戻る。
     private static func makeContainer() -> ModelContainer {
         let schema = Schema([StudyDay.self, StudyItem.self, StudySession.self, Destination.self])
-        let config = ModelConfiguration(schema: schema)
         #if DEBUG
-        // 動作確認用データ投入時は毎回まっさらから始める。SwiftData の削除永続化に依存せず、
-        // コンテナを開く前にストアファイルを消す。本番(SEEDなし)には一切影響しない。
-        if ProcessInfo.processInfo.environment["LANDFALL_SEED"] != nil {
-            wipeStoreFiles(base: config.url)
+        // スクリーンショット用サンプルは必ず一時ストアへ。
+        // 通常のシミュレーター履歴を消したり、レベルへ累積させたりしない。
+        if usesDebugSeed {
+            let memory = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+            return (try? ModelContainer(for: schema, configurations: memory))
+                ?? { fatalError("動作確認用コンテナを初期化できませんでした。") }()
         }
         #endif
+        let config = ModelConfiguration(schema: schema)
         do {
             return try ModelContainer(for: schema, configurations: config)
         } catch {
@@ -157,7 +159,7 @@ struct LandfallApp: App {
                 StudyTimer.migrateLegacyTimerIfNeeded()
                 WidgetTimerInbox.importPending(context: container.mainContext)
                 WidgetBridge.refresh(context: container.mainContext)
-                if let uid = auth.user?.uid {
+                if !Self.usesDebugSeed, let uid = auth.user?.uid {
                     Task {
                         await LocalAccountData.prepareForSignedInUser(
                             uid: uid,
@@ -170,6 +172,10 @@ struct LandfallApp: App {
                 }
             }
             .onChange(of: auth.user?.uid) { oldUID, newUID in
+                guard !Self.usesDebugSeed else {
+                    SyncService.shared.stopSync()
+                    return
+                }
                 if let newUID {
                     Task {
                         await LocalAccountData.prepareForSignedInUser(
@@ -208,7 +214,7 @@ struct LandfallApp: App {
                     WidgetBridge.refresh(context: container.mainContext)
                     let recorded = StudyDayStore.recordedToday(context: container.mainContext)
                     Task { await NotificationService.reschedule(recordedToday: recorded) }
-                    if auth.isSignedIn {
+                    if auth.isSignedIn && !Self.usesDebugSeed {
                         Task { await SyncService.shared.performInitialSync(context: container.mainContext) }
                     }
                 }
@@ -222,6 +228,16 @@ struct LandfallApp: App {
     private static var skipAuth: Bool {
         #if DEBUG
         return ProcessInfo.processInfo.environment["LANDFALL_SKIP_AUTH"] == "1"
+        #else
+        return false
+        #endif
+    }
+
+    /// 動作確認用データは明示的に `1` を渡した場合だけ有効。
+    /// 本番ビルドでは常に false。
+    private static var usesDebugSeed: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["LANDFALL_SEED"] == "1"
         #else
         return false
         #endif

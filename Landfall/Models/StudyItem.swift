@@ -110,7 +110,7 @@ enum StudyDayStore {
         return age == 0 || age == 1
     }
 
-    static func markDay(_ date: Date, context: ModelContext) {
+    static func markDay(_ date: Date, context: ModelContext, syncsToAccount: Bool = true) {
         let dayStart = Calendar.current.startOfDay(for: date)
         var descriptor = FetchDescriptor<StudyDay>(
             predicate: #Predicate { $0.date == dayStart }
@@ -120,7 +120,9 @@ enum StudyDayStore {
         if existing.isEmpty {
             let day = StudyDay(date: dayStart)
             context.insert(day)
-            Task { @MainActor in SyncService.shared.push(day) }
+            if syncsToAccount {
+                Task { @MainActor in SyncService.shared.push(day) }
+            }
         }
     }
 
@@ -137,7 +139,8 @@ enum StudyDayStore {
         _ text: String?,
         for date: Date,
         context: ModelContext,
-        now: Date = Date()
+        now: Date = Date(),
+        syncsToAccount: Bool = true
     ) -> Bool {
         guard canEditComment(for: date, now: now) else { return false }
         guard let day = day(for: date, context: context) else { return false }
@@ -148,7 +151,9 @@ enum StudyDayStore {
         day.note = value
         day.updatedAt = Date()
         try? context.save()
-        Task { @MainActor in SyncService.shared.push(day) }
+        if syncsToAccount {
+            Task { @MainActor in SyncService.shared.push(day) }
+        }
         return true
     }
 
