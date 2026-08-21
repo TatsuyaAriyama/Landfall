@@ -198,7 +198,8 @@ struct PrivateIslandVisitWorld: View {
             memberIDs: (islandService.currentIsland ?? room).memberIds,
             hostUid: room.hostUid,
             localID: currentUserID,
-            localStage: companionStage
+            localStage: companionStage,
+            localIdentity: .local(level: levelProgress.level)
         )
     }
 
@@ -223,6 +224,10 @@ struct PrivateIslandVisitWorld: View {
                 itemName: companionItem?.name ?? "",
                 crew: companionCrew,
                 canSetSail: false,
+                onChangeItem: {
+                    showingCompanionPicker = true
+                    Haptics.tap(.light)
+                },
                 onSetSail: {},
                 onCancel: leaveCompanionMuster
             )
@@ -309,7 +314,8 @@ struct PrivateIslandVisitWorld: View {
             state = CompanionVoyagePresence.state(
                 stage: stage,
                 continuing: lastIslandPlayerState,
-                localID: currentUserID
+                localID: currentUserID,
+                identity: .local(level: levelProgress.level)
             )
         } else {
             state = CompanionVoyagePresence.ashoreState(

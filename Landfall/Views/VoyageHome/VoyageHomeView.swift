@@ -66,6 +66,7 @@ struct VoyageHomeView: View {
     /// 同行の航海。仲間が島にいるときだけ、出航の前に参加一覧をはさむ。
     @State private var companionMusterItem: StudyItem?
     @State private var companionStage: CompanionVoyageStage?
+    @State private var showingCompanionItemPicker = false
     @StateObject private var companionNames = CompanionVoyageNameBook()
     @StateObject private var hostedPrivateIsland = HostedPrivateIslandSessionCoordinator()
     /// Which of the player's islands is live. The pass opens a second one, and
@@ -255,32 +256,7 @@ struct VoyageHomeView: View {
                     if let item = companionMusterItem,
                        presentedRoute == nil,
                        !timerWorldActive {
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .ignoresSafeArea()
-                            .onTapGesture {}
-                            .accessibilityHidden(true)
-                            .zIndex(13)
-
-                        CompanionVoyageMusterPanel(
-                            itemName: item.name,
-                            crew: companionCrew,
-                            canSetSail: true,
-                            onSetSail: { setSailWithCompanions(item) },
-                            onCancel: cancelCompanionMuster
-                        )
-                        .frame(
-                            maxWidth: .infinity,
-                            maxHeight: .infinity,
-                            alignment: geometry.size.width >= 760 ? .trailing : .top
-                        )
-                        .padding(.horizontal, 12)
-                        .padding(.top, geometry.size.width >= 760 ? 0 : geometry.safeAreaInsets.top + 62)
-                        .transition(
-                            .move(edge: geometry.size.width >= 760 ? .trailing : .top)
-                                .combined(with: .opacity)
-                        )
-                        .zIndex(14)
+                        companionMusterOverlay(item: item, geometry: geometry)
                     }
 
                     if let item = timerVoyageItem {
@@ -642,6 +618,55 @@ struct VoyageHomeView: View {
                 localOwnerID: auth.homeIslandOwnerID
             )
         }
+    }
+
+    private func companionMusterOverlay(
+        item: StudyItem,
+        geometry: GeometryProxy
+    ) -> some View {
+        ZStack(alignment: .top) {
+            Color.clear
+                .contentShape(Rectangle())
+                .ignoresSafeArea()
+                .onTapGesture {}
+                .accessibilityHidden(true)
+
+            Group {
+                if showingCompanionItemPicker {
+                    CompanionVoyageItemPickerHost(
+                        onSelect: selectCompanionMusterItem,
+                        onCancel: {
+                            showingCompanionItemPicker = false
+                            Haptics.tap(.light)
+                        }
+                    )
+                } else {
+                    CompanionVoyageMusterPanel(
+                        itemName: item.name,
+                        crew: companionCrew,
+                        canSetSail: true,
+                        onChangeItem: {
+                            showingCompanionItemPicker = true
+                            Haptics.tap(.light)
+                        },
+                        onSetSail: { setSailWithCompanions(item) },
+                        onCancel: cancelCompanionMuster
+                    )
+                }
+            }
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: geometry.size.width >= 760 ? .trailing : .top
+            )
+            .padding(.horizontal, 12)
+            .padding(.top, geometry.size.width >= 760 ? 0 : geometry.safeAreaInsets.top + 62)
+        }
+        .transition(
+            .move(edge: geometry.size.width >= 760 ? .trailing : .top)
+                .combined(with: .opacity)
+        )
+        .zIndex(14)
     }
 
     private func openPendingHarborInviteIfNeeded(_ requested: Bool) {
@@ -2176,7 +2201,8 @@ struct VoyageHomeView: View {
             memberIDs: room.memberIds,
             hostUid: room.hostUid,
             localID: uid,
-            localStage: companionStage
+            localStage: companionStage,
+            localIdentity: .local(level: PlayerLevelProgress(sessions: sessions).level)
         )
     }
 
@@ -2191,7 +2217,11 @@ struct VoyageHomeView: View {
         menuOpen = false
         companionNames.refresh(code: room.code)
         companionStage = .muster
-        hostedPrivateIsland.publishCompanionVoyage(stage: .muster)
+        showingCompanionItemPicker = false
+        hostedPrivateIsland.publishCompanionVoyage(
+            stage: .muster,
+            identity: .local(level: PlayerLevelProgress(sessions: sessions).level)
+        )
         withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
             showingWorkManifest = false
             companionMusterItem = item
@@ -2201,7 +2231,11 @@ struct VoyageHomeView: View {
 
     private func setSailWithCompanions(_ item: StudyItem) {
         companionStage = .sailing
-        hostedPrivateIsland.publishCompanionVoyage(stage: .sailing)
+        showingCompanionItemPicker = false
+        hostedPrivateIsland.publishCompanionVoyage(
+            stage: .sailing,
+            identity: .local(level: PlayerLevelProgress(sessions: sessions).level)
+        )
         withAnimation(.easeOut(duration: 0.18)) {
             companionMusterItem = nil
         }
@@ -2213,6 +2247,7 @@ struct VoyageHomeView: View {
     private func cancelCompanionMuster() {
         guard companionMusterItem != nil else { return }
         endCompanionVoyage()
+        showingCompanionItemPicker = false
         withAnimation(.easeOut(duration: 0.18)) {
             companionMusterItem = nil
             showingWorkManifest = true
@@ -2220,11 +2255,20 @@ struct VoyageHomeView: View {
         Haptics.tap(.light)
     }
 
+    private func selectCompanionMusterItem(_ item: StudyItem) {
+        companionMusterItem = item
+        showingCompanionItemPicker = false
+        Haptics.tap(.light)
+    }
+
     /// 島へ戻ったことを仲間へ返す。航海を終えたときも、取りやめたときも通る。
     private func endCompanionVoyage() {
         guard companionStage != nil else { return }
         companionStage = nil
-        hostedPrivateIsland.publishCompanionVoyage(stage: nil)
+        hostedPrivateIsland.publishCompanionVoyage(
+            stage: nil,
+            identity: .local(level: PlayerLevelProgress(sessions: sessions).level)
+        )
     }
 
     private func presentTimerVoyage(_ item: StudyItem) {

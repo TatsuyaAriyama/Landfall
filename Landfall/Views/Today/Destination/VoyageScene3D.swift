@@ -1902,7 +1902,8 @@ enum VoyageSceneKit {
     static func makeVoyagingScene(
         showIsland: Bool,
         timeOfDay: AftideHomeTimeOfDay = .night,
-        date: Date = .now
+        date: Date = .now,
+        boatParts: BoatParts = BoatCustomization.currentParts
     ) -> SCNScene {
         let palette = timeOfDay == .night ? AftideHomePalette.voyagingNight : timeOfDay.palette
         let scene = SCNScene()
@@ -1940,7 +1941,7 @@ enum VoyageSceneKit {
         travel.addChildNode(makeWake())
         let bob = SCNNode()
         bob.name = "boatBob"
-        let boat = makeBoatModel(BoatCustomization.currentParts)
+        let boat = makeBoatModel(boatParts)
         attachNavigator(to: boat)
         bob.addChildNode(boat)
         // しぶきは船体と一緒に上下する。甲板が波へ落ちた拍子に上がって見える。
@@ -2794,6 +2795,8 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
     var date: Date = .now
     var resting: Bool = false
     var elapsedSeconds: Int = 0
+    var boatParts: BoatParts = BoatCustomization.currentParts
+    var boatAppearanceKey: String = BoatCustomization.voyageRenderingKey
     /// 同行の航海の同乗者。順番がそのまま甲板の席順になる。
     var companions: [VoyageSceneKit.CompanionDeckMember] = []
     /// 自分がその航海のホストなら、正面でランタンを掲げる。
@@ -2816,7 +2819,8 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         let scene = VoyageSceneKit.makeVoyagingScene(
             showIsland: showIsland,
             timeOfDay: timeOfDay,
-            date: date
+            date: date,
+            boatParts: boatParts
         )
         view.scene = scene
         context.coordinator.animator.attach(to: scene)
@@ -2857,6 +2861,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         }
         context.coordinator.showIsland = showIsland
         context.coordinator.timeOfDay = timeOfDay
+        context.coordinator.boatAppearanceKey = boatAppearanceKey
         context.coordinator.setDate(date)
         context.coordinator.animator.resting = resting
         context.coordinator.animator.setElapsedSeconds(elapsedSeconds)
@@ -2867,13 +2872,16 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
 
     func updateUIView(_ view: VoyagingSceneKitView, context: Context) {
         if context.coordinator.showIsland != showIsland ||
-            context.coordinator.timeOfDay != timeOfDay {
+            context.coordinator.timeOfDay != timeOfDay ||
+            context.coordinator.boatAppearanceKey != boatAppearanceKey {
             context.coordinator.showIsland = showIsland
             context.coordinator.timeOfDay = timeOfDay
+            context.coordinator.boatAppearanceKey = boatAppearanceKey
             let scene = VoyageSceneKit.makeVoyagingScene(
                 showIsland: showIsland,
                 timeOfDay: timeOfDay,
-                date: date
+                date: date,
+                boatParts: boatParts
             )
             view.scene = scene
             context.coordinator.animator.attach(to: scene)
@@ -2910,6 +2918,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         let animator = VoyagingHomeAnimator()
         var showIsland = false
         var timeOfDay: AftideHomeTimeOfDay = .night
+        var boatAppearanceKey = ""
         var reduceMotion = false
         var onTapWorld: () -> Void
         private weak var view: SCNView?

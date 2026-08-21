@@ -1,6 +1,13 @@
 import FirebaseFirestore
 import Foundation
 
+extension BoatCustomization {
+    /// 船デザイン対応前後の共有データで同じように使える再描画キー。
+    static var voyageRenderingKey: String {
+        shareData.keys.sorted().map { "\($0)=\(shareData[$0] ?? "")" }.joined(separator: "|")
+    }
+}
+
 /// 私設島の「同行の航海」。ホストが出す航海に、島にいる仲間が同じ船で付いていく。
 ///
 /// 専用のドキュメントは足さない。既存の presence に scene / phase を一つずつ
@@ -34,7 +41,8 @@ enum CompanionVoyagePresence {
     static func state(
         stage: CompanionVoyageStage,
         continuing last: HomeIslandRemotePlayerState?,
-        localID: String
+        localID: String,
+        identity: CompanionVoyageIdentity
     ) -> HomeIslandRemotePlayerState {
         HomeIslandRemotePlayerState(
             id: localID,
@@ -44,6 +52,7 @@ enum CompanionVoyagePresence {
             pose: PhoenixPose.idle.rawValue,
             scene: Self.scene,
             phase: stage.presencePhase,
+            arrivalNonce: identity.presenceToken,
             isVisible: stage == .muster
         )
     }
@@ -67,10 +76,111 @@ enum CompanionVoyagePresence {
     }
 }
 
+/// 同行の航海中だけ presence に載せる小さなプレイヤーカード。
+///
+/// 専用の Firestore 読み取りやスキーマを増やさず、すでに各端末へ届く
+/// `arrivalNonce` の短い文字列として運ぶ。島へ戻ると破棄される一時情報なので、
+/// レベルや選択中の船が古いまま残らない。
+struct CompanionVoyageIdentity: Equatable, Sendable {
+    private static let tokenPrefix = "c1"
+
+    let level: Int
+    let styleToken: String
+    let symbolToken: String
+    /// 旧クライアントでは船体色、新クライアントでは船デザインID。
+    /// `BoatCustomization.parts(fromIDs:)` が両方を互換的に解釈する。
+    let hullID: String
+    let sailID: String
+
+    static let fallback = CompanionVoyageIdentity(
+        level: 1,
+        styleToken: TileStyle.midnight.rawValue,
+        symbolToken: TileSymbol.phoenix.rawValue,
+        hullID: "sand",
+        sailID: BoatCustomization.sailColors[0].id
+    )
+
+    static func local(level: Int) -> CompanionVoyageIdentity {
+        let boat = BoatCustomization.shareData
+        return CompanionVoyageIdentity(
+            level: max(1, level),
+            styleToken: TileStyle.from(PlayerProfile.styleToken).rawValue,
+            symbolToken: TileSymbol.from(PlayerProfile.symbolToken).rawValue,
+            hullID: boat["boatHull"] ?? "sand",
+            sailID: BoatCustomization.selectedSailID
+        )
+    }
+
+    var presenceToken: String {
+        let style = TileStyle.from(styleToken)
+        let symbol = TileSymbol.from(symbolToken)
+        let styleIndex = TileStyle.allCases.firstIndex(of: style) ?? 0
+        let symbolIndex = TileSymbol.allCases.firstIndex(of: symbol) ?? 0
+        let sailIndex = BoatCustomization.sailColors.firstIndex { $0.id == sailID } ?? 0
+        let safeHull = String(
+            hullID.filter { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
+                .prefix(24)
+        )
+        return [
+            Self.tokenPrefix,
+            String(max(1, min(level, 9999))),
+            String(styleIndex),
+            String(symbolIndex),
+            String(sailIndex),
+            safeHull.isEmpty ? "sand" : safeHull,
+        ].joined(separator: "|")
+    }
+
+    var boatParts: BoatParts {
+        BoatCustomization.parts(fromIDs: [
+            "boatSail": sailID,
+            "boatHull": hullID,
+        ])
+    }
+
+    var boatAppearanceKey: String { "\(hullID)-\(sailID)" }
+
+    static func decode(_ token: String?) -> CompanionVoyageIdentity? {
+        guard let token else { return nil }
+        let fields = token.split(separator: "|", omittingEmptySubsequences: false)
+        guard fields.count == 6,
+              fields[0] == Substring(tokenPrefix),
+              let level = Int(fields[1]),
+              (1...9999).contains(level)
+        else { return nil }
+
+        guard let styleIndex = Int(fields[2]),
+              TileStyle.allCases.indices.contains(styleIndex),
+              let symbolIndex = Int(fields[3]),
+              TileSymbol.allCases.indices.contains(symbolIndex),
+              let sailIndex = Int(fields[4]),
+              BoatCustomization.sailColors.indices.contains(sailIndex)
+        else { return nil }
+        let hullID = String(fields[5])
+        guard !hullID.isEmpty,
+              hullID.utf8.count <= 24,
+              hullID.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" })
+        else {
+            return nil
+        }
+        let style = TileStyle.allCases[styleIndex]
+        let symbol = TileSymbol.allCases[symbolIndex]
+        let sailID = BoatCustomization.sailColors[sailIndex].id
+        return CompanionVoyageIdentity(
+            level: level,
+            styleToken: style.rawValue,
+            symbolToken: symbol.rawValue,
+            hullID: hullID,
+            sailID: sailID
+        )
+    }
+}
+
 /// 参加一覧の一行。
 struct CompanionVoyageCrewMate: Identifiable, Equatable {
     let id: String
     var name: String
+    var identity: CompanionVoyageIdentity = .fallback
     /// nil は「まだ島にいる」。
     var stage: CompanionVoyageStage?
     var isHost: Bool
@@ -87,19 +197,30 @@ enum CompanionVoyageRoster {
         memberIDs: [String],
         hostUid: String,
         localID: String,
-        localStage: CompanionVoyageStage?
+        localStage: CompanionVoyageStage?,
+        localIdentity: CompanionVoyageIdentity
     ) -> [CompanionVoyageCrewMate] {
         var stages: [String: CompanionVoyageStage?] = [:]
+        var identities: [String: CompanionVoyageIdentity] = [:]
         for presence in presences where presence.uid != localID {
             guard presence.uid == hostUid || memberIDs.contains(presence.uid) else { continue }
             stages[presence.uid] = CompanionVoyagePresence.stage(of: presence)
+            if let identity = CompanionVoyageIdentity.decode(presence.arrivalNonce) {
+                identities[presence.uid] = identity
+            }
         }
-        if !localID.isEmpty { stages[localID] = localStage }
+        if !localID.isEmpty {
+            stages[localID] = localStage
+            identities[localID] = localIdentity
+        }
 
         let mates = stages.map { uid, stage in
             CompanionVoyageCrewMate(
                 id: uid,
-                name: names[uid] ?? LF.text("Sailor"),
+                name: uid == localID
+                    ? PlayerProfile.displayName
+                    : (names[uid] ?? LF.text("Sailor")),
+                identity: identities[uid] ?? .fallback,
                 stage: stage,
                 isHost: uid == hostUid,
                 isLocal: uid == localID

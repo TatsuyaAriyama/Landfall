@@ -128,7 +128,10 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
     ///
     /// 航海中はホームの島ビューが外れていて、位置を送る経路が止まっている。
     /// この調整役は画面より長く生きているので、ここだけが presence を保てる。
-    func publishCompanionVoyage(stage: CompanionVoyageStage?) {
+    func publishCompanionVoyage(
+        stage: CompanionVoyageStage?,
+        identity: CompanionVoyageIdentity
+    ) {
         guard let room = activeRoom,
               let uid = Auth.auth().currentUser?.uid,
               uid == room.hostUid
@@ -138,7 +141,8 @@ final class HostedPrivateIslandSessionCoordinator: ObservableObject {
             state = CompanionVoyagePresence.state(
                 stage: stage,
                 continuing: lastIslandPlayerState,
-                localID: uid
+                localID: uid,
+                identity: identity
             )
         } else {
             state = CompanionVoyagePresence.ashoreState(

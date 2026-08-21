@@ -153,6 +153,9 @@ struct HomeVoyageTimerView: View {
     /// 自分がこの航海を出した島の主かどうか。ホストは甲板の正面で
     /// ランタンを掲げ、船団の先を照らす。
     let hostsCompanionVoyage: Bool
+    /// 同行者側では島の主の船を使う。nil の通常航海は自分の船。
+    let boatParts: BoatParts?
+    let boatAppearanceKey: String?
     /// 初回航海だけ、通常のメモ欄を使いながら指定の文言を必須にする。
     /// nil の通常航海では、従来どおり任意メモとして動作する。
     let firstVoyageRequiredNote: String?
@@ -167,6 +170,8 @@ struct HomeVoyageTimerView: View {
         externalWorldTapToken: Int = 0,
         companions: [CompanionVoyageCrewMate] = [],
         hostsCompanionVoyage: Bool = false,
+        boatParts: BoatParts? = nil,
+        boatAppearanceKey: String? = nil,
         firstVoyageRequiredNote: String? = nil,
         onFirstVoyageRecorded: (() -> Void)? = nil
     ) {
@@ -178,6 +183,8 @@ struct HomeVoyageTimerView: View {
         self.externalWorldTapToken = externalWorldTapToken
         self.companions = companions
         self.hostsCompanionVoyage = hostsCompanionVoyage
+        self.boatParts = boatParts
+        self.boatAppearanceKey = boatAppearanceKey
         self.firstVoyageRequiredNote = firstVoyageRequiredNote
         self.onFirstVoyageRecorded = onFirstVoyageRecorded
     }
@@ -274,6 +281,8 @@ struct HomeVoyageTimerView: View {
                     date: clockNow,
                     resting: isVoyageResting,
                     elapsedSeconds: snapshot.elapsedSeconds(at: clockNow),
+                    boatParts: boatParts ?? BoatCustomization.currentParts,
+                    boatAppearanceKey: boatAppearanceKey ?? BoatCustomization.voyageRenderingKey,
                     companions: companions.map {
                         VoyageSceneKit.CompanionDeckMember(id: $0.id, isHost: $0.isHost)
                     },

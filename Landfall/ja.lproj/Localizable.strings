@@ -1408,6 +1408,7 @@
 "%@ is out at sea" = "%@は航海に出ています。";
 "%@ is getting ready to sail" = "%@が出航の支度をしています。";
 "Choose your work and sail along." = "作業項目を選んで、同行しましょう。";
+"Change work item" = "作業項目を変更";
 "Sail along" = "同行する";
 "Dismiss" = "閉じる";
 "What will you work on?" = "何に取り組みますか。";

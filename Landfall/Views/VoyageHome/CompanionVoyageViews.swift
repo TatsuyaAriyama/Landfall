@@ -6,21 +6,68 @@ import SwiftUI
 /// 甲板の同乗者だけを一枚の画面で見比べられる。
 /// `LANDFALL_COVOYAGE=panels` で札、`=deck` で甲板。
 struct CompanionVoyagePreviewView: View {
+    @Query private var sessions: [StudySession]
+    @State private var previewShowsPicker = false
+
     private let crew: [CompanionVoyageCrewMate] = [
         CompanionVoyageCrewMate(
-            id: "preview-self", name: "あなた", stage: .muster, isHost: true, isLocal: true
+            id: "preview-self",
+            name: "あなた",
+            identity: CompanionVoyageIdentity(
+                level: 16,
+                styleToken: TileStyle.violet.rawValue,
+                symbolToken: TileSymbol.phoenix.rawValue,
+                hullID: BoatCustomization.shareData["boatHull"] ?? "sand",
+                sailID: BoatCustomization.selectedSailID
+            ),
+            stage: .muster,
+            isHost: true,
+            isLocal: true
         ),
         CompanionVoyageCrewMate(
-            id: "preview-akari", name: "あかり", stage: .muster, isHost: false, isLocal: false
+            id: "preview-akari",
+            name: "あかり",
+            identity: CompanionVoyageIdentity(
+                level: 12,
+                styleToken: TileStyle.coral.rawValue,
+                symbolToken: TileSymbol.compass.rawValue,
+                hullID: "sand",
+                sailID: "coral"
+            ),
+            stage: .muster,
+            isHost: false,
+            isLocal: false
         ),
         CompanionVoyageCrewMate(
-            id: "preview-nagi", name: "凪", stage: nil, isHost: false, isLocal: false
+            id: "preview-nagi",
+            name: "凪",
+            identity: CompanionVoyageIdentity(
+                level: 8,
+                styleToken: TileStyle.seaGreen.rawValue,
+                symbolToken: TileSymbol.anchor.rawValue,
+                hullID: "sand",
+                sailID: "seaGreen"
+            ),
+            stage: nil,
+            isHost: false,
+            isLocal: false
         ),
     ]
 
     private var deckMode: String? {
         let raw = ProcessInfo.processInfo.environment["LANDFALL_COVOYAGE"]
         return raw == "deck" || raw == "deck-guest" ? raw : nil
+    }
+
+    private var panelMode: String {
+        ProcessInfo.processInfo.environment["LANDFALL_COVOYAGE"] ?? "panels"
+    }
+
+    private var previewBoatIdentity: CompanionVoyageIdentity {
+        if deckMode == "deck-guest" {
+            return crew.first(where: \.isHost)?.identity ?? .fallback
+        }
+        return .local(level: 16)
     }
 
     /// `deck` はホストの画面(自分がランタンを掲げる)、`deck-guest` は同行者の
@@ -47,44 +94,65 @@ struct CompanionVoyagePreviewView: View {
                     timeOfDay: .day,
                     resting: false,
                     elapsedSeconds: 60,
+                    boatParts: previewBoatIdentity.boatParts,
+                    boatAppearanceKey: previewBoatIdentity.boatAppearanceKey,
                     companions: deckMembers,
                     localSailorPose: deckMode == "deck" ? .raise : nil
                 )
                 .ignoresSafeArea()
             } else {
-                LinearGradient(
-                    colors: [Color(hex: 0x8BCFDB), Color(hex: 0x2CCFC5)],
-                    startPoint: .top,
-                    endPoint: .bottom
+                // 確認画面だけ別の背景にすると、実際の島での見え方を
+                // 誤解しやすい。普段のホームと同じ保存済みの自分の島をそのまま使う。
+                HomeIslandView(
+                    ownerID: AuthService.shared.homeIslandOwnerID,
+                    levelProgress: PlayerLevelProgress(sessions: sessions),
+                    startsMooredAtIsland: true,
+                    boatTapOpensSelection: true,
+                    showsDestination: true
                 )
-                .ignoresSafeArea()
+                .allowsHitTesting(false)
 
-                ScrollView {
-                    VStack(spacing: 16) {
+                Group {
+                    switch panelMode {
+                    case "invite":
                         CompanionVoyageInvitePanel(
                             hostName: "あかり",
                             isSailing: false,
                             onJoin: {},
                             onDismiss: {}
                         )
-                        CompanionVoyageMusterPanel(
-                            itemName: "英単語",
-                            crew: crew,
-                            canSetSail: true,
-                            onSetSail: {},
-                            onCancel: {}
-                        )
+                    case "panels-guest":
                         CompanionVoyageMusterPanel(
                             itemName: "英単語",
                             crew: crew,
                             canSetSail: false,
+                            onChangeItem: {},
                             onSetSail: {},
                             onCancel: {}
                         )
+                    case "picker":
                         CompanionVoyageItemPickerHost(onSelect: { _ in }, onCancel: {})
+                    default:
+                        if previewShowsPicker {
+                            CompanionVoyageItemPickerHost(
+                                onSelect: { _ in previewShowsPicker = false },
+                                onCancel: { previewShowsPicker = false }
+                            )
+                        } else {
+                            CompanionVoyageMusterPanel(
+                                itemName: "英単語",
+                                crew: crew,
+                                canSetSail: true,
+                                onChangeItem: { previewShowsPicker = true },
+                                onSetSail: {},
+                                onCancel: {}
+                            )
+                        }
                     }
-                    .padding(.vertical, 40)
                 }
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .safeAreaPadding(.top, 62)
             }
         }
         .preferredColorScheme(.light)
@@ -126,6 +194,7 @@ struct CompanionVoyageMusterPanel: View {
     let crew: [CompanionVoyageCrewMate]
     /// ホストだけが出航の合図を出せる。同行者は支度を済ませて待つ。
     let canSetSail: Bool
+    let onChangeItem: () -> Void
     let onSetSail: () -> Void
     let onCancel: () -> Void
 
@@ -142,10 +211,23 @@ struct CompanionVoyageMusterPanel: View {
                         .font(LFFont.label(9))
                         .tracking(1.0)
                         .foregroundStyle(CompanionVoyagePanelStyle.ink.opacity(0.6))
-                    Text(verbatim: itemName)
-                        .font(LFFont.copy(13))
+                    Button(action: onChangeItem) {
+                        HStack(spacing: 4) {
+                            Text(verbatim: itemName)
+                                .font(LFFont.copy(13))
+                                .lineLimit(1)
+                            Image(systemName: "pencil")
+                                .font(.system(size: 8, weight: .semibold))
+                                .opacity(0.48)
+                            Text("Edit")
+                                .font(LFFont.label(8))
+                                .opacity(0.58)
+                        }
                         .foregroundStyle(CompanionVoyagePanelStyle.ink)
-                        .lineLimit(1)
+                    }
+                    .buttonStyle(LFPressableButtonStyle())
+                    .accessibilityLabel(Text("Change work item"))
+                    .accessibilityValue(Text(verbatim: itemName))
                 }
                 Spacer(minLength: 4)
                 Text(verbatim: "\(aboardCount)/\(crew.count)")
@@ -169,7 +251,7 @@ struct CompanionVoyageMusterPanel: View {
                 }
                 .padding(.vertical, 4)
             }
-            .frame(maxHeight: 168)
+            .frame(maxHeight: 152)
 
             Rectangle()
                 .fill(CompanionVoyagePanelStyle.ink.opacity(0.12))
@@ -240,13 +322,23 @@ private struct CompanionVoyageCrewRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 6, height: 6)
-            Text(verbatim: mate.name)
-                .font(LFFont.copy(12))
-                .foregroundStyle(LFColor.harborTeal)
-                .lineLimit(1)
+            PlayerAvatarArt(
+                styleToken: mate.identity.styleToken,
+                symbolToken: mate.identity.symbolToken
+            )
+            .frame(width: 25, height: 25)
+            .overlay(Circle().stroke(dotColor.opacity(0.75), lineWidth: 1.25))
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(verbatim: mate.name)
+                    .font(LFFont.copy(11.5))
+                    .foregroundStyle(LFColor.harborTeal)
+                    .lineLimit(1)
+                Text(verbatim: "LV \(mate.identity.level)")
+                    .font(LFFont.label(7.5))
+                    .tracking(0.6)
+                    .foregroundStyle(LFColor.harborTeal.opacity(0.5))
+            }
             if mate.isHost {
                 Text("Host")
                     .font(LFFont.label(8))
@@ -257,12 +349,17 @@ private struct CompanionVoyageCrewRow: View {
                     .background(LFColor.harborTeal.opacity(0.08), in: Capsule())
             }
             Spacer(minLength: 4)
-            Text(stateLabel)
-                .font(LFFont.label(9.5))
-                .foregroundStyle(LFColor.harborTeal.opacity(0.55))
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 5, height: 5)
+                Text(stateLabel)
+                    .font(LFFont.label(8.5))
+                    .foregroundStyle(LFColor.harborTeal.opacity(0.55))
+            }
         }
         .padding(.horizontal, 12)
-        .frame(height: 30)
+        .frame(height: 38)
         .accessibilityElement(children: .combine)
     }
 }
@@ -413,12 +510,15 @@ struct CompanionVoyageTimerHost: View {
     @Query private var destinations: [Destination]
 
     var body: some View {
+        let hostIdentity = companions.first(where: \.isHost)?.identity ?? .fallback
         HomeVoyageTimerView(
             item: item,
             hasDestination: destinations.contains { $0.achievedAt == nil },
             onManual: { _ in },
             onReturnHome: onReturnHome,
-            companions: companions
+            companions: companions,
+            boatParts: hostIdentity.boatParts,
+            boatAppearanceKey: hostIdentity.boatAppearanceKey
         )
     }
 }
