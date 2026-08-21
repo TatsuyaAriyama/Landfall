@@ -31,7 +31,7 @@ private func damp(_ cur: Float, _ target: Float, _ lambda: Float, _ dt: Float) -
 // MARK: - ポーズ
 
 enum PhoenixPose: String, CaseIterable, Identifiable {
-    case idle, walk, lookout, raise, hail, point, stargaze, rest, sit, lie
+    case idle, walk, lookout, raise, hail, point, stargaze, rest, sit, chart, lie
     var id: String { rawValue }
     static var selectableCases: [PhoenixPose] {
         allCases.filter { $0 != .lie }
@@ -47,6 +47,7 @@ enum PhoenixPose: String, CaseIterable, Identifiable {
         case .stargaze: "Stargaze"
         case .rest: "Rest"
         case .sit: "Sit"
+        case .chart: "Read chart"
         case .lie: "Lie down"
         }
     }
@@ -94,6 +95,9 @@ private func poseBase(_ p: PhoenixPose) -> PoseBase {
         return PoseBase(armRx: -0.8, armRz: -0.3, armLx: -0.86, armLz: 0.32, lean: 0.07, wind: 0.75, headX: 0.32, scan: 0.05, scanSpeed: 0.22, turn: 0, sway: 0.6, breathAmp: 1.75, breathSpeed: 0.58, glow: 2, sit: 0)
     case .sit:
         return PoseBase(armRx: 0.62, armRz: 0.3, armLx: 0.62, armLz: -0.3, lean: -0.04, wind: 0.7, headX: -0.05, scan: 0.13, scanSpeed: 0.18, turn: 0, sway: 0.45, breathAmp: 0.75, breathSpeed: 0.6, glow: 1.8, sit: 1)
+    case .chart:
+        // 右手だけを海図の巻き軸へ伸ばし、左手は身体の横へ自然に下げる。
+        return PoseBase(armRx: -1.1, armRz: 0.62, armLx: -0.12, armLz: -0.18, lean: 0.13, wind: 0.58, headX: 0.38, scan: 0.05, scanSpeed: 0.14, turn: 0.12, sway: 0.16, breathAmp: 0.65, breathSpeed: 0.58, glow: 1.35, sit: 0)
     case .lie:
         return PoseBase(armRx: -0.72, armRz: 0.22, armLx: -0.78, armLz: -0.22, lean: 0, wind: 0.12, headX: 0.16, scan: 0.035, scanSpeed: 0.10, turn: 0, sway: 0.16, breathAmp: 0.45, breathSpeed: 0.42, glow: 0.55, sit: 0)
     }
@@ -471,8 +475,121 @@ enum PhoenixNavigator {
         armR.eulerAngles.z = 0.14
         core.addChildNode(armR)
 
+        // 同行の航海で広げる海図。両面へ描き込んであるため、後ろを向いて
+        // 読んでいてもカメラを回せば内容まで見える。
+        let chart = makeChart()
+        chart.name = "navigatorChart"
+        // 胴体との間に空間を作り、右手で下角を持って海図をまっすぐ立てる。
+        // 肩より上へ出すことで、背面からでも海図の矩形が身体と混ざらない。
+        chart.position = SCNVector3(0, 0.85, 0.36)
+        chart.opacity = 0
+        core.addChildNode(chart)
+
         contact.addChildNode(core)
         return root
+    }
+
+    private static func makeChart() -> SCNNode {
+        let group = SCNNode()
+        let texture = makeChartTexture()
+        let borderMaterial = mat(UIColor(rgb: 0x274C4A), roughness: 0.9, doubleSided: true)
+        let backingGeometry = SCNBox(width: 0.47, height: 0.295, length: 0.018, chamferRadius: 0.018)
+        backingGeometry.firstMaterial = borderMaterial
+        group.addChildNode(SCNNode(geometry: backingGeometry))
+
+        // SceneKitのBox UVへ任せず、表裏それぞれに専用Planeを置く。
+        // 海図の線が引き伸ばされず、濃緑の縁が衣装との境界になる。
+        for side: Float in [-1, 1] {
+            let parchment = mat(UIColor.white, roughness: 0.94, doubleSided: false)
+            parchment.diffuse.contents = texture
+            parchment.diffuse.wrapS = .clamp
+            parchment.diffuse.wrapT = .clamp
+            let faceGeometry = SCNPlane(width: 0.44, height: 0.265)
+            faceGeometry.cornerRadius = 0.012
+            faceGeometry.firstMaterial = parchment
+            let face = SCNNode(geometry: faceGeometry)
+            face.position.z = side * 0.011
+            if side < 0 { face.eulerAngles.y = .pi }
+            group.addChildNode(face)
+        }
+
+        let rollMaterial = mat(UIColor(rgb: 0xC5A56B), roughness: 0.96)
+        for side: Float in [-1, 1] {
+            let rollGeometry = SCNCylinder(radius: 0.017, height: 0.255)
+            rollGeometry.radialSegmentCount = 10
+            rollGeometry.firstMaterial = rollMaterial
+            let roll = SCNNode(geometry: rollGeometry)
+            roll.position = SCNVector3(side * 0.222, 0, 0.018)
+            group.addChildNode(roll)
+        }
+        return group
+    }
+
+    /// 羊皮紙へ海岸線・測地格子・破線航路・島影・羅針図を描く。
+    /// 3Dプリミティブを細かく重ねるより縮小時の線が崩れず、ストア画像でも読める。
+    private static func makeChartTexture() -> UIImage {
+        let size = CGSize(width: 640, height: 384)
+        return UIGraphicsImageRenderer(size: size).image { context in
+            let cg = context.cgContext
+            UIColor(rgb: 0xE9D7A8).setFill()
+            cg.fill(CGRect(origin: .zero, size: size))
+
+            cg.setStrokeColor(UIColor(rgb: 0xB89B66).withAlphaComponent(0.48).cgColor)
+            cg.setLineWidth(2)
+            for x: CGFloat in stride(from: 64, through: 576, by: 64) {
+                cg.move(to: CGPoint(x: x, y: 0)); cg.addLine(to: CGPoint(x: x, y: 384))
+            }
+            for y: CGFloat in stride(from: 64, through: 320, by: 64) {
+                cg.move(to: CGPoint(x: 0, y: y)); cg.addLine(to: CGPoint(x: 640, y: y))
+            }
+            cg.strokePath()
+
+            let coast = UIBezierPath()
+            coast.move(to: CGPoint(x: 0, y: 60))
+            coast.addCurve(to: CGPoint(x: 118, y: 112), controlPoint1: CGPoint(x: 48, y: 48), controlPoint2: CGPoint(x: 62, y: 142))
+            coast.addCurve(to: CGPoint(x: 196, y: 210), controlPoint1: CGPoint(x: 172, y: 84), controlPoint2: CGPoint(x: 143, y: 208))
+            coast.addCurve(to: CGPoint(x: 120, y: 384), controlPoint1: CGPoint(x: 240, y: 284), controlPoint2: CGPoint(x: 160, y: 320))
+            coast.addLine(to: CGPoint(x: 0, y: 384))
+            coast.close()
+            UIColor(rgb: 0x8DA67B).withAlphaComponent(0.82).setFill()
+            coast.fill()
+            UIColor(rgb: 0x385B58).withAlphaComponent(0.86).setStroke()
+            coast.lineWidth = 7
+            coast.stroke()
+
+            let islands = [
+                CGRect(x: 286, y: 92, width: 48, height: 28),
+                CGRect(x: 392, y: 238, width: 68, height: 38),
+                CGRect(x: 500, y: 112, width: 38, height: 24),
+            ]
+            for island in islands {
+                let shape = UIBezierPath(ovalIn: island)
+                UIColor(rgb: 0x8DA67B).setFill(); shape.fill()
+                UIColor(rgb: 0x385B58).setStroke(); shape.lineWidth = 5; shape.stroke()
+            }
+
+            cg.setStrokeColor(UIColor(rgb: 0xB4513D).cgColor)
+            cg.setLineWidth(9)
+            cg.setLineDash(phase: 0, lengths: [18, 13])
+            cg.move(to: CGPoint(x: 155, y: 296))
+            cg.addCurve(to: CGPoint(x: 520, y: 126), control1: CGPoint(x: 260, y: 340), control2: CGPoint(x: 414, y: 98))
+            cg.strokePath()
+            cg.setLineDash(phase: 0, lengths: [])
+
+            let center = CGPoint(x: 530, y: 292)
+            cg.setStrokeColor(UIColor(rgb: 0x385B58).cgColor)
+            cg.setLineWidth(6)
+            cg.strokeEllipse(in: CGRect(x: center.x - 47, y: center.y - 47, width: 94, height: 94))
+            for index in 0..<8 {
+                let angle = CGFloat(index) * .pi / 4
+                let inner: CGFloat = index.isMultiple(of: 2) ? 10 : 20
+                cg.move(to: CGPoint(x: center.x + cos(angle) * inner, y: center.y + sin(angle) * inner))
+                cg.addLine(to: CGPoint(x: center.x + cos(angle) * 42, y: center.y + sin(angle) * 42))
+            }
+            cg.strokePath()
+            UIColor(rgb: 0xB4513D).setFill()
+            UIBezierPath(ovalIn: CGRect(x: center.x - 7, y: center.y - 7, width: 14, height: 14)).fill()
+        }
     }
 
     private static func makeArm(lantern hasLantern: Bool, palette: NavigatorPalette) -> SCNNode {
@@ -693,6 +810,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private weak var kneeR: SCNNode?
     private weak var kneeL: SCNNode?
     private weak var lantern: SCNNode?
+    private weak var chart: SCNNode?
     private weak var cape: SCNNode?
     private weak var glowMat: SCNMaterial?
     private var rippleNodes: [SCNNode] = []
@@ -725,6 +843,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         kneeR = navigator.childNode(withName: "kneeR", recursively: true)
         kneeL = navigator.childNode(withName: "kneeL", recursively: true)
         lantern = navigator.childNode(withName: "lantern", recursively: true)
+        chart = navigator.childNode(withName: "navigatorChart", recursively: true)
         cape = navigator.childNode(withName: "cape", recursively: true)
         glowMat = navigator.childNode(
             withName: "lanternGlow",
@@ -940,6 +1059,11 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
             // Fade the hand lantern while sleeping so it cannot clip through
             // the rope bed or the navigator's resting body.
             lantern.opacity = CGFloat(1 - lie)
+        }
+        if let chart {
+            let shown = pose == .chart ? 1.0 : 0.0
+            chart.opacity = CGFloat(shown)
+            chart.eulerAngles = SCNVector3Zero
         }
         glowMat?.emission.intensity = CGFloat(glow + sin(t * 2.1) * 0.2 * glow)
     }

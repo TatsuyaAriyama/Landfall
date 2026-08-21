@@ -1131,31 +1131,57 @@ enum VoyageSceneKit {
         }
     }
 
+    /// 甲板の4人は「役割 = 仕草 + 色」を固定する。ホスト側で見ても同行者側で
+    /// 見ても、ランタン・見張り・座る・海図読みの4つが一度ずつだけ現れる。
+    enum CompanionDeckRole: String, Equatable {
+        case lantern, lookout, seated, chart
+
+        var pose: PhoenixPose {
+            switch self {
+            case .lantern: .raise
+            case .lookout: .lookout
+            case .seated: .sit
+            case .chart: .chart
+            }
+        }
+
+        var colorID: String {
+            switch self {
+            case .lantern: "coral"
+            case .lookout: "mist"
+            case .seated: "iris"
+            case .chart: "honey"
+            }
+        }
+
+        var palette: NavigatorPalette {
+            NavigatorCustomization.colors.first(where: { $0.id == colorID })?.palette ?? .default
+        }
+    }
+
     /// 私設島の同行者が並ぶ甲板の定位置。私設島はホストを入れて4人までなので、
-    /// 席も3つでちょうど埋まる。舳先側の空いた面だけを使い、帆柱・操舵席・
-    /// 自分の航海士の足元は避けている。
+    /// 席も3つでちょうど埋まる。本人の航海士と合わせて左右2人ずつになるよう、
+    /// 帆柱を挟んで前後へ少しずつずらす。
     /// 席は座標を送り合わずに決める。誰がどこに立つかは各端末で同じ並び順から
     /// 割り当てるので、位置の通信はいらない。
     /// 席は「写真に撮ったときの並び」として決めている。
     ///
-    /// 既定のカメラは右舷後方から舳先を見ている。左舷はメインセイルとジブの
-    /// 裏になって誰も見えないので、席は右舷側だけに置く。四人が画面の横方向で
-    /// 重ならないよう、船尾から舳先へ等間隔にずらし、向きも一人ずつ変える。
+    /// 船首側は本人と左舷の一人、船尾側は左右に一人ずつ。
+    /// 上から見ると2×2の菱形になり、どちらか一方の舷へ人が固まらない。
     static let companionDeckSlots: [CompanionDeckSeat] = [
-        // 舳先寄りの右舷。こちらへ体を向け、手をかざして右手の海を見渡す。
-        CompanionDeckSeat(position: SCNVector3(0.20, 0.68, 0.42), pose: .lookout, facing: .starboard),
-        // 中ほど。斜め前を向き、腕をゆるめて一息ついている。腰掛けは甲板の
-        // どこにも無いので、座る仕草は使わない(宙に座って見えてしまう)。
-        CompanionDeckSeat(position: SCNVector3(-0.32, 0.68, 0.26), pose: .rest, facing: .bowStarboard),
-        // 船尾の右舷。通り過ぎる島影を指さして、反対側の海を教えている。
-        CompanionDeckSeat(position: SCNVector3(-0.84, 0.68, 0.38), pose: .point, facing: .port),
+        // 船首寄りの左舷。右舷寄りの本人と対になる。
+        CompanionDeckSeat(position: SCNVector3(0.56, 0.68, -0.42), role: .lookout, facing: .port),
+        // 船尾寄りの右舷。舷側へ腰を下ろして海を見る。
+        CompanionDeckSeat(position: SCNVector3(-0.28, 0.68, 0.42), role: .seated, facing: .starboard),
+        // 船尾寄りの左舷。3/4背面で海図を覗き込み、後列も2人で揃える。
+        CompanionDeckSeat(position: SCNVector3(-0.24, 0.62, -0.56), role: .chart, facing: .bowStarboard),
     ]
 
-    /// 島の主の席。舳先寄りの右舷で、正面を向いてランタンを掲げる。
+    /// 島の主の席。船首寄りの左舷で、正面を向いてランタンを掲げる。
     /// 自分が同行者側のとき(=ホストが甲板にいるとき)だけ使う。
     static let companionHostDeckSeat = CompanionDeckSeat(
-        position: SCNVector3(0.20, 0.68, 0.40),
-        pose: .raise,
+        position: SCNVector3(0.56, 0.68, -0.42),
+        role: .lantern,
         facing: .bow
     )
 
@@ -1170,7 +1196,7 @@ enum VoyageSceneKit {
         }
 
         let position: SCNVector3
-        let pose: PhoenixPose
+        let role: CompanionDeckRole
         let facing: Facing
     }
 
@@ -1208,8 +1234,8 @@ enum VoyageSceneKit {
     /// 同行者の航海士。港と同じく、遠くの相手は既定の熾火で描く。
     /// ノード名は自分の航海士(`navigator`)と必ず変える。同じ名前だと、
     /// 甲板の自分を動かすアニメータが仲間の体を掴んでしまう。
-    static func makeCompanionNavigator(id: String) -> SCNNode {
-        let sailor = PhoenixNavigator.makeNavigatorNode(palette: .default)
+    static func makeCompanionNavigator(id: String, role: CompanionDeckRole) -> SCNNode {
+        let sailor = PhoenixNavigator.makeNavigatorNode(palette: role.palette)
         sailor.name = "companion-navigator:\(id)"
         sailor.scale = SCNVector3(
             navigatorDeckScale,
@@ -2450,6 +2476,7 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
     }
 
     private weak var boat: SCNNode?
+    private weak var localSailor: SCNNode?
     private let companionLock = NSLock()
     private var desiredCompanions: [VoyageSceneKit.CompanionDeckMember] = []
     private var companionVisuals: [String: CompanionVisual] = [:]
@@ -2488,6 +2515,8 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
         self.scene = scene
         bob = scene.rootNode.childNode(withName: "boatBob", recursively: true)
         boat = scene.rootNode.childNode(withName: "boatModel", recursively: true)
+        localSailor = boat?.childNode(withName: "navigator", recursively: true)
+        applyLocalSailorRole()
         // 作り直したシーンでは、前の船に乗せた同乗者のノードごと席を空ける。
         companionLock.lock()
         companionVisuals.removeAll()
@@ -2532,6 +2561,26 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
     /// 装いで選んだ仕草の代わりにランタンを掲げる。
     var localSailorPose: PhoenixPose?
 
+    /// 同行中は自分にも固定の役割色を割り当てる。通常航海ではnilのままなので、
+    /// 装いで選んだ色と仕草をそのまま保つ。
+    var localSailorRole: VoyageSceneKit.CompanionDeckRole? {
+        didSet {
+            guard oldValue != localSailorRole else { return }
+            applyLocalSailorRole()
+        }
+    }
+
+    private func applyLocalSailorRole() {
+        guard let localSailor else { return }
+        PhoenixNavigator.applyPalette(
+            localSailorRole?.palette ?? NavigatorCustomization.currentPalette,
+            to: localSailor
+        )
+        // 同行者側の本人はホストと並んで正面を向かず、左舷の水平線を見る。
+        // 通常航海とランタン役は船首向きへ戻す。
+        localSailor.eulerAngles.y = localSailorRole == .lookout ? .pi : .pi / 2
+    }
+
     /// 船のノードが揃ってから呼ぶ。まだ組み上がっていなければ何もせず、
     /// 次のフレームでもう一度試す。
     private func syncCompanions() {
@@ -2552,10 +2601,11 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
             if let visual = companionVisuals[id] {
                 visual.node.position = seat.position
                 visual.node.eulerAngles.y = seat.facing.rawValue
-                visual.animator.pose = seat.pose
+                PhoenixNavigator.applyPalette(seat.role.palette, to: visual.node)
+                visual.animator.pose = seat.role.pose
                 continue
             }
-            let node = VoyageSceneKit.makeCompanionNavigator(id: id)
+            let node = VoyageSceneKit.makeCompanionNavigator(id: id, role: seat.role)
             node.position = seat.position
             node.eulerAngles.y = seat.facing.rawValue
             node.opacity = 0
@@ -2564,7 +2614,7 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
                 .fadeIn(duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.4)
             )
             let visual = CompanionVisual(node: node)
-            visual.animator.pose = seat.pose
+            visual.animator.pose = seat.role.pose
             visual.animator.bind(to: node, in: scene)
             companionVisuals[id] = visual
         }
@@ -2663,7 +2713,9 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
         }
 
         sailor.bindIfNeeded(currentScene)
-        sailor.pose = resting ? .sit : (localSailorPose ?? PhoenixPose.selected)
+        sailor.pose = resting
+            ? .sit
+            : (localSailorRole?.pose ?? localSailorPose ?? PhoenixPose.selected)
         sailor.step(t: t, dt: dt)
 
         // 席が空いたまま、あるいは船が組み上がる前に届いた同乗者をここで拾う。
@@ -2799,8 +2851,12 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
     var boatAppearanceKey: String = BoatCustomization.voyageRenderingKey
     /// 同行の航海の同乗者。順番がそのまま甲板の席順になる。
     var companions: [VoyageSceneKit.CompanionDeckMember] = []
-    /// 自分がその航海のホストなら、正面でランタンを掲げる。
+    /// 通常航海など、色を変えずに仕草だけ上書きするときに使う。
     var localSailorPose: PhoenixPose?
+
+    /// 同行の航海では、ローカルの航海士も4つの役割のどれかに固定する。
+    /// ホストはコーラルのランタン役、同行者はミストの見張り役。
+    var localSailorRole: VoyageSceneKit.CompanionDeckRole?
     var azimuthOffset: Float = 0
     var polarOffset: Float = 0
     var distanceScale: Float = 1
@@ -2866,6 +2922,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         context.coordinator.animator.resting = resting
         context.coordinator.animator.setElapsedSeconds(elapsedSeconds)
         context.coordinator.animator.localSailorPose = localSailorPose
+        context.coordinator.animator.localSailorRole = localSailorRole
         context.coordinator.animator.setCompanions(companions)
         return view
     }
@@ -2894,6 +2951,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         context.coordinator.animator.resting = resting
         context.coordinator.animator.setElapsedSeconds(elapsedSeconds)
         context.coordinator.animator.localSailorPose = localSailorPose
+        context.coordinator.animator.localSailorRole = localSailorRole
         context.coordinator.animator.setCompanions(companions)
         context.coordinator.setReduceMotion(
             accessibilityReduceMotion || UIAccessibility.isReduceMotionEnabled

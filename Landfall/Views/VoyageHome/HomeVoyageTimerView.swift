@@ -286,7 +286,9 @@ struct HomeVoyageTimerView: View {
                     companions: companions.map {
                         VoyageSceneKit.CompanionDeckMember(id: $0.id, isHost: $0.isHost)
                     },
-                    localSailorPose: hostsCompanionVoyage && !companions.isEmpty ? .raise : nil,
+                    localSailorRole: companions.isEmpty
+                        ? nil
+                        : (hostsCompanionVoyage ? .lantern : .lookout),
                     onTapWorld: toggleWorldUI
                 )
                 .ignoresSafeArea()

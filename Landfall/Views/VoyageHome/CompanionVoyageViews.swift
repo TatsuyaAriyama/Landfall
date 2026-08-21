@@ -63,6 +63,16 @@ struct CompanionVoyagePreviewView: View {
         ProcessInfo.processInfo.environment["LANDFALL_COVOYAGE"] ?? "panels"
     }
 
+    /// 甲板配置を船首・船尾の両方から確認するための撮影用オフセット。
+    /// 例: `LANDFALL_COVOYAGE_AZIMUTH=2.2 LANDFALL_COVOYAGE_DISTANCE=0.5`
+    private var previewAzimuthOffset: Float {
+        Float(ProcessInfo.processInfo.environment["LANDFALL_COVOYAGE_AZIMUTH"] ?? "") ?? 0
+    }
+
+    private var previewDistanceScale: Float {
+        Float(ProcessInfo.processInfo.environment["LANDFALL_COVOYAGE_DISTANCE"] ?? "") ?? 1
+    }
+
     private var previewBoatIdentity: CompanionVoyageIdentity {
         if deckMode == "deck-guest" {
             return crew.first(where: \.isHost)?.identity ?? .fallback
@@ -97,7 +107,9 @@ struct CompanionVoyagePreviewView: View {
                     boatParts: previewBoatIdentity.boatParts,
                     boatAppearanceKey: previewBoatIdentity.boatAppearanceKey,
                     companions: deckMembers,
-                    localSailorPose: deckMode == "deck" ? .raise : nil
+                    localSailorRole: deckMode == "deck" ? .lantern : .lookout,
+                    azimuthOffset: previewAzimuthOffset,
+                    distanceScale: previewDistanceScale
                 )
                 .ignoresSafeArea()
             } else {
