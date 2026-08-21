@@ -256,7 +256,7 @@ struct ForgottenSeaPrologueView: View {
                     Circle()
                         .stroke(Color(hex: 0xB69A5D), lineWidth: 1)
                         .padding(3)
-                    Text(verbatim: "K")
+                    Text(verbatim: "M")
                         .font(.system(size: 15, weight: .regular, design: .serif))
                         .foregroundStyle(Color(hex: 0xD6C28C))
                 }
