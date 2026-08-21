@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Bump only when a new opening should be offered to existing sailors once.
 enum PrologueState {
@@ -68,6 +69,7 @@ struct ForgottenSeaPrologueView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOverEnabled
+    @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var nameFieldFocused: Bool
 
@@ -120,6 +122,26 @@ struct ForgottenSeaPrologueView: View {
 
     private var visibleOpeningText: String {
         String(openingText.prefix(openingVisibleCharacterCount))
+    }
+
+    private var usesJapaneseTypography: Bool {
+        locale.language.languageCode?.identifier == "ja"
+    }
+
+    /// SwiftUI's generic serif design falls back to a sans-serif face for
+    /// Japanese. The prologue needs one coherent literary voice in both scripts.
+    private func storyFont(_ size: CGFloat, emphasized: Bool = false) -> Font {
+        if usesJapaneseTypography {
+            let face = emphasized ? "HiraMinProN-W6" : "HiraMinProN-W3"
+            if let font = UIFont(name: face, size: size) {
+                return Font(font)
+            }
+        }
+        return .system(
+            size: size,
+            weight: emphasized ? .medium : .regular,
+            design: .serif
+        )
     }
 
     var body: some View {
@@ -230,8 +252,8 @@ struct ForgottenSeaPrologueView: View {
                 .frame(width: 42, height: 1)
 
             Text(verbatim: visibleOpeningText)
-                .font(.system(size: 18, weight: .regular, design: .serif))
-                .tracking(0.45)
+                .font(storyFont(18))
+                .tracking(usesJapaneseTypography ? 0.05 : 0.45)
                 .foregroundStyle(Color(hex: 0xF1E8CF))
                 .lineSpacing(7)
                 .multilineTextAlignment(.leading)
@@ -264,7 +286,7 @@ struct ForgottenSeaPrologueView: View {
                 .accessibilityHidden(true)
 
                 Text("A letter from beyond")
-                    .font(.system(size: 11, weight: .regular, design: .serif))
+                    .font(storyFont(11))
                     .tracking(2.1)
                     .textCase(.uppercase)
                 Spacer()
@@ -294,7 +316,7 @@ struct ForgottenSeaPrologueView: View {
             if mode == .firstRun {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Your name")
-                        .font(.system(size: 10, weight: .regular, design: .serif))
+                        .font(storyFont(10))
                         .tracking(1.8)
                         .textCase(.uppercase)
                         .foregroundStyle(Color(hex: 0x31504A).opacity(0.68))
@@ -304,7 +326,7 @@ struct ForgottenSeaPrologueView: View {
                         .textInputAutocapitalization(.words)
                         .autocorrectionDisabled()
                         .submitLabel(.go)
-                        .font(.system(size: 20, weight: .regular, design: .serif))
+                        .font(storyFont(20))
                         .foregroundStyle(Color(hex: 0x173F3B))
                         .padding(.horizontal, 2)
                         .frame(height: 42)
@@ -318,44 +340,44 @@ struct ForgottenSeaPrologueView: View {
                         }
 
                     Text(verbatim: "\(nameCharacterCount)/\(PlayerProfile.nameCharacterLimit)")
-                    .font(.system(size: 10, weight: .regular, design: .serif))
-                    .foregroundStyle(
-                        nameCharacterCount > PlayerProfile.nameCharacterLimit
-                            ? LFColor.returnOrange
-                            : Color(hex: 0x31504A).opacity(0.54)
-                    )
-                    .accessibilityLabel(
-                        Text(
-                            verbatim: LF.format(
-                                "%lld of %lld characters",
-                                Int64(nameCharacterCount),
-                                Int64(PlayerProfile.nameCharacterLimit)
+                        .font(storyFont(10))
+                        .foregroundStyle(
+                            nameCharacterCount > PlayerProfile.nameCharacterLimit
+                                ? LFColor.returnOrange
+                                : Color(hex: 0x31504A).opacity(0.54)
+                        )
+                        .accessibilityLabel(
+                            Text(
+                                verbatim: LF.format(
+                                    "%lld of %lld characters",
+                                    Int64(nameCharacterCount),
+                                    Int64(PlayerProfile.nameCharacterLimit)
+                                )
                             )
                         )
-                    )
                 }
             } else {
                 Text(verbatim: PlayerProfile.displayName)
-                    .font(.system(size: 22, weight: .regular, design: .serif))
+                    .font(storyFont(22))
                     .foregroundStyle(Color(hex: 0x173F3B))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Button(action: setSail) {
                 Text("Set sail")
-                .font(.system(size: 14, weight: .medium, design: .serif))
-                .tracking(1.8)
-                .textCase(.uppercase)
-                .foregroundStyle(Color(hex: 0xEFE4C7))
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 50)
-                .background(Color(hex: 0x23483F))
-                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(Color(hex: 0xB69A5D).opacity(0.72), lineWidth: 1)
-                        .padding(3)
-                }
+                    .font(storyFont(14, emphasized: true))
+                    .tracking(1.8)
+                    .textCase(.uppercase)
+                    .foregroundStyle(Color(hex: 0xEFE4C7))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 50)
+                    .background(Color(hex: 0x23483F))
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .stroke(Color(hex: 0xB69A5D).opacity(0.72), lineWidth: 1)
+                            .padding(3)
+                    }
             }
             .buttonStyle(LFPressableButtonStyle())
             .disabled(!canSetSail)
@@ -363,7 +385,7 @@ struct ForgottenSeaPrologueView: View {
             .padding(.top, 18)
             .accessibilityHint(Text("Closes the prologue and begins your voyage"))
         }
-        .font(.system(size: 17, weight: .regular, design: .serif))
+        .font(storyFont(17))
         .foregroundStyle(Color(hex: 0x173F3B))
         .lineSpacing(5)
         .padding(.horizontal, 24)
