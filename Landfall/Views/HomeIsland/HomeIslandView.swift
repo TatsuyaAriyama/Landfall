@@ -242,10 +242,12 @@ struct HomeIslandView: View {
     private let assets = HomeIslandAssetCatalog.available()
     private let levelProgress: PlayerLevelProgress
     private let startsMooredAtIsland: Bool
+    private let playsArrivalOnAppear: Bool
     private let boatTapOpensSelection: Bool
     private let externalBoatBoardingRequest: HomeIslandBoatBoardingRequest?
     private let noticeBoardRequestID: UUID?
     private let onBoatSelected: () -> Void
+    private let onEmbeddedArrivalCompleted: () -> Void
     private let onEmbeddedDepartureCompleted: (() -> Void)?
     private let onEmbeddedBoardingRejected: () -> Void
     private let multiplayerSession: HomeIslandMultiplayerSession?
@@ -259,10 +261,12 @@ struct HomeIslandView: View {
         ownerID: String,
         levelProgress: PlayerLevelProgress,
         startsMooredAtIsland: Bool = false,
+        playsArrivalOnAppear: Bool = false,
         boatTapOpensSelection: Bool = false,
         boardingRequest: HomeIslandBoatBoardingRequest? = nil,
         noticeBoardRequestID: UUID? = nil,
         onBoatSelected: @escaping () -> Void = {},
+        onArrivalCompleted: @escaping () -> Void = {},
         onDepartureCompleted: (() -> Void)? = nil,
         onBoardingRejected: @escaping () -> Void = {},
         showsDestination: Bool = false,
@@ -274,10 +278,12 @@ struct HomeIslandView: View {
         self.showsDestination = showsDestination
         self.onDestinationLandfall = onDestinationLandfall
         self.startsMooredAtIsland = startsMooredAtIsland
+        self.playsArrivalOnAppear = playsArrivalOnAppear
         self.boatTapOpensSelection = boatTapOpensSelection
         externalBoatBoardingRequest = boardingRequest
         self.noticeBoardRequestID = noticeBoardRequestID
         self.onBoatSelected = onBoatSelected
+        onEmbeddedArrivalCompleted = onArrivalCompleted
         onEmbeddedDepartureCompleted = onDepartureCompleted
         onEmbeddedBoardingRejected = onBoardingRejected
         self.multiplayerSession = multiplayerSession
@@ -290,7 +296,11 @@ struct HomeIslandView: View {
                 readOnly: readOnly
             )
         )
-        _mode = State(initialValue: startsMooredAtIsland ? .explore : .arrival)
+        _mode = State(
+            initialValue: startsMooredAtIsland && !playsArrivalOnAppear
+                ? .explore
+                : .arrival
+        )
     }
 
     /// One source of truth for every state that temporarily owns interaction
@@ -476,6 +486,7 @@ struct HomeIslandView: View {
                         mode = .explore
                     }
                     Haptics.tap(.medium)
+                    onEmbeddedArrivalCompleted()
                 },
                 onJettyPresenceChanged: { isOnJetty in
                     withAnimation(.easeOut(duration: 0.18)) {
@@ -497,6 +508,7 @@ struct HomeIslandView: View {
                     finishCapture(requestID: requestID, image: image)
                 },
                 startsMooredAtIsland: startsMooredAtIsland,
+                playsArrivalOnAppear: playsArrivalOnAppear,
                 locksMooredOverview: false,
                 boatTapOpensSelection: boatTapOpensSelection,
                 boatCustomizationActive: showingBoatCustomization,

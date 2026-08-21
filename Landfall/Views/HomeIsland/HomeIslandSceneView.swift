@@ -292,6 +292,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
     /// Home-embedded worlds start with the boat already moored instead of
     /// replaying the standalone island arrival sequence.
     var startsMooredAtIsland = false
+    /// Returning from a voyage remains an embedded home, but enters through
+    /// the full approach and landing sequence before normal controls resume.
+    var playsArrivalOnAppear = false
     /// A showcase host may keep the island in a fixed overview. The interactive
     /// home disables this so walking, editing and camera controls retain their
     /// standalone behaviour after the arrival sequence is skipped.
@@ -526,6 +529,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
             static let berthingDuration: TimeInterval = 1.25
             static let mooringSettleDuration: TimeInterval = 0.25
             static let transferDuration: TimeInterval = 0.72
+            static let gangplankRevealDuration: TimeInterval = 0.22
+            static let jettyWalkDuration: TimeInterval = 0.86
             static let jettySettleDuration: TimeInterval = 0.55
         }
 
@@ -1278,7 +1283,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
             syncPlacements()
             syncRemotePlayers()
-            if owner.startsMooredAtIsland {
+            if owner.startsMooredAtIsland && !owner.playsArrivalOnAppear {
                 prepareMooredHome()
 #if DEBUG
                 scheduleSeatDemoIfRequested()
@@ -4172,58 +4177,121 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func beginLanding() {
-            guard !arrivalFinished, let navigator = navigatorNode else { return }
+            guard !arrivalFinished,
+                  let navigator = navigatorNode,
+                  let deckNavigator = arrivalBoatNavigator
+            else {
+                completeArrivalImmediately()
+                return
+            }
+
             let path = arrivalJettyLandingPath()
-            let landing = path.landing
-            let islandDirection = path.deck - landing
+            let transferStart = deckNavigator.presentation.worldPosition
+            let transferDirection = path.transfer - transferStart
+            let jettyDirection = path.landing - path.transfer
+            let islandDirection = path.deck - path.landing
+            let deckScale = VoyageSceneKit.navigatorDeckScale * ArrivalMotion.boatScale
 
             navigator.removeAllActions()
-            navigator.position = landing
-            navigator.eulerAngles.y = atan2(islandDirection.x, islandDirection.z)
-            navigator.scale = SCNVector3(
-                NavigatorAppearance.islandScale,
-                NavigatorAppearance.islandScale,
-                NavigatorAppearance.islandScale
-            )
+            navigator.position = transferStart
+            navigator.eulerAngles.y = atan2(transferDirection.x, transferDirection.z)
+            navigator.scale = SCNVector3(deckScale, deckScale, deckScale)
             navigator.opacity = 0
-            navigatorAnimator.pose = .idle
-            arrivalNavigatorIsWalking = false
-            arrivalBoatNavigator?.runAction(.fadeOut(duration: 0.16))
+            navigatorAnimator.pose = .walk
+            arrivalNavigatorIsWalking = true
+
+            let gangplank = makeArrivalGangplank(from: transferStart, to: path.transfer)
+            arrivalGangplank = gangplank
+            gangplank.runAction(
+                .fadeIn(duration: ArrivalMotion.gangplankRevealDuration)
+            )
+            deckNavigator.runAction(
+                .fadeOut(duration: ArrivalMotion.gangplankRevealDuration)
+            )
+            Haptics.tap(.light)
 
             animateArrivalCamera(
                 target: SCNVector3(
-                    landing.x,
-                    landing.y + 0.72,
-                    landing.z
+                    path.transfer.x,
+                    path.transfer.y + 0.62,
+                    path.transfer.z
                 ),
                 azimuth: 0.77,
-                elevation: 0.28,
-                radius: 11.8,
-                fieldOfView: 42,
-                duration: ArrivalMotion.jettySettleDuration
+                elevation: 0.24,
+                radius: 8.2,
+                fieldOfView: 44,
+                duration: ArrivalMotion.transferDuration
             )
 
-            navigator.runAction(.sequence([
+            let reveal = SCNAction.sequence([
                 .wait(duration: 0.08),
-                .fadeIn(duration: 0.20),
+                .fadeIn(duration: 0.18),
+            ])
+            let crossGangplank = SCNAction.move(
+                to: path.transfer,
+                duration: ArrivalMotion.transferDuration
+            )
+            crossGangplank.timingMode = .easeInEaseOut
+            let growToIslandScale = SCNAction.scale(
+                to: CGFloat(NavigatorAppearance.islandScale),
+                duration: ArrivalMotion.transferDuration
+            )
+            growToIslandScale.timingMode = .easeInEaseOut
+
+            let turnAlongJetty = SCNAction.rotateTo(
+                x: 0,
+                y: CGFloat(atan2(jettyDirection.x, jettyDirection.z)),
+                z: 0,
+                duration: 0.18,
+                usesShortestUnitArc: true
+            )
+            turnAlongJetty.timingMode = .easeOut
+            let walkToLanding = SCNAction.move(
+                to: path.landing,
+                duration: ArrivalMotion.jettyWalkDuration
+            )
+            walkToLanding.timingMode = .easeInEaseOut
+            let faceIsland = SCNAction.rotateTo(
+                x: 0,
+                y: CGFloat(atan2(islandDirection.x, islandDirection.z)),
+                z: 0,
+                duration: 0.20,
+                usesShortestUnitArc: true
+            )
+            faceIsland.timingMode = .easeOut
+
+            navigator.runAction(.sequence([
+                .group([reveal, crossGangplank, growToIslandScale]),
                 .run { [weak self] _ in
-                    guard let self else { return }
                     DispatchQueue.main.async {
+                        guard let self else { return }
                         self.animateArrivalCamera(
                             target: SCNVector3(
-                                landing.x,
-                                landing.y + 0.72,
-                                landing.z
+                                path.landing.x,
+                                path.landing.y + 0.72,
+                                path.landing.z
                             ),
                             azimuth: self.nearestEquivalentAzimuth(to: 0.82),
                             elevation: 0.30,
                             radius: 6.8,
                             fieldOfView: 48,
-                            duration: ArrivalMotion.jettySettleDuration
+                            duration: ArrivalMotion.jettyWalkDuration
                         )
                     }
                 },
-                .wait(duration: 0.24),
+                .group([turnAlongJetty, walkToLanding]),
+                faceIsland,
+                .run { [weak self] _ in
+                    guard let self else { return }
+                    self.arrivalNavigatorIsWalking = false
+                    self.navigatorAnimator.pose = .idle
+                    gangplank.runAction(.sequence([
+                        .fadeOut(duration: 0.24),
+                        .removeFromParentNode(),
+                    ]))
+                    self.arrivalGangplank = nil
+                },
+                .wait(duration: ArrivalMotion.jettySettleDuration),
                 .run { [weak self] _ in
                     DispatchQueue.main.async {
                         self?.finishArrival()

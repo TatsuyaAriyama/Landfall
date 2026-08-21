@@ -4,6 +4,10 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+enum HomeArrivalState {
+    static let pendingKey = "home.arrival.pending.v1"
+}
+
 /// iOS版の起点。最新Web版と同じく、目的地そのものを常設背景にし、
 /// 船首甲板の上へ作業項目と今日の記録を直接重ねる。
 struct VoyageHomeView: View {
@@ -93,6 +97,7 @@ struct VoyageHomeView: View {
     @AppStorage(StudyTimer.breakStartedAtKey, store: StudyTimer.defaults) private var timerBreakStartedAt: Double = 0
     @AppStorage(HomeBackgroundMusic.enabledKey) private var homeMusicEnabled = false
     @AppStorage("home.island.shipInteractionSeen") private var shipInteractionSeen = false
+    @AppStorage(HomeArrivalState.pendingKey) private var homeArrivalPending = false
     @StateObject private var sailAnimator = SailAnimator.shared
     /// アカウントの記録を取り込み終える前に「まだ何も無い」と見せないための状態。
     @ObservedObject private var sync = SyncService.shared
@@ -159,7 +164,7 @@ struct VoyageHomeView: View {
     }
 
     private var timerWorldActive: Bool {
-        timerVoyageItem != nil || timerSceneReturning
+        timerVoyageItem != nil || timerSceneReturning || homeArrivalPending
     }
 
     private var totalByItem: [UUID: Int] {
@@ -180,11 +185,13 @@ struct VoyageHomeView: View {
                         VoyageHomeIslandSceneHost(
                             ownerID: islandSlots.activeOwnerID,
                             levelProgress: PlayerLevelProgress(sessions: sessions),
+                            playsArrivalOnAppear: homeArrivalPending,
                             boardingRequest: homeIslandBoardingRequest,
                             noticeBoardRequestID: noticeBoardRequestID,
                             onBoatSelected: openWorkManifest,
                             multiplayerSession: hostedPrivateIsland.multiplayerSession,
                             onPrivateIslandSelected: presentPrivateIsland,
+                            onArrivalCompleted: finishHomeArrival,
                             onDepartureCompleted: finishIslandDeparture,
                             onBoardingRejected: cancelIslandDeparture,
                             onDestinationLandfall: { destination in
@@ -2284,16 +2291,22 @@ struct VoyageHomeView: View {
         guard timerVoyageItem != nil else { return }
         endCompanionVoyage()
         // The island leaves the hierarchy while the timer voyage is visible.
-        // Give it a new identity on return so SwiftUI cannot restore the
-        // pre-voyage departure state (input locked, boarding latched and the
-        // boat already cast off). The rebuilt scene starts moored in Explore.
+        // Rebuild it as a returning vessel so the saved voyage ends at the
+        // same physical jetty it departed from.
+        homeArrivalPending = true
+        timerSceneReturning = true
         homeIslandSceneGeneration = UUID()
         withAnimation(.easeOut(duration: 0.18)) {
             timerSceneReady = false
             timerVoyageItem = nil
         }
-        timerSceneReturning = false
         homeIslandBoardingRequest = nil
+    }
+
+    private func finishHomeArrival() {
+        homeArrivalPending = false
+        timerSceneReturning = false
+        now = Date()
         if let request = pendingManualAfterTimerReturn {
             pendingManualAfterTimerReturn = nil
             manualRequest = request
@@ -2348,11 +2361,13 @@ struct VoyageHomeView: View {
 private struct VoyageHomeIslandSceneHost: View {
     let ownerID: String
     let levelProgress: PlayerLevelProgress
+    let playsArrivalOnAppear: Bool
     let boardingRequest: HomeIslandBoatBoardingRequest?
     let noticeBoardRequestID: UUID?
     let onBoatSelected: () -> Void
     let multiplayerSession: HomeIslandMultiplayerSession?
     let onPrivateIslandSelected: (PrivateIslandRoom) -> Void
+    let onArrivalCompleted: () -> Void
     let onDepartureCompleted: () -> Void
     let onBoardingRejected: () -> Void
     let onDestinationLandfall: (Destination) -> Void
@@ -2362,10 +2377,12 @@ private struct VoyageHomeIslandSceneHost: View {
             ownerID: ownerID,
             levelProgress: levelProgress,
             startsMooredAtIsland: true,
+            playsArrivalOnAppear: playsArrivalOnAppear,
             boatTapOpensSelection: true,
             boardingRequest: boardingRequest,
             noticeBoardRequestID: noticeBoardRequestID,
             onBoatSelected: onBoatSelected,
+            onArrivalCompleted: onArrivalCompleted,
             onDepartureCompleted: onDepartureCompleted,
             onBoardingRejected: onBoardingRejected,
             showsDestination: true,

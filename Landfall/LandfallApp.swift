@@ -19,6 +19,7 @@ struct LandfallApp: App {
     @AppStorage(AppTheme.storageKey) private var appTheme = AppTheme.system.rawValue
     @AppStorage(PrologueState.completionKey) private var hasCompletedPrologue = false
     @AppStorage(TutorialState.completionKey) private var hasCompletedTutorial = false
+    @AppStorage(HomeArrivalState.pendingKey) private var homeArrivalPending = false
     @State private var isLaunchingFirstVoyage = false
     @State private var dismissedForcedPrologue = false
     @State private var dismissedForcedTutorial = false
@@ -112,6 +113,9 @@ struct LandfallApp: App {
                         FirstVoyageExperienceView(
                             recoverPreviouslySavedRecord: !Self.forceOnboarding
                         ) {
+                            // Persist before swapping roots. If the app closes
+                            // mid-approach, the next launch still finishes homecoming.
+                            homeArrivalPending = true
                             withAnimation(.easeInOut(duration: 0.52)) {
                                 hasCompletedTutorial = true
                                 dismissedForcedTutorial = true
