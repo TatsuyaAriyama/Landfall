@@ -10,7 +10,7 @@ enum WidgetVoyageStillRenderer {
     static func refreshIfNeeded(force: Bool = false) {
         guard let outputURL = KeelMiraWidgetStore.voyageImageURL else { return }
         let phaseBucket = Int(LandfallLunarPhase.current().cycle * 64)
-        let appearanceKey = BoatCustomization.selectedSailID
+        let appearanceKey = BoatCustomization.appearanceKey
             + ":" + PhoenixPose.selected.rawValue
             + ":moon-\(phaseBucket)"
         let previousKey = KeelMiraWidgetStore.defaults.string(forKey: renderKey)

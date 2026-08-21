@@ -321,7 +321,7 @@ private enum ShareVoyageBackdropRenderer {
     private static let renderSize = CGSize(width: 1170, height: 1464)
 
     static func image(for theme: DayCardTheme) -> UIImage? {
-        let key = "\(theme.rawValue)-\(BoatCustomization.selectedSailID)"
+        let key = "\(theme.rawValue)-\(BoatCustomization.appearanceKey)"
         if let cached = cachedImages[key] { return cached }
 
         let scene = VoyageSceneKit.makeVoyagingScene(

@@ -1182,7 +1182,7 @@ final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestur
 
     private func key(for parts: BoatParts) -> String {
         let stripe = parts.stripe?.hashValue ?? 0
-        return "\(parts.sail.hashValue)|\(parts.jib.hashValue)|\(parts.hull.hashValue)|\(stripe)|\(parts.flag)"
+        return "\(parts.shipID)|\(parts.sail.hashValue)|\(parts.jib.hashValue)|\(parts.hull.hashValue)|\(stripe)|\(parts.flag)"
     }
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {

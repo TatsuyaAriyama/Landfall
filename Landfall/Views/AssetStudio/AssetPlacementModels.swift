@@ -112,6 +112,7 @@ enum Asset3DCatalog {
         "sparkling_water_bottle",
         "canned_coffee",
         "landfall_boat",
+        "garden_estate_ship",
         "navigator_main",
     ]
 
@@ -196,6 +197,7 @@ enum Asset3DCatalog {
         case "sparkling_water_bottle": return LF.text("Sparkling Water")
         case "canned_coffee": return LF.text("Canned Coffee")
         case "landfall_boat": return "Landfall Boat"
+        case "garden_estate_ship": return "Garden Estate Ship"
         case "navigator_main": return "Navigator"
         default:
             return resourceName

@@ -1,15 +1,21 @@
+import SwiftData
 import SwiftUI
 import UIKit
 
-/// 装い。船は帆色だけを選び、航海士は仕草を切り替えて眺める。
+/// 装い。船は船体と帆色を選び、航海士は仕草を切り替えて眺める。
 struct DressView: View {
     @Environment(\.dismiss) private var dismiss
+    /// 船はレベルで開く。到達段階はいつもどおり記録から導き、
+    /// 別立ての残高は持たない。
+    @Query private var sessions: [StudySession]
     var onClose: (() -> Void)?
 
     /// Web版と同じく、色を替えてもカメラの向きは保ったまま船だけ更新する。
     @State private var boatParts = BoatCustomization.currentParts
     @State private var mode: Mode = Self.initialMode
     @State private var cameraResetToken = 0
+    /// 鍵の掛かった船を触ったときだけ、開く条件を見出しへ出す。
+    @State private var lockedShipTapped: ShipDesign?
     /// 航海士のポーズ。Web版と同じローカルキーへ保存する。
     @State private var navPose: PhoenixPose = {
         #if DEBUG
@@ -32,6 +38,10 @@ struct DressView: View {
         if ProcessInfo.processInfo.environment["LANDFALL_DEMO_BOAT"] != nil {
             BoatCustomization.selectSail("coral")
         }
+        // レベルを積まずに新しい船を確かめるための直行指定。
+        if let ship = ProcessInfo.processInfo.environment["LANDFALL_SHIP"] {
+            BoatCustomization.selectShip(ship)
+        }
         if ProcessInfo.processInfo.environment["LANDFALL_DRESS_NAV"] == "1" {
             return .navigator
         }
@@ -41,6 +51,10 @@ struct DressView: View {
 
     init(onClose: (() -> Void)? = nil) {
         self.onClose = onClose
+    }
+
+    private var levelProgress: PlayerLevelProgress {
+        PlayerLevelProgress(sessions: sessions)
     }
 
     var body: some View {
@@ -170,7 +184,8 @@ struct DressView: View {
             }
         }
         .frame(maxWidth: 680)
-        .frame(height: 164)
+        // 船は「どの船か」と「帆の色」の二段になる。航海士は一段のまま。
+        .frame(height: mode == .boat ? 246 : 164)
         .background(Color(hex: 0x071C19).opacity(0.88))
         .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .overlay(
@@ -204,10 +219,36 @@ struct DressView: View {
 
     private var boatControls: some View {
         VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Ship")
+                    .font(LFFont.label(13))
+                    .tracking(1)
+                    .foregroundStyle(LFColor.paper.opacity(0.58))
+
+                Spacer(minLength: 8)
+
+                shipHint
+                    .font(LFFont.label(12))
+                    .foregroundStyle(LFColor.paper.opacity(0.52))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(ShipCatalog.all) { ship in
+                        shipChip(ship)
+                    }
+                }
+                .padding(.vertical, 1)
+            }
+            .scrollClipDisabled()
+
             Text("Sail color")
                 .font(LFFont.label(13))
                 .tracking(1)
                 .foregroundStyle(LFColor.paper.opacity(0.58))
+                .padding(.top, 6)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -221,6 +262,77 @@ struct DressView: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 16)
+    }
+
+    /// 見出しの右は、いま選んでいる船の一行紹介。鍵の掛かった船を
+    /// 触ったときだけ、開く条件へ差し替わる。
+    private var shipHint: Text {
+        if let locked = lockedShipTapped {
+            return Text(verbatim: LF.format("Unlocks at Level %lld", Int64(locked.unlockLevel)))
+        }
+        return Text(BoatCustomization.selectedShip.summary)
+    }
+
+    private func shipChip(_ ship: ShipDesign) -> some View {
+        let selected = boatParts.shipID == ship.id
+        let unlocked = levelProgress.unlocks(requiredLevel: ship.unlockLevel)
+        return Button {
+            guard unlocked else {
+                withAnimation(.easeOut(duration: 0.18)) { lockedShipTapped = ship }
+                Haptics.error()
+                return
+            }
+            selectShip(ship)
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: unlocked ? ship.symbolName : "lock.fill")
+                    .font(.system(size: unlocked ? 14 : 11, weight: .semibold))
+                    .foregroundStyle(chipForeground(selected: selected, unlocked: unlocked))
+
+                Text(ship.title)
+                    .font(LFFont.copy(14))
+                    .foregroundStyle(chipForeground(selected: selected, unlocked: unlocked))
+
+                if !unlocked {
+                    Text(verbatim: "LV\(ship.unlockLevel)")
+                        .font(LFFont.label(11))
+                        .foregroundStyle(LFColor.harborSand.opacity(0.82))
+                }
+            }
+            .padding(.horizontal, 15)
+            .frame(height: 46)
+            .background(Capsule().fill(selected ? LFColor.coral : LFColor.paper.opacity(0.06)))
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        selected ? LFColor.coral : LFColor.harborSand.opacity(0.16),
+                        lineWidth: 1
+                    )
+            )
+        }
+        .buttonStyle(LFPressableButtonStyle(scale: 0.96))
+        .accessibilityLabel(Text(ship.title))
+        .accessibilityHint(
+            unlocked
+                ? Text(ship.summary)
+                : Text(verbatim: LF.format("Unlocks at Level %lld", Int64(ship.unlockLevel)))
+        )
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func chipForeground(selected: Bool, unlocked: Bool) -> Color {
+        if selected { return LFColor.midnight }
+        return LFColor.paper.opacity(unlocked ? 0.78 : 0.44)
+    }
+
+    private func selectShip(_ ship: ShipDesign) {
+        guard boatParts.shipID != ship.id else { return }
+        BoatCustomization.selectShip(ship.id)
+        boatParts = BoatCustomization.currentParts
+        lockedShipTapped = nil
+        Haptics.tap(.light)
+        Task { await PrivateIslandService.shared.publishProfileToJoinedIslands() }
+        PublicHarborService.shared.pushProfile()
     }
 
     private func modeChip(_ title: LocalizedStringKey, _ value: Mode) -> some View {

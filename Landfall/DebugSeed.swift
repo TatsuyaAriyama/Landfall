@@ -115,6 +115,22 @@ enum DebugSeed {
             )
         }
 
+        // LANDFALL_SEED_LEVEL=6 のように渡すと、その段階へ届くだけの時間を
+        // 半年前へ一括で置く。レベルで開く装備(船など)を、実際に時間を
+        // 積まずに確かめるための入口。
+        if let raw = ProcessInfo.processInfo.environment["LANDFALL_SEED_LEVEL"],
+           let level = Int(raw), level > 1,
+           let backdated = calendar.date(byAdding: .day, value: -180, to: today) {
+            context.insert(StudySession(
+                date: backdated,
+                minutes: (level - 1) * PlayerLevelProgress.minutesPerLevel,
+                note: nil,
+                item: development
+            ))
+            StudyDayStore.markDay(backdated, context: context)
+            try? context.save()
+        }
+
         // 日別航海誌の確認用。昨日はまだ編集できる頁、5日前は読み返すだけの綴じた頁。
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: today) {
             context.insert(StudySession(

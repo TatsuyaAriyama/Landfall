@@ -1219,12 +1219,17 @@ enum VoyageSceneKit {
         return sailor
     }
 
-    /// Webと同じBlenderソースから出力した完成船。簡易プリミティブを組み直さず、
-    /// 船体・甲板・舷縁・索具の形と座標系を両プラットフォームで共有する。
+    /// Blenderソースから出力した完成船。簡易プリミティブを組み直さず、
+    /// 船体・甲板・舷縁・索具の形と座標系をそのまま持ち込む。
+    ///
+    /// どの船を読むかは `parts.shipID` が決める。どのUSDZも帆の材質名と
+    /// `Navigator_Anchor` の位置を共有しているので、色替えも甲板の航海士も
+    /// 船ごとの分岐なしに動く。
     static func makeBoatModel(_ parts: BoatParts) -> SCNNode {
-        guard let url = Bundle.main.url(forResource: "landfall_boat", withExtension: "usdz"),
+        let ship = parts.ship
+        guard let url = Bundle.main.url(forResource: ship.resourceName, withExtension: "usdz"),
               let importedScene = try? SCNScene(url: url, options: nil) else {
-            assertionFailure("landfall_boat.usdz could not be loaded")
+            assertionFailure("\(ship.resourceName).usdz could not be loaded")
             return makeProceduralBoatModel(parts)
         }
 
