@@ -306,7 +306,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
     /// This remains separate from `mode` so editing, photography and boarding
     /// keep their existing state machines.
     var boatCustomizationActive = false
-    var boatAppearanceID = BoatCustomization.selectedSailID
+    var boatAppearanceID = BoatCustomization.appearanceKey
     /// 自分の島では、航海士を触ると色を替える小さな表示が出る。
     /// 訪問先や見せるだけの島では触っても何も起きない。
     var navigatorTapOpensColors = false
@@ -413,6 +413,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var renderedMode: HomeIslandMode = .arrival
         private var renderedBoatCustomizationActive = false
         private var renderedBoatAppearanceID = ""
+        private var renderedBoatShipID = ""
         private var renderedNavigatorAppearanceID = NavigatorCustomization.selectedID
         private var boatCustomizationCameraSnapshot: BoatCustomizationCameraSnapshot?
         private weak var orbitPanRecognizer: UIPanGestureRecognizer?
@@ -1451,8 +1452,55 @@ struct HomeIslandSceneView: UIViewRepresentable {
             else { return }
             renderedBoatAppearanceID = owner.boatAppearanceID
 
+            let parts = BoatCustomization.currentParts
+            if renderedBoatShipID != parts.shipID,
+               let bob = arrivalBoatBob {
+                renderedBoatShipID = parts.shipID
+                let sailor = arrivalBoatNavigator
+                sailor?.removeFromParentNode()
+
+                let replacement = VoyageSceneKit.makeBoatModel(parts)
+                if let sailor {
+                    if let anchor = replacement.childNode(
+                        withName: "Navigator_Anchor",
+                        recursively: true
+                    ) {
+                        sailor.position = SCNVector3Zero
+                        anchor.addChildNode(sailor)
+                    } else {
+                        sailor.position = VoyageSceneKit.navigatorDeckPosition
+                        replacement.addChildNode(sailor)
+                    }
+                }
+
+                boat.removeFromParentNode()
+                bob.addChildNode(replacement)
+                arrivalBoatModel = replacement
+
+                // Different hulls have different beams. Keep the selected ship
+                // tucked against the boarding float instead of overlapping it.
+                let halfBeam = max(
+                    abs(replacement.boundingBox.min.z),
+                    abs(replacement.boundingBox.max.z)
+                ) * ArrivalMotion.boatScale
+                let floatCenter = arrivalJettyWalkSurface?.worldPosition(
+                    localX: HomeIslandMetrics.boardingFloatCenterLocalX,
+                    localZ: HomeIslandMetrics.boardingFloatCenterLocalZ
+                ) ?? (x: Float(-1.55), z: Float(12.0))
+                let floatHalfWidth = HomeIslandMetrics.boardingFloatHalfWidth
+                    * HomeIslandMetrics.arrivalJettyScale
+                arrivalBoatStopPosition = SCNVector3(
+                    floatCenter.x - floatHalfWidth - halfBeam - 0.28,
+                    ArrivalMotion.boatY,
+                    floatCenter.z
+                )
+                arrivalBoat?.position = arrivalBoatStopPosition
+                view?.setNeedsDisplay()
+                return
+            }
+
             let option = BoatCustomization.sailColors.first {
-                $0.id == owner.boatAppearanceID
+                owner.boatAppearanceID.hasSuffix("-\($0.id)")
             } ?? BoatCustomization.selectedSail
             let duration = UIAccessibility.isReduceMotionEnabled ? 0 : 0.18
             SCNTransaction.begin()
@@ -1828,6 +1876,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             arrivalBoatModel = boat
             arrivalBoatNavigator = sailor
             renderedBoatAppearanceID = owner.boatAppearanceID
+            renderedBoatShipID = BoatCustomization.currentParts.shipID
 
             if !UIAccessibility.isReduceMotionEnabled {
                 let rise = SCNAction.moveBy(x: 0, y: 0.055, z: 0, duration: 1.25)

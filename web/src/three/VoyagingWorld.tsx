@@ -230,7 +230,7 @@ export interface VoyagingWorldProps {
   onMinimize: () => void;
   onToggleMode: () => void;
   /// 手で分数を入れる従来の記録へ逃げる(計測を始め忘れたとき用)。
-  onManual: () => void;
+  onManual?: () => void;
   /// 休憩に入る/休憩をおえる。時計はこのあいだ止まる。
   onToggleBreak: () => void;
 }
@@ -523,9 +523,11 @@ export default function VoyagingWorld({
               {t("finishVoyage")}
             </button>
             <div className="voyaging-alt">
-              <button className="voyaging-link" onClick={onManual}>
-                {t("enterByHand")}
-              </button>
+              {onManual && (
+                <button className="voyaging-link" onClick={onManual}>
+                  {t("enterByHand")}
+                </button>
+              )}
             </div>
           </div>
         </div>

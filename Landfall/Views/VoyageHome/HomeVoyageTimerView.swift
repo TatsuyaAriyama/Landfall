@@ -224,6 +224,10 @@ struct HomeVoyageTimerView: View {
         HomeTimerMode(rawValue: timerMode) ?? .free
     }
 
+    private var canEnterWorkTimeManually: Bool {
+        AccessPolicy.isDeveloper()
+    }
+
     private var snapshot: HomeTimerSnapshot {
         HomeTimerSnapshot(
             startedAt: timerStart,
@@ -354,18 +358,20 @@ struct HomeVoyageTimerView: View {
             Text("Your timer is still running. Please try again.")
         }
         .sheet(isPresented: $showingManualEntry) {
-            HomeManualTimeSheet(
-                item: item,
-                initialMinutes: snapshot.creditedMinutes(minimum: 0),
-                onSaved: {},
-                onRecorded: { minutes, savedNote in
-                    // Finish exactly as a measured voyage does, card and all.
-                    StudyTimer.clearAll()
-                    HomeVoyageAudio.shared.stop()
-                    completion = HomeVoyageCompletion(minutes: minutes, note: savedNote)
-                    Haptics.success()
-                }
-            )
+            if canEnterWorkTimeManually {
+                HomeManualTimeSheet(
+                    item: item,
+                    initialMinutes: snapshot.creditedMinutes(minimum: 0),
+                    onSaved: {},
+                    onRecorded: { minutes, savedNote in
+                        // Finish exactly as a measured voyage does, card and all.
+                        StudyTimer.clearAll()
+                        HomeVoyageAudio.shared.stop()
+                        completion = HomeVoyageCompletion(minutes: minutes, note: savedNote)
+                        Haptics.success()
+                    }
+                )
+            }
         }
         .onDisappear {
             noteFocused = false
@@ -826,7 +832,7 @@ struct HomeVoyageTimerView: View {
             .disabled(saving || !requiredNoteSatisfied)
             .padding(.top, 9)
 
-            if !isFirstVoyage {
+            if !isFirstVoyage, canEnterWorkTimeManually {
                 HStack {
                     Button {
                         // Stay at sea. Leaving the voyage to type a number and
@@ -1697,6 +1703,10 @@ struct HomeManualTimeSheet: View {
     }
 
     private func save() {
+        guard AccessPolicy.isDeveloper() else {
+            dismiss()
+            return
+        }
         let seconds = totalSeconds
         guard seconds > 0 else { return }
         let date = recordDate

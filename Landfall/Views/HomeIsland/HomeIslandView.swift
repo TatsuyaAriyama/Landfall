@@ -179,6 +179,7 @@ struct HomeIslandView: View {
     @State private var isNavigatorNearNoticeBoard = false
     @State private var showingBoatCustomization = false
     @State private var selectedBoatSailID = BoatCustomization.selectedSailID
+    @State private var selectedBoatShipID = BoatCustomization.selectedShipID
     /// 航海士を触ったときに出す、色替えだけの小さな表示。
     @State private var showingNavigatorColors = false
     @State private var selectedNavColorID = NavigatorCustomization.selectedID
@@ -512,7 +513,7 @@ struct HomeIslandView: View {
                 locksMooredOverview: false,
                 boatTapOpensSelection: boatTapOpensSelection,
                 boatCustomizationActive: showingBoatCustomization,
-                boatAppearanceID: selectedBoatSailID,
+                boatAppearanceID: "\(selectedBoatShipID)-\(selectedBoatSailID)",
                 navigatorTapOpensColors: multiplayerSession?.isReadOnly != true,
                 navigatorAppearanceID: effectiveNavColor.id,
                 onNavigatorSelected: { toggleNavigatorColors() },
@@ -1865,6 +1866,26 @@ struct HomeIslandView: View {
     private var boatCustomizationDock: some View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
+                Text("Ship")
+                    .font(LFFont.label(11))
+                    .tracking(0.8)
+                    .foregroundStyle(.white.opacity(0.58))
+                Spacer(minLength: 8)
+                Text(ShipCatalog.design(id: selectedBoatShipID).title)
+                    .font(LFFont.copy(13))
+                    .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+            }
+
+            HStack(spacing: 7) {
+                ForEach(ShipCatalog.all) { ship in
+                    boatShipButton(ship)
+                }
+            }
+
+            Divider()
+                .overlay(.white.opacity(0.12))
+
+            HStack(spacing: 8) {
                 Text("Sail color")
                     .font(LFFont.label(11))
                     .tracking(0.8)
@@ -1896,7 +1917,52 @@ struct HomeIslandView: View {
         .padding(.horizontal, 12)
         .safeAreaPadding(.bottom, 8)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Text("Sail color"))
+        .accessibilityLabel(Text("Your boat"))
+    }
+
+    private func boatShipButton(_ ship: ShipDesign) -> some View {
+        let selected = selectedBoatShipID == ship.id
+        let unlocked = levelProgress.unlocks(requiredLevel: ship.unlockLevel)
+        return Button {
+            selectBoatShip(ship, unlocked: unlocked)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: unlocked ? ship.symbolName : "lock.fill")
+                    .font(.system(size: unlocked ? 13 : 10, weight: .semibold))
+                Text(ship.title)
+                    .font(LFFont.copy(12))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                if !unlocked {
+                    Text(verbatim: "LV\(ship.unlockLevel)")
+                        .font(LFFont.label(9))
+                }
+            }
+            .foregroundStyle(selected ? LFColor.midnight : .white.opacity(unlocked ? 0.82 : 0.48))
+            .padding(.horizontal, 10)
+            .frame(maxWidth: .infinity)
+            .frame(height: 42)
+            .background(
+                selected ? Color(uiColor: VoyageSceneKit.sand) : .white.opacity(0.055),
+                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(
+                        selected ? Color(uiColor: VoyageSceneKit.sand) : .white.opacity(0.13),
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(LFPressableButtonStyle(scale: 0.96))
+        .accessibilityLabel(Text(ship.title))
+        .accessibilityHint(
+            unlocked
+                ? Text(ship.summary)
+                : Text(verbatim: LF.format("Unlocks at Level %lld", Int64(ship.unlockLevel)))
+        )
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private func boatSailColorButton(_ option: SailColorOption) -> some View {
@@ -2079,6 +2145,7 @@ struct HomeIslandView: View {
         walkInput = .zero
         showingNavigatorColors = false
         selectedBoatSailID = BoatCustomization.selectedSailID
+        selectedBoatShipID = BoatCustomization.selectedShipID
         withAnimation(.easeOut(duration: 0.22)) {
             showingBoatCustomization = true
         }
@@ -2098,6 +2165,19 @@ struct HomeIslandView: View {
         guard selectedBoatSailID != option.id else { return }
         BoatCustomization.selectSail(option.id)
         selectedBoatSailID = option.id
+        Haptics.tap(.light)
+        Task { await PrivateIslandService.shared.publishProfileToJoinedIslands() }
+        PublicHarborService.shared.pushProfile()
+    }
+
+    private func selectBoatShip(_ ship: ShipDesign, unlocked: Bool) {
+        guard unlocked else {
+            Haptics.error()
+            return
+        }
+        guard selectedBoatShipID != ship.id else { return }
+        BoatCustomization.selectShip(ship.id)
+        selectedBoatShipID = ship.id
         Haptics.tap(.light)
         Task { await PrivateIslandService.shared.publishProfileToJoinedIslands() }
         PublicHarborService.shared.pushProfile()

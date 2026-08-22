@@ -69,6 +69,12 @@ struct RecordSessionSheet: View {
         timerStart > 0 && timerItemID != item.uuid.uuidString
     }
 
+    /// Arbitrary backfilled time changes level progression, so it remains an
+    /// operator-only recovery tool instead of a player-facing shortcut.
+    private var canEnterWorkTimeManually: Bool {
+        AccessPolicy.isDeveloper()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -76,8 +82,10 @@ struct RecordSessionSheet: View {
             timerSection
                 .padding(.top, 28)
 
-            manualSection
-                .padding(.top, 28)
+            if canEnterWorkTimeManually {
+                manualSection
+                    .padding(.top, 28)
+            }
 
             TextField("What you worked on (optional)", text: $note)
                 .font(LFFont.label(16))
@@ -95,7 +103,9 @@ struct RecordSessionSheet: View {
 
             Spacer()
 
-            saveButton
+            if canEnterWorkTimeManually {
+                saveButton
+            }
         }
         .padding(LFMetrics.cardPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

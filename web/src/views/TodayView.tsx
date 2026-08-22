@@ -53,6 +53,7 @@ import { useFloatingDrag } from "../floatingDrag";
 import { whenIdle } from "../idle";
 import { destinationProgress } from "../destinations";
 import type { TimeOfDay } from "../timeOfDay";
+import { auth } from "../firebase";
 
 // 航海の世界は three.js を含んで重いので、初期描画と競合させない。
 // 空き時間か、タイルへ指を置いた瞬間から読み込み、押した後の待ちを短くする。
@@ -88,6 +89,13 @@ const MINUTE_ADDITIONS = [5, 15, 30, 60];
 
 // 前回記録した分数。次の記録ダイアログの初期値にする(いつも同じ長さの人の一手間を省く)。
 const LAST_MINUTES_KEY = "record.lastMinutes";
+const DEVELOPER_EMAIL = "ari.initx@gmail.com";
+
+function canEnterWorkTimeManually(): boolean {
+  const user = auth.currentUser;
+  return user?.emailVerified === true
+    && user.email?.trim().toLowerCase() === DEVELOPER_EMAIL;
+}
 
 interface VoyageCompletion {
   /// 完了後も、航海中と同じ海・船の位置をそのまま見せるためのスナップショット。
@@ -239,7 +247,7 @@ export function TodayView({
 
   /// 計測を始め忘れたとき用。測った分を初期値にして、手で直せる画面へ。
   const switchToManual = () => {
-    if (!timer) return;
+    if (!timer || !canEnterWorkTimeManually()) return;
     const item = data.items.find((i) => i.id === timer.itemId);
     // 通常の計測確定は0分の記録を避けるため最低1分にするが、手入力へ移る時は
     // 実測が1分未満なら0分から始める。ここで1分を足すと「+30分」を2回押して
@@ -476,7 +484,7 @@ export function TodayView({
               }}
               onMinimize={() => setVoyaging(false)}
               onToggleMode={toggleMode}
-              onManual={switchToManual}
+              onManual={canEnterWorkTimeManually() ? switchToManual : undefined}
               onToggleBreak={toggleBreak}
               onDiscard={async () => {
                 if (await askConfirm({ title: t("timerDiscardConfirm"), danger: true })) {
@@ -506,7 +514,7 @@ export function TodayView({
         />
       )}
 
-      {recording && (
+      {recording && canEnterWorkTimeManually() && (
         <RecordDialog
           uid={uid}
           item={recording}
@@ -757,7 +765,7 @@ function RecordDialog({
   };
 
   const save = async () => {
-    if (working || minutes <= 0) return;
+    if (!canEnterWorkTimeManually() || working || minutes <= 0) return;
     setWorking(true);
     const clamped = Math.min(minutes, 6000);
     try {

@@ -271,6 +271,7 @@ struct VoyageHomeView: View {
                             item: item,
                             hasDestination: activeDestination != nil,
                             onManual: { minutes in
+                                guard AccessPolicy.isDeveloper() else { return }
                                 pendingManualAfterTimerReturn = HomeManualRequest(
                                     item: item,
                                     initialMinutes: minutes
@@ -357,11 +358,13 @@ struct VoyageHomeView: View {
             .interactiveDismissDisabled()
         }
         .sheet(item: $manualRequest) { request in
-            HomeManualTimeSheet(
-                item: request.item,
-                initialMinutes: request.initialMinutes,
-                onSaved: { now = Date() }
-            )
+            if AccessPolicy.isDeveloper() {
+                HomeManualTimeSheet(
+                    item: request.item,
+                    initialMinutes: request.initialMinutes,
+                    onSaved: { now = Date() }
+                )
+            }
         }
         .fullScreenCover(item: $celebrating) { destination in
             LandfallCelebrationView(
@@ -2309,7 +2312,9 @@ struct VoyageHomeView: View {
         now = Date()
         if let request = pendingManualAfterTimerReturn {
             pendingManualAfterTimerReturn = nil
-            manualRequest = request
+            if AccessPolicy.isDeveloper() {
+                manualRequest = request
+            }
         }
     }
 
