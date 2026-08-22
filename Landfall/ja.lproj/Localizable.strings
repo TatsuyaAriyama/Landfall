@@ -147,6 +147,7 @@
 "Stone Lighthouse" = "石造りの灯台";
 "Small Stump" = "小さな切り株";
 "Small Lighthouse" = "小さな灯台";
+"Small Rock" = "小さな岩";
 "Wooden Jetty" = "木製の桟橋";
 "Campfire" = "焚き火";
 "Log Stool" = "丸太椅子";
@@ -157,6 +158,7 @@
 "Stone Path — Straight" = "石の小径・直線";
 "Stone Path — Curve" = "石の小径・曲線";
 "Stone Path — Fork" = "石の小径・分岐";
+"Coastal Rocks" = "海岸の岩礁";
 "Navigator's Tent" = "航海士の作業テント";
 "Inside the Weathered Cottage" = "朽ちた家の中";
 "Inside the Navigator's Tent" = "航海士のテントの中";

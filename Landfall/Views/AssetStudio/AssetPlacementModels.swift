@@ -30,7 +30,7 @@ struct Asset3DDescriptor: Identifiable, Hashable {
         if lowercased.contains("lookout") { return "binoculars.fill" }
         if lowercased.contains("ruins") { return "building.columns.fill" }
         if lowercased.contains("stone_path") { return "square.grid.3x3.fill" }
-        if lowercased.contains("boulder") { return "mountain.2.fill" }
+        if lowercased.contains("coastal_rocks") { return "mountain.2.fill" }
         if lowercased.contains("tent") { return "tent.fill" }
         if lowercased.contains("bottle") { return "waterbottle.fill" }
         if lowercased.contains("coffee") { return "cup.and.saucer.fill" }
@@ -72,6 +72,7 @@ enum Asset3DCatalog {
         "stone_path_straight",
         "stone_path_curve",
         "stone_path_fork",
+        "coastal_rocks",
         "navigator_tent",
         "weathered_crate",
         "harbor_lantern_post",
@@ -156,6 +157,7 @@ enum Asset3DCatalog {
         case "stone_path_straight": return LF.text("Stone Path — Straight")
         case "stone_path_curve": return LF.text("Stone Path — Curve")
         case "stone_path_fork": return LF.text("Stone Path — Fork")
+        case "coastal_rocks": return LF.text("Coastal Rocks")
         case "navigator_tent": return LF.text("Navigator's Tent")
         case "weathered_crate": return LF.text("Weathered Crate")
         case "harbor_lantern_post": return LF.text("Harbor Lantern Post")
