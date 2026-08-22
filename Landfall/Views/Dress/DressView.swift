@@ -275,7 +275,9 @@ struct DressView: View {
 
     private func shipChip(_ ship: ShipDesign) -> some View {
         let selected = boatParts.shipID == ship.id
-        let unlocked = levelProgress.unlocks(requiredLevel: ship.unlockLevel)
+        // 進水済みの船は鍵を外して見せる。記録を削ってレベルが下がっても
+        // 取り上げない決まりなので、いま乗っている船に錠前を描くと嘘になる。
+        let unlocked = selected || levelProgress.unlocks(requiredLevel: ship.unlockLevel)
         return Button {
             guard unlocked else {
                 withAnimation(.easeOut(duration: 0.18)) { lockedShipTapped = ship }

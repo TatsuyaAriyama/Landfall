@@ -57,6 +57,14 @@ enum ShipCatalog {
             symbolName: "leaf.fill",
             unlockLevel: 5
         ),
+        ShipDesign(
+            id: "corsair",
+            resourceName: "pirate_ship",
+            title: "Corsair",
+            summary: "A torn lug sail, a black flag, and a chest nobody has opened.",
+            symbolName: "flag.fill",
+            unlockLevel: 10
+        ),
     ]
 
     static let `default` = all[0]
