@@ -52,7 +52,10 @@ struct HomeTimerSnapshot {
     }
 
     func creditedMinutes(at date: Date = Date(), minimum: Int = 1) -> Int {
-        min(6_000, max(minimum, Int((Double(workedSeconds(at: date)) / 60).rounded())))
+        min(
+            WorkRecordPolicy.maximumSessionMinutes,
+            max(minimum, Int((Double(workedSeconds(at: date)) / 60).rounded()))
+        )
     }
 
     /// How many 25-minute focus blocks have been completed since pomodoro was
@@ -108,10 +111,7 @@ private enum HomeVoyageRecorder {
         context: ModelContext
     ) throws -> HomeVoyageCompletion {
         let minutes = snapshot.creditedMinutes()
-        let trimmed = String(
-            (note ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)
-        )
-        let savedNote = trimmed.isEmpty ? nil : trimmed
+        let savedNote = WorkRecordPolicy.normalizedNote(note)
         let date = Date()
         let session = StudySession(
             date: date,
@@ -121,19 +121,20 @@ private enum HomeVoyageRecorder {
         )
 
         context.insert(session)
-        StudyDayStore.markDay(date, context: context)
+        let dayMark = StudyDayStore.markDay(date, context: context, syncsToAccount: false)
         do {
             try context.save()
         } catch {
             context.delete(session)
+            if dayMark.wasInserted { context.delete(dayMark.day) }
             throw error
         }
 
-        SyncService.shared.push(session)
-        PublicHarborService.shared.publishCurrentMonth(context: context)
-        WidgetBridge.refresh(context: context)
-        let recorded = StudyDayStore.recordedToday(context: context)
-        Task { await NotificationService.reschedule(recordedToday: recorded) }
+        SyncService.shared.publishPersistedSessionChanges(
+            [session],
+            insertedDays: dayMark.wasInserted ? [dayMark.day] : [],
+            context: context
+        )
 
         return HomeVoyageCompletion(minutes: minutes, note: savedNote)
     }
@@ -1464,7 +1465,7 @@ struct HomeManualTimeSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \StudyDay.date, order: .reverse) private var days: [StudyDay]
 
-    private static let maximumSeconds = 6_000 * 60
+    private static let maximumSeconds = WorkRecordPolicy.maximumSessionMinutes * 60
 
     @State private var totalSeconds: Int
     @State private var note = ""
@@ -1710,27 +1711,31 @@ struct HomeManualTimeSheet: View {
         let seconds = totalSeconds
         guard seconds > 0 else { return }
         let date = recordDate
-        let trimmed = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
         let session = StudySession(
             date: date,
             minutes: seconds / 60,
             extraSeconds: seconds % 60,
-            note: trimmed.isEmpty ? nil : trimmed,
+            note: WorkRecordPolicy.normalizedNote(note),
             item: item
         )
         modelContext.insert(session)
-        StudyDayStore.markDay(date, context: modelContext)
+        let dayMark = StudyDayStore.markDay(
+            date,
+            context: modelContext,
+            syncsToAccount: false
+        )
         do {
             try modelContext.save()
         } catch {
             modelContext.delete(session)
+            if dayMark.wasInserted { modelContext.delete(dayMark.day) }
             return
         }
-        SyncService.shared.push(session)
-        PublicHarborService.shared.publishCurrentMonth(context: modelContext)
-        WidgetBridge.refresh(context: modelContext)
-        let recorded = StudyDayStore.recordedToday(context: modelContext)
-        Task { await NotificationService.reschedule(recordedToday: recorded) }
+        SyncService.shared.publishPersistedSessionChanges(
+            [session],
+            insertedDays: dayMark.wasInserted ? [dayMark.day] : [],
+            context: modelContext
+        )
         Haptics.success()
         if let onRecorded {
             onRecorded(session.minutes, session.note)

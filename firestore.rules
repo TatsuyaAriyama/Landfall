@@ -145,6 +145,170 @@ service cloud.firestore {
         && data.placements.size() <= 120;
     }
 
+    // ---- 私的な作業記録 ----
+
+    function validUUID(value) {
+      return value is string
+        && value.matches(
+          '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+        );
+    }
+
+    function validDayId(value) {
+      return value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function validPrivateRecordDate(value) {
+      return value is timestamp
+        && value >= timestamp.date(2000, 1, 1)
+        && value <= request.time + duration.value(10, 'm');
+    }
+
+    // v1.0 の書類には updatedAt が無い。読み直して保存した時点で追加されるため、
+    // 欠損だけは互換性のため許し、存在する値は未来へ固定できないよう制限する。
+    function validOptionalUpdatedAt(data) {
+      return !('updatedAt' in data)
+        || (data.updatedAt is timestamp
+          && data.updatedAt >= timestamp.date(2000, 1, 1)
+          && data.updatedAt <= request.time + duration.value(10, 'm'));
+    }
+
+    function validItemStyle(value) {
+      return value in styleTokens()
+        || value.matches(
+          '^pccs-(v|b|s|dp|lt|sf|d|dk|p|ltg|g|dkg)-(0[1-9]|1[0-9]|2[0-4])$'
+        )
+        || value.matches(
+          '^sea-(00[0-9]|0[1-9][0-9]|[12][0-9]{2}|3[0-5][0-9])-(0[0-9]{2}|100)-(0(1[8-9]|[2-9][0-9])|100)$'
+        );
+    }
+
+    function validItemSymbol(value) {
+      return value in [
+        'anchor', 'compass', 'wheel', 'lighthouse', 'island', 'phoenix',
+        'book', 'pen', 'sailboat', 'attire', 'wave', 'comet', 'sun'
+      ];
+    }
+
+    function validPrivateItem(data, documentId) {
+      return validUUID(documentId)
+        && data.keys().hasOnly([
+          'name', 'styleToken', 'symbolToken', 'sortOrder',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'name', 'styleToken', 'symbolToken', 'sortOrder', 'createdAt'
+        ])
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 60
+        && validItemStyle(data.styleToken)
+        && validItemSymbol(data.symbolToken)
+        && data.sortOrder is int
+        && data.sortOrder >= -1
+        && data.sortOrder <= 100000
+        && validPrivateRecordDate(data.createdAt)
+        && validOptionalUpdatedAt(data);
+    }
+
+    function validPrivateSession(data, documentId) {
+      return validUUID(documentId)
+        && data.keys().hasOnly([
+          'date', 'minutes', 'extraSeconds', 'note', 'itemUUID',
+          'itemName', 'itemStyle', 'itemSymbol', 'updatedAt'
+        ])
+        && data.keys().hasAll(['date', 'minutes'])
+        && validPrivateRecordDate(data.date)
+        && data.minutes is int
+        && data.minutes >= 0
+        && data.minutes <= 6000
+        && (!('extraSeconds' in data)
+          || (data.extraSeconds is int
+            && data.extraSeconds >= 0
+            && data.extraSeconds <= 59))
+        && (data.minutes > 0
+          || ('extraSeconds' in data && data.extraSeconds > 0))
+        && (!('note' in data)
+          || (data.note is string && data.note.size() <= 500))
+        && (!('itemUUID' in data) || validUUID(data.itemUUID))
+        && (!('itemName' in data)
+          || (data.itemName is string
+            && data.itemName.size() >= 1
+            && data.itemName.size() <= 60))
+        && (!('itemStyle' in data) || validItemStyle(data.itemStyle))
+        && (!('itemSymbol' in data) || validItemSymbol(data.itemSymbol))
+        && validOptionalUpdatedAt(data);
+    }
+
+    function validPrivateDay(data, documentId) {
+      return validDayId(documentId)
+        && data.keys().hasOnly(['date', 'note', 'updatedAt'])
+        && data.keys().hasAll(['date'])
+        && validPrivateRecordDate(data.date)
+        && (!('note' in data)
+          || (data.note is string && data.note.size() <= 1000))
+        && validOptionalUpdatedAt(data);
+    }
+
+    function validVoyageLog(data, documentId) {
+      return validDayId(documentId)
+        && data.keys().hasOnly(['date', 'body', 'updatedAt'])
+        && data.keys().hasAll(['date', 'body', 'updatedAt'])
+        && validPrivateRecordDate(data.date)
+        && data.body is string
+        && data.body.size() >= 1
+        && data.body.size() <= 260
+        && validOptionalUpdatedAt(data);
+    }
+
+    function validDestination(data, documentId) {
+      return validUUID(documentId)
+        && data.keys().hasOnly([
+          'name', 'itemUUID', 'targetMinutes', 'targetDate', 'targetHasTime',
+          'manual', 'manualDone', 'steps', 'createdAt', 'achievedAt', 'updatedAt'
+        ])
+        && data.keys().hasAll(['name', 'createdAt'])
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 60
+        && (!('itemUUID' in data) || validUUID(data.itemUUID))
+        && (!('targetMinutes' in data)
+          || (data.targetMinutes is int
+            && data.targetMinutes >= 1
+            && data.targetMinutes <= 600000))
+        && (!('targetDate' in data) || data.targetDate is timestamp)
+        && (!('targetHasTime' in data) || data.targetHasTime is bool)
+        && (!('manual' in data) || data.manual is bool)
+        && (!('manualDone' in data) || data.manualDone is bool)
+        && validDestinationSteps(data)
+        && validPrivateRecordDate(data.createdAt)
+        && (!('achievedAt' in data) || data.achievedAt is timestamp)
+        && validOptionalUpdatedAt(data);
+    }
+
+    function validDestinationStep(step) {
+      return step is map
+        && step.keys().hasOnly(['id', 'name', 'scheduledAt', 'doneAt'])
+        && step.keys().hasAll(['id', 'name'])
+        && validUUID(step.id)
+        && step.name is string
+        && step.name.size() >= 1
+        && step.name.size() <= 60
+        && (!('scheduledAt' in step) || step.scheduledAt is timestamp)
+        && (!('doneAt' in step) || step.doneAt is timestamp);
+    }
+
+    // Firestore Rules には配列の全要素ループが無いため、契約上の最大3件を
+    // 明示的に検証する。短い配列の範囲外へは短絡評価で触れない。
+    function validDestinationSteps(data) {
+      return !('steps' in data)
+        || (data.steps is list
+          && data.steps.size() <= 3
+          && (data.steps.size() < 1 || validDestinationStep(data.steps[0]))
+          && (data.steps.size() < 2 || validDestinationStep(data.steps[1]))
+          && (data.steps.size() < 3 || validDestinationStep(data.steps[2])));
+    }
+
     // ================================================================
     // 私的バックアップ: 本人のみ
     // ================================================================
@@ -200,19 +364,47 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // 端末間で同期する私的な記録。本人以外は存在も確認できない。
-    // 形はクライアントのDTOに委ねるが、フィールド数の上限だけは置いて、
-    // 自分の領域を無制限に膨らませる書き込みを防ぐ(DTOは最大11フィールド)。
-    match /users/{userId}/{collectionId}/{documentId} {
-      allow read, delete: if isSelf(userId)
-        && collectionId in [
-          'items', 'sessions', 'days', 'voyageLogs', 'destinations', 'blocks'
-        ];
+    // 端末間で同期する私的な記録。本人以外は存在も確認できず、本人の書き込みも
+    // コレクションごとの契約を満たすものだけ通す。
+    match /users/{userId}/items/{documentId} {
+      allow read, delete: if isSelf(userId);
       allow create, update: if isSelf(userId)
-        && collectionId in [
-          'items', 'sessions', 'days', 'voyageLogs', 'destinations', 'blocks'
-        ]
-        && request.resource.data.keys().size() <= 32;
+        && validPrivateItem(request.resource.data, documentId);
+    }
+
+    match /users/{userId}/sessions/{documentId} {
+      allow read, delete: if isSelf(userId);
+      allow create, update: if isSelf(userId)
+        && validPrivateSession(request.resource.data, documentId);
+    }
+
+    match /users/{userId}/days/{documentId} {
+      allow read, delete: if isSelf(userId);
+      allow create, update: if isSelf(userId)
+        && validPrivateDay(request.resource.data, documentId);
+    }
+
+    match /users/{userId}/voyageLogs/{documentId} {
+      allow read, delete: if isSelf(userId);
+      allow create, update: if isSelf(userId)
+        && validVoyageLog(request.resource.data, documentId);
+    }
+
+    match /users/{userId}/destinations/{documentId} {
+      allow read, delete: if isSelf(userId);
+      allow create, update: if isSelf(userId)
+        && validDestination(request.resource.data, documentId);
+    }
+
+    match /users/{userId}/blocks/{targetUserId} {
+      allow read, delete: if isSelf(userId);
+      allow create, update: if isSelf(userId)
+        && targetUserId.size() >= 1
+        && targetUserId.size() <= 128
+        && targetUserId != userId
+        && request.resource.data.keys().hasOnly(['createdAt'])
+        && request.resource.data.keys().hasAll(['createdAt'])
+        && request.resource.data.createdAt == request.time;
     }
 
     match /users/{userId}/entitlements/{entitlementId} {

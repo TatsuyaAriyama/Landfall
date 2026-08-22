@@ -251,7 +251,9 @@ struct ItemEditorSheet: View {
     }
 
     /// 保存する項目名。前後空白を除き、上限で切り詰める(肥大化した同期データを防ぐ)。
-    private var nameToSave: String { String(trimmedName.prefix(60)) }
+    private var nameToSave: String {
+        String(trimmedName.prefix(WorkRecordPolicy.maximumItemNameCharacters))
+    }
 
     private func save() {
         guard !saveDisabled else { return }

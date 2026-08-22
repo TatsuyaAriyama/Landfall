@@ -132,12 +132,14 @@ struct SessionEditSheet: View {
     private var saveButton: some View {
         Button {
             noteFocused = false
-            session.minutes = max(1, minutes)
-            let trimmed = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
-            session.note = trimmed.isEmpty ? nil : trimmed
-            try? modelContext.save()
-            SyncService.shared.push(session)
-            WidgetBridge.refresh(context: modelContext)
+            session.minutes = min(WorkRecordPolicy.maximumSessionMinutes, max(1, minutes))
+            session.note = WorkRecordPolicy.normalizedNote(note)
+            do {
+                try modelContext.save()
+            } catch {
+                return
+            }
+            SyncService.shared.publishPersistedSessionChanges([session], context: modelContext)
             dismiss()
         } label: {
             Text("Save changes")

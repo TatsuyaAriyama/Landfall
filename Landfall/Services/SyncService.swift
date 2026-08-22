@@ -34,11 +34,8 @@ final class SyncService: ObservableObject {
     // MARK: - Push / delete (fire-and-forget)
 
     func push(_ item: StudyItem) {
-        guard let uid else { return }
-        let dto = ItemDTO(
-            name: item.name, styleToken: item.styleToken, symbolToken: item.symbolToken,
-            sortOrder: item.sortOrder, createdAt: item.createdAt, updatedAt: Date()
-        )
+        guard let uid, let dto = Self.validatedItemDTO(from: item) else { return }
+        item.updatedAt = dto.updatedAt ?? item.updatedAt
         try? itemsCollection(uid).document(item.uuid.uuidString).setData(from: dto)
     }
 
@@ -48,15 +45,8 @@ final class SyncService: ObservableObject {
     }
 
     func push(_ session: StudySession) {
-        guard let uid else { return }
-        let dto = SessionDTO(
-            date: session.date, minutes: session.minutes,
-            extraSeconds: session.extraSeconds, note: session.note,
-            // 項目がまだ手元へ届いていない記録を送るときも、繋ぎ先を落とさない。
-            // ここで nil を書くと、他端末では紐付けの切れた記録に化けてしまう。
-            itemUUID: session.item?.uuid.uuidString ?? session.pendingItemUUID,
-            updatedAt: Date()
-        )
+        guard let uid, let dto = Self.validatedSessionDTO(from: session) else { return }
+        session.updatedAt = dto.updatedAt ?? session.updatedAt
         try? sessionsCollection(uid).document(session.uuid.uuidString).setData(from: dto)
     }
 
@@ -66,14 +56,30 @@ final class SyncService: ObservableObject {
     }
 
     func push(_ day: StudyDay) {
-        guard let uid else { return }
-        let dto = DayDTO(date: day.date, note: day.note, updatedAt: Date())
+        guard let uid, let dto = Self.validatedDayDTO(from: day) else { return }
+        day.updatedAt = dto.updatedAt ?? day.updatedAt
         try? daysCollection(uid).document(Self.dayDocID(day.date)).setData(from: dto)
     }
 
     func deleteDay(_ date: Date) {
         guard let uid else { return }
         daysCollection(uid).document(Self.dayDocID(date)).delete()
+    }
+
+    /// ローカル保存に成功した作業記録を、バックアップ・共有月間記録・Widget・
+    /// 通知へ一度だけ反映する。記録画面ごとに同じ後処理を持たせない。
+    func publishPersistedSessionChanges(
+        _ sessions: [StudySession],
+        insertedDays: [StudyDay] = [],
+        context: ModelContext
+    ) {
+        guard !sessions.isEmpty || !insertedDays.isEmpty else { return }
+        sessions.forEach(push)
+        insertedDays.forEach(push)
+        PublicHarborService.shared.publishCurrentMonth(context: context)
+        WidgetBridge.refresh(context: context)
+        let recordedToday = StudyDayStore.recordedToday(context: context)
+        Task { await NotificationService.reschedule(recordedToday: recordedToday) }
     }
 
     func push(_ dest: Destination) {
@@ -523,13 +529,25 @@ final class SyncService: ObservableObject {
             async let destinations = destinationsCollection(uid).getDocuments(source: .server)
             var snapshot = AccountSnapshot()
             for document in try await items.documents {
-                if let dto = try? document.data(as: ItemDTO.self) { snapshot.items[document.documentID] = dto }
+                if UUID(uuidString: document.documentID) != nil,
+                   let dto = try? document.data(as: ItemDTO.self),
+                   let valid = Self.validated(dto) {
+                    snapshot.items[document.documentID] = valid
+                }
             }
             for document in try await sessions.documents {
-                if let dto = try? document.data(as: SessionDTO.self) { snapshot.sessions[document.documentID] = dto }
+                if UUID(uuidString: document.documentID) != nil,
+                   let dto = try? document.data(as: SessionDTO.self),
+                   let valid = Self.validated(dto) {
+                    snapshot.sessions[document.documentID] = valid
+                }
             }
             for document in try await days.documents {
-                if let dto = try? document.data(as: DayDTO.self) { snapshot.days[document.documentID] = dto }
+                if Self.dateFromDayDocID(document.documentID) != nil,
+                   let dto = try? document.data(as: DayDTO.self),
+                   let valid = Self.validated(dto) {
+                    snapshot.days[document.documentID] = valid
+                }
             }
             for document in try await destinations.documents {
                 if let dto = try? document.data(as: DestinationDTO.self) { snapshot.destinations[document.documentID] = dto }
@@ -906,7 +924,9 @@ final class SyncService: ObservableObject {
             guard UUID(uuidString: id) != nil else { continue }
             switch change.type {
             case .added, .modified:
-                guard let dto = try? change.document.data(as: ItemDTO.self) else { continue }
+                guard let decoded = try? change.document.data(as: ItemDTO.self),
+                      let dto = Self.validated(decoded)
+                else { continue }
                 let remoteAt = dto.updatedAt ?? .distantPast
                 if let existing = fetchItem(id, context) {
                     if remoteAt > existing.updatedAt {
@@ -959,7 +979,9 @@ final class SyncService: ObservableObject {
             guard UUID(uuidString: id) != nil else { continue }
             switch change.type {
             case .added, .modified:
-                guard let dto = try? change.document.data(as: SessionDTO.self) else { continue }
+                guard let decoded = try? change.document.data(as: SessionDTO.self),
+                      let dto = Self.validated(decoded)
+                else { continue }
                 let remoteAt = dto.updatedAt ?? .distantPast
                 let item = dto.itemUUID.flatMap { fetchItem($0, context) }
                 // 作業項目がまだ届いていなければ、繋ぎ先を覚えておく。
@@ -967,7 +989,7 @@ final class SyncService: ObservableObject {
                 if let existing = fetchSession(id, context) {
                     if remoteAt > existing.updatedAt {
                         existing.date = dto.date; existing.minutes = dto.minutes
-                        existing.extraSeconds = min(59, max(0, dto.extraSeconds ?? 0))
+                        existing.extraSeconds = dto.extraSeconds ?? 0
                         existing.note = dto.note; existing.item = item
                         existing.pendingItemUUID = pending
                         existing.updatedAt = remoteAt
@@ -1011,7 +1033,10 @@ final class SyncService: ObservableObject {
             let id = change.document.documentID
             switch change.type {
             case .added, .modified:
-                guard let dto = try? change.document.data(as: DayDTO.self) else { continue }
+                guard Self.dateFromDayDocID(id) != nil,
+                      let decoded = try? change.document.data(as: DayDTO.self),
+                      let dto = Self.validated(decoded)
+                else { continue }
                 let remoteAt = dto.updatedAt ?? .distantPast
                 if let existing = fetchDay(dto.date, context) {
                     if remoteAt > existing.updatedAt { existing.note = dto.note; existing.updatedAt = remoteAt; changed = true }
@@ -1151,6 +1176,110 @@ final class SyncService: ObservableObject {
     }()
     private static func dayDocID(_ date: Date) -> String { dayFormatter.string(from: date) }
     private static func dateFromDayDocID(_ id: String) -> Date? { dayFormatter.date(from: id) }
+
+    // MARK: - Private-record validation
+
+    /// Missing `updatedAt` remains readable for v1.0 compatibility. Values written by
+    /// current clients are bounded so a poisoned future timestamp cannot win LWW forever.
+    private static func validRecordDate(_ date: Date, now: Date = Date()) -> Bool {
+        WorkRecordPolicy.isValidRecordDate(date, now: now)
+    }
+
+    private static func validUpdatedAt(_ date: Date?, now: Date = Date()) -> Bool {
+        WorkRecordPolicy.isValidUpdatedAt(date, now: now)
+    }
+
+    private static func validOptionalUUID(_ value: String?) -> Bool {
+        guard let value else { return true }
+        return UUID(uuidString: value) != nil
+    }
+
+    private static func validatedItemDTO(from item: StudyItem) -> ItemDTO? {
+        let name = String(
+            item.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                .prefix(WorkRecordPolicy.maximumItemNameCharacters)
+        )
+        guard !name.isEmpty,
+              item.styleToken.count <= 32,
+              item.symbolToken.count <= 24,
+              (-1...100_000).contains(item.sortOrder),
+              validRecordDate(item.createdAt)
+        else { return nil }
+        return ItemDTO(
+            name: name,
+            styleToken: item.styleToken,
+            symbolToken: item.symbolToken,
+            sortOrder: item.sortOrder,
+            createdAt: item.createdAt,
+            updatedAt: Date()
+        )
+    }
+
+    private static func validatedSessionDTO(from session: StudySession) -> SessionDTO? {
+        let itemUUID = session.item?.uuid.uuidString ?? session.pendingItemUUID
+        guard WorkRecordPolicy.isValidSession(
+            minutes: session.minutes,
+            extraSeconds: session.extraSeconds
+        ), validRecordDate(session.date),
+           validOptionalUUID(itemUUID)
+        else { return nil }
+        return SessionDTO(
+            date: session.date,
+            minutes: session.minutes,
+            extraSeconds: session.extraSeconds,
+            note: WorkRecordPolicy.normalizedNote(session.note),
+            // 項目がまだ手元へ届いていない記録も、繋ぎ先を落とさない。
+            itemUUID: itemUUID,
+            updatedAt: Date()
+        )
+    }
+
+    private static func validatedDayDTO(from day: StudyDay) -> DayDTO? {
+        guard validRecordDate(day.date) else { return nil }
+        let trimmed = day.note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let note = (trimmed?.isEmpty ?? true)
+            ? nil
+            : String(trimmed!.prefix(WorkRecordPolicy.maximumDayNoteCharacters))
+        return DayDTO(date: day.date, note: note, updatedAt: Date())
+    }
+
+    private static func validated(_ dto: ItemDTO) -> ItemDTO? {
+        let name = dto.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty,
+              name.count <= WorkRecordPolicy.maximumItemNameCharacters,
+              !dto.styleToken.isEmpty, dto.styleToken.count <= 32,
+              !dto.symbolToken.isEmpty, dto.symbolToken.count <= 24,
+              (-1...100_000).contains(dto.sortOrder),
+              validRecordDate(dto.createdAt),
+              validUpdatedAt(dto.updatedAt)
+        else { return nil }
+        return dto
+    }
+
+    private static func validated(_ dto: SessionDTO) -> SessionDTO? {
+        let extraSeconds = dto.extraSeconds ?? 0
+        guard WorkRecordPolicy.isValidSession(minutes: dto.minutes, extraSeconds: extraSeconds),
+              validRecordDate(dto.date),
+              validUpdatedAt(dto.updatedAt),
+              (dto.note?.count ?? 0) <= WorkRecordPolicy.maximumSessionNoteCharacters,
+              validOptionalUUID(dto.itemUUID)
+        else { return nil }
+        var clean = dto
+        clean.extraSeconds = extraSeconds
+        clean.note = WorkRecordPolicy.normalizedNote(dto.note)
+        return clean
+    }
+
+    private static func validated(_ dto: DayDTO) -> DayDTO? {
+        guard validRecordDate(dto.date),
+              validUpdatedAt(dto.updatedAt),
+              (dto.note?.count ?? 0) <= WorkRecordPolicy.maximumDayNoteCharacters
+        else { return nil }
+        var clean = dto
+        let trimmed = dto.note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        clean.note = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        return clean
+    }
 }
 
 // MARK: - Firestore DTO(Codable)

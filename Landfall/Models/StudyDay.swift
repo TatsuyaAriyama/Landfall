@@ -11,7 +11,10 @@ final class StudyDay {
 
     init(date: Date, note: String? = nil) {
         self.date = Calendar.current.startOfDay(for: date)
-        self.note = note
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.note = (trimmed?.isEmpty ?? true)
+            ? nil
+            : String(trimmed!.prefix(WorkRecordPolicy.maximumDayNoteCharacters))
         self.updatedAt = Date()
     }
 }

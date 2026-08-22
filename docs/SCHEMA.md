@@ -23,8 +23,8 @@ docID = 項目の UUID 文字列(大文字ハイフン形式。Web で新規作�
 | フィールド | 型 | 備考 |
 |---|---|---|
 | `name` | string | 項目名。表示上限60文字 |
-| `styleToken` | string | `midnight / coral / ink / seaGreen / violet / sunYellow`(項目タイルはこの6色のみ) |
-| `symbolToken` | string | `anchor / compass / wheel / lighthouse / island / phoenix / book / pen`(旧: `wave→anchor, comet→compass, sun→lighthouse` に読み替え) |
+| `styleToken` | string | 12種のブランド色、`pccs-{tone}-{01...24}`、または `sea-{H}-{S}-{V}`。許可値は `firestore.rules` の `validItemStyle` が正典 |
+| `symbolToken` | string | `anchor / compass / wheel / lighthouse / island / phoenix / book / pen / sailboat / attire`(旧: `wave→anchor, comet→compass, sun→lighthouse` に読み替え) |
 | `sortOrder` | number(int) | グリッドの並び順 |
 | `createdAt` | timestamp | |
 | `updatedAt` | timestamp? | LWW。v1.0 の書類には無い場合がある |
@@ -36,8 +36,9 @@ docID = 項目の UUID 文字列(大文字ハイフン形式。Web で新規作�
 | フィールド | 型 | 備考 |
 |---|---|---|
 | `date` | timestamp | 作業開始日時。日への帰属はこの日付 |
-| `minutes` | number(int) | 分。0〜6000 |
-| `note` | string? | ひとこと。上限120文字 |
+| `minutes` | number(int) | 分。0〜6000。`extraSeconds` と合わせて1秒以上必須 |
+| `extraSeconds` | number(int)? | 分未満の端数。0〜59。旧クライアントでは省略 |
+| `note` | string? | ひとこと。上限500文字 |
 | `itemUUID` | string? | 紐づく項目の docID |
 | `updatedAt` | timestamp? | LWW |
 
@@ -49,7 +50,7 @@ docID = `yyyy-MM-dd`(端末ローカルのタイムゾーンでの startOfDay)�
 | フィールド | 型 | 備考 |
 |---|---|---|
 | `date` | timestamp | その日の startOfDay |
-| `note` | string? | その日のひとこと(セッションのメモとは別)。上限120文字 |
+| `note` | string? | その日のひとこと(セッションのメモとは別)。上限1000文字 |
 | `updatedAt` | timestamp? | LWW |
 
 ### `users/{uid}/voyageLogs/{yyyy-MM-dd}` — 航海日録
@@ -92,6 +93,13 @@ docIDと日付の解釈は `days` と同じ。空本文はドキュメント自�
 
 Web/iOSともに `steps`、`targetHasTime`、旧目標フィールドを同じ解釈で読み書きする。
 到達条件を満たしても自動では `achievedAt` を立てず、本人が「上陸する」を選んだ時点で航海を締める。
+
+### 永続データの防御境界
+
+- `items` / `sessions` / `days` / `voyageLogs` / `destinations` / `blocks` は、本人の領域でもFirestoreルールがコレクション別に型・キー・文字数・数値範囲・docIDを検証する。
+- 作業日時とLWW時刻は2000-01-01以降、サーバー時刻より最大10分先まで。端末時計の通常のずれは許容しつつ、未来日時で競合を恒久的に支配する書き込みを拒否する。
+- iOSは同じ上限を `WorkRecordPolicy` に集約し、同期受信時にも再検証する。ルールを通る以前の壊れたデータやローカルストア改変があっても、異常な記録はレベルへ加算しない。
+- レベルは作業記録から再計算し、別の可変XP残高を持たない。整数オーバーフローと通信上限を避けるため最大9999で飽和する。
 
 ---
 

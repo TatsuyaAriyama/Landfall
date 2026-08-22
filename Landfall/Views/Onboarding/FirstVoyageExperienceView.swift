@@ -152,7 +152,7 @@ enum TutorialFirstVoyageRecorder {
 
         let date = Date()
         let minutes = min(
-            6_000,
+            WorkRecordPolicy.maximumSessionMinutes,
             max(1, Int((Double(max(0, elapsedSeconds)) / 60).rounded()))
         )
         let session = StudySession(
@@ -163,31 +163,21 @@ enum TutorialFirstVoyageRecorder {
         )
         session.uuid = sessionID
         context.insert(session)
-        // StudyDayStore.markDay は挿入直後に同期を予約するため、保存失敗時にも
-        // 「記録のない学んだ日」だけが残り得る。この導線ではローカル保存が
-        // 成功するまで同期せず、今回作った日だけをsessionと一緒に巻き戻す。
-        let insertedDay = insertStudyDayIfNeeded(for: date, context: context)
+        let dayMark = StudyDayStore.markDay(date, context: context, syncsToAccount: false)
 
         do {
             try context.save()
         } catch {
             context.delete(session)
-            if let insertedDay {
-                context.delete(insertedDay)
-            }
+            if dayMark.wasInserted { context.delete(dayMark.day) }
             throw error
         }
 
-        SyncService.shared.push(session)
-        if let insertedDay {
-            SyncService.shared.push(insertedDay)
-        }
-        PublicHarborService.shared.publishCurrentMonth(context: context)
-        WidgetBridge.refresh(context: context)
-        let recordedToday = StudyDayStore.recordedToday(context: context)
-        Task {
-            await NotificationService.reschedule(recordedToday: recordedToday)
-        }
+        SyncService.shared.publishPersistedSessionChanges(
+            [session],
+            insertedDays: dayMark.wasInserted ? [dayMark.day] : [],
+            context: context
+        )
     }
 
     private static func fetchSession(id: UUID, context: ModelContext) -> StudySession? {
@@ -198,26 +188,6 @@ enum TutorialFirstVoyageRecorder {
         return try? context.fetch(descriptor).first
     }
 
-    /// 既存の日はそのまま使い、今回の記録のために新規挿入した場合だけ返す。
-    /// 呼び出し側は保存失敗時に返却値だけを削除できるため、既存コメントや
-    /// 別セッションに紐づくStudyDayを誤って巻き戻さない。
-    private static func insertStudyDayIfNeeded(
-        for date: Date,
-        context: ModelContext
-    ) -> StudyDay? {
-        let dayStart = Calendar.current.startOfDay(for: date)
-        var descriptor = FetchDescriptor<StudyDay>(
-            predicate: #Predicate { $0.date == dayStart }
-        )
-        descriptor.fetchLimit = 1
-        if (try? context.fetch(descriptor).first) != nil {
-            return nil
-        }
-
-        let day = StudyDay(date: dayStart)
-        context.insert(day)
-        return day
-    }
 }
 
 private enum TutorialFirstVoyageRecordingError: Error {

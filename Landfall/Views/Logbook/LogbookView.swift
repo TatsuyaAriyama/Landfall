@@ -283,11 +283,25 @@ struct LogbookView: View {
 
     private func commitReflection() {
         guard canEdit, isDirty else { return }
+        var insertedDay: StudyDay?
         if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            StudyDayStore.comment(for: selectedDate, context: modelContext) == nil {
-            StudyDayStore.markDay(selectedDate, context: modelContext)
+            let mark = StudyDayStore.markDay(
+                selectedDate,
+                context: modelContext,
+                syncsToAccount: false
+            )
+            if mark.wasInserted { insertedDay = mark.day }
         }
-        _ = StudyDayStore.setComment(draft, for: selectedDate, context: modelContext, now: today)
+        let saved = StudyDayStore.setComment(
+            draft,
+            for: selectedDate,
+            context: modelContext,
+            now: today
+        )
+        if !saved, let insertedDay {
+            modelContext.delete(insertedDay)
+        }
         loadReflection()
     }
 

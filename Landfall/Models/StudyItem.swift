@@ -31,7 +31,10 @@ final class StudyItem {
         createdAt: Date = Date()
     ) {
         self.uuid = UUID()
-        self.name = name
+        self.name = String(
+            name.trimmingCharacters(in: .whitespacesAndNewlines)
+                .prefix(WorkRecordPolicy.maximumItemNameCharacters)
+        )
         self.styleToken = styleToken
         self.symbolToken = symbolToken
         self.photoData = photoData
@@ -73,9 +76,9 @@ final class StudySession {
     ) {
         self.uuid = UUID()
         self.date = date
-        self.minutes = minutes
-        self.extraSeconds = min(59, max(0, extraSeconds))
-        self.note = note
+        self.minutes = min(WorkRecordPolicy.maximumSessionMinutes, max(0, minutes))
+        self.extraSeconds = min(WorkRecordPolicy.maximumExtraSeconds, max(0, extraSeconds))
+        self.note = WorkRecordPolicy.normalizedNote(note)
         self.item = item
         self.updatedAt = Date()
     }
@@ -83,7 +86,11 @@ final class StudySession {
 
 extension StudySession {
     /// 記録された正味の長さ。手入力は秒まで、タイマー記録は分単位。
-    var totalSeconds: Int { minutes * 60 + min(59, max(0, extraSeconds)) }
+    var totalSeconds: Int {
+        let safeMinutes = min(WorkRecordPolicy.maximumSessionMinutes, max(0, minutes))
+        let safeSeconds = min(WorkRecordPolicy.maximumExtraSeconds, max(0, extraSeconds))
+        return safeMinutes * 60 + safeSeconds
+    }
 
     /// 記録一覧で共通して使う順序。項目の種類に関係なく、全件を開始時刻の新しい順にする。
     /// 同時刻でも同期の到着順で表示が揺れないよう、更新時刻とUUIDまで比較する。
@@ -96,6 +103,11 @@ extension StudySession {
 
 /// 「学んだ日」の刻印。セッション保存時に呼び、その日の StudyDay を確実に1件にする。
 enum StudyDayStore {
+    struct MarkResult {
+        let day: StudyDay
+        let wasInserted: Bool
+    }
+
     /// 航海誌は、記憶が新しいうちに残す。当日と前日だけを書き換え可能にする。
     /// UIだけでなく保存層で制限し、共有カードや軌跡から過去分を変更できないようにする。
     static func canEditComment(
@@ -110,20 +122,27 @@ enum StudyDayStore {
         return age == 0 || age == 1
     }
 
-    static func markDay(_ date: Date, context: ModelContext, syncsToAccount: Bool = true) {
+    @discardableResult
+    static func markDay(
+        _ date: Date,
+        context: ModelContext,
+        syncsToAccount: Bool = true
+    ) -> MarkResult {
         let dayStart = Calendar.current.startOfDay(for: date)
         var descriptor = FetchDescriptor<StudyDay>(
             predicate: #Predicate { $0.date == dayStart }
         )
         descriptor.fetchLimit = 1
         let existing = (try? context.fetch(descriptor)) ?? []
-        if existing.isEmpty {
-            let day = StudyDay(date: dayStart)
-            context.insert(day)
-            if syncsToAccount {
-                Task { @MainActor in SyncService.shared.push(day) }
-            }
+        if let day = existing.first {
+            return MarkResult(day: day, wasInserted: false)
         }
+        let day = StudyDay(date: dayStart)
+        context.insert(day)
+        if syncsToAccount {
+            Task { @MainActor in SyncService.shared.push(day) }
+        }
+        return MarkResult(day: day, wasInserted: true)
     }
 
     /// その日のカードに添えるひとこと(記録ごとのメモとは別物)。
@@ -145,12 +164,21 @@ enum StudyDayStore {
         guard canEditComment(for: date, now: now) else { return false }
         guard let day = day(for: date, context: context) else { return false }
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
-        // 一言カードの120字から、日記として十分に書ける1000文字へ拡張する。
-        let value = (trimmed?.isEmpty ?? true) ? nil : String(trimmed!.prefix(1_000))
+        let value = (trimmed?.isEmpty ?? true)
+            ? nil
+            : String(trimmed!.prefix(WorkRecordPolicy.maximumDayNoteCharacters))
         guard day.note != value else { return false }
+        let previousNote = day.note
+        let previousUpdatedAt = day.updatedAt
         day.note = value
         day.updatedAt = Date()
-        try? context.save()
+        do {
+            try context.save()
+        } catch {
+            day.note = previousNote
+            day.updatedAt = previousUpdatedAt
+            return false
+        }
         if syncsToAccount {
             Task { @MainActor in SyncService.shared.push(day) }
         }

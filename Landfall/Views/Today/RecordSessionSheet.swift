@@ -329,17 +329,30 @@ struct RecordSessionSheet: View {
         // 保存の前に空白日数を測る(保存後だと最終記録日=今日になってしまう)。
         let blanks = isToday ? MonthStats.blankDays(since: days.first?.date, to: date) : nil
 
-        let trimmed = String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(500))
-        let session = StudySession(date: date, minutes: minutes, note: trimmed.isEmpty ? nil : trimmed, item: item)
+        let session = StudySession(
+            date: date,
+            minutes: minutes,
+            note: WorkRecordPolicy.normalizedNote(note),
+            item: item
+        )
         modelContext.insert(session)
-        StudyDayStore.markDay(date, context: modelContext)
-        try? modelContext.save()
-        SyncService.shared.push(session)
-        PublicHarborService.shared.publishCurrentMonth(context: modelContext)
-        WidgetBridge.refresh(context: modelContext)
-        // 今日つけたなら、今日のそっと通知は取り下げる(来た人はつつかない)。
-        let recorded = StudyDayStore.recordedToday(context: modelContext)
-        Task { await NotificationService.reschedule(recordedToday: recorded) }
+        let dayMark = StudyDayStore.markDay(
+            date,
+            context: modelContext,
+            syncsToAccount: false
+        )
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.delete(session)
+            if dayMark.wasInserted { modelContext.delete(dayMark.day) }
+            return
+        }
+        SyncService.shared.publishPersistedSessionChanges(
+            [session],
+            insertedDays: dayMark.wasInserted ? [dayMark.day] : [],
+            context: modelContext
+        )
         dismiss()
         Haptics.success()
         // 着岸アニメと「おかえり」は今日つけたときだけ。過去の後追いは静かに保存する。
