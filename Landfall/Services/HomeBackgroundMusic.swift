@@ -97,6 +97,17 @@ final class HomeBackgroundMusic: NSObject, ObservableObject, AVAudioPlayerDelega
         }
     }
 
+    /// UIで選んだ曲を保存と実再生へ同時に反映する。
+    ///
+    /// `@AppStorage` の変更通知だけに再生切替を任せると、同じ画面階層に
+    /// いる間は通知が次の更新まで届かず、表示だけ選択済みになることがある。
+    /// 島のミュージックパネルはこの入口を使い、押した瞬間に音も切り替える。
+    func selectAndPlay(_ track: HomeVoyageSound) {
+        guard Self.tracks.contains(track) else { return }
+        UserDefaults.standard.set(track.rawValue, forKey: Self.selectedTrackKey)
+        play()
+    }
+
     /// 別の画面音へ自然につなぐ。共有AudioSessionはタイマー側が続けて使えるよう残す。
     func stop() {
         playbackRequested = false

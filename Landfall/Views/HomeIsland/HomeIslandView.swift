@@ -3804,7 +3804,10 @@ private struct HomeIslandMusicPanel: View {
     @Binding var isEnabled: Bool
     @Binding var selectedTrackID: String
     @ObservedObject var music: HomeBackgroundMusic
+    @ObservedObject private var voyageMusic = HomeVoyageAudio.shared
     @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    @AppStorage(StudyTimer.soundKey, store: StudyTimer.defaults)
+    private var timerSoundID = HomeVoyageSound.initialTimerSound.rawValue
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// Rendered inside a floating island panel: no navigation chrome, no
     /// full-screen background — the panel owns both.
@@ -3880,7 +3883,7 @@ private struct HomeIslandMusicPanel: View {
                 Circle()
                     .fill(panelInk.opacity(0.08))
                     .frame(width: onPhone ? 36 : 48, height: onPhone ? 36 : 48)
-                if music.isPlaying {
+                if isCurrentContextPlaying {
                     HomeIslandEqualizer(color: panelInk)
                         .frame(width: onPhone ? 16 : 21, height: onPhone ? 16 : 21)
                 } else {
@@ -3904,17 +3907,17 @@ private struct HomeIslandMusicPanel: View {
             Spacer(minLength: 8)
 
             Button {
-                isEnabled.toggle()
+                togglePlayback()
                 Haptics.tap(.medium)
             } label: {
-                Image(systemName: isEnabled ? "pause.fill" : "play.fill")
+                Image(systemName: isCurrentContextPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: onPhone ? 13 : 15, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: onPhone ? 36 : 46, height: onPhone ? 36 : 46)
                     .background(panelInk, in: Circle())
             }
             .buttonStyle(LFPressableButtonStyle(scale: 0.94))
-            .accessibilityLabel(Text(isEnabled ? "Stop" : "Play"))
+            .accessibilityLabel(Text(isCurrentContextPlaying ? "Stop" : "Play"))
         }
         .padding(onPhone ? 10 : 14)
         .background(Color.white.opacity(0.66), in: RoundedRectangle(cornerRadius: onPhone ? 16 : 21))
@@ -3926,11 +3929,17 @@ private struct HomeIslandMusicPanel: View {
 
     private func trackRow(_ track: HomeVoyageSound) -> some View {
         let selected = displayedTrack == track
-        let playing = music.isPlaying && music.currentTrack == track
+        let playing = isCurrentContextPlaying && currentContextTrack == track
 
         return Button {
             selectedTrackID = track.rawValue
             isEnabled = true
+            if timerStart > 0 {
+                timerSoundID = track.rawValue
+                voyageMusic.play(track.rawValue)
+            } else {
+                music.selectAndPlay(track)
+            }
             Haptics.tap(.light)
         } label: {
             HStack(spacing: onPhone ? 9 : 12) {
@@ -3981,16 +3990,50 @@ private struct HomeIslandMusicPanel: View {
     /// 一曲終わるとプレイリストは次の曲へ自動で進む。パネルは選択値ではなく、
     /// いま実際に鳴っている曲を出す。止まっている間だけ、次に鳴る選択曲へ戻す。
     private var displayedTrack: HomeVoyageSound {
-        guard music.isPlaying,
-              HomeBackgroundMusic.tracks.contains(music.currentTrack)
+        guard isCurrentContextPlaying,
+              HomeBackgroundMusic.tracks.contains(currentContextTrack)
         else { return selectedTrack }
-        return music.currentTrack
+        return currentContextTrack
     }
 
     private var statusTitle: LocalizedStringKey {
-        if music.playbackFailed { return "Playback unavailable" }
-        if timerStart > 0, isEnabled { return "Plays after voyage" }
-        return isEnabled ? "Playing" : "Stopped"
+        if currentPlaybackFailed { return "Playback unavailable" }
+        return isCurrentContextPlaying ? "Playing" : "Stopped"
+    }
+
+    private var isCurrentContextPlaying: Bool {
+        timerStart > 0 ? voyageMusic.isPlaying : music.isPlaying
+    }
+
+    private var currentPlaybackFailed: Bool {
+        timerStart > 0 ? voyageMusic.playbackFailed : music.playbackFailed
+    }
+
+    private var currentContextTrack: HomeVoyageSound {
+        timerStart > 0 ? voyageMusic.currentSound : music.currentTrack
+    }
+
+    /// 島で聞こえている音を直接操作する。計測を最小化して島へ戻った場合は
+    /// 航海側のプレイヤーが音源なので、そちらも同じパネルから止められる。
+    private func togglePlayback() {
+        if isCurrentContextPlaying {
+            isEnabled = false
+            if timerStart > 0 {
+                timerSoundID = HomeVoyageSound.off.rawValue
+                voyageMusic.stop()
+            } else {
+                music.stop()
+            }
+            return
+        }
+
+        isEnabled = true
+        if timerStart > 0 {
+            timerSoundID = selectedTrack.rawValue
+            voyageMusic.play(selectedTrack.rawValue)
+        } else {
+            music.selectAndPlay(selectedTrack)
+        }
     }
 
     private var panelGlass: Color {

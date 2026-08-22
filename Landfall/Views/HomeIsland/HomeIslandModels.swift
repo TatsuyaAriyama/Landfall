@@ -490,7 +490,6 @@ enum HomeIslandAssetCatalog {
     /// Add an asset ID here when its final simulator percentage is approved.
     private static let calibratedScaleAssetIDs: Set<String> = [
         "small_stump",
-        "small_rock",
         // Sizes the operator set by eye in the simulator. Listing them here
         // applies the calibration to islands that already have one placed.
         "sandcastle"
@@ -590,22 +589,6 @@ enum HomeIslandAssetCatalog {
             footprintMargin: 0.42,
             unlockLevel: 4,
             requiresPass: true
-        ),
-        HomeIslandAsset(
-            id: "small_rock",
-            titleKey: "Small Rock",
-            symbolName: "mountain.2.fill",
-            defaultScale: 0.70,
-            footprintMargin: 0.55,
-            unlockLevel: 1
-        ),
-        HomeIslandAsset(
-            id: "coastal_rocks",
-            titleKey: "Coastal Rocks",
-            symbolName: "mountain.2.fill",
-            defaultScale: 0.72,
-            footprintMargin: 1.90,
-            unlockLevel: 13
         ),
         HomeIslandAsset(
             id: "small_lake",
@@ -965,9 +948,8 @@ enum HomeIslandAssetCatalog {
     static var approvedIDs: Set<String> { Set(approved.map(\.id)) }
 
     /// A flat top the navigator can stand on, once they are high enough to be
-    /// on it. Rocks are what this is for: their sides are far taller than a
-    /// step, so the only way up is a jump — which is the point of a rock being
-    /// there at all.
+    /// on it. The garden boulder's side is taller than a normal step, so the
+    /// only way up is an intentional jump.
     ///
     /// The shape is an ellipse in the asset's own frame, because a rock is
     /// round and a rectangle would offer corners the model does not have.
@@ -982,33 +964,15 @@ enum HomeIslandAssetCatalog {
         let topHeight: Float
     }
 
-    /// Measured off the models themselves, at the height where each mesh has
-    /// already flattened out, so standing on a ledge is standing on rock
-    /// rather than hovering over it.
+    /// The boulder's collision perch is deliberately a little broader and
+    /// lower than its small crown. That keeps a correctly aimed jump stable
+    /// without making the navigator hover outside the visible stone.
     static let standableLedges: [StandableLedge] = [
-        // One dome, one perch, right at the top.
         StandableLedge(
-            assetID: "small_rock",
-            halfWidth: 0.45,
-            halfDepth: 0.40,
-            topHeight: 0.70
-        ),
-        // The cluster is climbed in two hops. Its summit is out of reach from
-        // the sand on purpose: the shoulder that rings it is the first step,
-        // and the top is the second.
-        StandableLedge(
-            assetID: "coastal_rocks",
-            z: -0.30,
-            halfWidth: 1.35,
-            halfDepth: 0.82,
-            topHeight: 0.80
-        ),
-        StandableLedge(
-            assetID: "coastal_rocks",
-            z: -0.25,
-            halfWidth: 0.70,
-            halfDepth: 0.55,
-            topHeight: 1.36
+            assetID: "garden_boulder",
+            halfWidth: 0.36,
+            halfDepth: 0.36,
+            topHeight: 0.46
         ),
     ]
 
@@ -1204,24 +1168,6 @@ enum HomeIslandAssetCatalog {
                 HomeIslandAssetVariant(
                     assetID: "palm_tree",
                     nameKey: "Palm Tree"
-                ),
-            ]
-        ),
-        // Same question as the tree: a player clearing a shore is looking for
-        // "a rock". Whether it is one boulder or a whole reef is what the
-        // chooser is for.
-        HomeIslandAssetFamily(
-            id: "rock",
-            titleKey: "Rock",
-            symbolName: "mountain.2.fill",
-            variants: [
-                HomeIslandAssetVariant(
-                    assetID: "small_rock",
-                    nameKey: "Small Rock"
-                ),
-                HomeIslandAssetVariant(
-                    assetID: "coastal_rocks",
-                    nameKey: "Coastal Rocks"
                 ),
             ]
         ),
@@ -1487,8 +1433,7 @@ enum HomeIslandAssetCatalog {
              // Rocks are climbed too. Their ledges are solid up to their own
              // tops and open above them, so a flat body-sized cylinder here
              // would be a lid: nothing could ever land on one.
-             "small_rock",
-             "coastal_rocks",
+             "garden_boulder",
              "stone_path_straight",
              "stone_path_curve",
              "stone_path_fork",
