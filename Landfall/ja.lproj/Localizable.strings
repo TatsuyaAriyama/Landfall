@@ -871,6 +871,8 @@
 "min" = "分";
 "sec" = "秒";
 "Enter work time" = "作業時間を入力する";
+"Enter time" = "時間入力";
+"Clear" = "消す";
 "On break" = "休憩中";
 "Focus" = "集中";
 "Pomodoro break" = "休憩";

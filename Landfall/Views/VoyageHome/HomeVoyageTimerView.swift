@@ -770,18 +770,98 @@ struct HomeVoyageTimerView: View {
         )
     }
 
+    /// 記録の一式。三段(枠付きメモ・大きなボタン・単独のリンク)だと、
+    /// 海の上に書類を一枚置いたように見えていた。二段に畳み、メモは枠を
+    /// 外して一本の罫線にする。ガラスの上に載る要素の輪郭が減るほど、
+    /// 背後の航海が主役のまま残る。
     private var recordingPanel: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) {
+        VStack(spacing: 11) {
+            noteLine
+
+            HStack(spacing: 8) {
+                Button {
+                    finishVoyage()
+                } label: {
+                    HStack(spacing: 9) {
+                        if saving {
+                            ProgressView()
+                                .tint(.white)
+                        }
+                        Text("Log up to here")
+                            .font(LFFont.copy(15))
+                    }
+                    .foregroundStyle(Color.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(
+                        timerGlassInk.opacity(requiredNoteSatisfied ? 0.96 : 0.38),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    )
+                }
+                .buttonStyle(LFPressableButtonStyle())
+                .disabled(saving || !requiredNoteSatisfied)
+
+                if !isFirstVoyage, canEnterWorkTimeManually {
+                    // 三段目に一行だけ置いていた導線を、記録ボタンの隣へ寄せる。
+                    // 「時間を決める」二つの操作が並ぶので、行が減るだけでなく
+                    // 関係も分かりやすくなる。
+                    Button {
+                        // Stay at sea. Leaving the voyage to type a number and
+                        // landing back at the pier lost the thread of what the
+                        // player was doing.
+                        noteFocused = false
+                        showingManualEntry = true
+                        Haptics.tap(.light)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 13, weight: .medium))
+                            Text("Enter time")
+                                .font(LFFont.label(12))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(timerGlassInk.opacity(0.78))
+                        .padding(.horizontal, 12)
+                        .frame(height: 44)
+                        .background(
+                            Color.white.opacity(0.52),
+                            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .stroke(timerGlassInk.opacity(0.14), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(LFPressableButtonStyle())
+                    .accessibilityLabel(Text("Enter work time"))
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: 460)
+        .background(whiteGlassBackground(cornerRadius: 18, opacity: 0.82))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(timerGlassInk.opacity(0.17), lineWidth: 1)
+        )
+        .shadow(color: timerGlassInk.opacity(0.13), radius: 12, y: 5)
+    }
+
+    /// 枠のないメモ欄。下の罫線だけが入力位置を示し、書き始めると罫線が
+    /// 帰航オレンジへ移る。入れ子の角丸を一つ減らせるのが一番の効き目。
+    private var noteLine: some View {
+        VStack(spacing: 7) {
+            HStack(spacing: 9) {
                 Image(systemName: "pencil.line")
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(timerGlassInk.opacity(0.62))
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(timerGlassInk.opacity(noteFocused ? 0.74 : 0.52))
 
                 TextField(
                     "",
                     text: $note,
                     prompt: Text(verbatim: notePlaceholder)
-                        .foregroundStyle(timerGlassInk.opacity(0.48))
+                        .foregroundStyle(timerGlassInk.opacity(0.46))
                 )
                     .font(LFFont.label(14))
                     .foregroundStyle(timerGlassInk)
@@ -801,68 +881,31 @@ struct HomeVoyageTimerView: View {
                                 : LF.text("Enter \"Tutorial\".")
                         )
                     )
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 40)
-            .background(Color.white.opacity(0.66), in: RoundedRectangle(cornerRadius: 11))
-            .overlay(
-                RoundedRectangle(cornerRadius: 11)
-                    .stroke(timerGlassInk.opacity(0.12), lineWidth: 1)
-            )
 
-            Button {
-                finishVoyage()
-            } label: {
-                HStack(spacing: 9) {
-                    if saving {
-                        ProgressView()
-                            .tint(.white)
-                    }
-                    Text("Log up to here")
-                        .font(LFFont.copy(16))
-                }
-                .foregroundStyle(Color.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 46)
-                .background(
-                    timerGlassInk.opacity(requiredNoteSatisfied ? 0.96 : 0.38),
-                    in: RoundedRectangle(cornerRadius: 12)
-                )
-            }
-            .buttonStyle(LFPressableButtonStyle())
-            .disabled(saving || !requiredNoteSatisfied)
-            .padding(.top, 9)
-
-            if !isFirstVoyage, canEnterWorkTimeManually {
-                HStack {
+                if !note.isEmpty {
                     Button {
-                        // Stay at sea. Leaving the voyage to type a number and
-                        // landing back at the pier lost the thread of what the
-                        // player was doing.
-                        noteFocused = false
-                        showingManualEntry = true
+                        note = ""
                         Haptics.tap(.light)
                     } label: {
-                        Text("Enter work time")
-                            .font(LFFont.label(12))
-                            .foregroundStyle(timerGlassInk.opacity(0.72))
-                            .frame(minHeight: 34)
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 15))
+                            .foregroundStyle(timerGlassInk.opacity(0.32))
                     }
                     .buttonStyle(.plain)
-
+                    .accessibilityLabel(Text("Clear"))
                 }
             }
+            .frame(height: 24)
+
+            Capsule()
+                .fill(
+                    noteFocused
+                        ? LFColor.returnOrange.opacity(0.85)
+                        : timerGlassInk.opacity(0.18)
+                )
+                .frame(height: noteFocused ? 1.6 : 1)
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 11)
-        .padding(.bottom, 5)
-        .frame(maxWidth: 460)
-        .background(whiteGlassBackground(cornerRadius: 18, opacity: 0.82))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(timerGlassInk.opacity(0.17), lineWidth: 1)
-        )
-        .shadow(color: timerGlassInk.opacity(0.13), radius: 12, y: 5)
+        .animation(.easeOut(duration: 0.16), value: noteFocused)
     }
 
     private func whiteGlassBackground(
