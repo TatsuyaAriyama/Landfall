@@ -142,6 +142,21 @@ private enum HomeVoyageRecorder {
 
 /// Web版の「航海中」をホーム専用に移植したタイマー。
 /// 計測中の海を残したまま、完了時だけ航海札へ切り替える。
+/// 航海HUDの色。海の上に浮かぶ計器の板と、そこに灯る明かり。
+/// 白いガラス札で組むと画面の上に「アプリの用紙」が載って見えたので、
+/// 板は夜の海より一段深い緑、文字と縁は帆と同じ砂、数字は船尾の灯り。
+enum VoyageHUD {
+    /// 計器板の地。VoyageSceneKit の夜色(#123830)より沈めて、
+    /// 明るい昼の海の上でも文字が浮くようにする。
+    static let plate = Color(hex: 0x07231F)
+    /// 板に乗る文字と彫り線。帆・浜と同じ砂色。
+    static let ink = LFColor.harborSand
+    /// 灯り。経過時間と、効いている道具と、記録の押し板。
+    static let lamp = LFColor.emberGold
+    /// 進行中の合図とバッジ。
+    static let signal = LFColor.returnOrange
+}
+
 struct HomeVoyageTimerView: View {
     let item: StudyItem
     let hasDestination: Bool
@@ -195,7 +210,6 @@ struct HomeVoyageTimerView: View {
     @Query(sort: \StudyDay.date, order: .reverse) private var days: [StudyDay]
     /// 完了札の経験値バーは、記録済みの全セッションからレベルを導く。
     @Query private var sessions: [StudySession]
-
     @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
     @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID = ""
     @AppStorage(StudyTimer.modeKey, store: StudyTimer.defaults) private var timerMode = HomeTimerMode.free.rawValue
@@ -212,6 +226,7 @@ struct HomeVoyageTimerView: View {
     @State private var saveError = false
     @State private var saving = false
     @State private var uiHidden = false
+    @State private var showingVoyageMenu = false
     @State private var showingSoundPicker = false
     @State private var showingTodoList = false
     @State private var showingManualEntry = false
@@ -296,8 +311,42 @@ struct HomeVoyageTimerView: View {
         firstVoyageRequiredNote ?? LF.text("What you worked on (optional)")
     }
 
-    private var timerGlassInk: Color { LFColor.harborTeal }
-    private var timerClockInk: Color { Color(hex: 0xA74312) }
+    /// 航海HUDの素材。海の上に浮かぶ白いガラス札は「アプリの用紙」に
+    /// 見えていたので、夜の海より一段深い板へ沈め、縁と文字だけを
+    /// 船の灯りと同じ色で起こす。船室の計器を覗いている手触りにする。
+    private var plateInset: CGFloat { compactHUD ? 11 : 13 }
+
+    /// 計器板そのもの。背後の海を透かしつつ、板として厚みを持たせるため
+    /// 縁は上を明るく下を暗くした一本線にする。
+    private func instrumentPlate(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return ZStack {
+            shape.fill(.ultraThinMaterial)
+            shape.fill(VoyageHUD.plate.opacity(0.80))
+        }
+        .overlay(
+            shape.strokeBorder(
+                LinearGradient(
+                    colors: [
+                        VoyageHUD.ink.opacity(0.34),
+                        VoyageHUD.ink.opacity(0.09),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                ),
+                lineWidth: 1
+            )
+        )
+    }
+
+    /// 板に彫った溝。暗い線の下へ砂色の照り返しを一本添えると、
+    /// ただの区切り線ではなく板の段差に見える。
+    private var engravedRule: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(Color.black.opacity(0.24)).frame(height: 1)
+            Rectangle().fill(VoyageHUD.ink.opacity(0.09)).frame(height: 1)
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -428,99 +477,107 @@ struct HomeVoyageTimerView: View {
         VStack(spacing: 0) {
             timerHeader
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer(minLength: 18)
+            Spacer(minLength: 24)
+            if showingVoyageMenu {
+                voyageMenu
+                    .frame(maxWidth: compactHUD ? 332 : 420, alignment: .trailing)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.bottom, 14)
+                    .transition(
+                        .opacity.combined(with: .move(edge: .bottom))
+                    )
+            }
             recordingPanel
         }
-        .padding(.horizontal, compactHUD ? 12 : 16)
-        .safeAreaPadding(.top, compactHUD ? 10 : 12)
-        .safeAreaPadding(.bottom, 10)
+        .padding(.horizontal, compactHUD ? 26 : 34)
+        .safeAreaPadding(.top, compactHUD ? 22 : 28)
+        .safeAreaPadding(.bottom, compactHUD ? 20 : 26)
     }
 
+    /// 普段は景色を塞がず、参考画像と同じく課題名と時計だけを
+    /// 海の上に直接置く。文字影は白い札の代わりに明るさを保つ。
     private var timerHeader: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: compactHUD ? 6 : 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: compactHUD ? 8 : 9, style: .continuous)
-                        .fill(timerGlassInk.opacity(0.07))
-                    ItemTileArt(item: item)
-                        .padding(compactHUD ? 3 : 4)
-                }
-                .frame(width: compactHUD ? 24 : 28, height: compactHUD ? 24 : 28)
-                .overlay(
-                    RoundedRectangle(cornerRadius: compactHUD ? 8 : 9, style: .continuous)
-                        .stroke(timerGlassInk.opacity(0.14), lineWidth: 1)
-                )
-
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(isVoyageResting ? LFColor.sunYellow : LFColor.returnOrange)
-                            .frame(width: 4, height: 4)
-                        Text(statusLabel)
-                            .font(LFFont.label(7))
-                            .tracking(1.0)
-                        // The chips no longer carry a value line, so the running
-                        // pomodoro reports its phase and countdown up here.
-                        if pomodoroPhase != nil {
-                            pomodoroDetail
-                                .font(LFFont.label(7))
-                                .tracking(0.9)
-                                .foregroundStyle(LFColor.returnOrange.opacity(0.92))
-                                .lineLimit(1)
-                        }
-                    }
-                    .foregroundStyle(timerGlassInk.opacity(0.62))
-
-                    Text(item.name)
-                        .font(LFFont.copy(compactHUD ? 11 : 12))
-                        .foregroundStyle(timerGlassInk)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: compactHUD ? 4 : 6)
-
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(Self.clock(snapshot.elapsedSeconds(at: context.date)))
-                        .font(LFFont.copy(compactHUD ? 16 : 19))
-                        .monospacedDigit()
-                        .foregroundStyle(timerClockInk)
-                        .contentTransition(.numericText())
-                }
-                .accessibilityLabel(Text("ELAPSED"))
-
-                if !isFirstVoyage {
-                    Button {
-                        confirmingDiscard = true
-                        Haptics.tap(.rigid)
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: compactHUD ? 9 : 10, weight: .medium))
-                            .foregroundStyle(timerGlassInk)
-                            .frame(
-                                width: compactHUD ? 22 : 26,
-                                height: compactHUD ? 22 : 26
-                            )
-                            .background(timerGlassInk.opacity(0.07), in: Circle())
-                    }
-                    .buttonStyle(LFPressableButtonStyle())
-                    .accessibilityLabel(Text("Discard voyage"))
-                }
+        VStack(alignment: .leading, spacing: compactHUD ? 10 : 12) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(statusLampColor)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: statusLampColor.opacity(0.75), radius: 5)
+                Text(item.name)
+                    .font(LFFont.copy(compactHUD ? 13 : 15))
+                    .foregroundStyle(VoyageHUD.ink.opacity(0.78))
+                    .lineLimit(1)
             }
-            .padding(.horizontal, compactHUD ? 8 : 9)
-            .padding(.top, compactHUD ? 7 : 8)
 
-            Rectangle()
-                .fill(timerGlassInk.opacity(0.12))
-                .frame(height: 1)
-                .padding(.top, compactHUD ? 7 : 8)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(Self.clock(snapshot.elapsedSeconds(at: context.date)))
+                    .font(
+                        .system(
+                            size: compactHUD ? 50 : 58,
+                            weight: .light,
+                            design: .rounded
+                        )
+                    )
+                    .monospacedDigit()
+                    .foregroundStyle(VoyageHUD.lamp)
+                    .contentTransition(.numericText())
+                    .shadow(color: VoyageHUD.plate.opacity(0.68), radius: 10, y: 3)
+            }
+            .accessibilityLabel(Text("ELAPSED"))
+
+            HStack(spacing: -5) {
+                quickControl(
+                    systemImage: snapshot.isResting ? "play.fill" : "pause.fill",
+                    active: snapshot.isResting,
+                    accessibilityLabel: snapshot.isResting ? "Resume voyage" : "Take a break",
+                    action: toggleBreak
+                )
+                quickControl(
+                    systemImage: selectedSound == .off ? "speaker.slash.fill" : "music.note",
+                    active: selectedSound != .off,
+                    accessibilityLabel: soundAccessibilityLabel,
+                    action: {
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                            showingVoyageMenu = true
+                            showingSoundPicker.toggle()
+                            if showingSoundPicker { showingTodoList = false }
+                        }
+                        Haptics.tap(.light)
+                    }
+                )
+            }
 
             if !remoteCompanions.isEmpty {
                 companionStrip
-                    .padding(.horizontal, chipTrayPadding)
-                    .padding(.top, chipTrayPadding)
+                    .frame(maxWidth: compactHUD ? 236 : 280)
             }
+        }
+        .shadow(color: Color.black.opacity(0.28), radius: 8, y: 2)
+    }
 
-            HStack(spacing: compactHUD ? 4 : 5) {
+    private func quickControl(
+        systemImage: String,
+        active: Bool,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(VoyageHUD.ink.opacity(active ? 0.88 : 0.62))
+                .frame(width: 29, height: 29)
+                .background(VoyageHUD.plate.opacity(active ? 0.56 : 0.38), in: Circle())
+                .overlay(Circle().strokeBorder(VoyageHUD.ink.opacity(0.14), lineWidth: 1))
+        }
+        .buttonStyle(LFPressableButtonStyle())
+        .accessibilityLabel(Text(verbatim: accessibilityLabel))
+    }
+
+    /// 右下の「…」から開く航海道具。通常時は隠し、必要な時だけ
+    /// 船室の計器板として現れる。
+    private var voyageMenu: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: compactHUD ? 2 : 4) {
                 commandButton(
                     title: snapshot.isResting ? "Resume voyage" : "Take a break",
                     systemImage: snapshot.isResting ? "play.fill" : "pause.fill",
@@ -566,12 +623,13 @@ struct HomeVoyageTimerView: View {
                 )
                 .accessibilityLabel(Text("ToDo list"))
             }
-            .padding(chipTrayPadding)
+            .padding(.horizontal, compactHUD ? 7 : 9)
+            .padding(.vertical, compactHUD ? 10 : 12)
 
             if showingSoundPicker {
                 soundPicker
-                    .padding(.horizontal, chipTrayPadding)
-                    .padding(.bottom, chipTrayPadding)
+                    .padding(.horizontal, plateInset)
+                    .padding(.bottom, plateInset)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
@@ -580,39 +638,101 @@ struct HomeVoyageTimerView: View {
                 // is already there when the navigator gets home.
                 HomeIslandTodoCompactList(
                     store: todoStore,
-                    ink: timerGlassInk,
+                    ink: VoyageHUD.ink,
                     maxListHeight: compactHUD ? 176 : 196
                 )
-                .padding(.horizontal, chipTrayPadding)
-                .padding(.bottom, chipTrayPadding)
+                .padding(.horizontal, plateInset)
+                .padding(.bottom, plateInset)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
+
+            engravedRule
+
+            VStack(spacing: 10) {
+                noteLine
+
+                HStack(spacing: 8) {
+                    if !isFirstVoyage, canEnterWorkTimeManually {
+                        Button {
+                            noteFocused = false
+                            showingManualEntry = true
+                            Haptics.tap(.light)
+                        } label: {
+                            Label("Enter time", systemImage: "clock")
+                                .font(LFFont.label(11))
+                                .foregroundStyle(VoyageHUD.ink.opacity(0.78))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 36)
+                                .background(VoyageHUD.ink.opacity(0.07), in: Capsule())
+                        }
+                        .buttonStyle(LFPressableButtonStyle())
+                    }
+
+                    if !isFirstVoyage {
+                        Button {
+                            confirmingDiscard = true
+                            Haptics.tap(.rigid)
+                        } label: {
+                            Label("Discard voyage", systemImage: "xmark")
+                                .font(LFFont.label(11))
+                                .foregroundStyle(VoyageHUD.ink.opacity(0.62))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 36)
+                                .background(VoyageHUD.ink.opacity(0.07), in: Capsule())
+                        }
+                        .buttonStyle(LFPressableButtonStyle())
+                    }
+                }
+            }
+            .padding(.horizontal, plateInset)
+            .padding(.vertical, plateInset)
         }
-        .frame(maxWidth: compactHUD ? 258 : 320)
-        .background(whiteGlassBackground(cornerRadius: 17, opacity: 0.80))
-        .overlay(
-            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                .stroke(timerGlassInk.opacity(0.18), lineWidth: 1)
-        )
-        .shadow(color: timerGlassInk.opacity(0.16), radius: 13, y: 6)
+        .frame(maxWidth: compactHUD ? 332 : 420)
+        .background(instrumentPlate(cornerRadius: 20))
+        .shadow(color: Color.black.opacity(0.34), radius: 18, y: 9)
+    }
+
+    private var statusLampColor: Color {
+        isVoyageResting ? LFColor.sunYellow : VoyageHUD.signal
+    }
+
+    /// 航海を捨てる口。板の縁と同じ細い輪で、押し間違えない小ささに留める。
+    private var discardButton: some View {
+        Button {
+            confirmingDiscard = true
+            Haptics.tap(.rigid)
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: compactHUD ? 10 : 11, weight: .medium))
+                .foregroundStyle(VoyageHUD.ink.opacity(0.72))
+                .frame(
+                    width: compactHUD ? 26 : 28,
+                    height: compactHUD ? 26 : 28
+                )
+                .background(VoyageHUD.ink.opacity(0.08), in: Circle())
+                .overlay(Circle().strokeBorder(VoyageHUD.ink.opacity(0.16), lineWidth: 1))
+        }
+        .buttonStyle(LFPressableButtonStyle())
+        .accessibilityLabel(Text("Discard voyage"))
     }
 
     /// 同じ船に乗っている仲間。甲板の航海士と同じ並び順で名前を出す。
     private var companionStrip: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Image(systemName: "person.2.fill")
                 .font(.system(size: 8, weight: .medium))
-                .foregroundStyle(timerGlassInk.opacity(0.5))
+                .foregroundStyle(VoyageHUD.ink.opacity(0.52))
             Text(verbatim: remoteCompanions.map(\.name).joined(separator: LF.text(", ")))
                 .font(LFFont.label(9.5))
-                .foregroundStyle(timerGlassInk.opacity(0.78))
+                .foregroundStyle(VoyageHUD.ink.opacity(0.80))
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 8)
-        .frame(height: 22)
-        .background(timerGlassInk.opacity(0.05), in: Capsule())
+        .padding(.horizontal, 9)
+        .frame(height: 24)
+        .background(VoyageHUD.ink.opacity(0.07), in: Capsule())
+        .overlay(Capsule().strokeBorder(VoyageHUD.ink.opacity(0.13), lineWidth: 1))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Sailing together"))
         .accessibilityValue(
@@ -631,13 +751,8 @@ struct HomeVoyageTimerView: View {
         compactHUD ? 6 : 7
     }
 
-    private var chipCornerRadius: CGFloat {
-        compactHUD ? 12 : 13
-    }
-
-    /// Compact command chip: an icon over a short label. The old two-line
-    /// version carried its current value as a third line, which is what made
-    /// the timer card wide enough to need the middle of the screen.
+    /// 手元の道具。真鍮の丸ボタンを四つ並べた計器の列に見立てる。
+    /// 効いている道具は灯りが点り、板の地色の字が抜ける。
     private func commandButton(
         title: LocalizedStringKey,
         systemImage: String,
@@ -645,51 +760,53 @@ struct HomeVoyageTimerView: View {
         badge: Int = 0,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            VStack(spacing: compactHUD ? 2 : 3) {
+        let diameter: CGFloat = compactHUD ? 38 : 42
+        return Button(action: action) {
+            VStack(spacing: compactHUD ? 5 : 6) {
                 ZStack(alignment: .topTrailing) {
-                    Image(systemName: systemImage)
-                        .font(.system(size: compactHUD ? 12 : 13, weight: .medium))
-                        .frame(width: compactHUD ? 20 : 22, height: compactHUD ? 15 : 16)
+                    ZStack {
+                        Circle()
+                            .fill(active ? VoyageHUD.lamp : VoyageHUD.ink.opacity(0.08))
+                        Circle()
+                            .strokeBorder(
+                                active ? VoyageHUD.lamp : VoyageHUD.ink.opacity(0.18),
+                                lineWidth: 1
+                            )
+                        Image(systemName: systemImage)
+                            .font(.system(size: compactHUD ? 13 : 14, weight: .medium))
+                            .foregroundStyle(
+                                active ? VoyageHUD.plate : VoyageHUD.ink.opacity(0.84)
+                            )
+                    }
+                    .frame(width: diameter, height: diameter)
+                    .shadow(
+                        color: active ? VoyageHUD.lamp.opacity(0.42) : .clear,
+                        radius: 9
+                    )
+
                     if badge > 0 {
                         Text(verbatim: badge > 9 ? "9+" : "\(badge)")
-                            .font(LFFont.label(7))
+                            .font(LFFont.label(8))
                             .monospacedDigit()
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Color.white)
                             .padding(.horizontal, 3)
-                            .frame(minWidth: 12, minHeight: 12)
-                            .background(LFColor.returnOrange, in: Capsule())
-                            .offset(x: 6, y: -5)
-                    } else if active {
-                        Circle()
-                            .fill(LFColor.returnOrange)
-                            .frame(width: 4, height: 4)
-                            .offset(x: 4, y: -2)
+                            .frame(minWidth: 14, minHeight: 14)
+                            .background(VoyageHUD.signal, in: Capsule())
+                            .overlay(
+                                Capsule().strokeBorder(VoyageHUD.plate.opacity(0.75), lineWidth: 1)
+                            )
+                            .offset(x: 4, y: -3)
                     }
                 }
+
                 Text(title)
-                    .font(LFFont.label(compactHUD ? 7 : 8))
+                    .font(LFFont.label(compactHUD ? 8.5 : 9.5))
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                    .foregroundStyle(VoyageHUD.ink.opacity(active ? 0.92 : 0.56))
             }
-            .foregroundStyle(active ? timerGlassInk : timerGlassInk.opacity(0.74))
-            .padding(.horizontal, compactHUD ? 4 : 6)
-            .padding(.vertical, compactHUD ? 5 : 6)
             .frame(maxWidth: .infinity)
-            .frame(height: compactHUD ? 38 : 46)
-            .background(
-                active ? LFColor.returnOrange.opacity(0.10) : timerGlassInk.opacity(0.05),
-                in: RoundedRectangle(cornerRadius: chipCornerRadius, style: .continuous)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: chipCornerRadius, style: .continuous)
-                    .stroke(
-                        active
-                            ? LFColor.returnOrange.opacity(0.52)
-                            : timerGlassInk.opacity(0.11),
-                        lineWidth: 1
-                    )
-            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(LFPressableButtonStyle())
     }
@@ -704,9 +821,9 @@ struct HomeVoyageTimerView: View {
                 Text("SELECT TRACK")
                     .font(LFFont.label(7))
                     .tracking(1.2)
-                    .foregroundStyle(timerGlassInk.opacity(0.46))
+                    .foregroundStyle(VoyageHUD.ink.opacity(0.44))
             }
-            .foregroundStyle(timerGlassInk.opacity(0.68))
+            .foregroundStyle(VoyageHUD.ink.opacity(0.68))
             .padding(.horizontal, compactHUD ? 10 : 12)
             .frame(height: compactHUD ? 25 : 28)
 
@@ -726,7 +843,7 @@ struct HomeVoyageTimerView: View {
                                 .font(LFFont.copy(compactHUD ? 11 : 12))
                             Text(sound.subtitle)
                                 .font(LFFont.label(compactHUD ? 8 : 9))
-                                .foregroundStyle(timerGlassInk.opacity(0.48))
+                                .foregroundStyle(VoyageHUD.ink.opacity(0.50))
                         }
 
                         Spacer(minLength: 8)
@@ -743,12 +860,12 @@ struct HomeVoyageTimerView: View {
                                 )
                         }
                     }
-                    .foregroundStyle(timerGlassInk)
+                    .foregroundStyle(VoyageHUD.ink)
                     .padding(.horizontal, compactHUD ? 10 : 12)
                     .frame(height: compactHUD ? 38 : 43)
                     .background(
                         sound == displayedSound
-                            ? timerGlassInk.opacity(0.07)
+                            ? VoyageHUD.ink.opacity(0.10)
                             : Color.clear
                     )
                     .contentShape(Rectangle())
@@ -757,115 +874,116 @@ struct HomeVoyageTimerView: View {
 
                 if sound != HomeVoyageSound.timerSelectableSounds.last {
                     Rectangle()
-                        .fill(timerGlassInk.opacity(0.09))
+                        .fill(VoyageHUD.ink.opacity(0.10))
                         .frame(height: 1)
                         .padding(.leading, compactHUD ? 43 : 48)
                 }
             }
         }
-        .background(Color.white.opacity(0.54), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(
+            VoyageHUD.ink.opacity(0.06),
+            in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+        )
         .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(timerGlassInk.opacity(0.13), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .strokeBorder(VoyageHUD.ink.opacity(0.14), lineWidth: 1)
         )
     }
 
-    /// 記録の一式。三段(枠付きメモ・大きなボタン・単独のリンク)だと、
-    /// 海の上に書類を一枚置いたように見えていた。二段に畳み、メモは枠を
-    /// 外して一本の罫線にする。ガラスの上に載る要素の輪郭が減るほど、
-    /// 背後の航海が主役のまま残る。
+    /// 参考画像の下部操作。記録を左の大きなカプセル、設定を右の丸い
+    /// 「…」へ分け、中央の海と船の前を開けておく。
     private var recordingPanel: some View {
-        VStack(spacing: 11) {
-            noteLine
-
-            HStack(spacing: 8) {
-                Button {
+        HStack(alignment: .center) {
+            Button {
+                if requiredNoteSatisfied {
                     finishVoyage()
-                } label: {
-                    HStack(spacing: 9) {
-                        if saving {
-                            ProgressView()
-                                .tint(.white)
-                        }
-                        Text("Log up to here")
-                            .font(LFFont.copy(15))
+                } else {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                        showingVoyageMenu = true
                     }
-                    .foregroundStyle(Color.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(
-                        timerGlassInk.opacity(requiredNoteSatisfied ? 0.96 : 0.38),
-                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    noteFocused = true
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if saving {
+                        ProgressView()
+                            .tint(VoyageHUD.plate)
+                    }
+                    Text("Record")
+                        .font(LFFont.copy(compactHUD ? 14 : 16))
+                }
+                .foregroundStyle(
+                    requiredNoteSatisfied ? VoyageHUD.plate : VoyageHUD.ink.opacity(0.52)
+                )
+                .frame(width: compactHUD ? 126 : 144, height: compactHUD ? 52 : 56)
+                .background(
+                    requiredNoteSatisfied ? VoyageHUD.lamp : VoyageHUD.plate.opacity(0.72),
+                    in: Capsule()
+                )
+                .overlay(
+                    Capsule().strokeBorder(
+                        requiredNoteSatisfied
+                            ? Color.white.opacity(0.22)
+                            : VoyageHUD.ink.opacity(0.18),
+                        lineWidth: 1
                     )
-                }
-                .buttonStyle(LFPressableButtonStyle())
-                .disabled(saving || !requiredNoteSatisfied)
-
-                if !isFirstVoyage, canEnterWorkTimeManually {
-                    // 三段目に一行だけ置いていた導線を、記録ボタンの隣へ寄せる。
-                    // 「時間を決める」二つの操作が並ぶので、行が減るだけでなく
-                    // 関係も分かりやすくなる。
-                    Button {
-                        // Stay at sea. Leaving the voyage to type a number and
-                        // landing back at the pier lost the thread of what the
-                        // player was doing.
-                        noteFocused = false
-                        showingManualEntry = true
-                        Haptics.tap(.light)
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "clock")
-                                .font(.system(size: 13, weight: .medium))
-                            Text("Enter time")
-                                .font(LFFont.label(12))
-                                .lineLimit(1)
-                        }
-                        .foregroundStyle(timerGlassInk.opacity(0.78))
-                        .padding(.horizontal, 12)
-                        .frame(height: 44)
-                        .background(
-                            Color.white.opacity(0.52),
-                            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                .stroke(timerGlassInk.opacity(0.14), lineWidth: 1)
-                        )
-                    }
-                    .buttonStyle(LFPressableButtonStyle())
-                    .accessibilityLabel(Text("Enter work time"))
-                }
+                )
             }
+            .buttonStyle(LFPressableButtonStyle())
+            .disabled(saving)
+
+            Spacer(minLength: 24)
+
+            Button {
+                noteFocused = false
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                    showingVoyageMenu.toggle()
+                    if !showingVoyageMenu {
+                        showingSoundPicker = false
+                        showingTodoList = false
+                    }
+                }
+                Haptics.tap(.light)
+            } label: {
+                Image(systemName: showingVoyageMenu ? "xmark" : "ellipsis")
+                    .font(.system(size: compactHUD ? 16 : 18, weight: .medium))
+                    .foregroundStyle(
+                        showingVoyageMenu ? VoyageHUD.plate : VoyageHUD.ink.opacity(0.72)
+                    )
+                    .frame(width: compactHUD ? 52 : 56, height: compactHUD ? 52 : 56)
+                    .background(
+                        showingVoyageMenu
+                            ? VoyageHUD.lamp
+                            : VoyageHUD.plate.opacity(0.58),
+                        in: Circle()
+                    )
+                    .overlay(Circle().strokeBorder(VoyageHUD.ink.opacity(0.14), lineWidth: 1))
+            }
+            .buttonStyle(LFPressableButtonStyle())
+            .accessibilityLabel(Text("More voyage controls"))
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: 460)
-        .background(whiteGlassBackground(cornerRadius: 18, opacity: 0.82))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(timerGlassInk.opacity(0.17), lineWidth: 1)
-        )
-        .shadow(color: timerGlassInk.opacity(0.13), radius: 12, y: 5)
+        .frame(maxWidth: .infinity)
+        .shadow(color: Color.black.opacity(0.24), radius: 10, y: 4)
     }
 
-    /// 枠のないメモ欄。下の罫線だけが入力位置を示し、書き始めると罫線が
-    /// 帰航オレンジへ移る。入れ子の角丸を一つ減らせるのが一番の効き目。
+    /// 枠のないメモ欄。彫った罫線だけが書く場所を示し、書き始めると
+    /// 罫線に灯りが点る。板の上で輪郭が増えないほど、海が主役のまま残る。
     private var noteLine: some View {
-        VStack(spacing: 7) {
+        VStack(spacing: 8) {
             HStack(spacing: 9) {
                 Image(systemName: "pencil.line")
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(timerGlassInk.opacity(noteFocused ? 0.74 : 0.52))
+                    .foregroundStyle(VoyageHUD.ink.opacity(noteFocused ? 0.80 : 0.52))
 
                 TextField(
                     "",
                     text: $note,
                     prompt: Text(verbatim: notePlaceholder)
-                        .foregroundStyle(timerGlassInk.opacity(0.46))
+                        .foregroundStyle(VoyageHUD.ink.opacity(0.42))
                 )
                     .font(LFFont.label(14))
-                    .foregroundStyle(timerGlassInk)
-                    .tint(LFColor.returnOrange)
+                    .foregroundStyle(VoyageHUD.ink)
+                    .tint(VoyageHUD.lamp)
                     .focused($noteFocused)
                     .submitLabel(.done)
                     .onChange(of: note) { _, value in
@@ -889,7 +1007,7 @@ struct HomeVoyageTimerView: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 15))
-                            .foregroundStyle(timerGlassInk.opacity(0.32))
+                            .foregroundStyle(VoyageHUD.ink.opacity(0.38))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Text("Clear"))
@@ -897,27 +1015,25 @@ struct HomeVoyageTimerView: View {
             }
             .frame(height: 24)
 
-            Capsule()
-                .fill(
-                    noteFocused
-                        ? LFColor.returnOrange.opacity(0.85)
-                        : timerGlassInk.opacity(0.18)
-                )
-                .frame(height: noteFocused ? 1.6 : 1)
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.black.opacity(0.22))
+                    .frame(height: 1)
+                Capsule()
+                    .fill(
+                        noteFocused
+                            ? VoyageHUD.lamp.opacity(0.9)
+                            : VoyageHUD.ink.opacity(0.16)
+                    )
+                    .frame(height: noteFocused ? 1.6 : 1)
+                    .shadow(
+                        color: noteFocused ? VoyageHUD.lamp.opacity(0.5) : .clear,
+                        radius: 6
+                    )
+            }
+            .frame(height: 2)
         }
         .animation(.easeOut(duration: 0.16), value: noteFocused)
-    }
-
-    private func whiteGlassBackground(
-        cornerRadius: CGFloat,
-        opacity: Double
-    ) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(.ultraThinMaterial)
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(Color.white.opacity(opacity))
-        }
     }
 
     private var statusLabel: String {
