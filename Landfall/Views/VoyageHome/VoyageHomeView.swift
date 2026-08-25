@@ -51,6 +51,7 @@ struct VoyageHomeView: View {
     @State private var pendingCompleteDestination: Destination?
     @State private var pendingDelete: StudySession?
     @State private var timerVoyageItem: StudyItem?
+    @State private var timerVoyagePresentationID = UUID()
     @State private var timerSceneReady = false
     @State private var timerSceneReturning = false
     @State private var timerSceneNow = Date()
@@ -282,11 +283,13 @@ struct VoyageHomeView: View {
                                 now = Date()
                                 dismissTimerVoyage()
                             },
+                            onTimerStopped: synchronizeStoppedTimerState,
                             rendersScene: true,
                             externalWorldTapToken: timerWorldTapToken,
                             companions: sailingCompanions,
                             hostsCompanionVoyage: true
                         )
+                        .id(timerVoyagePresentationID)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .opacity(timerSceneReady ? 1 : 0)
                         .allowsHitTesting(timerSceneReady)
@@ -1591,7 +1594,7 @@ struct VoyageHomeView: View {
     /// 船を選んだ後の積荷画面では、カード全体を一つの出航操作にする。
     /// 名前だけが編集ボタンになる旧ホーム配置を持ち込まず、選択の迷いをなくす。
     private func manifestItemTile(_ item: StudyItem) -> some View {
-        let timing = timerItemID == item.uuid.uuidString
+        let timing = timerStart > 0 && timerItemID == item.uuid.uuidString
         // 持ち上がっているのは、指が動いて浮きの札が出ているときだけ。
         // 長押ししただけの札は、見た目を変えずにその場へ留める。
         let lifted = manifestDraggedItemID == item.uuid && manifestDragLocation != nil
@@ -1704,7 +1707,7 @@ struct VoyageHomeView: View {
 
     private func manifestItemTileArtwork(_ item: StudyItem) -> some View {
         let total = totalByItem[item.uuid] ?? 0
-        let timing = timerItemID == item.uuid.uuidString
+        let timing = timerStart > 0 && timerItemID == item.uuid.uuidString
 
         return VStack(spacing: 6) {
             ItemTileArt(item: item)
@@ -2289,7 +2292,19 @@ struct VoyageHomeView: View {
         timerSceneReturning = false
         timerSceneReady = true
         timerSceneNow = Date()
+        // 同じ項目で再出航しても、前回の完了カードなど画面内だけの状態を
+        // 引き継がないよう、航海を開くたびに新しい表示単位へ切り替える。
+        timerVoyagePresentationID = UUID()
         timerVoyageItem = item
+    }
+
+    private func synchronizeStoppedTimerState() {
+        timerStart = 0
+        timerItemID = ""
+        timerMode = HomeTimerMode.free.rawValue
+        timerPomodoroStartElapsed = 0
+        timerBreakSeconds = 0
+        timerBreakStartedAt = 0
     }
 
     private func dismissTimerVoyage() {

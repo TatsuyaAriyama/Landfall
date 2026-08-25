@@ -181,6 +181,7 @@ struct HomeVoyageTimerView: View {
     let hasDestination: Bool
     let onManual: (Int) -> Void
     let onReturnHome: () -> Void
+    let onTimerStopped: () -> Void
     let rendersScene: Bool
     let externalWorldTapToken: Int
     /// 私設島の同行者。甲板に並び、札には名前だけが出る。
@@ -201,6 +202,7 @@ struct HomeVoyageTimerView: View {
         hasDestination: Bool,
         onManual: @escaping (Int) -> Void,
         onReturnHome: @escaping () -> Void,
+        onTimerStopped: @escaping () -> Void = {},
         rendersScene: Bool = true,
         externalWorldTapToken: Int = 0,
         companions: [CompanionVoyageCrewMate] = [],
@@ -214,6 +216,7 @@ struct HomeVoyageTimerView: View {
         self.hasDestination = hasDestination
         self.onManual = onManual
         self.onReturnHome = onReturnHome
+        self.onTimerStopped = onTimerStopped
         self.rendersScene = rendersScene
         self.externalWorldTapToken = externalWorldTapToken
         self.companions = companions
@@ -1313,7 +1316,7 @@ struct HomeVoyageTimerView: View {
                 return
             }
 
-            StudyTimer.clearAll()
+            stopTimer()
             HomeVoyageAudio.shared.stop()
             saving = false
             noteFocused = false
@@ -1336,13 +1339,26 @@ struct HomeVoyageTimerView: View {
             return
         }
 
-        StudyTimer.clearAll()
+        stopTimer()
         HomeVoyageAudio.shared.stop()
         saving = false
         noteFocused = false
         reflectionFocused = false
         completion = result
         Haptics.success()
+    }
+
+    /// 保存領域だけでなく、この画面と親画面の AppStorage も同じ実行ループで
+    /// 終了状態へ揃える。完了直後に作業項目を開いても旧航海を再開させない。
+    private func stopTimer() {
+        StudyTimer.clearAll()
+        timerStart = 0
+        timerItemID = ""
+        timerMode = HomeTimerMode.free.rawValue
+        pomodoroStartElapsed = 0
+        breakSeconds = 0
+        breakStartedAt = 0
+        onTimerStopped()
     }
 
     private func playVoyageAudio(_ storedValue: String) {
@@ -1412,7 +1428,7 @@ struct HomeVoyageTimerView: View {
                 .padding(.top, 20)
 
                 Button {
-                    confirmingReturnHome = true
+                    onReturnHome()
                     Haptics.tap(.light)
                 } label: {
                     Text("Return home")
@@ -1436,7 +1452,7 @@ struct HomeVoyageTimerView: View {
             .shadow(color: Color.black.opacity(0.24), radius: 36, y: 18)
             .contentShape(RoundedRectangle(cornerRadius: 24))
             .onTapGesture {
-                confirmingReturnHome = true
+                onReturnHome()
                 Haptics.tap(.light)
             }
         }
