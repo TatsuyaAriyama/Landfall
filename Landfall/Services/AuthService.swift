@@ -363,7 +363,7 @@ final class AuthService: ObservableObject {
     private static func logSignInError(_ error: Error, stage: String) {
         let nsError = error as NSError
         logger.error(
-            "Sign-in failed stage=\(stage, privacy: .public) domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public) description=\(nsError.localizedDescription, privacy: .public)"
+            "Sign-in failed stage=\(stage, privacy: .public) domain=\(nsError.domain, privacy: .public) code=\(nsError.code, privacy: .public)"
         )
     }
 

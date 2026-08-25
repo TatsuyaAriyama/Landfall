@@ -385,57 +385,35 @@ final class PrivateIslandService: ObservableObject {
             throw PrivateIslandError.tooManyIslands
         }
 
-        let memberData = Self.memberProfileData(joinedAt: true)
-        for _ in 0..<8 {
-            let code = Self.generateCode()
-            let islandRef = db.collection("privateIslands").document(code)
-            let memberRef = islandRef.collection("members").document(uid)
-            let sessionRef = islandRef.collection("runtime").document("eos")
-            let session = try Self.generateEOSSessionCredentials()
-            let result = try await db.runTransaction { transaction, errorPointer -> Any? in
-                do {
-                    let existing = try transaction.getDocument(islandRef)
-                    guard !existing.exists else { return false }
-                    transaction.setData([
-                        "schemaVersion": 2,
-                        "name": name,
-                        "hostUid": uid,
-                        "memberIds": [uid],
-                        "createdAt": FieldValue.serverTimestamp(),
-                    ], forDocument: islandRef)
-                    transaction.setData(memberData, forDocument: memberRef)
-                    // Independent 256-bit values are committed with the room;
-                    // neither is derived from the short invite code.
-                    transaction.setData([
-                        "schemaVersion": 1,
-                        "sessionLocator": session.locator,
-                        "socketSecret": session.secret,
-                        "createdAt": FieldValue.serverTimestamp(),
-                    ], forDocument: sessionRef)
-                    return true
-                } catch let error as NSError {
-                    errorPointer?.pointee = error
-                    return nil
-                }
-            }
-            if Self.boolValue(result) {
-                if let initialSnapshot {
-                    do {
-                        try await publishSnapshot(initialSnapshot, to: code)
-                    } catch {
-                        // The parent island and host membership are already
-                        // committed. Do not report creation as failed just
-                        // because the first layout publication was interrupted;
-                        // Home Island autosave retries it after entry.
-                        errorMessage = error.localizedDescription
-                        enqueueOwnedSnapshot(initialSnapshot)
-                    }
-                }
-                await refreshIslands()
-                return code
+        let callable = Functions.functions(region: Self.functionsRegion)
+            .httpsCallable("createPrivateIsland")
+        let response: HTTPSCallableResult
+        do {
+            response = try await callable.call([
+                "name": name,
+                "member": Self.memberProfileData(joinedAt: false),
+            ])
+        } catch {
+            throw Self.mappedCreateError(error)
+        }
+        guard let payload = response.data as? [String: Any],
+              let rawCode = payload["code"] as? String
+        else { throw PrivateIslandError.codeUnavailable }
+        let code = Self.normalizedCode(rawCode)
+        guard code.count == 6 else { throw PrivateIslandError.codeUnavailable }
+
+        if let initialSnapshot {
+            do {
+                try await publishSnapshot(initialSnapshot, to: code)
+            } catch {
+                // The parent island and host membership are already committed.
+                // Home Island autosave retries the first layout publication.
+                errorMessage = error.localizedDescription
+                enqueueOwnedSnapshot(initialSnapshot)
             }
         }
-        throw PrivateIslandError.codeUnavailable
+        await refreshIslands()
+        return code
     }
 
     /// Joins the island identified by the existing six-character invite code.
@@ -1302,11 +1280,6 @@ final class PrivateIslandService: ObservableObject {
         return data
     }
 
-    private static func generateCode() -> String {
-        let characters = Array("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
-        return String((0..<6).compactMap { _ in characters.randomElement() })
-    }
-
     static func normalizedCode(_ rawCode: String) -> String {
         let allowed = Set("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
         let compact = rawCode.uppercased().filter { !$0.isWhitespace && $0 != "-" }
@@ -1339,6 +1312,20 @@ final class PrivateIslandService: ObservableObject {
         }
     }
 
+    private static func mappedCreateError(_ error: Error) -> Error {
+        let error = error as NSError
+        guard error.domain == FunctionsErrorDomain,
+              let code = FunctionsErrorCode(rawValue: error.code)
+        else { return PrivateIslandError.codeUnavailable }
+        switch code {
+        case .invalidArgument: return PrivateIslandError.invalidName
+        case .failedPrecondition: return PrivateIslandError.tooManyIslands
+        case .unauthenticated: return PrivateIslandError.notSignedIn
+        case .permissionDenied: return PrivateIslandError.codeUnavailable
+        default: return PrivateIslandError.codeUnavailable
+        }
+    }
+
     private static func mappedTransactionError(_ error: Error) -> Error {
         let error = error as NSError
         guard error.domain == transactionErrorDomain,
@@ -1349,12 +1336,6 @@ final class PrivateIslandService: ObservableObject {
         case .full: return PrivateIslandError.islandFull
         case .hostCannotLeave: return PrivateIslandError.hostCannotLeave
         }
-    }
-
-    private static func boolValue(_ value: Any?) -> Bool {
-        if let value = value as? Bool { return value }
-        if let value = value as? NSNumber { return value.boolValue }
-        return false
     }
 
     private static func intValue(_ value: Any?) -> Int? {

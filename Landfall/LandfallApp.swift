@@ -150,6 +150,17 @@ struct LandfallApp: App {
             .environment(\.locale, (AppLanguage(rawValue: appLanguage) ?? .system).locale)
             // 端末設定に関わらず、アプリ内の外観(ライト/ダーク)設定に追従。
             .preferredColorScheme((AppTheme(rawValue: appTheme) ?? .system).colorScheme)
+            // iOS captures the last rendered frame for the app switcher. Cover
+            // journals, temporary notes, and timers as soon as the scene loses
+            // focus so they never remain legible in that system snapshot.
+            .overlay {
+                if scenePhase != .active {
+                    Color(red: 0.025, green: 0.105, blue: 0.095)
+                        .ignoresSafeArea()
+                        .accessibilityHidden(true)
+                }
+            }
+            .animation(nil, value: scenePhase)
             #if DEBUG
             // 動作確認用データの投入。mainContext(UIと同一)に対し、起動ごとに一度だけ。
             .task { DebugSeed.seedIfRequested(into: container) }

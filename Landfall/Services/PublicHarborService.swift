@@ -1,5 +1,6 @@
 import FirebaseAuth
 import FirebaseFirestore
+import FirebaseFunctions
 import Foundation
 import SwiftData
 
@@ -245,21 +246,21 @@ final class PublicHarborService: ObservableObject {
         while !Task.isCancelled, let publish = pendingMonthPublish {
             pendingMonthPublish = nil
             guard uid == publish.uid else { continue }
-            for slug in publish.slugs.sorted() {
-                guard !Task.isCancelled, uid == publish.uid else { break }
-                do {
-                    try await memberRef(slug: slug, uid: publish.uid)
-                        .collection("months").document(publish.docID)
-                        .setData(publish.data)
-                } catch {
-                    // Keep the newest complete payload queued for one later pass. A subsequent
-                    // local or cloud-sync change replaces it with an even newer complete copy.
-                    if pendingMonthPublish == nil, uid == publish.uid {
-                        pendingMonthPublish = publish
-                    }
-                    encounteredError = true
-                    break
+            do {
+                let callable = Functions.functions(region: "asia-northeast1")
+                    .httpsCallable("publishPublicHarborMonth")
+                _ = try await callable.call([
+                    "monthId": publish.docID,
+                    "slugs": publish.slugs.sorted(),
+                    "payload": Self.callableMonthPayload(publish.data),
+                ])
+            } catch {
+                // Keep the newest complete payload queued for one later pass. A subsequent
+                // local or cloud-sync change replaces it with an even newer complete copy.
+                if pendingMonthPublish == nil, uid == publish.uid {
+                    pendingMonthPublish = publish
                 }
+                encounteredError = true
             }
             if encounteredError { break }
         }
@@ -268,6 +269,26 @@ final class PublicHarborService: ObservableObject {
         if shouldRestart {
             monthPublishTask = Task { await drainMonthPublishes() }
         }
+    }
+
+    /// Callable data deliberately uses primitive milliseconds instead of a
+    /// Firestore server-timestamp sentinel. The trusted function reconstructs
+    /// timestamps, validates every nested value, and owns `updatedAt`.
+    private static func callableMonthPayload(_ data: [String: Any]) -> [String: Any] {
+        let sessions: [[String: Any]] = (data["sessions"] as? [[String: Any]] ?? [])
+            .compactMap { raw -> [String: Any]? in
+                guard let date = raw["date"] as? Date else { return nil }
+                var serialized = raw
+                serialized.removeValue(forKey: "date")
+                serialized["dateMilliseconds"] = Int64(
+                    (date.timeIntervalSince1970 * 1_000).rounded()
+                )
+                return serialized
+            }
+        return [
+            "days": data["days"] as? [Int] ?? [],
+            "sessions": sessions,
+        ]
     }
 
     private func stopMonthPublishing(for slug: String) async {

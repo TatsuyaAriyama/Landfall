@@ -85,6 +85,9 @@ const PRIVATE_ISLAND_CHAT_LIMIT = 500;
 const PRIVATE_ISLAND_CHAT_COOLDOWN_MS = 750;
 const PRIVATE_ISLAND_CHAT_HOURLY_LIMIT = 120;
 const PRIVATE_ISLAND_REPORT_DAILY_LIMIT = 20;
+const PUBLIC_HARBOR_MONTH_SESSIONS_LIMIT = 1_000;
+const PUBLIC_HARBOR_MONTH_INPUT_BYTES = 800_000;
+const PUBLIC_HARBOR_MONTH_HOURLY_LIMIT = 300;
 
 function stripeClient() {
   return new Stripe(stripeRestrictedKey.value(), {
@@ -267,6 +270,137 @@ function privateIslandChatText(value: unknown): string {
     throw new HttpsError("invalid-argument", "text cannot be sent.");
   }
   return text;
+}
+
+function plainRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function boundedPublicString(
+  value: unknown,
+  maximum: number,
+  preserveTextWhitespace = false,
+): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = withoutUnicodeControls(value.normalize("NFC"), preserveTextWhitespace);
+  return Array.from(normalized).slice(0, maximum).join("");
+}
+
+function validMonthIds(now = new Date()): Set<string> {
+  // A local calendar can be one day ahead of or behind UTC. Accepting the
+  // adjacent instants covers every iOS time zone without opening arbitrary
+  // historical document IDs to a modified client.
+  return new Set([-86_400_000, 0, 86_400_000].map((offset) =>
+    new Date(now.getTime() + offset).toISOString().slice(0, 7)));
+}
+
+function publicHarborMonthPayload(value: unknown, maximumDay: number): {
+  days: number[];
+  sessions: Record<string, unknown>[];
+} {
+  const input = plainRecord(value);
+  if (!input || !Array.isArray(input.days) || !Array.isArray(input.sessions)) {
+    throw new HttpsError("invalid-argument", "A valid month payload is required.");
+  }
+  if (input.days.length > 31 || input.sessions.length > PUBLIC_HARBOR_MONTH_SESSIONS_LIMIT) {
+    throw new HttpsError("invalid-argument", "The month payload is too large.");
+  }
+
+  const days = input.days.map((day) => {
+    if (typeof day !== "number" || !Number.isSafeInteger(day) || day < 1 || day > maximumDay) {
+      throw new HttpsError("invalid-argument", "A study day is outside the selected month.");
+    }
+    return day;
+  });
+  if (new Set(days).size !== days.length) {
+    throw new HttpsError("invalid-argument", "Study days cannot be duplicated.");
+  }
+
+  const now = Date.now();
+  const sessions = input.sessions.map((raw) => {
+    const session = plainRecord(raw);
+    if (!session) throw new HttpsError("invalid-argument", "Every session must be an object.");
+    const allowedKeys = new Set([
+      "day", "minutes", "dateMilliseconds", "note", "itemName", "styleToken", "symbolToken",
+    ]);
+    if (Object.keys(session).some((key) => !allowedKeys.has(key))) {
+      throw new HttpsError("invalid-argument", "A session contains an unknown field.");
+    }
+    const day = session.day;
+    const minutes = session.minutes;
+    const dateMilliseconds = session.dateMilliseconds;
+    if (typeof day !== "number" || !Number.isSafeInteger(day) || day < 1 || day > maximumDay) {
+      throw new HttpsError("invalid-argument", "A session day is invalid.");
+    }
+    if (
+      typeof minutes !== "number" || !Number.isSafeInteger(minutes) ||
+      minutes < 1 || minutes > 6_000
+    ) {
+      throw new HttpsError("invalid-argument", "A session duration is invalid.");
+    }
+    if (
+      typeof dateMilliseconds !== "number" || !Number.isSafeInteger(dateMilliseconds) ||
+      dateMilliseconds < 946_684_800_000 || dateMilliseconds > now + 10 * 60 * 1_000
+    ) {
+      throw new HttpsError("invalid-argument", "A session date is invalid.");
+    }
+
+    const output: Record<string, unknown> = {
+      day,
+      minutes,
+      date: Timestamp.fromMillis(dateMilliseconds),
+    };
+    const note = boundedPublicString(session.note, 500, true);
+    const itemName = boundedPublicString(session.itemName, 60);
+    if (note) output.note = note;
+    if (itemName) output.itemName = itemName;
+    if (session.styleToken !== undefined) {
+      if (typeof session.styleToken !== "string" || !PUBLIC_JOURNAL_STYLE_TOKENS.has(session.styleToken)) {
+        throw new HttpsError("invalid-argument", "A session style is invalid.");
+      }
+      output.styleToken = session.styleToken;
+    }
+    if (session.symbolToken !== undefined) {
+      if (typeof session.symbolToken !== "string" || !PUBLIC_JOURNAL_SYMBOL_TOKENS.has(session.symbolToken)) {
+        throw new HttpsError("invalid-argument", "A session symbol is invalid.");
+      }
+      output.symbolToken = session.symbolToken;
+    }
+    return output;
+  });
+
+  if (Buffer.byteLength(JSON.stringify({ days, sessions }), "utf8") > PUBLIC_HARBOR_MONTH_INPUT_BYTES) {
+    throw new HttpsError("invalid-argument", "The month payload exceeds the storage limit.");
+  }
+  return { days: [...days].sort((left, right) => left - right), sessions };
+}
+
+function privateIslandMemberData(value: unknown, joinedAt: Timestamp): Record<string, unknown> {
+  const input = plainRecord(value) ?? {};
+  const displayName = boundedPublicString(input.displayName, 60)?.trim() || "Sailor";
+  const styleToken = typeof input.styleToken === "string" && PUBLIC_JOURNAL_STYLE_TOKENS.has(input.styleToken)
+    ? input.styleToken
+    : "midnight";
+  const symbolToken = typeof input.symbolToken === "string" && PUBLIC_JOURNAL_SYMBOL_TOKENS.has(input.symbolToken)
+    ? input.symbolToken
+    : "phoenix";
+  const output: Record<string, unknown> = {
+    displayName,
+    styleToken,
+    symbolToken,
+    resolve: boundedPublicString(input.resolve, 80)?.trim() ?? "",
+    boatSail: boundedPublicString(input.boatSail, 24) || "sand",
+    boatJib: boundedPublicString(input.boatJib, 24) || "sand",
+    boatHull: boundedPublicString(input.boatHull, 24) || "starter",
+    boatStripe: boundedPublicString(input.boatStripe, 24) || "none",
+    boatFlag: boundedPublicString(input.boatFlag, 24) || "none",
+    joinedAt,
+  };
+  if (typeof input.sinceDay === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(input.sinceDay)) {
+    output.sinceDay = input.sinceDay;
+  }
+  return output;
 }
 
 function hashedActorId(namespace: string, actor: string): string {
@@ -1413,6 +1547,81 @@ export const purgeLegacyPrivateRooms = onCall(
   },
 );
 
+/**
+ * Publishes the signed-in sailor's current public-harbor month through a
+ * bounded, App Check protected path. Direct month writes are denied by rules,
+ * so a modified client cannot manufacture unbounded document IDs or nested
+ * payloads at the project's expense.
+ */
+export const publishPublicHarborMonth = onCall(
+  { region: REGION, enforceAppCheck: true, timeoutSeconds: 60, memory: "256MiB" },
+  async (request) => {
+    const uid = requireUid(request.auth);
+    const monthId = typeof request.data?.monthId === "string" ? request.data.monthId : "";
+    if (!validMonthIds().has(monthId)) {
+      throw new HttpsError("invalid-argument", "Only the current local month can be published.");
+    }
+
+    const rawSlugs = request.data?.slugs;
+    if (!Array.isArray(rawSlugs) || rawSlugs.length < 1 || rawSlugs.length > PUBLIC_HARBORS.length) {
+      throw new HttpsError("invalid-argument", "At least one official harbor is required.");
+    }
+    const slugs = rawSlugs.map((slug) => {
+      if (typeof slug !== "string" || !PUBLIC_HARBORS.includes(slug)) {
+        throw new HttpsError("invalid-argument", "An unknown public harbor was supplied.");
+      }
+      return slug;
+    });
+    if (new Set(slugs).size !== slugs.length) {
+      throw new HttpsError("invalid-argument", "A public harbor cannot be duplicated.");
+    }
+    const [monthYear, monthNumber] = monthId.split("-").map(Number);
+    const maximumDay = new Date(Date.UTC(monthYear, monthNumber, 0)).getUTCDate();
+    const payload = publicHarborMonthPayload(request.data?.payload, maximumDay);
+    const now = Timestamp.now();
+    const rateLimitRef = db.collection("publicHarborMonthPublishLimits")
+      .doc(hashedActorId("public-harbor-month", uid));
+    const memberRefs = slugs.map((slug) =>
+      db.doc(`publicHarbors/${slug}/members/${uid}`));
+
+    await db.runTransaction(async (transaction) => {
+      const [rateLimit, ...members] = await Promise.all([
+        transaction.get(rateLimitRef),
+        ...memberRefs.map((ref) => transaction.get(ref)),
+      ]);
+      if (members.some((member) => !member.exists)) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Join every selected public harbor before publishing.",
+        );
+      }
+
+      const windowStartedAt = rateLimit.get("windowStartedAt");
+      const storedCount = rateLimit.get("count");
+      const sameWindow = windowStartedAt instanceof Timestamp &&
+        now.toMillis() - windowStartedAt.toMillis() < 60 * 60 * 1_000;
+      const nextCount = sameWindow && typeof storedCount === "number" ? storedCount + 1 : 1;
+      if (nextCount > PUBLIC_HARBOR_MONTH_HOURLY_LIMIT) {
+        throw new HttpsError("resource-exhausted", "The hourly month publishing limit was reached.");
+      }
+
+      transaction.set(rateLimitRef, {
+        count: nextCount,
+        windowStartedAt: sameWindow ? windowStartedAt : now,
+        updatedAt: now,
+      });
+      for (let index = 0; index < slugs.length; index += 1) {
+        transaction.set(memberRefs[index].collection("months").doc(monthId), {
+          days: payload.days,
+          sessions: payload.sessions,
+          updatedAt: now,
+        });
+      }
+    });
+    return { published: true, monthId, harborCount: slugs.length };
+  },
+);
+
 // Joining by invite code happens here, never in the client, so the island
 // document itself can stay unreadable to non-members. A client-side join needs
 // read access to any island by id, which turns the six-character code into a
@@ -1424,6 +1633,27 @@ export const purgeLegacyPrivateRooms = onCall(
 const PRIVATE_ISLAND_MAX_MEMBERS = 8;
 const PRIVATE_ISLAND_MAX_JOINED = 3;
 const PRIVATE_ISLAND_JOIN_ATTEMPTS_PER_HOUR = 20;
+const PRIVATE_ISLAND_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function generatedPrivateIslandCode(): string {
+  return Array.from(randomBytes(6), (byte) =>
+    PRIVATE_ISLAND_CODE_ALPHABET[byte & 31]).join("");
+}
+
+async function hasActiveVoyagePass(
+  transaction: FirebaseFirestore.Transaction,
+  uid: string,
+): Promise<boolean> {
+  const [stripePass, appStorePass] = await Promise.all([
+    transaction.get(db.doc(`users/${uid}/entitlements/${VOYAGE_PASS_ENTITLEMENT}`)),
+    transaction.get(db.doc(`users/${uid}/entitlements/${APP_STORE_VOYAGE_PASS_ENTITLEMENT}`)),
+  ]);
+  const now = Timestamp.now().toMillis();
+  return [stripePass, appStorePass].some((snapshot) => {
+    const end = snapshot.get("currentPeriodEnd");
+    return snapshot.get("active") === true && end instanceof Timestamp && end.toMillis() > now;
+  });
+}
 
 type PrivateIslandJoinOutcome =
   | {
@@ -1436,6 +1666,86 @@ type PrivateIslandJoinOutcome =
   | {
     status: "rate-limited" | "not-found" | "island-full" | "membership-limit";
   };
+
+type PrivateIslandCreateOutcome =
+  | { status: "created" | "already-hosts"; code: string }
+  | { status: "collision" | "membership-limit" | "pass-required" };
+
+/**
+ * Creates at most one hosted island per account. A per-user transaction lock
+ * serializes concurrent requests, while the server generates both the invite
+ * code and independent 256-bit EOS credentials. Firestore rules deny the
+ * equivalent direct client create.
+ */
+export const createPrivateIsland = onCall(
+  { region: REGION, enforceAppCheck: true },
+  async (request) => {
+    const uid = requireUid(request.auth);
+    const name = boundedPublicString(request.data?.name, 80)?.trim() ?? "";
+    if (!name) throw new HttpsError("invalid-argument", "Give the island a name.");
+    const member = request.data?.member;
+    const joinedQuery = db.collection("privateIslands")
+      .where("memberIds", "array-contains", uid)
+      .limit(PRIVATE_ISLAND_MAX_JOINED + 1);
+    const creationLockRef = db.collection("privateIslandCreationLocks").doc(uid);
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const code = generatedPrivateIslandCode();
+      const islandRef = db.collection("privateIslands").doc(code);
+      const outcome = await db.runTransaction<PrivateIslandCreateOutcome>(async (transaction) => {
+        const creationLock = await transaction.get(creationLockRef);
+        const [joined, island] = await Promise.all([
+          transaction.get(joinedQuery),
+          transaction.get(islandRef),
+        ]);
+        const hosted = joined.docs.find((document) => document.get("hostUid") === uid);
+        if (hosted) return { status: "already-hosts", code: hosted.id };
+        if (joined.size >= PRIVATE_ISLAND_MAX_JOINED) return { status: "membership-limit" };
+        if (!isDeveloper(request.auth) && !(await hasActiveVoyagePass(transaction, uid))) {
+          return { status: "pass-required" };
+        }
+        if (island.exists) return { status: "collision" };
+
+        const now = Timestamp.now();
+        transaction.set(creationLockRef, {
+          revision: (typeof creationLock.get("revision") === "number"
+            ? creationLock.get("revision") as number
+            : 0) + 1,
+          updatedAt: now,
+        });
+        transaction.create(islandRef, {
+          schemaVersion: 2,
+          name,
+          hostUid: uid,
+          memberIds: [uid],
+          createdAt: now,
+        });
+        transaction.create(islandRef.collection("members").doc(uid),
+          privateIslandMemberData(member, now));
+        transaction.create(islandRef.collection("runtime").doc("eos"), {
+          schemaVersion: 1,
+          sessionLocator: randomBytes(32).toString("base64url"),
+          socketSecret: randomBytes(32).toString("base64url"),
+          createdAt: now,
+        });
+        return { status: "created", code };
+      });
+
+      switch (outcome.status) {
+        case "created":
+        case "already-hosts":
+          return { code: outcome.code, alreadyExisted: outcome.status === "already-hosts" };
+        case "membership-limit":
+          throw new HttpsError("failed-precondition", "The private-island membership limit was reached.");
+        case "pass-required":
+          throw new HttpsError("permission-denied", "An active Voyage Pass is required.");
+        case "collision":
+          break;
+      }
+    }
+    throw new HttpsError("unavailable", "An invite code could not be allocated. Please try again.");
+  },
+);
 
 export const joinPrivateIsland = onCall(
   { region: REGION, enforceAppCheck: true },

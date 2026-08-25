@@ -38,25 +38,6 @@ service cloud.firestore {
         && request.auth.token.email_verified == true;
     }
 
-    function entitlementIsActive(userId, entitlementId) {
-      let entitlement = /databases/$(database)/documents/users/$(userId)/entitlements/$(entitlementId);
-      return exists(entitlement)
-        && get(entitlement).data.active == true
-        && get(entitlement).data.currentPeriodEnd is timestamp
-        && get(entitlement).data.currentPeriodEnd > request.time;
-    }
-
-    function hasVoyagePass() {
-      return isDeveloper()
-        || (
-          signedIn()
-          && (
-            entitlementIsActive(request.auth.uid, 'voyagePass')
-            || entitlementIsActive(request.auth.uid, 'voyagePassAppStore')
-          )
-        );
-    }
-
     // ---- 造形トークン ----
     // カードの配色と記号。ここに無い値は書き込めない。
 
@@ -127,16 +108,8 @@ service cloud.firestore {
         && data.resolve is string
         && data.resolve.size() <= 80
         && optionalSinceDay(data)
-        && optionalBoatParts(data);
-    }
-
-    // 月ごとの共有記録。日と作業セッションの束。
-    function validMonthPayload(data) {
-      return data.keys().hasOnly(['days', 'sessions', 'updatedAt'])
-        && data.days is list
-        && data.days.size() <= 31
-        && data.sessions is list
-        && data.sessions.size() <= 1000;
+        && optionalBoatParts(data)
+        && (!('joinedAt' in data) || data.joinedAt is timestamp);
     }
 
     // 島の配置バックアップ(自分の島・第2の島・ホスト島スナップショット共通)。
@@ -509,18 +482,10 @@ service cloud.firestore {
       // 島名と在島者のUIDを収集できてしまう。
       allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
 
-      allow create: if signedIn()
-        && hasVoyagePass()
-        && request.resource.data.keys().hasOnly([
-          'schemaVersion', 'name', 'hostUid', 'memberIds', 'createdAt'
-        ])
-        && request.resource.data.schemaVersion == 2
-        && request.resource.data.name is string
-        && request.resource.data.name.size() >= 1
-        && request.resource.data.name.size() <= 80
-        && request.resource.data.hostUid == request.auth.uid
-        && request.resource.data.memberIds == [request.auth.uid]
-        && request.resource.data.createdAt == request.time;
+      // 作成数・加入数の上限、航海証、コード衝突、EOS秘密値を同じ
+      // トランザクションで確定する `createPrivateIsland` だけが作成する。
+      // 端末createでは「1人1島」を競合込みで保証できない。
+      allow create: if false;
 
       // 端末から変更できるのは「自分が抜ける」ことだけ。
       // 加入は管理SDK(joinPrivateIsland)専用にし、端末が自分を island に
@@ -718,15 +683,19 @@ service cloud.firestore {
         allow list: if signedIn()
           && request.query.limit != null
           && request.query.limit <= 200;
-        allow create, update: if canWriteAs(memberId)
-          && validMemberCardShape(request.resource.data);
+        allow create: if canWriteAs(memberId)
+          && validMemberCardShape(request.resource.data)
+          && request.resource.data.joinedAt == request.time;
+        allow update: if canWriteAs(memberId)
+          && validMemberCardShape(request.resource.data)
+          && request.resource.data.joinedAt == resource.data.joinedAt;
         allow delete: if isSelf(memberId);
 
-        // 月ごとの共有記録。積み上がって残り、消せるのは本人だけ。
+        // 月ID・全セッション・総byte数・参加状態・時間上限を検証する
+        // `publishPublicHarborMonth` だけが作成・更新する。
         match /months/{monthId} {
           allow read: if signedIn();
-          allow create, update: if canWriteAs(memberId)
-            && validMonthPayload(request.resource.data);
+          allow create, update: if false;
           allow delete: if isSelf(memberId);
         }
       }
