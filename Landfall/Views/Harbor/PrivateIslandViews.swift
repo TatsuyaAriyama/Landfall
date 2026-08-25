@@ -17,6 +17,14 @@ struct PrivateIslandPreviewView: View {
     )
 
     var body: some View {
+        if ProcessInfo.processInfo.environment["LANDFALL_PRIVATE_CHAT_PREVIEW"] == "1" {
+            PrivateIslandChatPreviewScene()
+        } else {
+            lobbyPreview
+        }
+    }
+
+    private var lobbyPreview: some View {
         ZStack {
             LinearGradient(
                 colors: [Color(hex: 0x8BCFDB), Color(hex: 0x2CCFC5)],
@@ -45,6 +53,77 @@ struct PrivateIslandPreviewView: View {
         .fullScreenCover(isPresented: $showingVoyagePass) {
             VoyagePassView()
         }
+    }
+}
+
+/// Debug-only conversation fixture for checking the dock without creating a
+/// live multiplayer room or writing preview messages to Firestore.
+private struct PrivateIslandChatPreviewScene: View {
+    @State private var messages = Self.seedMessages
+    @State private var receivedCount = 0
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            LinearGradient(
+                colors: [Color(hex: 0x8BCFDB), Color(hex: 0x2CCFC5)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            PrivateIslandChatDock(
+                islandName: "星影の島",
+                messages: messages,
+                currentUserID: "preview-self",
+                initialExpanded: true,
+                onSend: appendOwnMessage
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+
+            Button("Receive") { appendIncomingMessage() }
+                .buttonStyle(.borderedProminent)
+                .padding(.top, 70)
+                .padding(.trailing, 18)
+        }
+        .preferredColorScheme(.light)
+    }
+
+    private func appendOwnMessage(_ text: String) async throws {
+        messages.append(
+            PrivateIslandChatMessage(
+                id: UUID().uuidString,
+                senderID: "preview-self",
+                senderName: "Ari",
+                text: text,
+                createdAt: .now
+            )
+        )
+    }
+
+    private func appendIncomingMessage() {
+        receivedCount += 1
+        messages.append(
+            PrivateIslandChatMessage(
+                id: UUID().uuidString,
+                senderID: "preview-akari",
+                senderName: "あかり",
+                text: "新しいメッセージ \(receivedCount)",
+                createdAt: .now
+            )
+        )
+    }
+
+    private static let seedMessages: [PrivateIslandChatMessage] = (1...8).map { index in
+        let mine = index.isMultiple(of: 3)
+        return PrivateIslandChatMessage(
+            id: "preview-\(index)",
+            senderID: mine ? "preview-self" : "preview-akari",
+            senderName: mine ? "Ari" : "あかり",
+            text: mine
+                ? "こちらは順調です。"
+                : "島の景色を見ながら話せるのがいいですね。",
+            createdAt: .now.addingTimeInterval(Double(index - 8) * 60)
+        )
     }
 }
 #endif
@@ -858,6 +937,10 @@ private struct PrivateIslandSubmitLabel: View {
 /// over the live Home Island scene. It never owns a network listener; the visit
 /// coordinator supplies messages and the send/report/block actions.
 struct PrivateIslandChatDock: View {
+    private static let messageLimit = 500
+    private static let characterCountThreshold = 50
+    private static let scrollCoordinateSpace = "private-island-chat-scroll"
+
     let islandName: String
     let messages: [PrivateIslandChatMessage]
     let currentUserID: String
@@ -882,6 +965,8 @@ struct PrivateIslandChatDock: View {
     @State private var draft = ""
     @State private var isSending = false
     @State private var sendError: String?
+    @State private var followsLatestMessage = true
+    @State private var showsLatestButton = false
     @FocusState private var inputFocused: Bool
 
     init(
@@ -915,6 +1000,18 @@ struct PrivateIslandChatDock: View {
 
     private var cleanDraft: String {
         draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSend: Bool {
+        !cleanDraft.isEmpty && !isSending && isConnected
+    }
+
+    private var remainingCharacters: Int {
+        Self.messageLimit - draft.count
+    }
+
+    private var showsCharacterCount: Bool {
+        remainingCharacters <= Self.characterCountThreshold
     }
 
     var body: some View {
@@ -953,6 +1050,12 @@ struct PrivateIslandChatDock: View {
             inputFocused = false
             onInputFocusChanged(false)
             onExpandedChanged(false)
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { inputFocused = false }
+            }
         }
     }
 
@@ -1011,13 +1114,8 @@ struct PrivateIslandChatDock: View {
 
                 messageList
 
-                if let sendError {
-                    Text(verbatim: sendError)
-                        .font(LFFont.label(10))
-                        .foregroundStyle(LFColor.deepRust)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 14)
-                        .padding(.top, 5)
+                if sendError != nil || showsCharacterCount {
+                    composerStatus
                 }
 
                 inputBar
@@ -1124,33 +1222,91 @@ struct PrivateIslandChatDock: View {
     }
 
     private var messageList: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    if messages.isEmpty {
-                        Text("Say hello to everyone on the island.")
-                            .font(LFFont.label(12))
-                        .foregroundStyle(PrivateIslandGlass.ink.opacity(0.43))
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 26)
-                    } else {
-                        ForEach(messages) { message in
-                            messageRow(message)
-                                .id(message.id)
+        GeometryReader { viewport in
+            ScrollViewReader { proxy in
+                ZStack(alignment: .bottomTrailing) {
+                    ScrollView {
+                        LazyVStack(spacing: 10) {
+                            if messages.isEmpty {
+                                Text("Say hello to everyone on the island.")
+                                    .font(LFFont.label(12))
+                                    .foregroundStyle(PrivateIslandGlass.ink.opacity(0.43))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.top, 26)
+                            } else {
+                                ForEach(messages) { message in
+                                    messageRow(message)
+                                        .id(message.id)
+                                }
+                            }
+
+                            latestMessageMarker
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                    }
+                    .scrollIndicators(.hidden)
+                    .scrollDismissesKeyboard(.interactively)
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 8)
+                            .onChanged { _ in followsLatestMessage = false }
+                    )
+                    .onPreferenceChange(ChatLatestMarkerOffsetKey.self) { markerBottom in
+                        updateLatestVisibility(
+                            markerBottom: markerBottom,
+                            viewportHeight: viewport.size.height
+                        )
+                    }
+                    .onAppear { scrollToLatest(proxy, animated: false) }
+                    .onChange(of: messages.last?.id) { _, _ in
+                        receiveLatestMessage(using: proxy)
+                    }
+
+                    if showsLatestButton {
+                        latestMessagesButton(proxy)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-            }
-            .scrollIndicators(.hidden)
-            .scrollDismissesKeyboard(.interactively)
-            .onAppear { scrollToLatest(proxy, animated: false) }
-            .onChange(of: messages.last?.id) { _, _ in
-                scrollToLatest(proxy, animated: true)
+                .coordinateSpace(name: Self.scrollCoordinateSpace)
             }
         }
         .frame(maxHeight: .infinity)
+    }
+
+    private var latestMessageMarker: some View {
+        Color.clear
+            .frame(height: 1)
+            .background {
+                GeometryReader { marker in
+                    Color.clear.preference(
+                        key: ChatLatestMarkerOffsetKey.self,
+                        value: marker.frame(in: .named(Self.scrollCoordinateSpace)).maxY
+                    )
+                }
+            }
+            .accessibilityHidden(true)
+    }
+
+    private func latestMessagesButton(_ proxy: ScrollViewProxy) -> some View {
+        Button {
+            scrollToLatest(proxy, animated: true)
+            Haptics.tap(.light)
+        } label: {
+            Label("New messages", systemImage: "arrow.down")
+                .font(LFFont.copy(11))
+                .foregroundStyle(PrivateIslandGlass.ink)
+                .padding(.horizontal, 11)
+                .frame(height: 32)
+                .privateIslandGlass(cornerRadius: 16, opacity: 0.94)
+                .overlay {
+                    Capsule()
+                        .stroke(PrivateIslandGlass.ink.opacity(0.1), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.1), radius: 8, y: 3)
+        }
+        .buttonStyle(LFPressableButtonStyle())
+        .padding(.trailing, 12)
+        .padding(.bottom, 7)
+        .accessibilityHint(Text("Jumps to the latest message"))
     }
 
     private func messageRow(_ message: PrivateIslandChatMessage) -> some View {
@@ -1233,10 +1389,7 @@ struct PrivateIslandChatDock: View {
                 .focused($inputFocused)
                 .submitLabel(.send)
                 .onSubmit(send)
-                .onChange(of: draft) { _, value in
-                    if value.count > 500 { draft = String(value.prefix(500)) }
-                    if sendError != nil { sendError = nil }
-                }
+                .onChange(of: draft, updateDraft)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(PrivateIslandGlass.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: 15))
@@ -1251,9 +1404,9 @@ struct PrivateIslandChatDock: View {
                 ZStack {
                     Circle()
                         .fill(
-                            cleanDraft.isEmpty || isSending || !isConnected
-                                ? PrivateIslandGlass.ink.opacity(0.25)
-                                : PrivateIslandGlass.ink
+                            canSend
+                                ? PrivateIslandGlass.ink
+                                : PrivateIslandGlass.ink.opacity(0.25)
                         )
                     if isSending {
                         ProgressView()
@@ -1268,7 +1421,7 @@ struct PrivateIslandChatDock: View {
                 .frame(width: 42, height: 42)
             }
             .buttonStyle(LFPressableButtonStyle())
-            .disabled(cleanDraft.isEmpty || isSending || !isConnected)
+            .disabled(!canSend)
             .accessibilityLabel(Text(isSending ? "Sending…" : "Send"))
         }
         .padding(.horizontal, 12)
@@ -1276,25 +1429,94 @@ struct PrivateIslandChatDock: View {
         .padding(.bottom, 10)
     }
 
+    private var composerStatus: some View {
+        HStack(spacing: 8) {
+            if let sendError {
+                Label {
+                    Text(verbatim: sendError)
+                        .lineLimit(2)
+                } icon: {
+                    Image(systemName: "exclamationmark.circle.fill")
+                }
+                .foregroundStyle(LFColor.deepRust)
+
+                Spacer(minLength: 4)
+
+                Button {
+                    self.sendError = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(PrivateIslandGlass.ink.opacity(0.5))
+                .accessibilityLabel(Text("Dismiss"))
+            } else {
+                Spacer(minLength: 0)
+            }
+
+            if showsCharacterCount {
+                Text(verbatim: "\(remainingCharacters)")
+                    .monospacedDigit()
+                    .foregroundStyle(
+                        remainingCharacters == 0
+                            ? LFColor.deepRust
+                            : PrivateIslandGlass.ink.opacity(0.5)
+                    )
+                    .accessibilityLabel(
+                        Text("\(remainingCharacters) characters remaining")
+                    )
+            }
+        }
+        .font(LFFont.label(10))
+        .padding(.leading, 14)
+        .padding(.trailing, 12)
+        .padding(.top, 5)
+    }
+
     private func send() {
-        let message = String(cleanDraft.prefix(500))
-        guard !message.isEmpty, !isSending, isConnected else { return }
+        guard canSend else { return }
+        let message = cleanDraft
         isSending = true
         sendError = nil
         Task { @MainActor in
+            defer { isSending = false }
             do {
                 try await onSend(message)
                 draft = ""
-                isSending = false
                 inputFocused = true
                 Haptics.tap(.light)
             } catch {
                 sendError = error.localizedDescription
-                isSending = false
                 Haptics.error()
                 UIAccessibility.post(notification: .announcement, argument: error.localizedDescription)
             }
         }
+    }
+
+    private func updateDraft(_ oldValue: String, _ newValue: String) {
+        if newValue.count > Self.messageLimit {
+            draft = String(newValue.prefix(Self.messageLimit))
+        }
+        if sendError != nil, oldValue != newValue {
+            sendError = nil
+        }
+    }
+
+    private func receiveLatestMessage(using proxy: ScrollViewProxy) {
+        guard messages.last != nil else { return }
+        if followsLatestMessage || messages.last?.senderID == currentUserID {
+            scrollToLatest(proxy, animated: true)
+        } else {
+            showsLatestButton = true
+        }
+    }
+
+    private func updateLatestVisibility(markerBottom: CGFloat, viewportHeight: CGFloat) {
+        let isVisible = markerBottom <= viewportHeight + 24
+        followsLatestMessage = isVisible
+        if isVisible { showsLatestButton = false }
     }
 
     private func scrollToLatest(_ proxy: ScrollViewProxy, animated: Bool) {
@@ -1305,6 +1527,8 @@ struct PrivateIslandChatDock: View {
         } else {
             action()
         }
+        followsLatestMessage = true
+        showsLatestButton = false
     }
 
     private func senderInitial(_ name: String) -> String {
@@ -1333,6 +1557,14 @@ struct PrivateIslandChatDock: View {
 
     private var dockAlignment: Alignment {
         horizontalSizeClass == .regular ? .bottomTrailing : .bottom
+    }
+}
+
+private struct ChatLatestMarkerOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = .greatestFiniteMagnitude
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 

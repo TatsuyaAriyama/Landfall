@@ -293,6 +293,9 @@
 "Say hello to everyone on the island." = "島のみんなに声をかけてみましょう。";
 "Message" = "メッセージ";
 "Chat message" = "チャットメッセージ";
+"New messages" = "新着メッセージ";
+"Jumps to the latest message" = "最新のメッセージへ移動します";
+"%lld characters remaining" = "残り%lld文字";
 "Add an item" = "項目を追加する";
 "Tap + at the end of the work item list." = "作業項目一覧の末尾にある＋をタップします。";
 "Edit an item" = "項目を編集する";
