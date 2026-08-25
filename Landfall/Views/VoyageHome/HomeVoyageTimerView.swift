@@ -20,24 +20,6 @@ extension StudyTimer {
         WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
     }
 
-    /// 休憩操作を持たない現行HUDへ移行した後も、旧HUDやWidgetから
-    /// 残った休憩状態だけで時計が止まり続けないようにする。
-    @discardableResult
-    static func resumeIfNeeded(at date: Date = Date()) -> Bool {
-        let pausedAt = defaults.double(forKey: breakStartedAtKey)
-        guard defaults.double(forKey: startKey) > 0, pausedAt > 0 else {
-            return false
-        }
-        let accumulated = defaults.double(forKey: breakSecondsKey)
-        defaults.set(
-            accumulated + max(0, date.timeIntervalSince1970 - pausedAt),
-            forKey: breakSecondsKey
-        )
-        defaults.set(0, forKey: breakStartedAtKey)
-        defaults.synchronize()
-        WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
-        return true
-    }
 }
 
 enum HomeTimerMode: String {
@@ -500,7 +482,6 @@ struct HomeVoyageTimerView: View {
             }
         }
         .onAppear {
-            resumePersistedBreakIfNeeded()
             let migratedSound = HomeVoyageSound.resolve(soundMode)
             if migratedSound.rawValue != soundMode {
                 soundMode = migratedSound.rawValue
@@ -528,7 +509,6 @@ struct HomeVoyageTimerView: View {
         }
         .onReceive(clockPulse) { date in
             clockNow = date
-            resumePersistedBreakIfNeeded(at: date)
         }
         .onChange(of: externalWorldTapToken) { _, _ in
             guard !rendersScene else { return }
@@ -545,16 +525,6 @@ struct HomeVoyageTimerView: View {
         Haptics.tap(.light)
     }
 
-    /// 旧HUDで休憩にしたまま更新すると、再開ボタンだけが消えて時計が
-    /// 永久に止まってしまう。現行HUDには休憩操作がないため、画面へ
-    /// 戻った時点で休憩時間を計測対象から除外したまま自動再開する。
-    private func resumePersistedBreakIfNeeded(at date: Date = Date()) {
-        guard breakStartedAt > 0 else { return }
-        guard StudyTimer.resumeIfNeeded(at: date) else { return }
-        breakSeconds = StudyTimer.defaults.double(forKey: StudyTimer.breakSecondsKey)
-        breakStartedAt = 0
-    }
-
     private var voyageControls: some View {
         VStack(spacing: 0) {
             timerHeader
@@ -567,7 +537,7 @@ struct HomeVoyageTimerView: View {
         .safeAreaPadding(.bottom, compactHUD ? 20 : 26)
     }
 
-    /// 景色を主役にしたまま、左上には小さな数字と二つの道具だけを置く。
+    /// 景色を主役にしたまま、左上には小さな数字と道具だけを置く。
     private var timerHeader: some View {
         VStack(alignment: .leading, spacing: compactHUD ? 8 : 10) {
             TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -582,11 +552,20 @@ struct HomeVoyageTimerView: View {
                     .monospacedDigit()
                     .foregroundStyle(LFColor.coral)
                     .contentTransition(.numericText())
-                    .shadow(color: VoyageHUD.plate.opacity(0.72), radius: 7, y: 2)
             }
             .accessibilityLabel(Text("ELAPSED"))
 
             HStack(spacing: 7) {
+                compactToolButton(
+                    systemImage: snapshot.isResting ? "play.fill" : "pause.fill",
+                    active: snapshot.isResting,
+                    accessibilityLabel: snapshot.isResting
+                        ? LF.text("Resume voyage")
+                        : LF.text("Take a break")
+                ) {
+                    toggleBreak()
+                }
+
                 compactToolButton(
                     systemImage: "music.note",
                     active: showingSoundPicker,
@@ -1164,24 +1143,22 @@ struct HomeVoyageTimerView: View {
                 HStack(spacing: 8) {
                     if saving {
                         ProgressView()
-                            .tint(VoyageHUD.plate)
+                            .tint(Color.black)
                     }
                     Text("Record")
                         .font(LFFont.copy(compactHUD ? 14 : 16))
                 }
-                .foregroundStyle(
-                    requiredNoteSatisfied ? VoyageHUD.plate : VoyageHUD.ink.opacity(0.52)
-                )
+                .foregroundStyle(Color.black.opacity(requiredNoteSatisfied ? 0.88 : 0.42))
                 .frame(width: compactHUD ? 126 : 144, height: compactHUD ? 52 : 56)
                 .background(
-                    requiredNoteSatisfied ? VoyageHUD.lamp : VoyageHUD.plate.opacity(0.72),
+                    Color.white.opacity(requiredNoteSatisfied ? 1 : 0.45),
                     in: Capsule()
                 )
                 .overlay(
                     Capsule().strokeBorder(
                         requiredNoteSatisfied
-                            ? Color.white.opacity(0.22)
-                            : VoyageHUD.ink.opacity(0.18),
+                            ? Color.black.opacity(0.10)
+                            : Color.black.opacity(0.08),
                         lineWidth: 1
                     )
                 )
