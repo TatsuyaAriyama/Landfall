@@ -426,8 +426,7 @@ struct HomeVoyageTimerView: View {
         }
         .alert("Return to your island?", isPresented: $confirmingReturnHome) {
             Button("Return to island") {
-                onReturnHome()
-                Haptics.tap(.medium)
+                discardVoyageAndReturnHome()
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -1359,6 +1358,16 @@ struct HomeVoyageTimerView: View {
         breakSeconds = 0
         breakStartedAt = 0
         onTimerStopped()
+    }
+
+    /// 航海中の帰還は一時停止ではなく取り消しとして扱う。
+    /// 永続タイマーまで消してから島へ戻さないと、次に船を開いたとき
+    /// 同じ作業項目が「航海へ戻る」として復活してしまう。
+    private func discardVoyageAndReturnHome() {
+        stopTimer()
+        HomeVoyageAudio.shared.stop()
+        onReturnHome()
+        Haptics.tap(.medium)
     }
 
     private func playVoyageAudio(_ storedValue: String) {
