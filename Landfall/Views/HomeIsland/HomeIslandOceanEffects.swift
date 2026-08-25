@@ -133,6 +133,7 @@ enum HomeIslandOceanEffects {
     float3 uSea;
     float3 uDeep;
     float3 uLight;
+    float3 uSky;
     float3 uFog;
     float3 uSurfaceSize;
     float3 uCoordinateOffset;
@@ -168,6 +169,22 @@ enum HomeIslandOceanEffects {
             + cos(phaseD) * 0.007 * 0.940
     ) * calm;
 
+    // Small crossed ripples live only in the fragment normal. They catch the
+    // sky without adding geometry, so the ocean gains detail at close range
+    // while the silhouette and the low-motion wave field stay unchanged.
+    float microA = q.x * 1.86 + q.y * 1.21 - uTime * 1.08;
+    float microB = q.y * 2.34 - q.x * 1.47 + uTime * 0.91;
+    float2 microSlope = float2(
+        cos(microA) * 0.038 - cos(microB) * 0.026,
+        cos(microA) * 0.025 + cos(microB) * 0.042
+    ) * calm;
+    float3 waterNormal = normalize(
+        _surface.normal
+        - _surface.tangent * microSlope.x
+        - _surface.bitangent * microSlope.y
+    );
+    _surface.normal = waterNormal;
+
     float shallowMix = smoothstep(9.5, 24.0, distanceFromIsland);
     float deepMix = smoothstep(31.0, 82.0, distanceFromIsland);
     float3 col = mix(uShallow, uSea, shallowMix);
@@ -179,6 +196,15 @@ enum HomeIslandOceanEffects {
     float crest = smoothstep(0.035, 0.155, height);
     col = mix(col, uDeep, trough * 0.055);
     col = mix(col, uLight, crest * 0.16);
+
+    // Water is transparent-looking head-on and increasingly mirrors the sky
+    // toward grazing angles. Keeping this reflection procedural avoids a cube
+    // map seam and makes it consistent across Island, Voyage and Timer scenes.
+    float viewFacing = clamp(dot(waterNormal, normalize(_surface.view)), 0.0, 1.0);
+    float fresnel = 0.02 + 0.98 * pow(1.0 - viewFacing, 5.0);
+    float skyReflection = smoothstep(0.025, 0.72, fresnel);
+    col = mix(col, uSky, skyReflection * 0.38);
+    col = mix(col, uLight, crest * skyReflection * 0.13);
 
     // Two warped wave fields meet in short curved ridges. This avoids the
     // straight, texture-like bands that are especially obvious in perspective.
@@ -263,6 +289,7 @@ enum HomeIslandOceanEffects {
         material.setValue(colorVector(0x18B9C9), forKey: "uSea")
         material.setValue(colorVector(0x087895), forKey: "uDeep")
         material.setValue(colorVector(0xEFFFF7), forKey: "uLight")
+        material.setValue(colorVector(0x9FE8E1), forKey: "uSky")
         material.setValue(colorVector(0x93D9D3), forKey: "uFog")
         material.setValue(
             SCNVector3(Float(layout.width), Float(layout.depth), 0),
