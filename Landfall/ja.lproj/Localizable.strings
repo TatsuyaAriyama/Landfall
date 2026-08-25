@@ -908,7 +908,7 @@
 "Saved for next time" = "次回用に残しました";
 "Unsaved changes" = "未保存の変更があります";
 "Clear this temporary memo?" = "この一時メモを消しますか？";
-"Not added to your voyage log or cloud sync. Keep it only when you want to continue next time." = "航海記録やクラウドには残りません。続きから書きたい時だけ、この端末に残せます。";
+"This is only a temporary memo.\nUse “Keep for next time” to carry it over." = "あくまでも一時的なメモ欄です。\n「次回まで残す」で持ち越すことができます。";
 "How did the work feel?" = "作業の感想を一言";
 "End voyage" = "航海を終える";
 "Back to timer" = "タイマーへ戻る";

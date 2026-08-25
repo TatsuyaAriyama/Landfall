@@ -772,8 +772,9 @@ struct HomeVoyageTimerView: View {
                         Text("Unsaved changes")
                             .foregroundStyle(LFColor.coral)
                     }
-                    Text("Not added to your voyage log or cloud sync. Keep it only when you want to continue next time.")
+                    Text("This is only a temporary memo.\nUse “Keep for next time” to carry it over.")
                         .foregroundStyle(Color.black.opacity(0.72))
+                        .lineLimit(2)
                 }
                 .font(LFFont.label(10))
             }
