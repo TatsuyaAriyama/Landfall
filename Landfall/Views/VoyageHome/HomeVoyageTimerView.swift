@@ -228,6 +228,7 @@ struct HomeVoyageTimerView: View {
     @State private var uiHidden = false
     @State private var showingVoyageMenu = false
     @State private var showingSoundPicker = false
+    @State private var showingTemporaryMemo = false
     @State private var showingTodoList = false
     @State private var showingManualEntry = false
     @StateObject private var todoStore = HomeIslandTodoStore.shared
@@ -387,41 +388,10 @@ struct HomeVoyageTimerView: View {
         // shared world is displaying a bright morning or daytime sea.
         .preferredColorScheme(.dark)
         .animation(.spring(response: 0.62, dampingFraction: 0.82), value: completion != nil)
-        .confirmationDialog(
-            "Discard this voyage?",
-            isPresented: $confirmingDiscard,
-            titleVisibility: .visible
-        ) {
-            Button("Discard voyage", role: .destructive) {
-                StudyTimer.clearAll()
-                HomeVoyageAudio.shared.stop()
-                onReturnHome()
-                Haptics.tap(.rigid)
-            }
-            Button("Keep sailing", role: .cancel) {}
-        } message: {
-            Text("The measured time will not be recorded.")
-        }
         .alert("Could not save the voyage", isPresented: $saveError) {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Your timer is still running. Please try again.")
-        }
-        .sheet(isPresented: $showingManualEntry) {
-            if canEnterWorkTimeManually {
-                HomeManualTimeSheet(
-                    item: item,
-                    initialMinutes: snapshot.creditedMinutes(minimum: 0),
-                    onSaved: {},
-                    onRecorded: { minutes, savedNote in
-                        // Finish exactly as a measured voyage does, card and all.
-                        StudyTimer.clearAll()
-                        HomeVoyageAudio.shared.stop()
-                        completion = HomeVoyageCompletion(minutes: minutes, note: savedNote)
-                        Haptics.success()
-                    }
-                )
-            }
         }
         .onDisappear {
             noteFocused = false
@@ -478,84 +448,80 @@ struct HomeVoyageTimerView: View {
             timerHeader
                 .frame(maxWidth: .infinity, alignment: .leading)
             Spacer(minLength: 24)
-            if showingVoyageMenu {
-                voyageMenu
-                    .frame(maxWidth: compactHUD ? 332 : 420, alignment: .trailing)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.bottom, 14)
-                    .transition(
-                        .opacity.combined(with: .move(edge: .bottom))
-                    )
-            }
             recordingPanel
         }
-        .padding(.horizontal, compactHUD ? 26 : 34)
-        .safeAreaPadding(.top, compactHUD ? 22 : 28)
+        .padding(.horizontal, compactHUD ? 24 : 32)
+        .safeAreaPadding(.top, compactHUD ? 14 : 20)
         .safeAreaPadding(.bottom, compactHUD ? 20 : 26)
     }
 
-    /// 普段は景色を塞がず、参考画像と同じく課題名と時計だけを
-    /// 海の上に直接置く。文字影は白い札の代わりに明るさを保つ。
+    /// 景色を主役にしたまま、左上には小さな数字と二つの道具だけを置く。
     private var timerHeader: some View {
-        VStack(alignment: .leading, spacing: compactHUD ? 10 : 12) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(statusLampColor)
-                    .frame(width: 6, height: 6)
-                    .shadow(color: statusLampColor.opacity(0.75), radius: 5)
-                Text(item.name)
-                    .font(LFFont.copy(compactHUD ? 13 : 15))
-                    .foregroundStyle(VoyageHUD.ink.opacity(0.78))
-                    .lineLimit(1)
-            }
-
+        VStack(alignment: .leading, spacing: compactHUD ? 8 : 10) {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 Text(Self.clock(snapshot.elapsedSeconds(at: context.date)))
                     .font(
                         .system(
-                            size: compactHUD ? 50 : 58,
-                            weight: .light,
+                            size: compactHUD ? 22 : 25,
+                            weight: .medium,
                             design: .rounded
                         )
                     )
                     .monospacedDigit()
-                    .foregroundStyle(VoyageHUD.lamp)
+                    .foregroundStyle(LFColor.coral)
                     .contentTransition(.numericText())
-                    .shadow(color: VoyageHUD.plate.opacity(0.68), radius: 10, y: 3)
+                    .shadow(color: VoyageHUD.plate.opacity(0.72), radius: 7, y: 2)
             }
             .accessibilityLabel(Text("ELAPSED"))
 
-            HStack(spacing: -5) {
-                quickControl(
-                    systemImage: snapshot.isResting ? "play.fill" : "pause.fill",
-                    active: snapshot.isResting,
-                    accessibilityLabel: snapshot.isResting ? "Resume voyage" : "Take a break",
-                    action: toggleBreak
-                )
-                quickControl(
-                    systemImage: selectedSound == .off ? "speaker.slash.fill" : "music.note",
-                    active: selectedSound != .off,
-                    accessibilityLabel: soundAccessibilityLabel,
-                    action: {
-                        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-                            showingVoyageMenu = true
-                            showingSoundPicker.toggle()
-                            if showingSoundPicker { showingTodoList = false }
-                        }
-                        Haptics.tap(.light)
+            HStack(spacing: 7) {
+                compactToolButton(
+                    systemImage: "music.note",
+                    active: showingSoundPicker,
+                    accessibilityLabel: soundAccessibilityLabel
+                ) {
+                    noteFocused = false
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                        showingSoundPicker.toggle()
+                        showingTemporaryMemo = false
                     }
-                )
+                    Haptics.tap(.light)
+                }
+
+                compactToolButton(
+                    systemImage: "pencil.line",
+                    active: showingTemporaryMemo,
+                    accessibilityLabel: LF.text("Temporary memo")
+                ) {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                        showingTemporaryMemo.toggle()
+                        showingSoundPicker = false
+                    }
+                    if showingTemporaryMemo {
+                        Task { @MainActor in noteFocused = true }
+                    } else {
+                        noteFocused = false
+                    }
+                    Haptics.tap(.light)
+                }
             }
 
-            if !remoteCompanions.isEmpty {
-                companionStrip
-                    .frame(maxWidth: compactHUD ? 236 : 280)
+            if showingSoundPicker {
+                soundPicker
+                    .frame(width: compactHUD ? 310 : 350)
+                    .padding(.top, 2)
+                    .background(transparentCardBackground(cornerRadius: 18))
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else if showingTemporaryMemo {
+                temporaryMemoCard
+                    .frame(width: compactHUD ? 310 : 370)
+                    .padding(.top, 2)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .shadow(color: Color.black.opacity(0.28), radius: 8, y: 2)
     }
 
-    private func quickControl(
+    private func compactToolButton(
         systemImage: String,
         active: Bool,
         accessibilityLabel: String,
@@ -563,14 +529,85 @@ struct HomeVoyageTimerView: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(VoyageHUD.ink.opacity(active ? 0.88 : 0.62))
-                .frame(width: 29, height: 29)
-                .background(VoyageHUD.plate.opacity(active ? 0.56 : 0.38), in: Circle())
-                .overlay(Circle().strokeBorder(VoyageHUD.ink.opacity(0.14), lineWidth: 1))
+                .font(.system(size: compactHUD ? 16 : 18, weight: .semibold))
+                .foregroundStyle(active ? LFColor.coral : VoyageHUD.plate.opacity(0.86))
+                .frame(width: compactHUD ? 32 : 35, height: compactHUD ? 32 : 35)
+                .contentShape(Rectangle())
+                .shadow(color: Color.white.opacity(0.78), radius: 1.2)
+                .shadow(color: Color.black.opacity(0.24), radius: 4, y: 2)
         }
         .buttonStyle(LFPressableButtonStyle())
         .accessibilityLabel(Text(verbatim: accessibilityLabel))
+    }
+
+    /// 入力中だけ画面に存在する航海中の走り書き。永続化先を持たず、
+    /// 記録ボタンを押しても StudySession へ渡さない。
+    private var temporaryMemoCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "pencil.line")
+                    .font(.system(size: 13, weight: .medium))
+                Text("Temporary memo")
+                    .font(LFFont.label(12))
+                Spacer()
+                Button {
+                    noteFocused = false
+                    withAnimation(.easeOut(duration: 0.20)) {
+                        showingTemporaryMemo = false
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 28, height: 28)
+                        .background(VoyageHUD.plate.opacity(0.08), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Close"))
+            }
+            .foregroundStyle(VoyageHUD.plate.opacity(0.88))
+
+            ZStack(alignment: .topLeading) {
+                if note.isEmpty {
+                    Text("Write anything here")
+                        .font(LFFont.copy(14))
+                        .foregroundStyle(VoyageHUD.plate.opacity(0.42))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 8)
+                        .allowsHitTesting(false)
+                }
+
+                TextEditor(text: $note)
+                    .font(LFFont.copy(14))
+                    .foregroundStyle(VoyageHUD.plate)
+                    .tint(LFColor.coral)
+                    .scrollContentBackground(.hidden)
+                    .focused($noteFocused)
+                    .frame(minHeight: compactHUD ? 150 : 190)
+                    .accessibilityLabel(Text("Temporary memo"))
+            }
+            .padding(7)
+            .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(VoyageHUD.plate.opacity(0.10), lineWidth: 1)
+            )
+
+            Text("This is a temporary memo field.")
+                .font(LFFont.label(11))
+                .foregroundStyle(VoyageHUD.plate.opacity(0.62))
+        }
+        .padding(14)
+        .background(transparentCardBackground(cornerRadius: 18))
+        .shadow(color: Color.black.opacity(0.22), radius: 16, y: 8)
+    }
+
+    private func transparentCardBackground(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return ZStack {
+            shape.fill(.ultraThinMaterial)
+            shape.fill(Color.white.opacity(0.30))
+        }
+        .overlay(shape.strokeBorder(VoyageHUD.plate.opacity(0.14), lineWidth: 1))
     }
 
     /// 右下の「…」から開く航海道具。通常時は隠し、必要な時だけ
@@ -899,9 +936,10 @@ struct HomeVoyageTimerView: View {
                     finishVoyage()
                 } else {
                     withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-                        showingVoyageMenu = true
+                        showingTemporaryMemo = true
+                        showingSoundPicker = false
                     }
-                    noteFocused = true
+                    Task { @MainActor in noteFocused = true }
                 }
             } label: {
                 HStack(spacing: 8) {
@@ -932,35 +970,7 @@ struct HomeVoyageTimerView: View {
             .buttonStyle(LFPressableButtonStyle())
             .disabled(saving)
 
-            Spacer(minLength: 24)
-
-            Button {
-                noteFocused = false
-                withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-                    showingVoyageMenu.toggle()
-                    if !showingVoyageMenu {
-                        showingSoundPicker = false
-                        showingTodoList = false
-                    }
-                }
-                Haptics.tap(.light)
-            } label: {
-                Image(systemName: showingVoyageMenu ? "xmark" : "ellipsis")
-                    .font(.system(size: compactHUD ? 16 : 18, weight: .medium))
-                    .foregroundStyle(
-                        showingVoyageMenu ? VoyageHUD.plate : VoyageHUD.ink.opacity(0.72)
-                    )
-                    .frame(width: compactHUD ? 52 : 56, height: compactHUD ? 52 : 56)
-                    .background(
-                        showingVoyageMenu
-                            ? VoyageHUD.lamp
-                            : VoyageHUD.plate.opacity(0.58),
-                        in: Circle()
-                    )
-                    .overlay(Circle().strokeBorder(VoyageHUD.ink.opacity(0.14), lineWidth: 1))
-            }
-            .buttonStyle(LFPressableButtonStyle())
-            .accessibilityLabel(Text("More voyage controls"))
+            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity)
         .shadow(color: Color.black.opacity(0.24), radius: 10, y: 4)
@@ -1162,7 +1172,7 @@ struct HomeVoyageTimerView: View {
             result = try HomeVoyageRecorder.record(
                 item: item,
                 snapshot: snapshot,
-                note: note,
+                note: nil,
                 context: modelContext
             )
         } catch {

@@ -901,6 +901,9 @@
 "ELAPSED" = "経過時間";
 "VOYAGE PLAYLIST" = "航海プレイリスト";
 "SELECT TRACK" = "曲を選択";
+"Temporary memo" = "一時メモ";
+"Write anything here" = "ここに自由に書けます";
+"This is a temporary memo field." = "これは一時的なメモ欄です。";
 "Sail in silence" = "静かな航海";
 "Ambient sound" = "環境音";
 "Original soundtrack" = "オリジナル楽曲";

@@ -123,7 +123,7 @@ struct FirstVoyageExperienceView: View {
 }
 
 /// 最初の航海を通常の作業記録として保存する。
-/// StudyItem を勝手に作らず、作業メモだけを航海誌に残す。
+/// 入力した合言葉は検証にだけ使い、一時メモとして航海誌には残さない。
 @MainActor
 enum TutorialFirstVoyageRecorder {
     /// 同じFirebaseアカウントの別端末でも同一記録に収束する、
@@ -158,7 +158,7 @@ enum TutorialFirstVoyageRecorder {
         let session = StudySession(
             date: date,
             minutes: minutes,
-            note: savedNote,
+            note: nil,
             item: nil
         )
         session.uuid = sessionID
