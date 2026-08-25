@@ -1240,6 +1240,173 @@ enum VoyageSceneKit {
         return seating
     }
 
+    // MARK: - 船の質感
+
+    private struct BoatSurfaceProfile {
+        let roughness: CGFloat?
+        let metalness: CGFloat?
+        let clearCoat: (amount: CGFloat, roughness: CGFloat)
+        let ambientOcclusion: CGFloat
+        let detail: (scale: Float, strength: Float, roughness: Float, color: Float)
+        let isWettable: Bool
+
+        init(
+            roughness: CGFloat?,
+            metalness: CGFloat? = 0,
+            clearCoat: (amount: CGFloat, roughness: CGFloat) = (0, 0.8),
+            ambientOcclusion: CGFloat = 0.96,
+            detail: (scale: Float, strength: Float, roughness: Float, color: Float)
+                = (1, 0, 0, 0),
+            isWettable: Bool = false
+        ) {
+            self.roughness = roughness
+            self.metalness = metalness
+            self.clearCoat = clearCoat
+            self.ambientOcclusion = ambientOcclusion
+            self.detail = detail
+            self.isWettable = isWettable
+        }
+    }
+
+    /// USDZ 側の材質名を「何でできているか」へまとめる。
+    /// 船を追加しても、名前に意味が入っていれば同じ光の中に揃う。
+    private enum BoatSurfaceKind: Float {
+        case generic = 0
+        case paint = 1
+        case varnishedWood = 2
+        case weatheredWood = 3
+        case sailcloth = 4
+        case rope = 5
+        case iron = 6
+        case polishedMetal = 7
+        case stone = 8
+        case organic = 9
+        case glass = 10
+        case glow = 11
+        case bone = 12
+
+        static func resolve(_ identity: String) -> Self {
+            if identity.contains("glow") { return .glow }
+            if identity.contains("glass") { return .glass }
+            if identity.contains("mainsail")
+                || identity.contains("boatjib")
+                || identity.contains("sailpatch")
+                || identity.contains("flag") {
+                return .sailcloth
+            }
+            if identity.contains("rope") { return .rope }
+            if identity.contains("brass") || identity.contains("gold") {
+                return .polishedMetal
+            }
+            if identity.contains("iron") || identity.contains("metal") {
+                return .iron
+            }
+            if identity.contains("stone") { return .stone }
+            if identity.contains("leaf") || identity.contains("bloom") {
+                return .organic
+            }
+            if identity.contains("bone") { return .bone }
+            if identity.contains("pirate")
+                && (identity.contains("hull")
+                    || identity.contains("deck")
+                    || identity.contains("strake")
+                    || identity.contains("bulwark")
+                    || identity.contains("tar")) {
+                return .weatheredWood
+            }
+            if identity.contains("wood") || identity.contains("boatdeck") {
+                return .varnishedWood
+            }
+            if identity.contains("boathull")
+                || identity.contains("cockpit")
+                || identity.contains("stripe") {
+                return .paint
+            }
+            return .generic
+        }
+
+        var profile: BoatSurfaceProfile {
+            switch self {
+            case .generic:
+                BoatSurfaceProfile(roughness: nil, metalness: nil)
+            case .paint:
+                BoatSurfaceProfile(
+                    roughness: 0.42,
+                    clearCoat: (0.52, 0.20),
+                    detail: (19, 0.010, 0.035, 0.018),
+                    isWettable: true
+                )
+            case .varnishedWood:
+                BoatSurfaceProfile(
+                    roughness: 0.68,
+                    clearCoat: (0.22, 0.32),
+                    detail: (7.5, 0.032, 0.085, 0.060),
+                    isWettable: true
+                )
+            case .weatheredWood:
+                BoatSurfaceProfile(
+                    roughness: 0.88,
+                    ambientOcclusion: 0.82,
+                    detail: (6.2, 0.052, 0.080, 0.090),
+                    isWettable: true
+                )
+            case .sailcloth:
+                BoatSurfaceProfile(
+                    roughness: 0.94,
+                    ambientOcclusion: 0.90,
+                    detail: (26, 0.020, 0.040, 0.030)
+                )
+            case .rope:
+                BoatSurfaceProfile(
+                    roughness: 0.98,
+                    ambientOcclusion: 0.82,
+                    detail: (22, 0.038, 0.025, 0.065)
+                )
+            case .iron:
+                BoatSurfaceProfile(
+                    roughness: 0.62,
+                    metalness: 0.38,
+                    detail: (17, 0.022, 0.090, 0.030),
+                    isWettable: true
+                )
+            case .polishedMetal:
+                BoatSurfaceProfile(
+                    roughness: 0.36,
+                    metalness: 0.70,
+                    clearCoat: (0.18, 0.18),
+                    detail: (25, 0.010, 0.055, 0.018),
+                    isWettable: true
+                )
+            case .stone:
+                BoatSurfaceProfile(
+                    roughness: 0.94,
+                    ambientOcclusion: 0.82,
+                    detail: (9, 0.050, 0.060, 0.075),
+                    isWettable: true
+                )
+            case .organic:
+                BoatSurfaceProfile(
+                    roughness: 0.86,
+                    ambientOcclusion: 0.90,
+                    detail: (13, 0.016, 0.055, 0.040)
+                )
+            case .glass:
+                BoatSurfaceProfile(
+                    roughness: 0.16,
+                    clearCoat: (0.88, 0.08)
+                )
+            case .glow:
+                BoatSurfaceProfile(roughness: 0.24)
+            case .bone:
+                BoatSurfaceProfile(
+                    roughness: 0.82,
+                    detail: (12, 0.020, 0.040, 0.040),
+                    isWettable: true
+                )
+            }
+        }
+    }
+
     /// 同行者の航海士。港と同じく、遠くの相手は既定の熾火で描く。
     /// ノード名は自分の航海士(`navigator`)と必ず変える。同じ名前だと、
     /// 甲板の自分を動かすアニメータが仲間の体を掴んでしまう。
@@ -1252,6 +1419,157 @@ enum VoyageSceneKit {
             navigatorDeckScale
         )
         return sailor
+    }
+
+    /// UV や画像を増やさず、各メッシュの座標に微細凹凸を固定する。
+    /// 分岐は材質ごとに一定なので、小さな船では画像テクスチャより転送量が少ない。
+    private static let boatSurfaceShader = """
+    #pragma arguments
+    float uBoatSurfaceKind;
+    float uBoatDetailScale;
+    float uBoatDetailStrength;
+    float uBoatRoughnessVariation;
+    float uBoatColorVariation;
+    float uBoatWettable;
+    float uBoatWaterline;
+    float3 uBoatGrainAxis;
+    float3 uBoatSeaBounce;
+    #pragma body
+    float3 localP = (scn_node.inverseModelViewTransform
+        * float4(_surface.position, 1.0)).xyz;
+    float3 p = localP * uBoatDetailScale;
+    float height = 0.0;
+
+    if (uBoatSurfaceKind > 1.5 && uBoatSurfaceKind < 3.5) {
+        // 長辺に沿う年輪と細い導管。マストでも船体でも流れが揃う。
+        float along = dot(p, uBoatGrainAxis);
+        float3 acrossP = p - uBoatGrainAxis * along;
+        float across = length(acrossP);
+        height = sin(along * 1.18 + sin(across * 0.71) * 1.55) * 0.62
+            + sin(along * 4.7 + across * 0.38) * 0.21;
+    } else if (uBoatSurfaceKind > 3.5 && uBoatSurfaceKind < 4.5) {
+        // 帆布の縦糸と横糸。大きなシワは別の頂点シェーダが担う。
+        float warp = sin((p.x + p.y * 0.17) * 2.2);
+        float weft = sin((p.y + p.z * 0.19) * 2.35);
+        height = warp * weft * 0.58 + sin((p.x - p.y + p.z) * 0.61) * 0.12;
+    } else if (uBoatSurfaceKind > 4.5 && uBoatSurfaceKind < 5.5) {
+        float twist = dot(p, uBoatGrainAxis);
+        height = sin(twist * 1.45 + length(p - uBoatGrainAxis * twist) * 2.6) * 0.72;
+    } else if (uBoatSurfaceKind > 5.5 && uBoatSurfaceKind < 7.5) {
+        // 鍛造金属のごく小さな槌目。
+        height = sin(p.x * 1.13 + p.z * 0.77)
+            * sin(p.y * 1.37 - p.z * 0.83) * 0.42;
+    } else if (uBoatSurfaceKind > 7.5 && uBoatSurfaceKind < 8.5) {
+        height = sin(p.x * 0.73 + sin(p.z * 0.61) * 1.4) * 0.46
+            + sin(p.y * 1.51 - p.x * 0.37) * 0.25;
+    } else if (uBoatSurfaceKind > 0.5 && uBoatSurfaceKind < 1.5) {
+        // 塗膜のオレンジピールは強く出さず、ハイライトだけを割る。
+        height = sin(p.x * 1.71 + p.y * 1.23) * sin(p.z * 1.57 - p.y) * 0.28;
+    } else if (uBoatSurfaceKind > 8.5 && uBoatSurfaceKind < 9.5) {
+        height = sin(p.x * 0.91 + p.z * 1.19) * sin(p.y * 0.83 - p.x) * 0.34;
+    } else if (uBoatSurfaceKind > 11.5 && uBoatSurfaceKind < 12.5) {
+        height = sin(p.x * 0.82 + p.y * 0.37) * sin(p.z * 0.91 - p.y * 0.28) * 0.29;
+    }
+
+    float3 normal = normalize(_surface.normal);
+    if (uBoatDetailStrength > 0.0) {
+        // 高さの画面微分から接線空間を復元。UV がない USDZ でも泳がない。
+        float3 dpdx = dfdx(_surface.position);
+        float3 dpdy = dfdy(_surface.position);
+        float3 dpdyPerp = cross(dpdy, normal);
+        float3 dpdxPerp = cross(normal, dpdx);
+        float determinant = dot(dpdx, dpdyPerp);
+        float3 gradient = dpdyPerp * dfdx(height) + dpdxPerp * dfdy(height);
+        normal = normalize(
+            max(abs(determinant), 0.00001) * normal
+                - copysign(uBoatDetailStrength, determinant) * gradient
+        );
+        _surface.normal = normal;
+        _surface.roughness = clamp(
+            _surface.roughness + height * uBoatRoughnessVariation,
+            0.06,
+            1.0
+        );
+        _surface.diffuse.rgb *= 1.0 + height * uBoatColorVariation;
+    }
+
+    // しぶきの上端だけを少し不揃いにし、船と一緒に揺れる濡れ帯にする。
+    float brokenLine = uBoatWaterline
+        + sin(localP.x * 8.3 + sin(localP.z * 11.7) * 0.9) * 0.018;
+    float wet = uBoatWettable
+        * (1.0 - smoothstep(brokenLine - 0.055, brokenLine + 0.16, localP.y));
+    float3 wetColor = _surface.diffuse.rgb * float3(0.58, 0.75, 0.72);
+    _surface.diffuse.rgb = mix(_surface.diffuse.rgb, wetColor, wet * 0.32);
+    _surface.roughness = mix(_surface.roughness, 0.16, wet * 0.82);
+    _surface.clearCoat = max(_surface.clearCoat, wet * 0.82);
+    _surface.clearCoatRoughness = mix(_surface.clearCoatRoughness, 0.08, wet);
+    _surface.clearCoatNormal = normal;
+
+    // 海からの青緑の照り返し。フレネル輪郭へ絞って色移りを防ぐ。
+    float rim = pow(1.0 - clamp(dot(normal, normalize(_surface.view)), 0.0, 1.0), 3.0);
+    _surface.emission.rgb += uBoatSeaBounce * (rim * 0.032 + wet * 0.020);
+    """
+
+    private static func styleBoatMaterial(
+        _ material: SCNMaterial,
+        on node: SCNNode,
+        identity: String
+    ) {
+        let surface = BoatSurfaceKind.resolve(identity.lowercased())
+        let profile = surface.profile
+        material.lightingModel = .physicallyBased
+        if let roughness = profile.roughness {
+            material.roughness.contents = roughness
+        }
+        if let metalness = profile.metalness {
+            material.metalness.contents = metalness
+        }
+        material.ambientOcclusion.contents = profile.ambientOcclusion
+        material.clearCoat.contents = profile.clearCoat.amount
+        material.clearCoatRoughness.contents = profile.clearCoat.roughness
+
+        if surface == .sailcloth {
+            material.isDoubleSided = true
+        } else if surface == .glow {
+            if material.emission.contents == nil {
+                material.emission.contents = material.diffuse.contents
+                material.emission.intensity = 1.7
+            }
+        }
+
+        let detail = profile.detail
+        var modifiers = material.shaderModifiers ?? [:]
+        modifiers[.surface] = boatSurfaceShader
+        material.shaderModifiers = modifiers
+        material.setValue(NSNumber(value: surface.rawValue), forKey: "uBoatSurfaceKind")
+        material.setValue(NSNumber(value: detail.scale), forKey: "uBoatDetailScale")
+        material.setValue(NSNumber(value: detail.strength), forKey: "uBoatDetailStrength")
+        material.setValue(NSNumber(value: detail.roughness), forKey: "uBoatRoughnessVariation")
+        material.setValue(NSNumber(value: detail.color), forKey: "uBoatColorVariation")
+        material.setValue(
+            NSNumber(value: profile.isWettable ? Float(1) : Float(0)),
+            forKey: "uBoatWettable"
+        )
+        material.setValue(NSNumber(value: Float(0.07)), forKey: "uBoatWaterline")
+        material.setValue(longestLocalAxis(of: node), forKey: "uBoatGrainAxis")
+        material.setValue(
+            HomeIslandOceanEffects.linearColorVector(0x2E7063),
+            forKey: "uBoatSeaBounce"
+        )
+    }
+
+    private static func longestLocalAxis(of node: SCNNode) -> SCNVector3 {
+        let bounds = node.boundingBox
+        let spans = [
+            bounds.max.x - bounds.min.x,
+            bounds.max.y - bounds.min.y,
+            bounds.max.z - bounds.min.z,
+        ]
+        switch spans.indices.max(by: { spans[$0] < spans[$1] }) ?? 0 {
+        case 1: return SCNVector3(0, 1, 0)
+        case 2: return SCNVector3(0, 0, 1)
+        default: return SCNVector3(1, 0, 0)
+        }
     }
 
     /// Blenderソースから出力した完成船。簡易プリミティブを組み直さず、
@@ -1280,7 +1598,8 @@ enum VoyageSceneKit {
                 guard let material = source.copy() as? SCNMaterial else {
                     return source
                 }
-                switch material.name {
+                let materialName = material.name ?? ""
+                switch materialName {
                 case "LF_BoatHull":
                     material.diffuse.contents = parts.hull
                 case "LF_BoatDeck":
@@ -1305,6 +1624,11 @@ enum VoyageSceneKit {
                 default:
                     break
                 }
+                styleBoatMaterial(
+                    material,
+                    on: node,
+                    identity: "\(materialName) \(node.name ?? "")"
+                )
                 return material
             }
         }
@@ -1443,74 +1767,36 @@ enum VoyageSceneKit {
         return group
     }
 
-    /// 航跡。船尾から後ろへ、白い帯が尾に向かってフェードする(Web Wake のグラデ)。
+    /// Shared-ocean scenes use the analytical wake. Legacy scenes keep only a
+    /// short, softly tapered disturbance so no rectangular white strip appears.
     static func makeWake() -> SCNNode {
-        // 旧64x8 bitmapと同じ2.3x0.4の帯を、頂点alphaの補間だけで描く。
-        // tail=0 → 70%=0.5 → 船尾=0.9の勾配なので、見た目とnode opacity契約は不変。
-        let segmentCount = 12
-        var vertices: [SCNVector3] = []
-        var colors: [SIMD4<Float>] = []
-        var indices: [UInt32] = []
-        vertices.reserveCapacity((segmentCount + 1) * 2)
-        colors.reserveCapacity((segmentCount + 1) * 2)
-        indices.reserveCapacity(segmentCount * 6)
-
-        for column in 0...segmentCount {
-            let progress = Float(column) / Float(segmentCount)
-            let x = -1.15 + progress * 2.3
-            let alpha: Float
-            if progress <= 0.7 {
-                alpha = progress / 0.7 * 0.5
-            } else {
-                alpha = 0.5 + (progress - 0.7) / 0.3 * 0.4
-            }
-            vertices.append(SCNVector3(x, 0, -0.2))
-            vertices.append(SCNVector3(x, 0, 0.2))
-            colors.append(SIMD4(1, 1, 1, alpha))
-            colors.append(SIMD4(1, 1, 1, alpha))
-
-            guard column < segmentCount else { continue }
-            let near = UInt32(column * 2)
-            let far = UInt32((column + 1) * 2)
-            indices += [near, near + 1, far, near + 1, far + 1, far]
-        }
-
-        let colorData = colors.withUnsafeBytes { Data($0) }
-        let colorSource = SCNGeometrySource(
-            data: colorData,
-            semantic: .color,
-            vectorCount: colors.count,
-            usesFloatComponents: true,
-            componentsPerVector: 4,
-            bytesPerComponent: MemoryLayout<Float>.size,
-            dataOffset: 0,
-            dataStride: MemoryLayout<SIMD4<Float>>.stride
-        )
-        let element = indices.withUnsafeBufferPointer {
-            SCNGeometryElement(
-                data: Data(buffer: $0),
-                primitiveType: .triangles,
-                primitiveCount: indices.count / 3,
-                bytesPerIndex: MemoryLayout<UInt32>.size
-            )
-        }
-        let geometry = SCNGeometry(
-            sources: [SCNGeometrySource(vertices: vertices), colorSource],
-            elements: [element]
-        )
+        let plane = SCNPlane(width: 2.3, height: 0.56)
         let material = SCNMaterial()
         material.lightingModel = .constant
-        material.diffuse.contents = UIColor.white
+        material.diffuse.contents = UIColor(rgb: 0x9CCBC6)
         material.blendMode = .alpha
         material.writesToDepthBuffer = false
         material.readsFromDepthBuffer = true
         material.isDoubleSided = true
-        geometry.firstMaterial = material
+        material.shaderModifiers = [
+            .surface: """
+            float2 uv = _surface.diffuseTexcoord;
+            float along = clamp(uv.x, 0.0, 1.0);
+            float lateral = abs(uv.y * 2.0 - 1.0);
+            float halfWidth = mix(0.44, 0.15, along);
+            float softEdge = 1.0 - smoothstep(halfWidth * 0.48, halfWidth, lateral);
+            float tailFade = smoothstep(0.0, 0.20, along);
+            float flow = 0.86 + 0.14 * sin(along * 5.2 + lateral * 3.4 - scn_frame.time * 0.65);
+            _surface.diffuse.a *= softEdge * tailFade * flow * 0.34;
+            """
+        ]
+        plane.firstMaterial = material
 
-        let node = SCNNode(geometry: geometry)
-        node.name = "wake"
+        let node = SCNNode(geometry: plane)
+        node.name = "legacyWake"
+        node.eulerAngles.x = -.pi / 2
         node.position = SCNVector3(-2.15, 0.025, 0)
-        node.opacity = 0.34
+        node.opacity = 0.30
         return node
     }
 
@@ -1772,7 +2058,7 @@ enum VoyageSceneKit {
             )
         }
 
-        // 航路上の船。波紋+航跡ごと進む(Web: group scale 0.55, rot y 0.1)。
+        // 航路上の船。波紋ごと進む(Web: group scale 0.55, rot y 0.1)。
         let travel = SCNNode()
         travel.name = "travel"
         travel.position = SCNVector3(boatX(ratio), 0, 0)
@@ -1952,7 +2238,13 @@ enum VoyageSceneKit {
 
         scene.rootNode.addChildNode(makeVoyagingCelestial(timeOfDay: timeOfDay, date: date))
         scene.rootNode.addChildNode(
-            HomeIslandOceanEffects.makeScene(layout: .timerVoyage).root
+            HomeIslandOceanEffects.makeScene(
+                layout: .timerVoyage,
+                appearance: makeVoyagingOceanAppearance(
+                    timeOfDay: timeOfDay,
+                    palette: palette
+                )
+            ).root
         )
         // Web Horizon と同じ、z=-20の細い平面。円形の水平線は投影位置が変わり、
         // 同じカメラ定数でも世界全体が上下にずれて見えるため使わない。
@@ -1973,14 +2265,20 @@ enum VoyageSceneKit {
         travel.name = "travel"
         travel.eulerAngles.y = 0.1
         travel.scale = SCNVector3(0.55, 0.55, 0.55)
-        travel.addChildNode(makeWake())
         let bob = SCNNode()
         bob.name = "boatBob"
         let boat = makeBoatModel(boatParts)
         attachNavigator(to: boat)
         bob.addChildNode(boat)
-        // しぶきは船体と一緒に上下する。甲板が波へ落ちた拍子に上がって見える。
-        bob.addChildNode(VoyageBowSpray.makeNode())
+        // しぶきは船体と一緒に上下し、その時間帯の海色と反射色を受け継ぐ。
+        bob.addChildNode(
+            VoyageBowSpray.makeNode(
+                palette: .init(
+                    sea: UIColor(rgb: palette.sea),
+                    highlight: UIColor(rgb: palette.reflection)
+                )
+            )
+        )
         travel.addChildNode(bob)
         scene.rootNode.addChildNode(travel)
 
@@ -2005,173 +2303,6 @@ enum VoyageSceneKit {
         return scene
     }
 
-    /// 平面の頂点自体を上下させる三層の波。XY平面のlocal +Zが、ノード回転後のworld +Y。
-    /// 外周は水平線へ自然につなぐため振幅を落とす。
-    private static let voyagingSeaClockOrigin = ProcessInfo.processInfo.systemUptime
-
-    /// SCNSceneごとの`scn_frame.time`へ、process内で共有する経過時間を足す。
-    /// 遷移Sceneからguided Sceneへ作り直しても波・反射の位相が巻き戻らない。
-    private static var voyagingSeaTimeOffset: Float {
-        let origin = voyagingSeaClockOrigin
-        return Float(ProcessInfo.processInfo.systemUptime - origin)
-    }
-
-    private static let voyagingSeaGeometryShader = """
-    #pragma arguments
-    float uVoyageTimeOffset;
-    #pragma body
-    float2 p = _geometry.position.xy;
-    float t = scn_frame.time + uVoyageTimeOffset;
-    float phaseA = p.x * 0.31 + p.y * 0.17 - t * 0.72;
-    float phaseB = -p.x * 0.19 + p.y * 0.43 + t * 0.51;
-    float phaseC = p.x * 0.91 + p.y * 0.67 - t * 1.16;
-    float edge = 1.0 - smoothstep(21.0, 29.0, length(p));
-    float height =
-        sin(phaseA) * 0.070
-        + sin(phaseB) * 0.042
-        + sin(phaseC) * 0.014;
-    float dhdx =
-        cos(phaseA) * 0.070 * 0.31
-        + cos(phaseB) * 0.042 * -0.19
-        + cos(phaseC) * 0.014 * 0.91;
-    float dhdy =
-        cos(phaseA) * 0.070 * 0.17
-        + cos(phaseB) * 0.042 * 0.43
-        + cos(phaseC) * 0.014 * 0.67;
-    _geometry.position.z += height * edge;
-    _geometry.normal = normalize(float3(-dhdx * edge, -dhdy * edge, 1.0));
-    """
-
-    /// 波高・傾斜から陰影を作り、遠景の空色反射、細かな波頭、船尾の航跡を重ねる。
-    /// 色はPCCSパレットのsRGB値なので、最後にlinearへ変換して白っぽい映像を防ぐ。
-    private static let voyagingSeaSurfaceShader = """
-    #pragma arguments
-    float3 uSea;
-    float3 uDeep;
-    float3 uLight;
-    float3 uFog;
-    float uVoyageTimeOffset;
-    #pragma body
-    float2 p = (_surface.diffuseTexcoord - float2(0.5)) * 60.0;
-    float r = length(p) / 30.0;
-    float t = scn_frame.time + uVoyageTimeOffset;
-
-    float phaseA = p.x * 0.31 + p.y * 0.17 - t * 0.72;
-    float phaseB = -p.x * 0.19 + p.y * 0.43 + t * 0.51;
-    float phaseC = p.x * 0.91 + p.y * 0.67 - t * 1.16;
-    float height =
-        sin(phaseA) * 0.070
-        + sin(phaseB) * 0.042
-        + sin(phaseC) * 0.014;
-    float2 slope = float2(
-        cos(phaseA) * 0.070 * 0.31
-            + cos(phaseB) * 0.042 * -0.19
-            + cos(phaseC) * 0.014 * 0.91,
-        cos(phaseA) * 0.070 * 0.17
-            + cos(phaseB) * 0.042 * 0.43
-            + cos(phaseC) * 0.014 * 0.67
-    );
-    float3 waveNormal = normalize(float3(-slope, 1.0));
-
-    float depth = smoothstep(0.08, 1.0, r);
-    float3 col = mix(uSea, uDeep, depth * 0.72);
-    // 波の向きに応じた明暗。単なる模様ではなく面の起伏として読める強さ。
-    float facing = clamp(dot(waveNormal, normalize(float3(-0.28, 0.18, 0.94))), 0.0, 1.0);
-    float directionalShade = clamp(
-        0.5 + slope.x * 7.2 + slope.y * 5.4,
-        0.0,
-        1.0
-    );
-    col *= 0.84 + directionalShade * 0.24;
-
-    // 遠景では空と霧を水面へ薄く映し込み、水平線へ連続させる。
-    float grazing = smoothstep(0.30, 0.96, r);
-    col = mix(col, mix(uLight, uFog, 0.52), grazing * 0.16);
-
-    // 高い波頭だけに出る不規則な反射。均等な白線にしない。
-    float micro = sin(p.x * 3.8 - p.y * 2.7 + t * 1.7)
-        * sin(p.x * 1.6 + p.y * 4.1 - t * 1.1);
-    float crest = smoothstep(0.060, 0.115, height + micro * 0.018);
-    float broken = 0.58 + 0.42 * sin(p.x * 2.9 + p.y * 1.7 - t * 1.4);
-    col = mix(col, uLight, crest * broken * 0.18);
-
-    // 日月の反射は一本の帯ではなく、波で細かく切れた光片として描く。
-    float lane = exp(-((p.x - 5.1) * (p.x - 5.1)) / 6.4);
-    float shimmer = 0.5 + 0.5
-        * sin(p.y * 1.23 - t * 1.19)
-        * sin(p.x * 1.08 + t * 0.54);
-    float specular = pow(facing, 52.0) * (0.45 + 0.55 * max(micro, 0.0));
-    col = mix(col, uLight, clamp(lane * shimmer * 0.21 + specular * 0.20, 0.0, 0.34));
-
-    // 船尾(-X)に残る、幅が少しずつ広がる二筋の航跡。
-    float aft = (1.0 - smoothstep(-0.45, 0.35, p.x)) * smoothstep(-19.0, -1.1, p.x);
-    float wakeWidth = 0.20 + max(-p.x, 0.0) * 0.045;
-    float wakeL = exp(-pow((p.y - wakeWidth) / 0.15, 2.0));
-    float wakeR = exp(-pow((p.y + wakeWidth) / 0.15, 2.0));
-    float wakeBreak = 0.45 + 0.55 * sin(-p.x * 2.6 + t * 1.9);
-    col = mix(col, uLight, aft * (wakeL + wakeR) * wakeBreak * 0.13);
-
-    _surface.diffuse = float4(pow(clamp(col, 0.0, 1.0), float3(2.2)), 1.0);
-    """
-
-    private static func makeVoyagingSea(palette: AftideHomePalette) -> SCNNode {
-        let root = SCNNode()
-        root.name = "voyagingSea"
-
-        let plane = SCNPlane(width: 60, height: 60)
-        // 約1.6万頂点。60fpsを保ちつつ、近景で波の輪郭が角張らない密度。
-        plane.widthSegmentCount = 128
-        plane.heightSegmentCount = 128
-        let material = SCNMaterial()
-        // WebのShaderMaterialと同じ非照明。PBR光を重ねると同じ#1E5348でも
-        // iOSだけ明るい緑へ転ぶため、波の陰影・反射はsurface shader内で完結させる。
-        material.lightingModel = .constant
-        material.diffuse.contents = UIColor(rgb: palette.sea)
-        material.isDoubleSided = true
-        material.shaderModifiers = [
-            .geometry: voyagingSeaGeometryShader,
-            .surface: voyagingSeaSurfaceShader
-        ]
-        material.setValue(colorVector(palette.sea), forKey: "uSea")
-        material.setValue(colorVector(palette.seaDeep), forKey: "uDeep")
-        material.setValue(colorVector(palette.reflection), forKey: "uLight")
-        material.setValue(colorVector(palette.fog), forKey: "uFog")
-        material.setValue(
-            NSNumber(value: voyagingSeaTimeOffset),
-            forKey: "uVoyageTimeOffset"
-        )
-        plane.firstMaterial = material
-        let surface = SCNNode(geometry: plane)
-        surface.name = "voyagingSeaSurface"
-        surface.eulerAngles.x = -.pi / 2
-        root.addChildNode(surface)
-
-        // 波が持ち上がった隙間から背景色が覗かないための深い水の下地。
-        let underlayPlane = SCNPlane(width: 60, height: 60)
-        underlayPlane.firstMaterial = unlitMaterial(UIColor(rgb: palette.seaDeep))
-        let underlay = SCNNode(geometry: underlayPlane)
-        underlay.name = "voyagingSeaUnderlay"
-        underlay.position.y = -0.14
-        underlay.eulerAngles.x = -.pi / 2
-        root.addChildNode(underlay)
-        return root
-    }
-
-    private static func makeVoyagingHorizon(palette: AftideHomePalette) -> SCNNode {
-        // カメラを360°回しても途切れない、水平方向を一周する淡い水平線。
-        let ring = SCNTorus(ringRadius: 25, pipeRadius: 0.022)
-        ring.ringSegmentCount = 128
-        ring.pipeSegmentCount = 5
-        let material = unlitMaterial(UIColor(rgb: palette.reflection))
-        material.diffuse.contents = UIColor(rgb: palette.reflection).withAlphaComponent(0.14)
-        material.writesToDepthBuffer = false
-        ring.firstMaterial = material
-        let node = SCNNode(geometry: ring)
-        node.name = "voyagingHorizon"
-        node.position = SCNVector3(0.8, 0.035, 0)
-        return node
-    }
-
     private static func makeVoyagingCelestial(
         timeOfDay: AftideHomeTimeOfDay,
         date: Date
@@ -2183,23 +2314,62 @@ enum VoyageSceneKit {
             moon.scale = SCNVector3(0.4, 0.4, 0.4)
             return moon
         }
-        let sphere = SCNSphere(radius: timeOfDay == .night ? 1.1 : 1.25)
-        sphere.segmentCount = 24
+        let sphere = SCNSphere(radius: 1.25)
+        sphere.segmentCount = 40
         let material = unlitMaterial(UIColor(rgb: palette.reflection))
         material.emission.contents = UIColor(rgb: palette.reflection)
-        material.emission.intensity = timeOfDay == .night ? 0.9 : 0.62
+        material.emission.intensity = 0.62
+        material.writesToDepthBuffer = false
         sphere.firstMaterial = material
         let node = SCNNode(geometry: sphere)
         node.name = "voyagingSun"
-        node.position = SCNVector3(
+        node.position = voyagingCelestialPosition(for: timeOfDay)
+        node.scale = SCNVector3(0.27, 0.27, 0.27)
+        node.renderingOrder = -20
+        return node
+    }
+
+    private static let voyagingLightTarget = SCNVector3(0.8, 1.15, 0)
+
+    private static func voyagingCelestialPosition(
+        for timeOfDay: AftideHomeTimeOfDay
+    ) -> SCNVector3 {
+        SCNVector3(
             timeOfDay == .morning ? -5.2 : (timeOfDay == .day ? 0.8 : 5.1),
             timeOfDay == .day ? 5.1 : (timeOfDay == .evening ? 1.25 : 3.3),
             -5.5
         )
-        node.scale = timeOfDay == .night
-            ? SCNVector3(0.4, 0.4, 0.4)
-            : SCNVector3(0.72, 0.72, 0.72)
-        return node
+    }
+
+    private static func makeVoyagingOceanAppearance(
+        timeOfDay: AftideHomeTimeOfDay,
+        palette: AftideHomePalette
+    ) -> HomeIslandOceanEffects.Appearance {
+        let source = voyagingCelestialPosition(for: timeOfDay)
+        let target = voyagingLightTarget
+        let strength: Float
+        switch timeOfDay {
+        case .morning: strength = 0.65
+        case .day: strength = 1
+        case .evening: strength = 0.55
+        case .night: strength = 0.10
+        }
+        return HomeIslandOceanEffects.Appearance(
+            shallow: timeOfDay == .night ? palette.sea : palette.fill,
+            sea: palette.sea,
+            deep: palette.seaDeep,
+            light: palette.reflection,
+            sky: palette.sky,
+            horizon: palette.fog,
+            sun: palette.reflection,
+            fog: palette.fog,
+            sunDirection: SCNVector3(
+                source.x - target.x,
+                source.y - target.y,
+                source.z - target.z
+            ),
+            sunStrength: strength
+        )
     }
 
     private static func makeVoyagingLights(
@@ -2217,8 +2387,8 @@ enum VoyageSceneKit {
         key.light?.type = .directional
         key.light?.color = UIColor(rgb: palette.key)
         key.light?.intensity = timeOfDay == .day ? 1_450 : 1_080
-        key.position = SCNVector3(-6, 8, -5)
-        key.look(at: SCNVector3(0.8, 1.15, 0))
+        key.position = voyagingCelestialPosition(for: timeOfDay)
+        key.look(at: voyagingLightTarget)
 
         let fill = SCNNode()
         fill.light = SCNLight()
@@ -2226,16 +2396,8 @@ enum VoyageSceneKit {
         fill.light?.color = UIColor(rgb: palette.fill)
         fill.light?.intensity = 240
         fill.position = SCNVector3(5, 3, 6)
-        fill.look(at: SCNVector3(0.8, 1.15, 0))
+        fill.look(at: voyagingLightTarget)
         return [ambient, key, fill]
-    }
-
-    private static func colorVector(_ rgb: UInt) -> SCNVector3 {
-        SCNVector3(
-            Float((rgb >> 16) & 0xFF) / 255,
-            Float((rgb >> 8) & 0xFF) / 255,
-            Float(rgb & 0xFF) / 255
-        )
     }
 
     // MARK: - 没入エディタ専用の部品(Web VoyageWorld)
@@ -2453,9 +2615,32 @@ enum VoyageSceneKit {
 // MARK: - アニメータ(Web useFrame 相当)
 
 /// Web VoyagingWorld の船・航跡・カモメを毎フレーム駆動する。
-final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
-    var resting = false
+final class VoyagingHomeAnimator: NSObject {
+    private struct DesiredState {
+        var revision: UInt64 = 0
+        var resting = false
+        var elapsedSeconds: Float = 0
+        var localSailorPose: PhoenixPose?
+        var localSailorRole: VoyageSceneKit.CompanionDeckRole?
+        var companions: [VoyageSceneKit.CompanionDeckMember] = []
+        var reduceMotion = false
+    }
+
+    private struct DesiredUpdate {
+        let revision: UInt64
+        let localSailorRoleChanged: Bool
+        let enteredReducedMotion: Bool
+    }
+
+    private let desiredStateLock = NSLock()
+    private var desiredState = DesiredState()
+    private var appliedDesiredRevision: UInt64 = 0
+    private var resting = false
     private var elapsedSeconds: Float = 0
+    private var localSailorPose: PhoenixPose?
+    private var localSailorRole: VoyageSceneKit.CompanionDeckRole?
+    private var reduceMotion = false
+    private var frozenOceanTime = HomeIslandOceanEffects.currentTime
     private let flock: [(radius: Float, height: Float, omega: Float, flap: Float, phase: Float)] = [
         (4.2, 2.3, 0.085, 2.1, 0.0), (5.0, 2.8, -0.065, 1.7, 0.8),
         (4.6, 2.0, 0.11, 2.5, 1.6), (5.6, 3.2, 0.055, 1.6, 2.4),
@@ -2466,12 +2651,25 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
     private var startTime: TimeInterval?
     private var lastTime: TimeInterval = 0
     private weak var scene: SCNScene?
+    private weak var marineScene: SCNScene?
+    private weak var travel: SCNNode?
     private weak var bob: SCNNode?
-    private weak var wake: SCNNode?
     private weak var approachingIsland: SCNNode?
     private weak var seaMaterial: SCNMaterial?
     private var gulls: [SCNNode] = []
     private let sailor = PhoenixAnimator()
+
+    private static let timerMarineTuning: HomeIslandMarineDynamics.BoatTuning = {
+        var tuning = HomeIslandMarineDynamics.BoatTuning.homeIsland
+        let sceneScale: Float = 0.55 / 0.92
+        tuning.hullLength *= sceneScale
+        tuning.beam *= sceneScale
+        return tuning
+    }()
+    private let marineController = HomeIslandMarineDynamics.BoatController(
+        field: .init(layout: .timerVoyage),
+        tuning: timerMarineTuning
+    )
 
     /// 同行の航海の同乗者。船のノードの下にぶら下げるので、甲板の揺れも
     /// 傾きもそのまま受け継ぐ。
@@ -2486,7 +2684,6 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
 
     private weak var boat: SCNNode?
     private weak var localSailor: SCNNode?
-    private let companionLock = NSLock()
     private var desiredCompanions: [VoyageSceneKit.CompanionDeckMember] = []
     private var companionVisuals: [String: CompanionVisual] = [:]
     private var companionsAreSeated = true
@@ -2494,44 +2691,95 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
     /// 帆としぶきへ実際に渡している風の強さ。段階が変わっても数秒かけて寄せる。
     private var windStrength: Float = 0
     private var sailMaterials: [SCNMaterial] = []
-    private var spraySystems: [SCNParticleSystem] = []
+    private var spraySystems: VoyageBowSpray.Systems = .empty
+    private var sprayIsActive = false
 
-    /// 船の揺れと旗の位相。速さを経過時間に掛けるのではなく、毎フレーム足す。
+    /// 旗の位相。速さを経過時間に掛けるのではなく、毎フレーム足す。
     ///
     /// 掛け算だと、風が変わって周波数が動いた瞬間に位相が `t × Δω` だけ飛ぶ。
     /// 一時間航海したあとの `t` は大きいので、段階が上がるちょうどその瞬間に
     /// 船が震えて見えてしまう。休憩の出入りでも同じことが起きる。
-    private var bobPhase: Float = 0
-    private var rollPhase: Float = 0
-    private var pitchPhase: Float = 1.2
     private var flagPhase: Float = 0
 
     /// 風の強さが目標へ寄る速さ(時定数・秒)。出航・休憩明けはこの四倍ほど、
     /// おおよそ二秒半かけて次の絵に落ち着く。
     private static let windEase: Float = 0.625
+    /// A single non-animated step lands damped navigator joints on their target.
+    private static let staticPoseSnapDelta: Float = 4
 
     /// 休憩中は帆を緩めて凪へ戻す。再開すれば全力の風に戻る。
     private var windTarget: Float {
         resting ? 0.10 : VoyageWind.sailingStrength
     }
 
-    func setElapsedSeconds(_ seconds: Int) {
-        elapsedSeconds = max(elapsedSeconds, Float(max(0, seconds)))
-        placeApproachingIsland()
+    /// SwiftUI writes only this lock-protected target. Renderer-owned values and
+    /// SceneKit objects are updated together at the start of the next frame.
+    @discardableResult
+    func updateDesiredState(
+        resting: Bool,
+        elapsedSeconds: Int,
+        localSailorPose: PhoenixPose?,
+        localSailorRole: VoyageSceneKit.CompanionDeckRole?,
+        companions: [VoyageSceneKit.CompanionDeckMember],
+        reduceMotion: Bool
+    ) -> UInt64 {
+        desiredStateLock.lock()
+        desiredState.revision &+= 1
+        desiredState.resting = resting
+        desiredState.elapsedSeconds = Float(max(0, elapsedSeconds))
+        desiredState.localSailorPose = localSailorPose
+        desiredState.localSailorRole = localSailorRole
+        desiredState.companions = companions
+        desiredState.reduceMotion = reduceMotion
+        let revision = desiredState.revision
+        desiredStateLock.unlock()
+        return revision
+    }
+
+    private func consumeDesiredState() -> DesiredUpdate {
+        desiredStateLock.lock()
+        let snapshot = desiredState
+        desiredStateLock.unlock()
+        guard snapshot.revision != appliedDesiredRevision else {
+            return DesiredUpdate(
+                revision: appliedDesiredRevision,
+                localSailorRoleChanged: false,
+                enteredReducedMotion: false
+            )
+        }
+
+        let roleChanged = localSailorRole != snapshot.localSailorRole
+        let wasReducingMotion = reduceMotion
+        resting = snapshot.resting
+        elapsedSeconds = max(elapsedSeconds, snapshot.elapsedSeconds)
+        localSailorPose = snapshot.localSailorPose
+        localSailorRole = snapshot.localSailorRole
+        if desiredCompanions != snapshot.companions {
+            desiredCompanions = snapshot.companions
+            companionsAreSeated = false
+        }
+        reduceMotion = snapshot.reduceMotion
+        if reduceMotion, !wasReducingMotion {
+            frozenOceanTime = HomeIslandOceanEffects.currentTime
+        }
+        appliedDesiredRevision = snapshot.revision
+        return DesiredUpdate(
+            revision: snapshot.revision,
+            localSailorRoleChanged: roleChanged,
+            enteredReducedMotion: reduceMotion && !wasReducingMotion
+        )
     }
 
     private func bind(_ scene: SCNScene) {
         self.scene = scene
+        travel = scene.rootNode.childNode(withName: "travel", recursively: false)
         bob = scene.rootNode.childNode(withName: "boatBob", recursively: true)
         boat = scene.rootNode.childNode(withName: "boatModel", recursively: true)
         localSailor = boat?.childNode(withName: "navigator", recursively: true)
         applyLocalSailorRole()
         // 作り直したシーンでは、前の船に乗せた同乗者のノードごと席を空ける。
-        companionLock.lock()
         companionVisuals.removeAll()
         companionsAreSeated = false
-        companionLock.unlock()
-        wake = scene.rootNode.childNode(withName: "wake", recursively: true)
         approachingIsland = scene.rootNode.childNode(withName: "approachingIsland", recursively: false)
         seaMaterial = scene.rootNode
             .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
@@ -2542,41 +2790,6 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
         // 作り直したシーンでも、いま吹いている風の続きから始める。
         applyWind(windStrength, at: 0)
         placeApproachingIsland()
-    }
-
-    /// Reduce Motion では描画loopが回らない。シーンを差し替えた時点で一度だけ
-    /// 結び直し、同乗者が甲板に現れないままにならないようにする。
-    func attach(to scene: SCNScene) {
-        guard self.scene !== scene else { return }
-        bind(scene)
-        syncCompanions()
-    }
-
-    /// 甲板に並べる同乗者を入れ替える。並び順がそのまま席順になる。
-    ///
-    /// 席を持てるのは `companionDeckSlots` の数まで。あふれた仲間は甲板には
-    /// 出ないが、同乗していること自体は札の名前で伝わる。
-    func setCompanions(_ members: [VoyageSceneKit.CompanionDeckMember]) {
-        companionLock.lock()
-        let unchanged = members == desiredCompanions
-        desiredCompanions = members
-        if !unchanged { companionsAreSeated = false }
-        companionLock.unlock()
-        guard !unchanged else { return }
-        syncCompanions()
-    }
-
-    /// 自分の航海士の仕草を上から決める。同行の航海でホストを務めている間だけ、
-    /// 装いで選んだ仕草の代わりにランタンを掲げる。
-    var localSailorPose: PhoenixPose?
-
-    /// 同行中は自分にも固定の役割色を割り当てる。通常航海ではnilのままなので、
-    /// 装いで選んだ色と仕草をそのまま保つ。
-    var localSailorRole: VoyageSceneKit.CompanionDeckRole? {
-        didSet {
-            guard oldValue != localSailorRole else { return }
-            applyLocalSailorRole()
-        }
     }
 
     private func applyLocalSailorRole() {
@@ -2604,13 +2817,7 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
     /// 船のノードが揃ってから呼ぶ。まだ組み上がっていなければ何もせず、
     /// 次のフレームでもう一度試す。
     private func syncCompanions() {
-        companionLock.lock()
-        let isSeated = companionsAreSeated
-        companionLock.unlock()
-        guard !isSeated, let boat, let scene else { return }
-
-        companionLock.lock()
-        defer { companionLock.unlock() }
+        guard !companionsAreSeated, let boat, let scene else { return }
 
         let seating = VoyageSceneKit.companionDeckSeating(for: desiredCompanions)
         let seatedIDs = Set(seating.map(\.id))
@@ -2623,39 +2830,47 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
                 visual.node.eulerAngles.y = seat.facing.rawValue
                 PhoenixNavigator.applyPalette(seat.role.palette, to: visual.node)
                 visual.animator.pose = seat.role.pose
+                if reduceMotion {
+                    visual.animator.step(t: 0, dt: Self.staticPoseSnapDelta)
+                }
                 continue
             }
             let node = VoyageSceneKit.makeCompanionNavigator(id: id, role: seat.role)
             node.position = seat.position
             node.eulerAngles.y = seat.facing.rawValue
-            node.opacity = 0
             boat.addChildNode(node)
-            node.runAction(
-                .fadeIn(duration: UIAccessibility.isReduceMotionEnabled ? 0 : 0.4)
-            )
+            if reduceMotion {
+                node.opacity = 1
+            } else {
+                node.opacity = 0
+                node.runAction(.fadeIn(duration: 0.4))
+            }
             let visual = CompanionVisual(node: node)
             visual.animator.pose = seat.role.pose
             visual.animator.bind(to: node, in: scene)
+            if reduceMotion {
+                visual.animator.step(t: 0, dt: Self.staticPoseSnapDelta)
+            }
             companionVisuals[id] = visual
         }
         companionsAreSeated = true
     }
 
-    /// 風の強さを絵へ配る。帆の孕み、しぶきの量、航跡の白さがここで揃う。
+    /// 帆には休憩中の微風を残すが、しぶきは航行中だけ三層別に駆動する。
     private func applyWind(_ wind: Float, at t: Float) {
         for material in sailMaterials {
             material.setValue(NSNumber(value: wind), forKey: "uWind")
         }
-        if !spraySystems.isEmpty {
-            // 一定量を出し続けると霧になる。舳先が波を叩く拍に合わせて波を作り、
-            // 谷でも細く出し続けることで、途切れずに脈を打つ飛沫にする。
-            let surge = max(0, sin(t * 1.9))
-            let beat = 0.34 + 0.66 * powf(surge, 2.2)
-            let rate = CGFloat(wind * beat) * VoyageBowSpray.peakBirthRate
-            for system in spraySystems {
-                system.birthRate = rate
-            }
+        let shouldSpray = !resting && !reduceMotion && wind > 0.0005
+        if shouldSpray {
+            spraySystems.apply(.sailing(wind: wind, at: t))
+        } else if sprayIsActive {
+            // 描画を止める前に既存粒も消し、Reduce Motionで静止粒を残さない。
+            spraySystems.reset()
+        } else {
+            spraySystems.apply(.zero)
         }
+        sprayIsActive = shouldSpray
     }
 
     private func placeApproachingIsland() {
@@ -2665,49 +2880,85 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
         approachingIsland?.position = SCNVector3(6.5 * k, 0, -5.5 * k)
     }
 
-    func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
-        guard let currentScene = renderer.scene else { return }
-        if scene !== currentScene { bind(currentScene) }
+    /// Returns the desired-state revision after a complete reduced-motion frame.
+    /// The coordinator uses it to stop rendering only if no newer state arrived.
+    func renderFrame(
+        _ renderer: SCNSceneRenderer,
+        updateAtTime time: TimeInterval
+    ) -> UInt64? {
+        guard let currentScene = renderer.scene else { return nil }
+        let desiredUpdate = consumeDesiredState()
+        let sceneChanged = scene !== currentScene
+        if sceneChanged {
+            bind(currentScene)
+        } else if desiredUpdate.localSailorRoleChanged {
+            applyLocalSailorRole()
+        }
         if startTime == nil { startTime = time; lastTime = time }
         let t = Float(time - (startTime ?? time))
         let dt = Float(min(max(time - lastTime, 0), 0.1))
+        let animationTime: Float = reduceMotion ? 0 : t
+        let animationDelta: Float = reduceMotion ? 0 : dt
         lastTime = time
+        let oceanTime = reduceMotion
+            ? frozenOceanTime
+            : HomeIslandOceanEffects.currentTime
         seaMaterial?.setValue(
-            NSNumber(value: HomeIslandOceanEffects.currentTime),
+            NSNumber(value: oceanTime),
             forKey: "uTime"
         )
-        if !resting {
-            elapsedSeconds += dt
-            placeApproachingIsland()
+        if !resting, !reduceMotion {
+            elapsedSeconds += animationDelta
         }
+        placeApproachingIsland()
 
         // 段階が上がった瞬間に絵が飛ばないよう、目標へ 2 秒半かけて寄せる。
-        let target = windTarget
-        if abs(target - windStrength) > 0.0005 {
-            windStrength += (target - windStrength) * min(1, dt / VoyagingHomeAnimator.windEase)
+        if reduceMotion {
+            windStrength = 0
         } else {
-            windStrength = target
+            let target = windTarget
+            if abs(target - windStrength) > 0.0005 {
+                windStrength += (target - windStrength)
+                    * min(1, animationDelta / VoyagingHomeAnimator.windEase)
+            } else {
+                windStrength = target
+            }
         }
-        applyWind(windStrength, at: t)
+        applyWind(windStrength, at: animationTime)
 
-        // 風が強いほど大きく速く揺れ、風上へわずかに傾く。
-        let swell = 1 + windStrength * 0.55
-        bobPhase += dt * (resting ? 0.34 : 0.8 + windStrength * 0.35)
-        rollPhase += dt * (resting ? 0.28 : 0.6)
-        pitchPhase += dt * (resting ? 0.25 : 0.5)
-        flagPhase += dt * (resting ? 1.2 : 5.2 + windStrength * 3.4)
+        // Scene rebuilds arrive through SwiftUI, but marine controller state is
+        // only touched from this renderer callback.
+        if marineScene !== currentScene {
+            marineController.reset(buoyancyNode: bob)
+            marineScene = currentScene
+        }
+        if let travel, let bob {
+            let frame = marineController.update(
+                boatRoot: travel,
+                buoyancyNode: bob,
+                oceanTime: oceanTime,
+                deltaTime: animationDelta,
+                reduceMotion: reduceMotion,
+                propulsionSpeed: resting || reduceMotion ? 0 : windStrength * 1.6
+            )
+            frame.wake.apply(to: seaMaterial)
+        } else {
+            marineController.reset()
+            HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
+        }
+
+        if reduceMotion {
+            flagPhase = 0
+        } else {
+            flagPhase += animationDelta * (resting ? 1.2 : 5.2 + windStrength * 3.4)
+        }
 
         if let bob {
-            let heel = windStrength * 0.055
-            bob.position.y = sin(bobPhase) * (resting ? 0.025 : 0.06) * swell
-            bob.eulerAngles.z = sin(rollPhase) * (resting ? 0.012 : 0.03) * swell - heel
-            bob.eulerAngles.x = sin(pitchPhase) * (resting ? 0.007 : 0.015) * swell
             bob.childNode(withName: "boatFlag", recursively: true)?
-                .eulerAngles.y = sin(flagPhase) * (resting ? 0.07 : 0.22 + windStrength * 0.16)
+                .eulerAngles.y = reduceMotion
+                    ? 0
+                    : sin(flagPhase) * (resting ? 0.07 : 0.22 + windStrength * 0.16)
         }
-        wake?.opacity = CGFloat(
-            (0.34 + sin(t * 1.4) * 0.07) * (1 + windStrength * 0.62)
-        )
 
         for (index, bird) in gulls.enumerated() {
             guard flock.indices.contains(index) else { continue }
@@ -2717,36 +2968,40 @@ final class VoyagingHomeAnimator: NSObject, SCNSceneRendererDelegate {
             let omega = config.omega
             let flap = config.flap
             let phase = config.phase
-            let angle = phase + t * omega
+            let angle = phase + animationTime * omega
             bird.position = SCNVector3(
                 cos(angle) * radius,
-                height + sin(t * 0.4 + phase) * 0.22,
+                height + sin(animationTime * 0.4 + phase) * 0.22,
                 sin(angle) * radius
             )
             let vx = -sin(angle) * omega
             let vz = cos(angle) * omega
             bird.eulerAngles.y = atan2(-vx, -vz)
             bird.eulerAngles.z = omega > 0 ? -0.18 : 0.18
-            let beat = -0.22 + sin(t * flap + phase) * 0.34
+            let beat = -0.22 + sin(animationTime * flap + phase) * 0.34
             bird.childNode(withName: "leftWing", recursively: false)?.eulerAngles.z = beat
             bird.childNode(withName: "rightWing", recursively: false)?.eulerAngles.z = -beat
         }
 
         sailor.bindIfNeeded(currentScene)
-        sailor.pose = resting
+        let sailorPose: PhoenixPose = resting
             ? .sit
             : (localSailorRole?.pose ?? localSailorPose ?? PhoenixPose.selected)
-        sailor.step(t: t, dt: dt)
+        let sailorPoseChanged = sailor.pose != sailorPose
+        sailor.pose = sailorPose
+        let sailorDelta = reduceMotion
+            && (desiredUpdate.enteredReducedMotion || sceneChanged || sailorPoseChanged)
+            ? Self.staticPoseSnapDelta
+            : animationDelta
+        sailor.step(t: animationTime, dt: sailorDelta)
 
         // 席が空いたまま、あるいは船が組み上がる前に届いた同乗者をここで拾う。
         syncCompanions()
-        companionLock.lock()
-        let companions = Array(companionVisuals.values)
-        companionLock.unlock()
         // 仲間の休憩までは分からない。甲板では立って海を見ている姿にする。
-        for companion in companions {
-            companion.animator.step(t: t, dt: dt)
+        for companion in companionVisuals.values {
+            companion.animator.step(t: animationTime, dt: animationDelta)
         }
+        return reduceMotion ? desiredUpdate.revision : nil
     }
 }
 
@@ -2899,7 +3154,6 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             boatParts: boatParts
         )
         view.scene = scene
-        context.coordinator.animator.attach(to: scene)
         view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
         view.antialiasingMode = guidedIntroduction ? .multisampling2X : .multisampling4X
         view.preferredFramesPerSecond = guidedIntroduction ? 30 : 60
@@ -2918,10 +3172,6 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         // カメラの上方向はworld +Yへ固定し、回転後のロールを発生させない。
         view.allowsCameraControl = false
         let reduceMotion = accessibilityReduceMotion || UIAccessibility.isReduceMotionEnabled
-        view.rendersContinuously = !reduceMotion
-        view.isPlaying = !reduceMotion
-        context.coordinator.reduceMotion = reduceMotion
-        view.delegate = reduceMotion ? nil : context.coordinator
         view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
         context.coordinator.attach(to: view)
         context.coordinator.setOrbit(
@@ -2939,11 +3189,14 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         context.coordinator.timeOfDay = timeOfDay
         context.coordinator.boatAppearanceKey = boatAppearanceKey
         context.coordinator.setDate(date)
-        context.coordinator.animator.resting = resting
-        context.coordinator.animator.setElapsedSeconds(elapsedSeconds)
-        context.coordinator.animator.localSailorPose = localSailorPose
-        context.coordinator.animator.localSailorRole = localSailorRole
-        context.coordinator.animator.setCompanions(companions)
+        context.coordinator.updateAnimationState(
+            resting: resting,
+            elapsedSeconds: elapsedSeconds,
+            localSailorPose: localSailorPose,
+            localSailorRole: localSailorRole,
+            companions: companions,
+            reduceMotion: reduceMotion
+        )
         return view
     }
 
@@ -2961,25 +3214,24 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
                 boatParts: boatParts
             )
             view.scene = scene
-            context.coordinator.animator.attach(to: scene)
             view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
             view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
             context.coordinator.bindCamera()
         }
         context.coordinator.setDate(date)
         context.coordinator.onTapWorld = onTapWorld
-        context.coordinator.animator.resting = resting
-        context.coordinator.animator.setElapsedSeconds(elapsedSeconds)
-        context.coordinator.animator.localSailorPose = localSailorPose
-        context.coordinator.animator.localSailorRole = localSailorRole
-        context.coordinator.animator.setCompanions(companions)
-        context.coordinator.setReduceMotion(
-            accessibilityReduceMotion || UIAccessibility.isReduceMotionEnabled
-        )
         context.coordinator.setOrbit(
             azimuthOffset: azimuthOffset,
             polarOffset: polarOffset,
             distanceScale: distanceScale
+        )
+        context.coordinator.updateAnimationState(
+            resting: resting,
+            elapsedSeconds: elapsedSeconds,
+            localSailorPose: localSailorPose,
+            localSailorRole: localSailorRole,
+            companions: companions,
+            reduceMotion: accessibilityReduceMotion || UIAccessibility.isReduceMotionEnabled
         )
     }
 
@@ -2993,11 +3245,12 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
     }
 
     final class Coordinator: NSObject, SCNSceneRendererDelegate, UIGestureRecognizerDelegate {
-        let animator = VoyagingHomeAnimator()
+        private let animator = VoyagingHomeAnimator()
         var showIsland = false
         var timeOfDay: AftideHomeTimeOfDay = .night
         var boatAppearanceKey = ""
-        var reduceMotion = false
+        private var reduceMotion = false
+        private var latestAnimatorRevision: UInt64 = 0
         var onTapWorld: () -> Void
         private weak var view: SCNView?
         private weak var camera: SCNNode?
@@ -3058,19 +3311,50 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             bindMoon()
         }
 
-        /// 設定アプリやControl Centerから表示中にReduce Motionが変わった場合も、
-        /// SCNViewの描画loopとdelegateを同じframeで安全に切り替える。
-        func setReduceMotion(_ value: Bool) {
-            guard reduceMotion != value, let view else { return }
+        /// Publishes a coherent main-thread snapshot. No animator or SceneKit
+        /// state is mutated until the renderer consumes this revision.
+        func updateAnimationState(
+            resting: Bool,
+            elapsedSeconds: Int,
+            localSailorPose: PhoenixPose?,
+            localSailorRole: VoyageSceneKit.CompanionDeckRole?,
+            companions: [VoyageSceneKit.CompanionDeckMember],
+            reduceMotion: Bool
+        ) {
+            latestAnimatorRevision = animator.updateDesiredState(
+                resting: resting,
+                elapsedSeconds: elapsedSeconds,
+                localSailorPose: localSailorPose,
+                localSailorRole: localSailorRole,
+                companions: companions,
+                reduceMotion: reduceMotion
+            )
+            configureAnimationLoop(reduceMotion: reduceMotion)
+        }
+
+        /// Reduced Motion still renders one complete static frame. The delegate
+        /// is detached only after that revision has reset boat pose, wake and foam.
+        private func configureAnimationLoop(reduceMotion value: Bool) {
+            guard let view else { return }
             reduceMotion = value
-            view.rendersContinuously = !value
-            view.isPlaying = !value
-            view.delegate = value ? nil : self
             if value {
                 azimuthDelta = 0
                 polarDelta = 0
-                view.setNeedsDisplay()
             }
+            view.delegate = self
+            view.rendersContinuously = true
+            view.isPlaying = true
+            if value { view.setNeedsDisplay() }
+        }
+
+        private func finishReducedMotionFrame(revision: UInt64) {
+            guard reduceMotion,
+                  revision == latestAnimatorRevision,
+                  let view
+            else { return }
+            view.rendersContinuously = false
+            view.isPlaying = false
+            view.delegate = nil
         }
 
         func installGestures(on view: SCNView) {
@@ -3243,7 +3527,11 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         }
 
         func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
-            animator.renderer(renderer, updateAtTime: time)
+            guard let revision = animator.renderFrame(renderer, updateAtTime: time)
+            else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.finishReducedMotionFrame(revision: revision)
+            }
         }
 
         @objc private func onCameraFrame() {

@@ -1424,7 +1424,10 @@ enum AftideHomeSceneFactory {
         scene.fogEndDistance = 220
         scene.fogDensityExponent = 1
 
-        let ocean = HomeIslandOceanEffects.makeScene(layout: .voyageHome)
+        let ocean = HomeIslandOceanEffects.makeScene(
+            layout: .voyageHome,
+            appearance: oceanAppearance(timeOfDay: timeOfDay, palette: palette)
+        )
         scene.rootNode.addChildNode(ocean.root)
         let vessel = makeNavigatorPOVBoat()
         markHotspot(vessel, as: .work)
@@ -1465,11 +1468,7 @@ enum AftideHomeSceneFactory {
             color: UIColor(rgb: palette.reflection),
             phase: .current(at: date)
         )
-        celestial.position = SCNVector3(
-            timeOfDay == .morning ? 42 : (timeOfDay == .day ? 48 : 46),
-            timeOfDay == .day ? 14 : (timeOfDay == .evening ? 7 : 10),
-            celestialZ
-        )
+        celestial.position = celestialPosition(for: timeOfDay, z: celestialZ)
         scene.rootNode.addChildNode(celestial)
 
         if palette.stars > 0 {
@@ -1491,7 +1490,7 @@ enum AftideHomeSceneFactory {
         key.light?.type = .directional
         key.light?.color = UIColor(rgb: palette.key)
         key.light?.intensity = timeOfDay == .day ? 1_550 : 1_250
-        key.position = SCNVector3(-6, 11, 7)
+        key.position = celestial.position
         key.look(at: SCNVector3Zero)
         scene.rootNode.addChildNode(key)
 
@@ -1530,6 +1529,43 @@ enum AftideHomeSceneFactory {
         scene.rootNode.addChildNode(camera)
 
         return scene
+    }
+
+    private static func oceanAppearance(
+        timeOfDay: AftideHomeTimeOfDay,
+        palette: AftideHomePalette
+    ) -> HomeIslandOceanEffects.Appearance {
+        let source = celestialPosition(for: timeOfDay, z: -2.5)
+        let strength: Float
+        switch timeOfDay {
+        case .morning: strength = 0.65
+        case .day: strength = 1
+        case .evening: strength = 0.55
+        case .night: strength = 0.10
+        }
+        return HomeIslandOceanEffects.Appearance(
+            shallow: timeOfDay == .night ? palette.sea : palette.fill,
+            sea: palette.sea,
+            deep: palette.seaDeep,
+            light: palette.reflection,
+            sky: palette.sky,
+            horizon: palette.fog,
+            sun: palette.reflection,
+            fog: palette.fog,
+            sunDirection: source,
+            sunStrength: strength
+        )
+    }
+
+    private static func celestialPosition(
+        for timeOfDay: AftideHomeTimeOfDay,
+        z: Float
+    ) -> SCNVector3 {
+        SCNVector3(
+            timeOfDay == .morning ? 42 : (timeOfDay == .day ? 48 : 46),
+            timeOfDay == .day ? 14 : (timeOfDay == .evening ? 7 : 10),
+            z
+        )
     }
 
     /// ホームの船(原点)から目的地までを結ぶ中継島群。ステップ数と島数を必ず一致させる。

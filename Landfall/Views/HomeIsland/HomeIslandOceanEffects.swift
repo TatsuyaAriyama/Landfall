@@ -6,11 +6,37 @@ struct HomeIslandOceanScene {
     let animatedMaterial: SCNMaterial
 }
 
-/// Bright, layered water authored specifically for the close third-person
-/// camera on My Island. Wave shape, normal direction, color, shimmer and shore
-/// foam all move independently so the surface never reads as one sliding tile.
+/// Layered coastal water shared by My Island, the voyage home and the timer.
+/// Geometry carries the swells while the surface shader supplies fine normals,
+/// optical depth, sky light and foam without texture lookups.
 enum HomeIslandOceanEffects {
     private static let clockOrigin = ProcessInfo.processInfo.systemUptime
+
+    struct Appearance {
+        let shallow: UInt
+        let sea: UInt
+        let deep: UInt
+        let light: UInt
+        let sky: UInt
+        let horizon: UInt
+        let sun: UInt
+        let fog: UInt
+        let sunDirection: SCNVector3
+        let sunStrength: Float
+
+        static let daylight = Appearance(
+            shallow: 0x39CAB4,
+            sea: 0x127F9C,
+            deep: 0x043B62,
+            light: 0xF4FFF9,
+            sky: 0x4A9DCA,
+            horizon: 0xC7F2E9,
+            sun: 0xFFF1C7,
+            fog: 0x6BA1AA,
+            sunDirection: SCNVector3(-0.34, 0.72, 0.60),
+            sunStrength: 1
+        )
+    }
 
     /// One process-wide wave clock keeps every view of the same ocean in phase.
     /// It also prevents a fallback/standalone timer scene from visibly restarting
@@ -27,7 +53,6 @@ enum HomeIslandOceanEffects {
         let centerX: Float
         let surfaceY: Float
         let includesShoreline: Bool
-        let includesHorizon: Bool
         let rootName: String
 
         static let homeIsland = Layout(
@@ -38,7 +63,6 @@ enum HomeIslandOceanEffects {
             centerX: 0,
             surfaceY: -0.55,
             includesShoreline: true,
-            includesHorizon: true,
             rootName: "home-island-ocean-root"
         )
 
@@ -52,7 +76,6 @@ enum HomeIslandOceanEffects {
             centerX: 24,
             surfaceY: 0,
             includesShoreline: false,
-            includesHorizon: false,
             rootName: "homeSea"
         )
 
@@ -67,12 +90,52 @@ enum HomeIslandOceanEffects {
             centerX: 0,
             surfaceY: 0,
             includesShoreline: false,
-            includesHorizon: false,
             rootName: "voyagingSea"
         )
     }
 
     static let surfaceNodeName = "landfall-shared-ocean-surface"
+
+    /// Shared source keeps the displaced surface, its normals and CPU-side
+    /// sampler on one compact wave spectrum. `p`, `uTime` and
+    /// `distanceFromIsland` are supplied by each modifier stage.
+    private static let waveSpectrumShader = """
+    float calm = mix(0.36, 1.0, smoothstep(10.0, 34.0, distanceFromIsland));
+    float2 dirA = float2(0.342, 0.940);
+    float2 dirB = float2(-0.766, 0.643);
+    float2 dirC = float2(0.906, 0.423);
+    float2 dirD = float2(-0.259, 0.966);
+    float2 dirE = float2(0.643, -0.766);
+    float phaseA = dot(p, dirA) * 0.105 - uTime * 0.42;
+    float phaseB = dot(p, dirB) * 0.155 - uTime * 0.36 + 1.70;
+    float phaseC = dot(p, dirC) * 0.340 - uTime * 0.78 + 0.45;
+    float phaseD = dot(p, dirD) * 0.720 - uTime * 1.22 + 2.10;
+    float phaseE = dot(p, dirE) * 1.250 - uTime * 1.68 + 0.90;
+    float sinA = sin(phaseA);
+    float sinB = sin(phaseB);
+    float sinC = sin(phaseC);
+    float sinD = sin(phaseD);
+    float sinE = sin(phaseE);
+    float cosA = cos(phaseA);
+    float cosB = cos(phaseB);
+    float cosC = cos(phaseC);
+    float cosD = cos(phaseD);
+    float cosE = cos(phaseE);
+    float height = (
+        sinA * 0.150
+        + sinB * 0.090
+        + sinC * 0.035
+        + sinD * 0.014
+        + sinE * 0.005
+    ) * calm;
+    float2 slope = (
+        dirA * (cosA * 0.150 * 0.105)
+        + dirB * (cosB * 0.090 * 0.155)
+        + dirC * (cosC * 0.035 * 0.340)
+        + dirD * (cosD * 0.014 * 0.720)
+        + dirE * (cosE * 0.005 * 1.250)
+    ) * calm;
+    """
 
     private static let geometryShader = """
     #pragma arguments
@@ -83,33 +146,14 @@ enum HomeIslandOceanEffects {
     float2 localP = _geometry.position.xy;
     float2 p = localP + uCoordinateOffset.xy;
     float distanceFromIsland = length(float2(p.x * 0.72, p.y));
-    float calm = mix(0.42, 1.0, smoothstep(11.0, 34.0, distanceFromIsland));
-    float warpPhase = p.x * 0.058 + p.y * 0.081 - uTime * 0.23;
-    float warp = sin(warpPhase) * 1.05;
-    float2 q = p + float2(warp, -warp * 0.48);
-    float phaseA = q.y * 0.145 + q.x * 0.098 - uTime * 0.43;
-    float phaseB = q.y * 0.118 - q.x * 0.112 + uTime * 0.34;
-    float phaseC = q.y * 0.430 + q.x * 0.345 - uTime * 0.74;
-    float phaseD = q.y * 0.940 - q.x * 0.670 + uTime * 1.16;
-    float height = (
-        sin(phaseA) * 0.145
-        + sin(phaseB) * 0.082
-        + sin(phaseC) * 0.024
-        + sin(phaseD) * 0.007
-    ) * calm;
-    float dWarpX = cos(warpPhase) * 1.05 * 0.058;
-    float dWarpY = cos(warpPhase) * 1.05 * 0.081;
-    float dhdx = (
-        cos(phaseA) * 0.145 * (0.098 + dWarpX)
-        + cos(phaseB) * 0.082 * (-0.112 - dWarpX * 0.48)
-        + cos(phaseC) * 0.024 * 0.345
-        + cos(phaseD) * 0.007 * -0.670
-    ) * calm;
-    float dhdy = (
-        cos(phaseA) * 0.145 * (0.145 + dWarpY)
-        + cos(phaseB) * 0.082 * (0.118 - dWarpY * 0.48)
-        + cos(phaseC) * 0.024 * 0.430
-        + cos(phaseD) * 0.007 * 0.940
+    \(waveSpectrumShader)
+    // Five directional components make a compact Gerstner-style field. The
+    // first three also move vertices laterally, giving crests a real profile
+    // instead of simply lifting a flat grid.
+    float2 horizontal = (
+        dirA * (cosA * 0.150 * 0.62)
+        + dirB * (cosB * 0.090 * 0.54)
+        + dirC * (cosC * 0.035 * 0.38)
     ) * calm;
     float edgeX = 1.0 - smoothstep(
         uSurfaceSize.x * 0.43,
@@ -122,8 +166,9 @@ enum HomeIslandOceanEffects {
         abs(localP.y)
     );
     float edge = edgeX * edgeY;
+    _geometry.position.xy += horizontal * edge;
     _geometry.position.z += height * edge;
-    _geometry.normal = normalize(float3(-dhdx * edge, -dhdy * edge, 1.0));
+    _geometry.normal = normalize(float3(-slope.x * edge, -slope.y * edge, 1.0));
     """
 
     private static let surfaceShader = """
@@ -134,141 +179,227 @@ enum HomeIslandOceanEffects {
     float3 uDeep;
     float3 uLight;
     float3 uSky;
+    float3 uHorizon;
+    float3 uSun;
     float3 uFog;
+    float3 uSunDirection;
+    float uSunStrength;
     float3 uSurfaceSize;
     float3 uCoordinateOffset;
     float uShoreline;
+    float3 uBoatPosition;
+    float3 uBoatHeading;
+    float uBoatSpeed;
     #pragma body
     float2 localP = (_surface.diffuseTexcoord - 0.5) * uSurfaceSize.xy;
     float2 p = localP + uCoordinateOffset.xy;
     float distanceFromIsland = length(float2(p.x * 0.72, p.y));
-    float calm = mix(0.42, 1.0, smoothstep(11.0, 34.0, distanceFromIsland));
-    float warpPhase = p.x * 0.058 + p.y * 0.081 - uTime * 0.23;
-    float warp = sin(warpPhase) * 1.05;
-    float2 q = p + float2(warp, -warp * 0.48);
-    float phaseA = q.y * 0.145 + q.x * 0.098 - uTime * 0.43;
-    float phaseB = q.y * 0.118 - q.x * 0.112 + uTime * 0.34;
-    float phaseC = q.y * 0.430 + q.x * 0.345 - uTime * 0.74;
-    float phaseD = q.y * 0.940 - q.x * 0.670 + uTime * 1.16;
-    float height = (
-        sin(phaseA) * 0.145
-        + sin(phaseB) * 0.082
-        + sin(phaseC) * 0.024
-        + sin(phaseD) * 0.007
-    ) * calm;
-    float dWarpX = cos(warpPhase) * 1.05 * 0.058;
-    float dWarpY = cos(warpPhase) * 1.05 * 0.081;
-    float2 slope = float2(
-        cos(phaseA) * 0.145 * (0.098 + dWarpX)
-            + cos(phaseB) * 0.082 * (-0.112 - dWarpX * 0.48)
-            + cos(phaseC) * 0.024 * 0.345
-            + cos(phaseD) * 0.007 * -0.670,
-        cos(phaseA) * 0.145 * (0.145 + dWarpY)
-            + cos(phaseB) * 0.082 * (0.118 - dWarpY * 0.48)
-            + cos(phaseC) * 0.024 * 0.430
-            + cos(phaseD) * 0.007 * 0.940
-    ) * calm;
+    \(waveSpectrumShader)
+    float edgeX = 1.0 - smoothstep(
+        uSurfaceSize.x * 0.43,
+        uSurfaceSize.x * 0.50,
+        abs(localP.x)
+    );
+    float edgeY = 1.0 - smoothstep(
+        uSurfaceSize.y * 0.43,
+        uSurfaceSize.y * 0.50,
+        abs(localP.y)
+    );
+    float surfaceEdge = edgeX * edgeY;
+    height *= surfaceEdge;
+    slope *= surfaceEdge;
 
-    // Small crossed ripples live only in the fragment normal. They catch the
-    // sky without adding geometry, so the ocean gains detail at close range
-    // while the silhouette and the low-motion wave field stay unchanged.
-    float microA = q.x * 1.86 + q.y * 1.21 - uTime * 1.08;
-    float microB = q.y * 2.34 - q.x * 1.47 + uTime * 0.91;
-    float2 microSlope = float2(
-        cos(microA) * 0.038 - cos(microB) * 0.026,
-        cos(microA) * 0.025 + cos(microB) * 0.042
-    ) * calm;
+    // Mid and fine ripples alter only the fragment normal. Three crossed
+    // directions retain close-range detail without multiplying vertex cost.
+    float rippleA = dot(p, float2(0.829, 0.559)) * 1.82 - uTime * 1.18;
+    float rippleB = dot(p, float2(-0.616, 0.788)) * 2.66 - uTime * 1.47;
+    float rippleC = dot(p, float2(0.225, 0.974)) * 4.85 - uTime * 2.05;
+    float detailCalm = mix(
+        0.68,
+        1.0,
+        smoothstep(10.0, 34.0, distanceFromIsland)
+    );
+    float2 detailSlope = (
+        float2(0.829, 0.559) * (cos(rippleA) * 0.032)
+        + float2(-0.616, 0.788) * (cos(rippleB) * 0.023)
+        + float2(0.225, 0.974) * (cos(rippleC) * 0.010)
+    ) * detailCalm * surfaceEdge;
     float3 waterNormal = normalize(
         _surface.normal
-        - _surface.tangent * microSlope.x
-        - _surface.bitangent * microSlope.y
+        - _surface.tangent * detailSlope.x
+        - _surface.bitangent * detailSlope.y
     );
     _surface.normal = waterNormal;
 
-    float shallowMix = smoothstep(9.5, 24.0, distanceFromIsland);
-    float deepMix = smoothstep(31.0, 82.0, distanceFromIsland);
-    float3 col = mix(uShallow, uSea, shallowMix);
-    col = mix(col, uDeep, deepMix * 0.72);
-    float directionalShade = clamp(0.52 + slope.x * 3.6 + slope.y * 3.1, 0.0, 1.0);
-    col *= 0.975 + directionalShade * 0.07;
+    // The shoreline shape doubles as a light-weight bathymetry map. In scenes
+    // without an island, a gentler radial depth keeps the same palette without
+    // accidentally painting a false shoreline beneath the boat.
+    float openWaterDepth = 5.0 + smoothstep(0.0, 90.0, distanceFromIsland) * 13.0;
+    float waterDepth = openWaterDepth;
+    float shoreAngle = 0.0;
+    float shoreDistance = 1000.0;
+    if (uShoreline > 0.5) {
+        shoreAngle = atan2(p.y / 9.10 + 0.00001, p.x / 13.10 + 0.00001);
+        float shorelineRipple = sin(shoreAngle * 3.0 + 0.45) * 0.045
+            + sin(shoreAngle * 7.0 - 0.82) * 0.026
+            + sin(shoreAngle * 11.0 + 1.30) * 0.012;
+        float shorelineShift = sin(shoreAngle * 5.0 + 0.91) * 0.018;
+        float shorelineScale = 0.955 * (1.0 + shorelineRipple + shorelineShift);
+        float ellipseRadius = length(float2(p.x / 13.10, p.y / 9.10));
+        shoreDistance = (ellipseRadius - shorelineScale) * 10.8;
+        waterDepth = max(0.12, shoreDistance * 0.72 + 0.12);
+    }
 
-    float trough = 1.0 - smoothstep(-0.13, 0.008, height);
-    float crest = smoothstep(0.035, 0.155, height);
-    col = mix(col, uDeep, trough * 0.055);
-    col = mix(col, uLight, crest * 0.16);
+    // Red and green wavelengths fall away first as the optical path grows;
+    // blue-green scatter remains, producing depth without a dark overlay.
+    float3 transmission = exp(
+        -float3(0.155, 0.061, 0.027) * min(waterDepth, 24.0)
+    );
+    float3 filteredWater = uDeep + (uShallow - uDeep) * transmission;
+    float3 waterBody = mix(
+        uShallow,
+        uSea,
+        smoothstep(0.35, 4.6, waterDepth)
+    );
+    waterBody = mix(waterBody, uDeep, smoothstep(4.0, 20.0, waterDepth) * 0.82);
+    float3 col = mix(waterBody, filteredWater, 0.46);
 
-    // Water is transparent-looking head-on and increasingly mirrors the sky
-    // toward grazing angles. Keeping this reflection procedural avoids a cube
-    // map seam and makes it consistent across Island, Voyage and Timer scenes.
-    float viewFacing = clamp(dot(waterNormal, normalize(_surface.view)), 0.0, 1.0);
-    float fresnel = 0.02 + 0.98 * pow(1.0 - viewFacing, 5.0);
-    float skyReflection = smoothstep(0.025, 0.72, fresnel);
-    col = mix(col, uSky, skyReflection * 0.38);
-    col = mix(col, uLight, crest * skyReflection * 0.13);
+    float2 shadedSlope = slope + detailSlope * 2.2;
+    float directionalShade = clamp(
+        0.50 + dot(shadedSlope, float2(-5.2, 6.4)),
+        0.0,
+        1.0
+    );
+    col *= 0.82 + directionalShade * 0.32;
 
-    // Two warped wave fields meet in short curved ridges. This avoids the
-    // straight, texture-like bands that are especially obvious in perspective.
-    float causticA = sin(
-        q.x * 0.82 + sin(q.y * 0.21 - uTime * 0.37) * 1.55 + uTime * 0.68
-    );
-    float causticB = sin(
-        q.y * 0.91 + sin(q.x * 0.24 + uTime * 0.29) * 1.45 - uTime * 0.57
-    );
-    float causticC = sin(
-        (q.x - q.y) * 1.07 + sin((q.x + q.y) * 0.17) * 1.2 + uTime * 0.43
-    );
-    float causticRidge = 1.0 - smoothstep(0.018, 0.16, abs(causticA + causticB));
-    float causticCross = 1.0 - smoothstep(0.02, 0.145, abs(causticB + causticC));
-    float caustic = max(causticRidge, causticCross * 0.58);
-    float nearShore = 1.0 - smoothstep(13.0, 42.0, distanceFromIsland);
-    col = mix(col, uLight, caustic * nearShore * 0.14);
+    float trough = 1.0 - smoothstep(-0.15, 0.005, height);
+    float crest = smoothstep(0.045, 0.180, height);
+    col = mix(col, uDeep, trough * 0.16);
+    col = mix(col, uShallow, crest * 0.14);
 
-    // Recreate the exact authored sand outline in water space. Procedural lace
-    // stays on the surface and can never turn into a dark occluding object.
-    float shoreAngle = atan2(p.y / 9.10, p.x / 13.10);
-    float shorelineRipple = sin(shoreAngle * 3.0 + 0.45) * 0.045
-        + sin(shoreAngle * 7.0 - 0.82) * 0.026
-        + sin(shoreAngle * 11.0 + 1.3) * 0.012;
-    float shorelineShift = sin(shoreAngle * 5.0 + 0.91) * 0.018;
-    float shorelineScale = 0.955 * (1.0 + shorelineRipple + shorelineShift);
-    float ellipseRadius = length(float2(p.x / 13.10, p.y / 9.10));
-    float shoreDistance = (ellipseRadius - shorelineScale) * 10.8;
-    float wash = 0.105
-        + sin(shoreAngle * 5.0 - uTime * 0.74) * 0.028
-        + sin(shoreAngle * 13.0 + uTime * 0.43) * 0.016;
-    float foamRidge = 1.0 - smoothstep(0.018, 0.088, abs(shoreDistance - wash));
-    float foamBreak = 0.5 + 0.5 * sin(
-        shoreAngle * 23.0 + sin(shoreAngle * 9.0) * 1.6 - uTime * 0.92
+    // Fresnel reflection is a sky gradient rather than a single cyan wash.
+    // A warm, narrow sun lobe shares the same normal and therefore travels
+    // across both long swells and tiny ripples as one coherent highlight.
+    float3 viewDirection = normalize(_surface.view);
+    float viewFacing = clamp(dot(waterNormal, viewDirection), 0.0, 1.0);
+    float fresnel = 0.025 + 0.975 * pow(1.0 - viewFacing, 5.0);
+    float3 reflectionDirection = reflect(-viewDirection, waterNormal);
+    float3 worldUp = normalize(
+        (scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz
     );
-    float foamLace = 0.5 + 0.5 * sin(
-        shoreAngle * 41.0 - sin(shoreAngle * 17.0) * 1.1 + uTime * 0.61
+    float skyHeight = clamp(
+        dot(reflectionDirection, worldUp) * 0.72 + 0.36,
+        0.0,
+        1.0
     );
-    float fragments = max(
-        smoothstep(0.46, 0.72, foamBreak),
-        smoothstep(0.70, 0.91, foamLace) * 0.48
-    );
-    float waterSide = smoothstep(-0.015, 0.045, shoreDistance);
-    float shoreFoam = foamRidge * fragments * waterSide * uShoreline;
-    col = mix(col, uLight, shoreFoam * 0.58);
+    float3 reflectedSky = mix(uHorizon, uSky, smoothstep(0.08, 0.88, skyHeight));
+    col = mix(col, reflectedSky, 0.085 + fresnel * 0.60);
 
-    // Crossing masks turn highlights into scattered glints instead of stripes.
+    float3 sunDirection = normalize(
+        (scn_frame.viewTransform * float4(uSunDirection, 0.0)).xyz
+    );
+    float sunFacing = max(
+        dot(waterNormal, normalize(viewDirection + sunDirection)),
+        0.0
+    );
+    float sunBroad = pow(sunFacing, 48.0);
+    float sunCore = pow(sunFacing, 192.0);
     float glintA = 0.5 + 0.5 * sin(
-        p.x * 1.47 - p.y * 1.91 + sin(p.y * 0.19) * 1.7 - uTime * 1.46
+        dot(p, float2(1.47, -1.91)) + sin(p.y * 0.19) * 1.7 - uTime * 1.46
     );
     float glintB = 0.5 + 0.5 * sin(
-        p.y * 2.31 + p.x * 0.73 + sin(p.x * 0.23) * 1.3 + uTime * 1.13
+        dot(p, float2(0.73, 2.31)) + sin(p.x * 0.23) * 1.3 + uTime * 1.13
     );
-    float sparkle = smoothstep(0.76, 0.985, glintA * glintB)
-        * smoothstep(0.025, 0.14, height)
-        * (1.0 - smoothstep(18.0, 76.0, distanceFromIsland));
-    col = mix(col, uLight, sparkle * 0.36);
+    float glintBreakup = 0.02 + 0.98 * smoothstep(0.38, 0.92, glintA * glintB);
+    col += uSun * uSunStrength
+        * (sunBroad * 0.015 + sunCore * glintBreakup * 0.32);
+
+    // Only sufficiently high, steep and broken crests produce white water.
+    // This removes the repeating bright lines that made the former surface
+    // read as a patterned plane.
+    float crestSteepness = smoothstep(0.028, 0.058, length(slope));
+    float crestBreakup = 0.5 + 0.5 * sin(
+        dot(p, float2(0.91, 0.67))
+            + sin(dot(p, float2(-0.21, 0.34))) * 1.8
+            - uTime * 0.61
+    );
+    float crestFoam = crest * crestSteepness * smoothstep(0.42, 0.80, crestBreakup);
+    col = mix(col, uLight, crestFoam * 0.46);
+
+    if (uShoreline > 0.5) {
+        // Two advancing shore bands and angular breakup form broad, irregular lace.
+        float wash = 0.18
+            + sin(shoreAngle * 5.0 - uTime * 0.58) * 0.055
+            + sin(shoreAngle * 13.0 + uTime * 0.37) * 0.024;
+        float shorePrimary = 1.0
+            - smoothstep(0.025, 0.145, abs(shoreDistance - wash));
+        float shoreSecondary = 1.0 - smoothstep(
+            0.035,
+            0.180,
+            abs(shoreDistance - wash - 0.48)
+        );
+        float foamBreak = 0.5 + 0.5 * sin(
+            shoreAngle * 23.0 + sin(shoreAngle * 9.0) * 1.6 - uTime * 0.84
+        );
+        float foamLace = 0.5 + 0.5 * sin(
+            shoreAngle * 41.0 - sin(shoreAngle * 17.0) * 1.1 + uTime * 0.56
+        );
+        float fragments = max(
+            smoothstep(0.38, 0.76, foamBreak),
+            smoothstep(0.68, 0.92, foamLace) * 0.55
+        );
+        float waterSide = smoothstep(-0.03, 0.08, shoreDistance);
+        float shoreFoam = min(shorePrimary + shoreSecondary * 0.38, 1.0)
+            * fragments * waterSide;
+        col = mix(col, uLight, shoreFoam * 0.76);
+    }
+
+    // Boat uniforms use ocean-plane coordinates: (world X, -world Z). Keep the
+    // wake below foam contrast: it is only a short, continuous change in the
+    // water body, never a row of white particles or a geometric V.
+    if (uBoatSpeed > 0.08) {
+        float2 heading = uBoatHeading.xy;
+        heading /= max(length(heading), 0.001);
+        float2 wakeOrigin = uBoatPosition.xy - heading * 0.72;
+        float2 fromWake = p - wakeOrigin;
+        float aft = -dot(fromWake, heading);
+        float signedLateral = dot(fromWake, float2(-heading.y, heading.x));
+        float wakeStrength = smoothstep(0.08, 1.60, uBoatSpeed);
+        float wakeLength = mix(1.8, 4.2, wakeStrength);
+        if (aft > 0.0 && aft < wakeLength) {
+            float wakeAge = clamp(aft / wakeLength, 0.0, 1.0);
+            float remainingWake = 1.0 - wakeAge;
+            float lengthFade = smoothstep(0.04, 0.38, aft)
+                * remainingWake * remainingWake;
+            float slowFlow = 0.5 + 0.5 * sin(
+                aft * 1.35 + signedLateral * 1.9 - uTime * 0.62
+            );
+            float centerDrift = (slowFlow - 0.5) * mix(0.04, 0.10, wakeAge);
+            float wakeWidth = mix(0.20, 0.31, wakeStrength) + aft * 0.055;
+            float plume = 1.0 - smoothstep(
+                wakeWidth,
+                wakeWidth + 0.34,
+                abs(signedLateral - centerDrift)
+            );
+            float disturbance = plume * lengthFade * wakeStrength * surfaceEdge;
+            float3 wakeWater = mix(
+                uShallow,
+                uDeep,
+                0.48 + slowFlow * 0.18
+            );
+            col = mix(col, wakeWater, disturbance * 0.065);
+        }
+    }
 
     float horizon = smoothstep(58.0, 90.0, distanceFromIsland);
-    col = mix(col, uFog, horizon * 0.24);
+    col = mix(col, uFog, horizon * 0.18);
     _surface.diffuse = float4(clamp(col, 0.0, 1.0), 1.0);
     """
 
-    static func makeScene(layout: Layout = .homeIsland) -> HomeIslandOceanScene {
+    static func makeScene(
+        layout: Layout = .homeIsland,
+        appearance: Appearance = .daylight
+    ) -> HomeIslandOceanScene {
         let root = SCNNode()
         root.name = layout.rootName
 
@@ -278,19 +409,23 @@ enum HomeIslandOceanEffects {
         let material = SCNMaterial()
         material.name = "home-island-ocean-material"
         material.lightingModel = .constant
-        material.diffuse.contents = UIColor(rgb: 0x3AB9B5)
+        material.diffuse.contents = UIColor(rgb: 0x168BA1)
         material.isDoubleSided = true
         material.shaderModifiers = [
             .geometry: geometryShader,
             .surface: surfaceShader,
         ]
         material.setValue(NSNumber(value: currentTime), forKey: "uTime")
-        material.setValue(colorVector(0x22DDBD), forKey: "uShallow")
-        material.setValue(colorVector(0x18B9C9), forKey: "uSea")
-        material.setValue(colorVector(0x087895), forKey: "uDeep")
-        material.setValue(colorVector(0xEFFFF7), forKey: "uLight")
-        material.setValue(colorVector(0x9FE8E1), forKey: "uSky")
-        material.setValue(colorVector(0x93D9D3), forKey: "uFog")
+        material.setValue(linearColorVector(appearance.shallow), forKey: "uShallow")
+        material.setValue(linearColorVector(appearance.sea), forKey: "uSea")
+        material.setValue(linearColorVector(appearance.deep), forKey: "uDeep")
+        material.setValue(linearColorVector(appearance.light), forKey: "uLight")
+        material.setValue(linearColorVector(appearance.sky), forKey: "uSky")
+        material.setValue(linearColorVector(appearance.horizon), forKey: "uHorizon")
+        material.setValue(linearColorVector(appearance.sun), forKey: "uSun")
+        material.setValue(linearColorVector(appearance.fog), forKey: "uFog")
+        material.setValue(appearance.sunDirection, forKey: "uSunDirection")
+        material.setValue(NSNumber(value: appearance.sunStrength), forKey: "uSunStrength")
         material.setValue(
             SCNVector3(Float(layout.width), Float(layout.depth), 0),
             forKey: "uSurfaceSize"
@@ -300,6 +435,9 @@ enum HomeIslandOceanEffects {
             NSNumber(value: layout.includesShoreline ? Float(1) : Float(0)),
             forKey: "uShoreline"
         )
+        material.setValue(SCNVector3Zero, forKey: "uBoatPosition")
+        material.setValue(SCNVector3(0, 1, 0), forKey: "uBoatHeading")
+        material.setValue(NSNumber(value: Float(0)), forKey: "uBoatSpeed")
         plane.firstMaterial = material
 
         let surface = SCNNode(geometry: plane)
@@ -312,44 +450,33 @@ enum HomeIslandOceanEffects {
         let underlayGeometry = SCNPlane(width: layout.width, height: layout.depth)
         let underlayMaterial = SCNMaterial()
         underlayMaterial.lightingModel = .constant
-        underlayMaterial.diffuse.contents = UIColor(rgb: 0x28A7B7)
+        underlayMaterial.diffuse.contents = UIColor(rgb: 0x07536E)
         underlayMaterial.isDoubleSided = true
         underlayGeometry.firstMaterial = underlayMaterial
         let underlay = SCNNode(geometry: underlayGeometry)
         underlay.name = "home-island-ocean-underlay"
         underlay.categoryBitMask = 1 << 4
         underlay.eulerAngles.x = -.pi / 2
-        // The four displacement layers can reach about 0.26 m at full swell.
+        // The five displacement layers can reach about 0.30 m at full swell.
         // Keep the safety layer below that entire range so a trough never
         // reveals it as a moving dark oval.
         underlay.position = SCNVector3(layout.centerX, layout.surfaceY - 0.50, 0)
         root.addChildNode(underlay)
 
-        if layout.includesHorizon {
-            let horizonGeometry = SCNTorus(ringRadius: 72, pipeRadius: 0.032)
-            horizonGeometry.ringSegmentCount = 192
-            horizonGeometry.pipeSegmentCount = 5
-            let horizonMaterial = SCNMaterial()
-            horizonMaterial.lightingModel = .constant
-            horizonMaterial.diffuse.contents = UIColor(rgb: 0xD8FFF4).withAlphaComponent(0.18)
-            horizonMaterial.blendMode = .alpha
-            horizonMaterial.writesToDepthBuffer = false
-            horizonGeometry.firstMaterial = horizonMaterial
-            let horizon = SCNNode(geometry: horizonGeometry)
-            horizon.name = "home-island-bright-horizon"
-            horizon.categoryBitMask = 1 << 4
-            horizon.position = SCNVector3(layout.centerX, layout.surfaceY + 0.12, 0)
-            root.addChildNode(horizon)
-        }
-
         return HomeIslandOceanScene(root: root, animatedMaterial: material)
     }
 
-    private static func colorVector(_ rgb: UInt) -> SCNVector3 {
-        SCNVector3(
-            Float((rgb >> 16) & 0xFF) / 255,
-            Float((rgb >> 8) & 0xFF) / 255,
-            Float(rgb & 0xFF) / 255
+    static func linearColorVector(_ rgb: UInt) -> SCNVector3 {
+        func linear(_ byte: UInt) -> Float {
+            let component = Float(byte) / 255
+            guard component > 0.04045 else { return component / 12.92 }
+            return powf((component + 0.055) / 1.055, 2.4)
+        }
+
+        return SCNVector3(
+            linear((rgb >> 16) & 0xFF),
+            linear((rgb >> 8) & 0xFF),
+            linear(rgb & 0xFF)
         )
     }
 }

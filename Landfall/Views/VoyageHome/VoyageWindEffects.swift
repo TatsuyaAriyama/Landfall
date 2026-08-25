@@ -128,100 +128,295 @@ enum VoyageSailFlutter {
 
 // MARK: - 波しぶき
 
-/// 舳先が波を切って上げるしぶき。左右一対の粒子で、風の強さだけ量が増える。
+/// 舳先が波を切る瞬間を、飛沫・霧・海面の細片に分けて描く。
 enum VoyageBowSpray {
     static let nodeName = "voyageBowSpray"
 
-    /// 片側の最大発生数。寿命 0.55 秒なので、同時に生きる粒は 70 前後に収まる。
-    static let peakBirthRate: CGFloat = 128
+    struct Palette {
+        let sea: UIColor
+        let highlight: UIColor
+    }
 
-    /// 舳先の左右へ粒子を置いた入れ物を返す。船体(bob)へ足して使う。
-    static func makeNode() -> SCNNode {
+    struct Rates {
+        static let zero = Rates(streaks: 0, mist: 0, flecks: 0)
+
+        let streaks: CGFloat
+        let mist: CGFloat
+        let flecks: CGFloat
+
+        static func sailing(wind: Float, at time: Float) -> Rates {
+            let strength = CGFloat(min(max(wind, 0), 1))
+            let wave = max(0, sin(time * 1.9))
+            let impact = powf(wave, 2.3)
+            let surfaceWave = max(0, sin(time * 1.9 - 0.72))
+            return Rates(
+                streaks: 18 * strength * CGFloat(0.06 + impact * 0.94),
+                mist: 6 * strength * CGFloat(impact),
+                flecks: 36 * strength
+                    * CGFloat(0.22 + powf(surfaceWave, 1.45) * 0.78)
+            )
+        }
+    }
+
+    /// レイヤーを配列の順序で識別しない、アニメータ向けの型付きハンドル。
+    struct Systems {
+        static let empty = Systems(streaks: [], mist: [], flecks: [])
+
+        let streaks: [SCNParticleSystem]
+        let mist: [SCNParticleSystem]
+        let flecks: [SCNParticleSystem]
+
+        func apply(_ rates: Rates) {
+            set(streaks, rate: rates.streaks)
+            set(mist, rate: rates.mist)
+            set(flecks, rate: rates.flecks)
+        }
+
+        func reset() {
+            apply(.zero)
+            for system in all { system.reset() }
+        }
+
+        private var all: [SCNParticleSystem] {
+            streaks + mist + flecks
+        }
+
+        private func set(_ systems: [SCNParticleSystem], rate: CGFloat) {
+            for system in systems { system.birthRate = rate }
+        }
+    }
+
+    private enum Layer: String, CaseIterable {
+        case streaks
+        case mist
+        case flecks
+
+        var nodeName: String { "\(VoyageBowSpray.nodeName)-\(rawValue)" }
+    }
+
+    static func makeNode(palette: Palette) -> SCNNode {
         let root = SCNNode()
         root.name = nodeName
-        let image = dropletImage()
-        for side in [Float(1), Float(-1)] {
-            let node = SCNNode()
-            // 船体は舳先が +x。喫水線のすぐ上、舷側の外へ少し出した位置から出す。
-            node.position = SCNVector3(1.24, 0.10, 0.22 * side)
-            node.addParticleSystem(makeSystem(image: image, side: side))
-            root.addChildNode(node)
+        for layer in Layer.allCases {
+            let layerNode = SCNNode()
+            layerNode.name = layer.nodeName
+            for side in [Float(1), Float(-1)] {
+                let emitter = SCNNode()
+                emitter.position = position(for: layer, side: side)
+                emitter.addParticleSystem(
+                    makeSystem(layer: layer, side: side, palette: palette)
+                )
+                layerNode.addChildNode(emitter)
+            }
+            root.addChildNode(layerNode)
         }
         return root
     }
 
-    static func systems(in root: SCNNode) -> [SCNParticleSystem] {
+    static func systems(in root: SCNNode) -> Systems {
         guard let container = root.childNode(withName: nodeName, recursively: true) else {
-            return []
+            return .empty
         }
-        return container.childNodes.flatMap { $0.particleSystems ?? [] }
+        func systems(for layer: Layer) -> [SCNParticleSystem] {
+            container.childNode(withName: layer.nodeName, recursively: false)?
+                .childNodes.flatMap { $0.particleSystems ?? [] } ?? []
+        }
+        return Systems(
+            streaks: systems(for: .streaks),
+            mist: systems(for: .mist),
+            flecks: systems(for: .flecks)
+        )
     }
 
-    private static func makeSystem(image: UIImage, side: Float) -> SCNParticleSystem {
+    private static func position(for layer: Layer, side: Float) -> SCNVector3 {
+        switch layer {
+        case .streaks: SCNVector3(1.24, 0.08, 0.19 * side)
+        case .mist: SCNVector3(1.18, 0.03, 0.23 * side)
+        case .flecks: SCNVector3(1.20, 0.01, 0.24 * side)
+        }
+    }
+
+    private static func makeSystem(
+        layer: Layer,
+        side: Float,
+        palette: Palette
+    ) -> SCNParticleSystem {
         let system = SCNParticleSystem()
-        system.particleImage = image
         system.birthRate = 0
         system.emissionDuration = 1
         system.loops = true
-        system.particleLifeSpan = 0.55
-        system.particleLifeSpanVariation = 0.22
-        // 舷側を離れず、舳先の高さより上へは行かない速さ。上限 v^2/2a はおよそ
-        // 0.13 — 甲板の縁までで、帆にはかからない。
-        system.particleVelocity = 1.15
-        system.particleVelocityVariation = 0.45
-        // 外へ、そして上へ。舷側を舐めるのではなく、切った波が跳ねる角度。
-        system.emittingDirection = SCNVector3(0.46, 0.78, 0.43 * side)
-        system.spreadingAngle = 22
-        system.acceleration = SCNVector3(0, -5.0, 0)
-        // 粒は小さく、数で見せる。大きい粒はしぶきではなく泡に見える。
-        system.particleSize = 0.020
-        system.particleSizeVariation = 0.010
-        system.particleColor = UIColor(white: 1, alpha: 0.92)
-        system.particleColorVariation = SCNVector4(0, 0.04, 0.10, 0.18)
         system.blendMode = .alpha
         system.isLightingEnabled = false
         system.sortingMode = .none
         system.isAffectedByGravity = false
-        system.particleAngularVelocity = 0
-        // 点から出すと筋になる。舷側に沿った細い箱にすると、面で上がる飛沫になる。
-        let shape = SCNBox(width: 0.05, height: 0.02, length: 0.20, chamferRadius: 0)
-        system.emitterShape = shape
+        system.isAffectedByPhysicsFields = false
+        system.isLocal = false
         system.birthLocation = .volume
+        system.birthDirection = .constant
 
-        // 空中で細り、消えぎわに透ける。出っぱなしの白い点にしないための二本。
-        let size = CAKeyframeAnimation(keyPath: "size")
-        size.values = [0.62, 1.0, 0.58]
-        size.keyTimes = [0, 0.26, 1.0]
-        let sizeController = SCNParticlePropertyController(animation: size)
-        let opacity = CAKeyframeAnimation(keyPath: "opacity")
-        opacity.values = [0.0, 1.0, 0.85, 0.0]
-        opacity.keyTimes = [0, 0.14, 0.55, 1.0]
-        let opacityController = SCNParticlePropertyController(animation: opacity)
-        system.propertyControllers = [
-            .size: sizeController,
-            .opacity: opacityController,
-        ]
+        switch layer {
+        case .streaks:
+            system.particleImage = streakImage
+            system.particleLifeSpan = 0.24
+            system.particleLifeSpanVariation = 0.06
+            system.particleVelocity = 1.35
+            system.particleVelocityVariation = 0.25
+            system.emittingDirection = SCNVector3(0.38, 0.76, 0.52 * side)
+            system.spreadingAngle = 12
+            system.acceleration = SCNVector3(0, -6.5, 0)
+            system.particleSize = 0.044
+            system.particleSizeVariation = 0.014
+            system.particleColor = palette.highlight.withAlphaComponent(0.60)
+            system.particleColorVariation = SCNVector4(0.04, 0.12, 0.12, 0.24)
+            system.particleAngle = radians(side > 0 ? -24 : 24)
+            system.particleAngleVariation = radians(14)
+            system.particleAngularVelocityVariation = radians(60)
+            system.emitterShape = SCNBox(
+                width: 0.06,
+                height: 0.02,
+                length: 0.18,
+                chamferRadius: 0
+            )
+            system.propertyControllers = controllers(
+                size: [0.20, 1.0, 0.24],
+                opacity: [0, 1.0, 0.50, 0]
+            )
+
+        case .mist:
+            system.particleImage = mistImage
+            system.particleLifeSpan = 0.42
+            system.particleLifeSpanVariation = 0.10
+            system.particleVelocity = 0.45
+            system.particleVelocityVariation = 0.12
+            system.emittingDirection = SCNVector3(0.18, 0.34, 0.44 * side)
+            system.spreadingAngle = 32
+            system.acceleration = SCNVector3(0, -1.8, 0)
+            system.particleSize = 0.085
+            system.particleSizeVariation = 0.030
+            system.particleColor = palette.sea.withAlphaComponent(0.14)
+            system.particleColorVariation = SCNVector4(0.06, 0.12, 0.12, 0.08)
+            system.particleAngleVariation = radians(180)
+            system.particleAngularVelocityVariation = radians(20)
+            system.emitterShape = SCNBox(
+                width: 0.10,
+                height: 0.03,
+                length: 0.24,
+                chamferRadius: 0
+            )
+            system.propertyControllers = controllers(
+                size: [0.35, 1.20, 1.65],
+                opacity: [0, 1.0, 0.40, 0]
+            )
+
+        case .flecks:
+            system.particleImage = fleckImage
+            system.particleLifeSpan = 0.16
+            system.particleLifeSpanVariation = 0.05
+            system.particleVelocity = 0.72
+            system.particleVelocityVariation = 0.22
+            system.emittingDirection = SCNVector3(-0.10, 0.22, 0.82 * side)
+            system.spreadingAngle = 16
+            system.acceleration = SCNVector3(0, -6.0, 0)
+            system.particleSize = 0.020
+            system.particleSizeVariation = 0.008
+            system.particleColor = palette.sea.withAlphaComponent(0.45)
+            system.particleColorVariation = SCNVector4(0.08, 0.16, 0.14, 0.24)
+            system.particleAngle = radians(side > 0 ? -68 : 68)
+            system.particleAngleVariation = radians(34)
+            system.particleAngularVelocityVariation = radians(80)
+            system.emitterShape = SCNBox(
+                width: 0.08,
+                height: 0.015,
+                length: 0.22,
+                chamferRadius: 0
+            )
+            system.propertyControllers = controllers(
+                size: [0.45, 1.0, 0.26],
+                opacity: [0, 0.85, 0.42, 0]
+            )
+        }
         return system
     }
 
-    /// 縁のぼけた白い粒。画像を同梱せずに済ませるため、その場で描く。
-    private static func dropletImage() -> UIImage {
+    private static func controllers(
+        size: [Double],
+        opacity: [Double]
+    ) -> [SCNParticleSystem.ParticleProperty: SCNParticlePropertyController] {
+        let sizeAnimation = CAKeyframeAnimation(keyPath: "size")
+        sizeAnimation.values = size.map(NSNumber.init(value:))
+        sizeAnimation.keyTimes = normalizedTimes(count: size.count)
+        let opacityAnimation = CAKeyframeAnimation(keyPath: "opacity")
+        opacityAnimation.values = opacity.map(NSNumber.init(value:))
+        opacityAnimation.keyTimes = normalizedTimes(count: opacity.count)
+        return [
+            .size: SCNParticlePropertyController(animation: sizeAnimation),
+            .opacity: SCNParticlePropertyController(animation: opacityAnimation),
+        ]
+    }
+
+    private static func normalizedTimes(count: Int) -> [NSNumber] {
+        guard count > 1 else { return [0] }
+        return (0..<count).map { NSNumber(value: Double($0) / Double(count - 1)) }
+    }
+
+    private static func radians(_ degrees: CGFloat) -> CGFloat {
+        degrees * .pi / 180
+    }
+
+    private static let streakImage = makeStreakImage()
+    private static let mistImage = makeMistImage()
+    private static let fleckImage = makeFleckImage()
+
+    private static func makeStreakImage() -> UIImage {
         let side: CGFloat = 32
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
         return renderer.image { context in
             let cgContext = context.cgContext
+            cgContext.saveGState()
+            UIBezierPath(
+                roundedRect: CGRect(x: 14, y: 3, width: 4, height: 26),
+                cornerRadius: 2
+            ).addClip()
             let colors = [
-                UIColor(white: 1, alpha: 1).cgColor,
-                UIColor(white: 1, alpha: 0.72).cgColor,
+                UIColor(white: 1, alpha: 0).cgColor,
+                UIColor(white: 1, alpha: 0.92).cgColor,
+                UIColor(white: 1, alpha: 0.50).cgColor,
                 UIColor(white: 1, alpha: 0).cgColor,
             ] as CFArray
             guard let gradient = CGGradient(
                 colorsSpace: CGColorSpaceCreateDeviceRGB(),
                 colors: colors,
-                locations: [0, 0.26, 1]
+                locations: [0, 0.20, 0.58, 1]
+            ) else {
+                cgContext.restoreGState()
+                return
+            }
+            cgContext.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: side / 2, y: 2),
+                end: CGPoint(x: side / 2, y: 30),
+                options: []
+            )
+            cgContext.restoreGState()
+        }
+    }
+
+    private static func makeMistImage() -> UIImage {
+        let side: CGFloat = 32
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
+        return renderer.image { context in
+            let colors = [
+                UIColor(white: 1, alpha: 0.54).cgColor,
+                UIColor(white: 1, alpha: 0.18).cgColor,
+                UIColor(white: 1, alpha: 0).cgColor,
+            ] as CFArray
+            guard let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: colors,
+                locations: [0, 0.36, 1]
             ) else { return }
             let center = CGPoint(x: side / 2, y: side / 2)
-            cgContext.drawRadialGradient(
+            context.cgContext.drawRadialGradient(
                 gradient,
                 startCenter: center,
                 startRadius: 0,
@@ -229,6 +424,39 @@ enum VoyageBowSpray {
                 endRadius: side / 2,
                 options: []
             )
+        }
+    }
+
+    private static func makeFleckImage() -> UIImage {
+        let side: CGFloat = 32
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
+        return renderer.image { context in
+            let cgContext = context.cgContext
+            cgContext.saveGState()
+            UIBezierPath(
+                roundedRect: CGRect(x: 7, y: 14, width: 18, height: 4),
+                cornerRadius: 2
+            ).addClip()
+            let colors = [
+                UIColor(white: 1, alpha: 0).cgColor,
+                UIColor(white: 1, alpha: 0.82).cgColor,
+                UIColor(white: 1, alpha: 0).cgColor,
+            ] as CFArray
+            guard let gradient = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: colors,
+                locations: [0, 0.50, 1]
+            ) else {
+                cgContext.restoreGState()
+                return
+            }
+            cgContext.drawLinearGradient(
+                gradient,
+                start: CGPoint(x: 7, y: side / 2),
+                end: CGPoint(x: 25, y: side / 2),
+                options: []
+            )
+            cgContext.restoreGState()
         }
     }
 }

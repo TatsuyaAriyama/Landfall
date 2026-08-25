@@ -262,7 +262,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
     var boatBoardingRequest: HomeIslandBoatBoardingRequest?
     var mode: HomeIslandMode
     /// 歩いているときの明るさ。写真モードのスライダはここからの増減。
-    static let baseExposureOffset: Float = 0.82
+    static let baseExposureOffset: Float = 0.45
     /// 写真モードでの増減(EV)。0 のあいだは歩いているときと同じ明るさ。
     var cameraExposureOffset: Float
     /// 設定で選んだ島の明るさ(EV)。歩いていても写真モードでも土台になる。
@@ -368,6 +368,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private weak var camera: SCNNode?
         private weak var cameraTarget: SCNNode?
         private weak var seaMaterial: SCNMaterial?
+        private let marineController = HomeIslandMarineDynamics.BoatController()
         private var oceanReduceMotionEnabled = UIAccessibility.isReduceMotionEnabled
         private var frozenOceanTime = HomeIslandOceanEffects.currentTime
         private weak var foundationNode: SCNNode?
@@ -1679,7 +1680,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func makeScene() -> SCNScene {
             let scene = SCNScene()
             scene.background.contents = UIColor.clear
-            scene.fogColor = UIColor(rgb: 0xC9F3EA)
+            scene.fogColor = UIColor(rgb: 0x6BA1AA)
             scene.fogStartDistance = 52
             scene.fogEndDistance = 118
             scene.lightingEnvironment.contents = UIColor(rgb: 0xD9FFF5)
@@ -1877,12 +1878,6 @@ struct HomeIslandSceneView: UIViewRepresentable {
             arrivalBoatNavigator = sailor
             renderedBoatAppearanceID = owner.boatAppearanceID
             renderedBoatShipID = BoatCustomization.currentParts.shipID
-
-            if !UIAccessibility.isReduceMotionEnabled {
-                let rise = SCNAction.moveBy(x: 0, y: 0.055, z: 0, duration: 1.25)
-                rise.timingMode = .easeInEaseOut
-                bob.runAction(.repeatForever(.sequence([rise, rise.reversed()])))
-            }
 
             return scene
         }
@@ -4148,13 +4143,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 .run { [weak self] _ in
                     DispatchQueue.main.async {
                         guard let self else { return }
-                        self.arrivalBoatBob?.removeAllActions()
-                        let settle = SCNAction.move(
-                            to: SCNVector3Zero,
-                            duration: ArrivalMotion.mooringSettleDuration
-                        )
-                        settle.timingMode = .easeOut
-                        self.arrivalBoatBob?.runAction(settle)
+                        guard let bob = self.arrivalBoatBob else { return }
+                        bob.removeAllActions()
+                        self.marineController.requestReset(buoyancyNode: bob)
                     }
                 },
                 .wait(duration: ArrivalMotion.mooringSettleDuration),
@@ -4462,6 +4453,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             arrivalGangplank?.removeFromParentNode()
             arrivalFinished = true
             arrivalNavigatorIsWalking = false
+            startMooredBoatMotion()
             enterExploreCamera(focusing: destination, animated: 0)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
@@ -4567,14 +4559,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func startMooredBoatMotion() {
-            guard !UIAccessibility.isReduceMotionEnabled,
-                  let bob = arrivalBoatBob
-            else { return }
+            guard let bob = arrivalBoatBob else { return }
             bob.removeAllActions()
-            bob.position = SCNVector3Zero
-            let rise = SCNAction.moveBy(x: 0, y: 0.016, z: 0, duration: 1.80)
-            rise.timingMode = .easeInEaseOut
-            bob.runAction(.repeatForever(.sequence([rise, rise.reversed()])))
+            marineController.requestReset(buoyancyNode: bob)
         }
 
         private func startDeparture() {
@@ -4727,7 +4714,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let easedTurn = turnProgress * turnProgress * (3 - 2 * turnProgress)
                 node.position = SCNVector3(
                     startPosition.x - DepartureMotion.outwardDrift * easedTurn,
-                    startPosition.y + sin(t * .pi * 5) * 0.012,
+                    startPosition.y,
                     startPosition.z + DepartureMotion.voyageDistance * travelProgress
                 )
                 // Increasing through 3π/2 fixes the 180° turn direction: the
@@ -6035,12 +6022,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     frozenOceanTime = HomeIslandOceanEffects.currentTime
                 }
             }
+            let oceanTime = reduceMotion
+                ? frozenOceanTime
+                : HomeIslandOceanEffects.currentTime
             seaMaterial?.setValue(
-                NSNumber(
-                    value: reduceMotion
-                        ? frozenOceanTime
-                        : HomeIslandOceanEffects.currentTime
-                ),
+                NSNumber(value: oceanTime),
                 forKey: "uTime"
             )
 
@@ -6049,6 +6035,21 @@ struct HomeIslandSceneView: UIViewRepresentable {
             // background gaps to avoid an unbounded catch-up burst.
             let deltaTime = Float(min(max(time - (lastFrameTime ?? time), 0), 0.25))
             lastFrameTime = time
+
+            if let boat = arrivalBoat, let bob = arrivalBoatBob {
+                let marineFrame = marineController.update(
+                    boatRoot: boat,
+                    buoyancyNode: bob,
+                    oceanTime: oceanTime,
+                    deltaTime: deltaTime,
+                    reduceMotion: reduceMotion
+                )
+                marineFrame.wake.apply(to: seaMaterial)
+            } else {
+                marineController.reset()
+                HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
+            }
+
             // The build-mode thumb pan runs here rather than on the keyboard
             // loop: that loop only ticks while a WASD key is held, so on a
             // device with no keyboard the thumb moved nothing at all.

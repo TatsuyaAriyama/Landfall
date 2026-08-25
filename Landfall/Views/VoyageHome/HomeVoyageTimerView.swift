@@ -316,6 +316,19 @@ struct HomeVoyageTimerView: View {
         .current(at: clockNow)
     }
 
+    /// Keep the elapsed time purely coral—without a shadow or backing plate—
+    /// while preserving readable contrast as the sky changes through the day.
+    private var timerCoral: Color {
+        switch timeOfDay {
+        case .morning, .day:
+            Color(hex: 0xA33440)
+        case .evening:
+            Color(hex: 0x782330)
+        case .night:
+            LFColor.coral
+        }
+    }
+
     private var palette: AftideHomePalette {
         .voyagingNight
     }
@@ -550,7 +563,7 @@ struct HomeVoyageTimerView: View {
                         )
                     )
                     .monospacedDigit()
-                    .foregroundStyle(LFColor.coral)
+                    .foregroundStyle(timerCoral)
                     .contentTransition(.numericText())
             }
             .accessibilityLabel(Text("ELAPSED"))
@@ -634,8 +647,8 @@ struct HomeVoyageTimerView: View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: compactHUD ? 16 : 18, weight: .semibold))
-                .foregroundStyle(active ? LFColor.coral : VoyageHUD.plate.opacity(0.86))
-                .frame(width: compactHUD ? 32 : 35, height: compactHUD ? 32 : 35)
+                .foregroundStyle(active ? timerCoral : VoyageHUD.plate.opacity(0.86))
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
                 .shadow(color: Color.white.opacity(0.78), radius: 1.2)
                 .shadow(color: Color.black.opacity(0.24), radius: 4, y: 2)
