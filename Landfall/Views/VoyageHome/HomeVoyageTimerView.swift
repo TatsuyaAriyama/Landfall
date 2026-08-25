@@ -121,6 +121,38 @@ private struct HomeVoyageCompletion {
     var pomodoroCycles: Int = 0
 }
 
+/// 航海記録とは切り離した、端末内だけの作業項目別スクラッチ。
+/// 明示的に残した内容だけを次の航海へ渡し、自動保存や同期は行わない。
+private enum VoyageTemporaryMemoStore {
+    static let maximumCharacters = 10_000
+    private static let storageKey = "voyage.temporaryMemos.v1"
+    private static let defaults = UserDefaults.standard
+
+    static func load(itemID: UUID) -> String {
+        let memos = defaults.dictionary(forKey: storageKey) as? [String: String]
+        return memos?[itemID.uuidString] ?? ""
+    }
+
+    @discardableResult
+    static func save(_ memo: String, itemID: UUID) -> String {
+        let value = String(memo.prefix(maximumCharacters))
+        var memos = defaults.dictionary(forKey: storageKey) as? [String: String] ?? [:]
+        memos[itemID.uuidString] = value
+        defaults.set(memos, forKey: storageKey)
+        return value
+    }
+
+    static func remove(itemID: UUID) {
+        var memos = defaults.dictionary(forKey: storageKey) as? [String: String] ?? [:]
+        memos.removeValue(forKey: itemID.uuidString)
+        if memos.isEmpty {
+            defaults.removeObject(forKey: storageKey)
+        } else {
+            defaults.set(memos, forKey: storageKey)
+        }
+    }
+}
+
 @MainActor
 private enum HomeVoyageRecorder {
     static func record(
@@ -225,6 +257,11 @@ struct HomeVoyageTimerView: View {
         self.boatAppearanceKey = boatAppearanceKey
         self.firstVoyageRequiredNote = firstVoyageRequiredNote
         self.onFirstVoyageRecorded = onFirstVoyageRecorded
+        let restoredMemo = firstVoyageRequiredNote == nil
+            ? VoyageTemporaryMemoStore.load(itemID: item.uuid)
+            : ""
+        _note = State(initialValue: restoredMemo)
+        _savedTemporaryMemo = State(initialValue: restoredMemo)
     }
 
     @Environment(\.modelContext) private var modelContext
@@ -242,7 +279,8 @@ struct HomeVoyageTimerView: View {
     private var soundMode = HomeVoyageSound.initialTimerSound.rawValue
     @ObservedObject private var voyageAudio = HomeVoyageAudio.shared
 
-    @State private var note = ""
+    @State private var note: String
+    @State private var savedTemporaryMemo: String
     @State private var reflection = ""
     @State private var completion: HomeVoyageCompletion?
     @State private var confirmingDiscard = false
@@ -254,6 +292,7 @@ struct HomeVoyageTimerView: View {
     @State private var showingTemporaryMemo = false
     @State private var showingReflection = false
     @State private var confirmingReturnHome = false
+    @State private var confirmingTemporaryMemoClear = false
     @State private var showingTodoList = false
     @State private var showingManualEntry = false
     @StateObject private var todoStore = HomeIslandTodoStore.shared
@@ -315,6 +354,23 @@ struct HomeVoyageTimerView: View {
     private var requiredNoteSatisfied: Bool {
         guard let firstVoyageRequiredNote else { return true }
         return normalizedNote == firstVoyageRequiredNote
+    }
+
+    private var temporaryMemoHasUnsavedChanges: Bool {
+        note != savedTemporaryMemo
+    }
+
+    private var canKeepTemporaryMemo: Bool {
+        !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && temporaryMemoHasUnsavedChanges
+    }
+
+    private var temporaryMemoIsSaved: Bool {
+        !savedTemporaryMemo.isEmpty && !temporaryMemoHasUnsavedChanges
+    }
+
+    private var temporaryMemoSaveLabel: LocalizedStringKey {
+        temporaryMemoIsSaved ? "Saved for next time" : "Keep for next time"
     }
 
     /// 参加順はホストから1〜4番。全端末で同じ配列を使い、ローカルかどうかは
@@ -427,6 +483,12 @@ struct HomeVoyageTimerView: View {
         .alert("Return to your island?", isPresented: $confirmingReturnHome) {
             Button("Return to island") {
                 discardVoyageAndReturnHome()
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Clear this temporary memo?", isPresented: $confirmingTemporaryMemoClear) {
+            Button("Clear", role: .destructive) {
+                clearTemporaryMemo()
             }
             Button("Cancel", role: .cancel) {}
         }
@@ -603,8 +665,8 @@ struct HomeVoyageTimerView: View {
         .accessibilityLabel(Text(verbatim: accessibilityLabel))
     }
 
-    /// 入力中だけ画面に存在する航海中の走り書き。永続化先を持たず、
-    /// 記録ボタンを押しても StudySession へ渡さない。
+    /// 航海記録へは渡さない作業項目別の走り書き。明示的に残した内容だけ、
+    /// 同じ端末で次にこの項目の航海を開いたときに復元する。
     private var temporaryMemoCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
@@ -647,6 +709,12 @@ struct HomeVoyageTimerView: View {
                     .focused($noteFocused)
                     .frame(minHeight: compactHUD ? 150 : 190)
                     .accessibilityLabel(Text("Temporary memo"))
+                    .onChange(of: note) { _, value in
+                        guard value.count > VoyageTemporaryMemoStore.maximumCharacters else {
+                            return
+                        }
+                        note = String(value.prefix(VoyageTemporaryMemoStore.maximumCharacters))
+                    }
             }
             .padding(7)
             .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
@@ -655,13 +723,79 @@ struct HomeVoyageTimerView: View {
                     .strokeBorder(VoyageHUD.plate.opacity(0.10), lineWidth: 1)
             )
 
-            Text("This is a temporary memo field.")
-                .font(LFFont.label(11))
-                .foregroundStyle(Color.black.opacity(0.72))
+            if isFirstVoyage {
+                Text("This is a temporary memo field.")
+                    .font(LFFont.label(11))
+                    .foregroundStyle(Color.black.opacity(0.72))
+            } else {
+                HStack(spacing: 8) {
+                    if !note.isEmpty || !savedTemporaryMemo.isEmpty {
+                        Button {
+                            noteFocused = false
+                            confirmingTemporaryMemoClear = true
+                            Haptics.tap(.light)
+                        } label: {
+                            Label("Clear", systemImage: "trash")
+                                .font(LFFont.label(10))
+                                .foregroundStyle(LFColor.coral)
+                                .padding(.horizontal, 10)
+                                .frame(height: 32)
+                                .background(Color.white.opacity(0.34), in: Capsule())
+                        }
+                        .buttonStyle(LFPressableButtonStyle())
+                    }
+
+                    Spacer(minLength: 4)
+
+                    Button {
+                        keepTemporaryMemoForNextVoyage()
+                    } label: {
+                        Label(
+                            temporaryMemoSaveLabel,
+                            systemImage: canKeepTemporaryMemo ? "bookmark" : "checkmark"
+                        )
+                        .font(LFFont.label(10))
+                        .foregroundStyle(Color.black.opacity(canKeepTemporaryMemo ? 0.88 : 0.50))
+                        .padding(.horizontal, 11)
+                        .frame(height: 32)
+                        .background(
+                            Color.white.opacity(canKeepTemporaryMemo ? 0.62 : 0.28),
+                            in: Capsule()
+                        )
+                    }
+                    .buttonStyle(LFPressableButtonStyle())
+                    .disabled(!canKeepTemporaryMemo)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    if temporaryMemoHasUnsavedChanges, !savedTemporaryMemo.isEmpty {
+                        Text("Unsaved changes")
+                            .foregroundStyle(LFColor.coral)
+                    }
+                    Text("Not added to your voyage log or cloud sync. Keep it only when you want to continue next time.")
+                        .foregroundStyle(Color.black.opacity(0.72))
+                }
+                .font(LFFont.label(10))
+            }
         }
         .padding(14)
         .background(transparentCardBackground(cornerRadius: 18))
         .shadow(color: Color.black.opacity(0.22), radius: 16, y: 8)
+    }
+
+    private func keepTemporaryMemoForNextVoyage() {
+        guard canKeepTemporaryMemo else { return }
+        let saved = VoyageTemporaryMemoStore.save(note, itemID: item.uuid)
+        note = saved
+        savedTemporaryMemo = saved
+        Haptics.success()
+    }
+
+    private func clearTemporaryMemo() {
+        VoyageTemporaryMemoStore.remove(itemID: item.uuid)
+        note = ""
+        savedTemporaryMemo = ""
+        Haptics.tap(.medium)
     }
 
     private func transparentCardBackground(cornerRadius: CGFloat) -> some View {

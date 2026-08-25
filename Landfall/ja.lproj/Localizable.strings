@@ -904,6 +904,11 @@
 "Temporary memo" = "一時メモ";
 "Write anything here" = "ここに自由に書けます";
 "This is a temporary memo field." = "これは一時的なメモ欄です。";
+"Keep for next time" = "次回まで残す";
+"Saved for next time" = "次回用に残しました";
+"Unsaved changes" = "未保存の変更があります";
+"Clear this temporary memo?" = "この一時メモを消しますか？";
+"Not added to your voyage log or cloud sync. Keep it only when you want to continue next time." = "航海記録やクラウドには残りません。続きから書きたい時だけ、この端末に残せます。";
 "How did the work feel?" = "作業の感想を一言";
 "End voyage" = "航海を終える";
 "Back to timer" = "タイマーへ戻る";
