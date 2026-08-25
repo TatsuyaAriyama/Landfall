@@ -1381,6 +1381,7 @@ final class PrivateIslandChatService: ObservableObject {
     private var allMessages: [PrivateIslandChatMessage] = []
     private var listener: ListenerRegistration?
     private var hasResolvedBlocks = false
+    private let functions = Functions.functions(region: "asia-northeast1")
 
     private var db: Firestore { Firestore.firestore() }
     var currentUserID: String? { Auth.auth().currentUser?.uid }
@@ -1460,9 +1461,9 @@ final class PrivateIslandChatService: ObservableObject {
         // Echo the line immediately instead of leaving a successful tap with
         // no visible result while Firestore waits for the server round-trip.
         // The snapshot listener replaces this provisional copy after commit.
-        let messageReference = chatReference.document()
+        let messageID = UUID().uuidString.lowercased()
         let optimisticMessage = PrivateIslandChatMessage(
-            id: messageReference.documentID,
+            id: messageID,
             senderID: uid,
             senderName: senderName,
             text: text,
@@ -1473,12 +1474,10 @@ final class PrivateIslandChatService: ObservableObject {
         applyBlocks()
 
         do {
-            try await messageReference.setData([
-                "uid": uid,
-                "senderName": senderName,
-                "kind": "text",
+            _ = try await functions.httpsCallable("sendPrivateIslandMessage").call([
+                "code": islandCode,
+                "requestId": messageID,
                 "text": text,
-                "createdAt": FieldValue.serverTimestamp(),
             ])
         } catch {
             allMessages.removeAll { $0.id == optimisticMessage.id }
@@ -1500,14 +1499,10 @@ final class PrivateIslandChatService: ObservableObject {
         guard !targetUserID.isEmpty, targetUserID != uid else {
             throw PrivateIslandError.invalidBlockTarget
         }
-        try await db.collection("reports").addDocument(data: [
-            "source": "privateIsland",
-            "privateIslandCode": islandCode,
-            "reporterUid": uid,
+        _ = try await functions.httpsCallable("submitPrivateIslandChatReport").call([
+            "code": islandCode,
             "targetUid": targetUserID,
             "messageId": message.id,
-            "text": String(message.text.prefix(500)),
-            "createdAt": FieldValue.serverTimestamp(),
         ])
     }
 

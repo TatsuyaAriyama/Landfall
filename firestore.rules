@@ -447,6 +447,14 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /privateIslandChatRateLimits/{rateLimitId} {
+      allow read, write: if false;
+    }
+
+    match /privateIslandReportLimits/{limitId} {
+      allow read, write: if false;
+    }
+
     // 出禁リストは運営だけが書き、ルールからの存在確認だけに使う。
     match /publicHarborBans/{slug}/users/{userId} {
       allow read, write: if false;
@@ -682,25 +690,9 @@ service cloud.firestore {
       // 島内チャット。学習記録の自動投稿は廃止し、言葉だけを扱う。
       match /chat/{messageId} {
         allow read: if isMember();
-        allow create: if isMember()
-          && request.resource.data.keys().hasOnly([
-            'uid', 'senderName', 'kind', 'text', 'createdAt'
-          ])
-          && request.resource.data.uid == request.auth.uid
-          && request.resource.data.senderName is string
-          && request.resource.data.senderName.size() >= 1
-          && request.resource.data.senderName.size() <= 60
-          && request.resource.data.senderName == get(
-            /databases/$(database)/documents/privateIslands/$(islandId)/members/$(request.auth.uid)
-          ).data.displayName
-          && request.resource.data.kind == 'text'
-          && request.resource.data.text is string
-          && request.resource.data.text.size() >= 1
-          && request.resource.data.text.size() <= 500
-          && !request.resource.data.text.matches(
-            '(?i).*(kill[ ._-]*yourself|\\bkys\\b|nigger|faggot|死ね|しね|殺す|ころす|自殺しろ).*'
-          )
-          && request.resource.data.createdAt == request.time;
+        // 作成はApp Check・所属・本文・速度制限を確認するCallableだけが行う。
+        // 端末からの直接createを残すと、改造クライアントが連投制限を迂回できる。
+        allow create: if false;
         allow update: if false;
         allow delete: if isMember() && request.auth.uid == resource.data.uid;
       }
@@ -722,7 +714,10 @@ service cloud.firestore {
       }
 
       match /members/{memberId} {
-        allow read: if signedIn();
+        allow get: if signedIn();
+        allow list: if signedIn()
+          && request.query.limit != null
+          && request.query.limit <= 200;
         allow create, update: if canWriteAs(memberId)
           && validMemberCardShape(request.resource.data);
         allow delete: if isSelf(memberId);
@@ -752,51 +747,14 @@ service cloud.firestore {
     }
 
     // ================================================================
-    // 通報(書き捨て。読めるのは運営=コンソールのみ)
+    // 通報(Callable経由。読めるのは運営=コンソールのみ)
     // ================================================================
     // 通報できるのは「自分が居る島で、実在する他人の発言」だけ。
     // 本文もサーバー側の実データと一致していなければ受け付けない。
 
     match /reports/{reportId} {
-      // 形と本人性だけを見る。実データ照合の前に、安いチェックで弾く。
-      function validReportShape(data) {
-        return data.keys().hasOnly([
-            'source', 'privateIslandCode', 'reporterUid', 'targetUid',
-            'messageId', 'text', 'createdAt'
-          ])
-          && data.source == 'privateIsland'
-          && data.reporterUid == request.auth.uid
-          && data.privateIslandCode is string
-          && data.privateIslandCode.matches('^[A-HJ-NP-Z2-9]{6}$')
-          && data.targetUid is string
-          && data.targetUid.size() >= 1
-          && data.targetUid.size() <= 128
-          && data.targetUid != request.auth.uid
-          && data.messageId is string
-          && data.messageId.size() >= 1
-          && data.messageId.size() <= 128
-          && data.text is string
-          && data.text.size() <= 500
-          && data.createdAt == request.time;
-      }
-
-      // 通報できるのは「自分が居る島の、実在する他人の発言」だけ。
-      // 本文もサーバー側の実データと一致していなければ受け付けない。
-      function matchesStoredChat(data) {
-        let island = /databases/$(database)/documents/privateIslands/$(data.privateIslandCode);
-        let message = /databases/$(database)/documents/privateIslands/$(data.privateIslandCode)/chat/$(data.messageId);
-        return exists(island)
-          && request.auth.uid in get(island).data.memberIds
-          && data.targetUid in get(island).data.memberIds
-          && exists(message)
-          && get(message).data.uid == data.targetUid
-          && get(message).data.text == data.text;
-      }
-
-      allow create: if signedIn()
-        && validReportShape(request.resource.data)
-        && matchesStoredChat(request.resource.data);
-      allow read, update, delete: if false;
+      // 実データ照合・重複排除・一日上限を行うCallableだけが作成する。
+      allow read, create, update, delete: if false;
     }
   }
 }

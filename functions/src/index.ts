@@ -78,6 +78,13 @@ const PUBLIC_CONTENT_REPORT_REASONS = new Set([
   "spam",
   "profile",
 ]);
+const PRIVATE_ISLAND_CODE = /^[A-HJ-NP-Z2-9]{6}$/;
+const PRIVATE_ISLAND_MESSAGE_ID =
+  /^(?:[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[1-5][0-9A-Fa-f]{3}-[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}|[A-Za-z0-9]{20})$/;
+const PRIVATE_ISLAND_CHAT_LIMIT = 500;
+const PRIVATE_ISLAND_CHAT_COOLDOWN_MS = 750;
+const PRIVATE_ISLAND_CHAT_HOURLY_LIMIT = 120;
+const PRIVATE_ISLAND_REPORT_DAILY_LIMIT = 20;
 
 function stripeClient() {
   return new Stripe(stripeRestrictedKey.value(), {
@@ -214,6 +221,56 @@ function publicJournalSymbolToken(value: unknown): string {
 function reportSnapshotString(value: unknown, maximum: number): string | null {
   if (typeof value !== "string") return null;
   return Array.from(value.normalize("NFC")).slice(0, maximum).join("");
+}
+
+function privateIslandCode(value: unknown): string {
+  const code = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (!PRIVATE_ISLAND_CODE.test(code)) {
+    throw new HttpsError("invalid-argument", "A valid invite code is required.");
+  }
+  return code;
+}
+
+function privateIslandMessageId(value: unknown): string {
+  const messageId = typeof value === "string" ? value.trim() : "";
+  if (!PRIVATE_ISLAND_MESSAGE_ID.test(messageId)) {
+    throw new HttpsError("invalid-argument", "A valid message identifier is required.");
+  }
+  return messageId;
+}
+
+function privateIslandChatText(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new HttpsError("invalid-argument", "text must be a string.");
+  }
+  const text = withoutUnicodeControls(value.normalize("NFC"), true).trim();
+  const characters = Array.from(text);
+  if (characters.length < 1 || characters.length > PRIVATE_ISLAND_CHAT_LIMIT) {
+    throw new HttpsError(
+      "invalid-argument",
+      `text must be between 1 and ${PRIVATE_ISLAND_CHAT_LIMIT} characters.`,
+    );
+  }
+  const compact = text.toLocaleLowerCase("ja").replace(/[\s._-]+/gu, "");
+  const prohibited = [
+    "killyourself",
+    "kys",
+    "nigger",
+    "faggot",
+    "死ね",
+    "しね",
+    "殺す",
+    "ころす",
+    "自殺しろ",
+  ];
+  if (prohibited.some((phrase) => compact.includes(phrase))) {
+    throw new HttpsError("invalid-argument", "text cannot be sent.");
+  }
+  return text;
+}
+
+function hashedActorId(namespace: string, actor: string): string {
+  return createHash("sha256").update(`${namespace}:${actor}`, "utf8").digest("hex");
 }
 
 function publicJournalRateLimitId(uid: string): string {
@@ -725,6 +782,170 @@ export const submitPublicContentReport = onCall(
   },
 );
 
+/**
+ * プライベート島の発言は、改造クライアントからFirestoreへ直接連投させない。
+ * App Check、所属確認、サーバー側の名前、本文検証、アカウント単位の速度制限を
+ * 一つの取引で確定してから、全参加者が読む正規チャットへ追加する。
+ */
+export const sendPrivateIslandMessage = onCall(
+  { region: REGION, enforceAppCheck: true, maxInstances: 40 },
+  async (request) => {
+    const uid = requireUid(request.auth);
+    const code = privateIslandCode(request.data?.code);
+    const messageId = privateIslandMessageId(request.data?.requestId);
+    const text = privateIslandChatText(request.data?.text);
+    const islandRef = db.doc(`privateIslands/${code}`);
+    const memberRef = islandRef.collection("members").doc(uid);
+    const messageRef = islandRef.collection("chat").doc(messageId);
+    const rateLimitRef = db.collection("privateIslandChatRateLimits")
+      .doc(hashedActorId("private-island-chat", uid));
+    let duplicate = false;
+
+    await db.runTransaction(async (transaction) => {
+      const [island, member, existing, rateLimit] = await Promise.all([
+        transaction.get(islandRef),
+        transaction.get(memberRef),
+        transaction.get(messageRef),
+        transaction.get(rateLimitRef),
+      ]);
+      const memberIds = island.get("memberIds");
+      if (
+        !island.exists ||
+        !Array.isArray(memberIds) ||
+        !memberIds.includes(uid) ||
+        !member.exists
+      ) {
+        throw new HttpsError("permission-denied", "Join this island before sending a message.");
+      }
+      if (existing.exists) {
+        if (existing.get("uid") !== uid) {
+          throw new HttpsError("already-exists", "That message identifier is already in use.");
+        }
+        duplicate = true;
+        return;
+      }
+
+      const now = Timestamp.now();
+      const windowStartedAt = rateLimit.get("windowStartedAt");
+      const lastSentAt = rateLimit.get("lastSentAt");
+      const storedCount = rateLimit.get("count");
+      const sameWindow =
+        windowStartedAt instanceof Timestamp &&
+        now.toMillis() - windowStartedAt.toMillis() < 60 * 60 * 1_000;
+      const count = sameWindow && typeof storedCount === "number" ? storedCount : 0;
+      if (
+        lastSentAt instanceof Timestamp &&
+        now.toMillis() - lastSentAt.toMillis() < PRIVATE_ISLAND_CHAT_COOLDOWN_MS
+      ) {
+        throw new HttpsError("resource-exhausted", "Please wait before sending another message.");
+      }
+      if (count >= PRIVATE_ISLAND_CHAT_HOURLY_LIMIT) {
+        throw new HttpsError("resource-exhausted", "The hourly message limit has been reached.");
+      }
+
+      const senderName = publicJournalMemberString(
+        member.get("displayName"),
+        "Sailor",
+        60,
+      );
+      transaction.set(rateLimitRef, {
+        uid,
+        count: count + 1,
+        windowStartedAt: sameWindow ? windowStartedAt : now,
+        lastSentAt: now,
+        updatedAt: now,
+      });
+      transaction.create(messageRef, {
+        uid,
+        senderName,
+        kind: "text",
+        text,
+        createdAt: now,
+      });
+    });
+
+    return { messageId, duplicate };
+  },
+);
+
+/** プライベート島の実在する他人の発言だけを、重複・連投を抑えて通報する。 */
+export const submitPrivateIslandChatReport = onCall(
+  { region: REGION, enforceAppCheck: true },
+  async (request) => {
+    const reporterUid = requireUid(request.auth);
+    const code = privateIslandCode(request.data?.code);
+    const messageId = privateIslandMessageId(request.data?.messageId);
+    const targetUid = requiredFeedbackString(request.data?.targetUid, "targetUid", 1, 128);
+    if (targetUid === reporterUid) {
+      throw new HttpsError("invalid-argument", "You cannot report yourself.");
+    }
+
+    const dayId = publicJournalDayId();
+    const reportId = hashedActorId(
+      "private-island-report",
+      `${reporterUid}|${code}|${messageId}`,
+    );
+    const limitId = hashedActorId("private-island-report-limit", `${reporterUid}|${dayId}`);
+    const islandRef = db.doc(`privateIslands/${code}`);
+    const messageRef = islandRef.collection("chat").doc(messageId);
+    const reportRef = db.collection("reports").doc(reportId);
+    const limitRef = db.collection("privateIslandReportLimits").doc(limitId);
+    let duplicate = false;
+
+    await db.runTransaction(async (transaction) => {
+      const [island, message, existing, limit] = await Promise.all([
+        transaction.get(islandRef),
+        transaction.get(messageRef),
+        transaction.get(reportRef),
+        transaction.get(limitRef),
+      ]);
+      const memberIds = island.get("memberIds");
+      if (
+        !island.exists ||
+        !Array.isArray(memberIds) ||
+        !memberIds.includes(reporterUid)
+      ) {
+        throw new HttpsError("permission-denied", "Only island members can report this message.");
+      }
+      if (!message.exists || message.get("uid") !== targetUid) {
+        throw new HttpsError("not-found", "This message is no longer available.");
+      }
+      if (existing.exists) {
+        duplicate = true;
+        return;
+      }
+
+      const storedCount = limit.get("count");
+      const count = typeof storedCount === "number" && Number.isSafeInteger(storedCount)
+        ? storedCount
+        : 0;
+      if (count >= PRIVATE_ISLAND_REPORT_DAILY_LIMIT) {
+        throw new HttpsError("resource-exhausted", "The daily report limit has been reached.");
+      }
+      const now = Timestamp.now();
+      transaction.set(limitRef, {
+        reporterUid,
+        dayId,
+        count: count + 1,
+        updatedAt: now,
+      });
+      transaction.create(reportRef, {
+        source: "privateIsland",
+        privateIslandCode: code,
+        reporterUid,
+        targetUid,
+        messageId,
+        text: reportSnapshotString(message.get("text"), PRIVATE_ISLAND_CHAT_LIMIT) ?? "",
+        status: "new",
+        appId: request.app?.appId ?? null,
+        createdAt: now,
+      });
+    });
+
+    return { reported: true, duplicate };
+  },
+);
+
 const productionTransactionVerifier = new SignedDataVerifier(
   appleRootCertificates,
   true,
@@ -1199,33 +1420,22 @@ export const purgeLegacyPrivateRooms = onCall(
 //
 // The callable must not become the same oracle in disguise: a wrong code costs
 // an attempt, and attempts are capped per account per hour.
-const PRIVATE_ISLAND_CODE = /^[A-HJ-NP-Z2-9]{6}$/;
 // PrivateIslandRoom.maxMembers / .maxJoined と同じ値。片方だけ動かさないこと。
 const PRIVATE_ISLAND_MAX_MEMBERS = 8;
 const PRIVATE_ISLAND_MAX_JOINED = 3;
 const PRIVATE_ISLAND_JOIN_ATTEMPTS_PER_HOUR = 20;
 
-async function enforceIslandJoinRateLimit(uid: string): Promise<void> {
-  const ref = db.collection("privateIslandJoinLimits").doc(uid);
-  const windowStart = Timestamp.fromMillis(Date.now() - 60 * 60 * 1000);
-  await db.runTransaction(async (transaction) => {
-    const snapshot = await transaction.get(ref);
-    const since = snapshot.get("windowStartedAt");
-    const withinWindow = since instanceof Timestamp && since.toMillis() > windowStart.toMillis();
-    const attempts = withinWindow ? (snapshot.get("attempts") as number ?? 0) : 0;
-    if (attempts >= PRIVATE_ISLAND_JOIN_ATTEMPTS_PER_HOUR) {
-      throw new HttpsError(
-        "resource-exhausted",
-        "Too many invite codes tried. Please wait a while before trying again.",
-      );
-    }
-    transaction.set(ref, {
-      attempts: attempts + 1,
-      windowStartedAt: withinWindow ? since : Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    });
-  });
-}
+type PrivateIslandJoinOutcome =
+  | {
+    status: "joined" | "already-member";
+    name: string;
+    hostUid: string;
+    memberIds: string[];
+    createdAt: number | null;
+  }
+  | {
+    status: "rate-limited" | "not-found" | "island-full" | "membership-limit";
+  };
 
 export const joinPrivateIsland = onCall(
   { region: REGION, enforceAppCheck: true },
@@ -1238,52 +1448,104 @@ export const joinPrivateIsland = onCall(
       throw new HttpsError("invalid-argument", "That invite code is not valid.");
     }
 
-    await enforceIslandJoinRateLimit(uid);
-
-    // 所属数の確認はトランザクションの外で行う。1件のドキュメントを守る
-    // トランザクションの中に別クエリを混ぜると、読み取りの分離が崩れる。
-    const joined = await db
+    const joinedQuery = db
       .collection("privateIslands")
-      .where("memberIds", "array-contains", uid)
-      .count()
-      .get();
-
+      .where("memberIds", "array-contains", uid);
     const islandRef = db.collection("privateIslands").doc(code);
-    let alreadyMember = false;
-    const memberIds = await db.runTransaction(async (transaction) => {
-      const island = await transaction.get(islandRef);
+    const rateLimitRef = db.collection("privateIslandJoinLimits").doc(uid);
+
+    // The rate-limit document is intentionally read and written in the same
+    // transaction as membership. Every concurrent join for one account now
+    // contends on that shared document, so two requests cannot both observe
+    // the old membership count and slip past maxJoined.
+    const outcome = await db.runTransaction<PrivateIslandJoinOutcome>(async (transaction) => {
+      const [rateLimit, joined, island] = await Promise.all([
+        transaction.get(rateLimitRef),
+        transaction.get(joinedQuery),
+        transaction.get(islandRef),
+      ]);
+      const now = Timestamp.now();
+      const windowStart = Timestamp.fromMillis(now.toMillis() - 60 * 60 * 1_000);
+      const since = rateLimit.get("windowStartedAt");
+      const withinWindow =
+        since instanceof Timestamp && since.toMillis() > windowStart.toMillis();
+      const storedAttempts = rateLimit.get("attempts");
+      const attempts =
+        withinWindow && typeof storedAttempts === "number" && Number.isSafeInteger(storedAttempts)
+          ? storedAttempts
+          : 0;
+      if (attempts >= PRIVATE_ISLAND_JOIN_ATTEMPTS_PER_HOUR) {
+        return { status: "rate-limited" };
+      }
+
+      // Invalid and full codes still consume an attempt. Returning an outcome
+      // instead of throwing lets the rate-limit write commit before the public
+      // error is raised outside the transaction.
+      transaction.set(rateLimitRef, {
+        attempts: attempts + 1,
+        windowStartedAt: withinWindow ? since : now,
+        updatedAt: now,
+      });
+
       if (!island.exists) {
-        throw new HttpsError("not-found", "No island answers that invite code.");
+        return { status: "not-found" };
       }
       const current = (island.get("memberIds") as string[] | undefined) ?? [];
       if (current.includes(uid)) {
-        alreadyMember = true;
-        return current;
+        return {
+          status: "already-member",
+          name: island.get("name") ?? "",
+          hostUid: island.get("hostUid") ?? "",
+          memberIds: current,
+          createdAt: (island.get("createdAt") as Timestamp | undefined)?.toMillis() ?? null,
+        };
       }
       if (current.length >= PRIVATE_ISLAND_MAX_MEMBERS) {
-        throw new HttpsError("resource-exhausted", "That island is full.");
+        return { status: "island-full" };
       }
-      if (joined.data().count >= PRIVATE_ISLAND_MAX_JOINED) {
-        throw new HttpsError(
-          "failed-precondition",
-          "You have joined as many islands as one navigator can hold.",
-        );
+      if (joined.size >= PRIVATE_ISLAND_MAX_JOINED) {
+        return { status: "membership-limit" };
       }
 
       const next = [...current, uid];
       transaction.update(islandRef, { memberIds: next });
-      return next;
+      return {
+        status: "joined",
+        name: island.get("name") ?? "",
+        hostUid: island.get("hostUid") ?? "",
+        memberIds: next,
+        createdAt: (island.get("createdAt") as Timestamp | undefined)?.toMillis() ?? null,
+      };
     });
 
-    const island = await islandRef.get();
+    switch (outcome.status) {
+      case "rate-limited":
+        throw new HttpsError(
+          "resource-exhausted",
+          "Too many invite codes tried. Please wait a while before trying again.",
+        );
+      case "not-found":
+        throw new HttpsError("not-found", "No island answers that invite code.");
+      case "island-full":
+        throw new HttpsError("resource-exhausted", "That island is full.");
+      case "membership-limit":
+        throw new HttpsError(
+          "failed-precondition",
+          "You have joined as many islands as one navigator can hold.",
+        );
+      case "joined":
+      case "already-member":
+        break;
+    }
+
     return {
       id: code,
-      name: island.get("name") ?? "",
-      hostUid: island.get("hostUid") ?? "",
-      memberIds,
+      name: outcome.name,
+      hostUid: outcome.hostUid,
+      memberIds: outcome.memberIds,
       // 再訪かどうか。端末はこれを見て joinedAt を書き換えないと判断する。
-      alreadyMember,
-      createdAt: (island.get("createdAt") as Timestamp | undefined)?.toMillis() ?? null,
+      alreadyMember: outcome.status === "already-member",
+      createdAt: outcome.createdAt,
     };
   },
 );
