@@ -19,6 +19,25 @@ extension StudyTimer {
         KeelMiraWidgetStore.clearTimer()
         WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
     }
+
+    /// 休憩操作を持たない現行HUDへ移行した後も、旧HUDやWidgetから
+    /// 残った休憩状態だけで時計が止まり続けないようにする。
+    @discardableResult
+    static func resumeIfNeeded(at date: Date = Date()) -> Bool {
+        let pausedAt = defaults.double(forKey: breakStartedAtKey)
+        guard defaults.double(forKey: startKey) > 0, pausedAt > 0 else {
+            return false
+        }
+        let accumulated = defaults.double(forKey: breakSecondsKey)
+        defaults.set(
+            accumulated + max(0, date.timeIntervalSince1970 - pausedAt),
+            forKey: breakSecondsKey
+        )
+        defaults.set(0, forKey: breakStartedAtKey)
+        defaults.synchronize()
+        WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
+        return true
+    }
 }
 
 enum HomeTimerMode: String {
@@ -221,6 +240,7 @@ struct HomeVoyageTimerView: View {
     @ObservedObject private var voyageAudio = HomeVoyageAudio.shared
 
     @State private var note = ""
+    @State private var reflection = ""
     @State private var completion: HomeVoyageCompletion?
     @State private var confirmingDiscard = false
     @State private var saveError = false
@@ -229,11 +249,14 @@ struct HomeVoyageTimerView: View {
     @State private var showingVoyageMenu = false
     @State private var showingSoundPicker = false
     @State private var showingTemporaryMemo = false
+    @State private var showingReflection = false
+    @State private var confirmingReturnHome = false
     @State private var showingTodoList = false
     @State private var showingManualEntry = false
     @StateObject private var todoStore = HomeIslandTodoStore.shared
     @State private var clockNow = Date()
     @FocusState private var noteFocused: Bool
+    @FocusState private var reflectionFocused: Bool
 
     private let clockPulse = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -279,6 +302,11 @@ struct HomeVoyageTimerView: View {
 
     private var normalizedNote: String {
         String(note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
+    }
+
+    private var normalizedReflection: String? {
+        let value = reflection.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : String(value.prefix(80))
     }
 
     private var requiredNoteSatisfied: Bool {
@@ -393,13 +421,22 @@ struct HomeVoyageTimerView: View {
         } message: {
             Text("Your timer is still running. Please try again.")
         }
+        .alert("Return to your island?", isPresented: $confirmingReturnHome) {
+            Button("Return to island") {
+                onReturnHome()
+                Haptics.tap(.medium)
+            }
+            Button("Cancel", role: .cancel) {}
+        }
         .onDisappear {
             noteFocused = false
+            reflectionFocused = false
             if timerItemID.isEmpty {
                 HomeVoyageAudio.shared.stop()
             }
         }
         .onAppear {
+            resumePersistedBreakIfNeeded()
             let migratedSound = HomeVoyageSound.resolve(soundMode)
             if migratedSound.rawValue != soundMode {
                 soundMode = migratedSound.rawValue
@@ -427,6 +464,7 @@ struct HomeVoyageTimerView: View {
         }
         .onReceive(clockPulse) { date in
             clockNow = date
+            resumePersistedBreakIfNeeded(at: date)
         }
         .onChange(of: externalWorldTapToken) { _, _ in
             guard !rendersScene else { return }
@@ -441,6 +479,16 @@ struct HomeVoyageTimerView: View {
             uiHidden.toggle()
         }
         Haptics.tap(.light)
+    }
+
+    /// 旧HUDで休憩にしたまま更新すると、再開ボタンだけが消えて時計が
+    /// 永久に止まってしまう。現行HUDには休憩操作がないため、画面へ
+    /// 戻った時点で休憩時間を計測対象から除外したまま自動再開する。
+    private func resumePersistedBreakIfNeeded(at date: Date = Date()) {
+        guard breakStartedAt > 0 else { return }
+        guard StudyTimer.resumeIfNeeded(at: date) else { return }
+        breakSeconds = StudyTimer.defaults.double(forKey: StudyTimer.breakSecondsKey)
+        breakStartedAt = 0
     }
 
     private var voyageControls: some View {
@@ -504,6 +552,19 @@ struct HomeVoyageTimerView: View {
                     }
                     Haptics.tap(.light)
                 }
+
+                compactToolButton(
+                    systemImage: "chevron.backward",
+                    active: false,
+                    accessibilityLabel: LF.text("Return to my island")
+                ) {
+                    noteFocused = false
+                    reflectionFocused = false
+                    showingSoundPicker = false
+                    showingTemporaryMemo = false
+                    confirmingReturnHome = true
+                    Haptics.tap(.light)
+                }
             }
 
             if showingSoundPicker {
@@ -564,13 +625,13 @@ struct HomeVoyageTimerView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(Text("Close"))
             }
-            .foregroundStyle(VoyageHUD.plate.opacity(0.88))
+            .foregroundStyle(Color.black)
 
             ZStack(alignment: .topLeading) {
                 if note.isEmpty {
                     Text("Write anything here")
                         .font(LFFont.copy(14))
-                        .foregroundStyle(VoyageHUD.plate.opacity(0.42))
+                        .foregroundStyle(Color.black.opacity(0.58))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 8)
                         .allowsHitTesting(false)
@@ -578,7 +639,7 @@ struct HomeVoyageTimerView: View {
 
                 TextEditor(text: $note)
                     .font(LFFont.copy(14))
-                    .foregroundStyle(VoyageHUD.plate)
+                    .foregroundStyle(Color.black)
                     .tint(LFColor.coral)
                     .scrollContentBackground(.hidden)
                     .focused($noteFocused)
@@ -594,7 +655,7 @@ struct HomeVoyageTimerView: View {
 
             Text("This is a temporary memo field.")
                 .font(LFFont.label(11))
-                .foregroundStyle(VoyageHUD.plate.opacity(0.62))
+                .foregroundStyle(Color.black.opacity(0.72))
         }
         .padding(14)
         .background(transparentCardBackground(cornerRadius: 18))
@@ -607,7 +668,7 @@ struct HomeVoyageTimerView: View {
             shape.fill(.ultraThinMaterial)
             shape.fill(Color.white.opacity(0.30))
         }
-        .overlay(shape.strokeBorder(VoyageHUD.plate.opacity(0.14), lineWidth: 1))
+        .overlay(shape.strokeBorder(Color.black.opacity(0.16), lineWidth: 1))
     }
 
     /// 右下の「…」から開く航海道具。通常時は隠し、必要な時だけ
@@ -858,9 +919,9 @@ struct HomeVoyageTimerView: View {
                 Text("SELECT TRACK")
                     .font(LFFont.label(7))
                     .tracking(1.2)
-                    .foregroundStyle(VoyageHUD.ink.opacity(0.44))
+                    .foregroundStyle(Color.black.opacity(0.70))
             }
-            .foregroundStyle(VoyageHUD.ink.opacity(0.68))
+            .foregroundStyle(Color.black)
             .padding(.horizontal, compactHUD ? 10 : 12)
             .frame(height: compactHUD ? 25 : 28)
 
@@ -880,7 +941,7 @@ struct HomeVoyageTimerView: View {
                                 .font(LFFont.copy(compactHUD ? 11 : 12))
                             Text(sound.subtitle)
                                 .font(LFFont.label(compactHUD ? 8 : 9))
-                                .foregroundStyle(VoyageHUD.ink.opacity(0.50))
+                                .foregroundStyle(Color.black.opacity(0.68))
                         }
 
                         Spacer(minLength: 8)
@@ -897,12 +958,12 @@ struct HomeVoyageTimerView: View {
                                 )
                         }
                     }
-                    .foregroundStyle(VoyageHUD.ink)
+                    .foregroundStyle(Color.black)
                     .padding(.horizontal, compactHUD ? 10 : 12)
                     .frame(height: compactHUD ? 38 : 43)
                     .background(
                         sound == displayedSound
-                            ? VoyageHUD.ink.opacity(0.10)
+                            ? Color.black.opacity(0.08)
                             : Color.clear
                     )
                     .contentShape(Rectangle())
@@ -911,29 +972,50 @@ struct HomeVoyageTimerView: View {
 
                 if sound != HomeVoyageSound.timerSelectableSounds.last {
                     Rectangle()
-                        .fill(VoyageHUD.ink.opacity(0.10))
+                        .fill(Color.black.opacity(0.12))
                         .frame(height: 1)
                         .padding(.leading, compactHUD ? 43 : 48)
                 }
             }
         }
         .background(
-            VoyageHUD.ink.opacity(0.06),
+            Color.white.opacity(0.12),
             in: RoundedRectangle(cornerRadius: 15, style: .continuous)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(VoyageHUD.ink.opacity(0.14), lineWidth: 1)
+                .strokeBorder(Color.black.opacity(0.16), lineWidth: 1)
         )
     }
 
     /// 参考画像の下部操作。記録を左の大きなカプセル、設定を右の丸い
     /// 「…」へ分け、中央の海と船の前を開けておく。
     private var recordingPanel: some View {
+        Group {
+            if showingReflection {
+                reflectionComposer
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else {
+                recordButton
+                    .transition(.opacity)
+            }
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: showingReflection)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shadow(color: Color.black.opacity(0.24), radius: 10, y: 4)
+    }
+
+    private var recordButton: some View {
         HStack(alignment: .center) {
             Button {
                 if requiredNoteSatisfied {
-                    finishVoyage()
+                    noteFocused = false
+                    showingSoundPicker = false
+                    showingTemporaryMemo = false
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                        showingReflection = true
+                    }
+                    Task { @MainActor in reflectionFocused = true }
                 } else {
                     withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
                         showingTemporaryMemo = true
@@ -973,7 +1055,80 @@ struct HomeVoyageTimerView: View {
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity)
-        .shadow(color: Color.black.opacity(0.24), radius: 10, y: 4)
+    }
+
+    /// 記録直前だけ現れる短い感想欄。一時メモとは別物で、入力した場合は
+    /// 航海記録と完了カードへ残す。
+    private var reflectionComposer: some View {
+        HStack(spacing: 9) {
+            compactToolButton(
+                systemImage: "chevron.backward",
+                active: false,
+                accessibilityLabel: LF.text("Back to timer")
+            ) {
+                reflectionFocused = false
+                withAnimation(.spring(response: 0.30, dampingFraction: 0.88)) {
+                    showingReflection = false
+                }
+                Haptics.tap(.light)
+            }
+
+            HStack(spacing: 8) {
+                Image(systemName: "quote.bubble")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.black.opacity(0.68))
+
+                TextField("How did the work feel?", text: $reflection)
+                    .font(LFFont.copy(compactHUD ? 12 : 14))
+                    .foregroundStyle(Color.black)
+                    .tint(LFColor.coral)
+                    .focused($reflectionFocused)
+                    .submitLabel(.done)
+                    .onSubmit { finishVoyage() }
+                    .onChange(of: reflection) { _, value in
+                        if value.count > 80 {
+                            reflection = String(value.prefix(80))
+                        }
+                    }
+
+                if !reflection.isEmpty {
+                    Button {
+                        reflection = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.black.opacity(0.46))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Clear"))
+                }
+            }
+            .padding(.horizontal, 13)
+            .frame(width: compactHUD ? 150 : 230, height: compactHUD ? 44 : 48)
+            .background(Color.white.opacity(0.78), in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.black.opacity(0.16), lineWidth: 1))
+
+            Button {
+                finishVoyage()
+            } label: {
+                HStack(spacing: 6) {
+                    if saving {
+                        ProgressView()
+                            .tint(VoyageHUD.plate)
+                    }
+                    Text("End voyage")
+                        .font(LFFont.copy(compactHUD ? 12 : 14))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(VoyageHUD.plate)
+                .padding(.horizontal, compactHUD ? 14 : 17)
+                .frame(height: compactHUD ? 44 : 48)
+                .background(VoyageHUD.lamp, in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 1))
+            }
+            .buttonStyle(LFPressableButtonStyle())
+            .disabled(saving)
+        }
     }
 
     /// 枠のないメモ欄。彫った罫線だけが書く場所を示し、書き始めると
@@ -1172,7 +1327,7 @@ struct HomeVoyageTimerView: View {
             result = try HomeVoyageRecorder.record(
                 item: item,
                 snapshot: snapshot,
-                note: nil,
+                note: normalizedReflection,
                 context: modelContext
             )
         } catch {
@@ -1185,6 +1340,7 @@ struct HomeVoyageTimerView: View {
         HomeVoyageAudio.shared.stop()
         saving = false
         noteFocused = false
+        reflectionFocused = false
         completion = result
         Haptics.success()
     }
@@ -1256,7 +1412,7 @@ struct HomeVoyageTimerView: View {
                 .padding(.top, 20)
 
                 Button {
-                    onReturnHome()
+                    confirmingReturnHome = true
                     Haptics.tap(.light)
                 } label: {
                     Text("Return home")
@@ -1278,6 +1434,11 @@ struct HomeVoyageTimerView: View {
                     .stroke(palette.inkColor.opacity(0.16), lineWidth: 1)
             )
             .shadow(color: Color.black.opacity(0.24), radius: 36, y: 18)
+            .contentShape(RoundedRectangle(cornerRadius: 24))
+            .onTapGesture {
+                confirmingReturnHome = true
+                Haptics.tap(.light)
+            }
         }
         .padding(.horizontal, 16)
         .safeAreaPadding(.bottom, 16)

@@ -530,6 +530,7 @@ struct VoyageHomeView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 now = Date()
+                StudyTimer.resumeIfNeeded()
             }
             if prologueIsLaunching {
                 if phase == .active {
@@ -577,6 +578,7 @@ struct VoyageHomeView: View {
         }
         .onAppear {
             clearOrphanedTimer()
+            StudyTimer.resumeIfNeeded()
             openPendingHarborInviteIfNeeded(router.wantsHarborTab)
             if !shipInteractionSeen {
                 withAnimation(.easeOut(duration: 0.28)) {
