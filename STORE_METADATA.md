@@ -81,6 +81,24 @@ KeelMiraは、集中した時間を3Dの航海として残す作業・学習タ�
 
 ## What's New
 
+### v1.8
+- EN:
+```
+Sea and ship visuals have been significantly refreshed.
+
+• More natural ship materials, motion, wake, and bow spray
+• Improved timer pause behavior, controls, and readability
+• Improved the overall quality and stability of the voyage screen
+```
+- JA:
+```
+海と船の表現を大幅に刷新しました。
+
+・船の素材、揺れ、航跡、水飛沫をより自然に改善
+・タイマーの一時停止動作と操作性、視認性を改善
+・航海画面全体の品質と安定性を向上
+```
+
 ### v1.7
 - EN:
 ```
