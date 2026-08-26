@@ -4242,56 +4242,66 @@ private struct HomeIslandHarborPanel: View {
                     .accessibilityHidden(true)
 
                 VStack(spacing: 0) {
-                    ZStack(alignment: .topTrailing) {
-                    Group {
-                        if let selectedPublicHarbor {
-                            NavigationStack {
-                                PublicHarborView(
-                                    harbor: selectedPublicHarbor,
-                                    showsOceanBackground: false,
-                                    onEmbeddedBack: {
-                                        withAnimation(.easeOut(duration: 0.18)) {
-                                            self.selectedPublicHarbor = nil
+                    VStack(spacing: 0) {
+                        if selectedPublicHarbor == nil {
+                            HStack(spacing: 12) {
+                                Text("Harbor")
+                                    .font(LFFont.copy(18))
+                                    .foregroundStyle(panelInk)
+
+                                Spacer(minLength: 0)
+
+                                Button(action: onClose) {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(panelInk)
+                                        .frame(width: 44, height: 44)
+                                        .background(panelInk.opacity(0.08), in: Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(Text("Close"))
+                            }
+                            .padding(.horizontal, 12)
+                            .frame(height: regular ? 64 : 60)
+                        }
+
+                        Group {
+                            if let selectedPublicHarbor {
+                                NavigationStack {
+                                    PublicHarborView(
+                                        harbor: selectedPublicHarbor,
+                                        showsOceanBackground: false,
+                                        onEmbeddedBack: {
+                                            withAnimation(.easeOut(duration: 0.18)) {
+                                                self.selectedPublicHarbor = nil
+                                            }
                                         }
+                                    )
+                                    .navigationDestination(for: PublicMemberKey.self) { key in
+                                        PublicMemberProfileView(
+                                            slug: key.slug,
+                                            initialMember: key.member,
+                                            showsOceanBackground: false
+                                        )
+                                    }
+                                }
+                            } else {
+                                HarborView(
+                                    showsOceanBackground: false,
+                                    onPublicHarborSelected: { harbor in
+                                        withAnimation(.easeOut(duration: 0.18)) {
+                                            selectedPublicHarbor = harbor
+                                        }
+                                    },
+                                    onPrivateIslandSelected: { room in
+                                        onClose()
+                                        onPrivateIslandSelected(room)
                                     }
                                 )
-                                .navigationDestination(for: PublicMemberKey.self) { key in
-                                    PublicMemberProfileView(
-                                        slug: key.slug,
-                                        initialMember: key.member,
-                                        showsOceanBackground: false
-                                    )
-                                }
                             }
-                        } else {
-                            HarborView(
-                                showsOceanBackground: false,
-                                onPublicHarborSelected: { harbor in
-                                    withAnimation(.easeOut(duration: 0.18)) {
-                                        selectedPublicHarbor = harbor
-                                    }
-                                },
-                                onPrivateIslandSelected: { room in
-                                    onClose()
-                                    onPrivateIslandSelected(room)
-                                }
-                            )
                         }
-                    }
-                    .padding(.top, regular ? 10 : 8)
-                    .clipShape(RoundedRectangle(cornerRadius: regular ? 30 : 24, style: .continuous))
-
-                    Button(action: onClose) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(panelInk)
-                            .frame(width: 44, height: 44)
-                            .background(panelInk.opacity(0.08), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(12)
-                    .zIndex(20)
-                    .accessibilityLabel(Text("Close"))
+                        .clipShape(RoundedRectangle(cornerRadius: regular ? 30 : 24, style: .continuous))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     .frame(width: panelWidth, height: panelHeight)
                     .background {
