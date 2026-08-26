@@ -116,6 +116,24 @@ struct PublicHarborView: View {
                     .foregroundStyle(LFColor.ink)
                 }
             }
+            if isJoined {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button("Leave this harbor", systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
+                            guard !working else { return }
+                            leaving = true
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(LFColor.ink.opacity(0.72))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .disabled(working)
+                    .accessibilityLabel(Text("Harbor options"))
+                }
+            }
         }
         .toolbarBackground(.hidden, for: .navigationBar)
         .task { await reload() }
@@ -320,18 +338,7 @@ struct PublicHarborView: View {
             Text("Sign in to enter a harbor.")
                 .font(LFFont.copy(showsOceanBackground ? 15 : 12))
                 .foregroundStyle(LFColor.ink.opacity(0.5))
-        } else if isJoined {
-            Button {
-                guard !working else { return }
-                leaving = true
-            } label: {
-                Text("Leave this harbor")
-                    .font(LFFont.label(14))
-                    .foregroundStyle(LFColor.ink.opacity(0.45))
-            }
-            .buttonStyle(.plain)
-            .disabled(working)
-        } else {
+        } else if !isJoined {
             VStack(alignment: .leading, spacing: 10) {
                 Button {
                     guard !working else { return }
