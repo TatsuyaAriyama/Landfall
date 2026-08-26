@@ -326,6 +326,7 @@ struct ContentView: View {
     private var homeMusicTrack = HomeVoyageSound.harborMinuet.rawValue
     @AppStorage(HomeWaveAmbience.enabledKey) private var homeWavesEnabled = true
     @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID = ""
     @AppStorage(StudyTimer.modeKey, store: StudyTimer.defaults)
     private var timerMode = HomeTimerMode.free.rawValue
     @AppStorage(StudyTimer.pomodoroStartElapsedKey, store: StudyTimer.defaults)
@@ -390,6 +391,9 @@ struct ContentView: View {
         .onChange(of: timerStart) { _, _ in
             updateHomeAudio()
         }
+        .onChange(of: timerItemID) { _, _ in
+            updateHomeAudio()
+        }
         .onChange(of: timerMode) { _, _ in
             updateHomeAudio()
         }
@@ -415,7 +419,7 @@ struct ContentView: View {
             updateHomeAudio()
         }
         .onReceive(timerAudioClock) { date in
-            guard timerStart > 0 else { return }
+            guard hasActiveTimer(at: date) else { return }
             let resting = timerIsResting(at: date)
             guard resting != lastTimerResting else { return }
             updateHomeAudio(at: date)
@@ -437,13 +441,17 @@ struct ContentView: View {
     }
 
     private func timerIsResting(at date: Date) -> Bool {
-        timerSnapshot.isResting || timerSnapshot.phase(at: date)?.focusing == false
+        timerSnapshot.isResting(at: date) || timerSnapshot.phase(at: date)?.focusing == false
+    }
+
+    private func hasActiveTimer(at date: Date = Date()) -> Bool {
+        VoyageTimerMath.isActive(startedAt: timerStart, itemID: timerItemID, at: date)
     }
 
     /// 航海中のBGMはタイマー画面の表示状態に依存させない。
     /// 手動休憩・ポモドーロ休憩だけ停止し、画面外やバックグラウンドでも維持する。
     private func updateHomeAudio(at date: Date = Date()) {
-        if timerStart > 0 {
+        if hasActiveTimer(at: date) {
             HomeBackgroundMusic.shared.stop()
             HomeWaveAmbience.shared.stop()
 

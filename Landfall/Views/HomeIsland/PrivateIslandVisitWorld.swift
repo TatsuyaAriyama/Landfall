@@ -47,6 +47,10 @@ struct PrivateIslandVisitWorld: View {
     @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
     @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID = ""
 
+    private var hasActiveTimer: Bool {
+        VoyageTimerMath.isActive(startedAt: timerStart, itemID: timerItemID)
+    }
+
     private let currentUserID: String
 
     init(
@@ -264,7 +268,7 @@ struct PrivateIslandVisitWorld: View {
     }
 
     private func startCompanionSailing(_ item: StudyItem) {
-        if timerStart > 0, timerItemID != item.uuid.uuidString {
+        if hasActiveTimer, timerItemID != item.uuid.uuidString {
             StudyTimer.clearAll()
         }
         StudyTimer.begin(itemID: item.uuid.uuidString, itemName: item.name)

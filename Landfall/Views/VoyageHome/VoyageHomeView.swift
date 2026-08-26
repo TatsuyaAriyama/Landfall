@@ -142,14 +142,22 @@ struct VoyageHomeView: View {
         todaySessions.reduce(0) { $0 + $1.minutes }
     }
 
+    private var hasActiveTimer: Bool {
+        VoyageTimerMath.isActive(
+            startedAt: timerStart,
+            itemID: timerItemID,
+            at: timerSceneNow
+        )
+    }
+
     private var currentTimerItem: StudyItem? {
-        guard timerStart > 0 else { return nil }
+        guard hasActiveTimer else { return nil }
         return items.first { $0.uuid.uuidString == timerItemID }
     }
 
     private var currentTimerSnapshot: HomeTimerSnapshot {
         HomeTimerSnapshot(
-            startedAt: timerStart > 0
+            startedAt: hasActiveTimer
                 ? timerStart
                 : timerSceneNow.timeIntervalSince1970,
             mode: HomeTimerMode(rawValue: timerMode) ?? .free,
@@ -160,7 +168,7 @@ struct VoyageHomeView: View {
     }
 
     private var timerIsResting: Bool {
-        currentTimerSnapshot.isResting
+        currentTimerSnapshot.isResting(at: timerSceneNow)
             || currentTimerSnapshot.phase(at: timerSceneNow)?.focusing == false
     }
 
@@ -722,7 +730,7 @@ struct VoyageHomeView: View {
     private func resumeHomeAudioAfterPrologue() {
         HomeVoyageAudio.shared.stop()
         guard scenePhase == .active else { return }
-        if timerStart > 0 {
+        if hasActiveTimer {
             if timerBreakStartedAt <= 0 {
                 HomeVoyageAudio.shared.play(timerSoundMode)
             }
@@ -832,7 +840,7 @@ struct VoyageHomeView: View {
 
     private func finishIslandDeparture() {
         guard let item = pendingIslandLaunchItem else { return }
-        if timerStart > 0, timerItemID != item.uuid.uuidString {
+        if hasActiveTimer, timerItemID != item.uuid.uuidString {
             StudyTimer.clearAll()
         }
         StudyTimer.begin(itemID: item.uuid.uuidString, itemName: item.name)
@@ -1592,7 +1600,7 @@ struct VoyageHomeView: View {
     /// 船を選んだ後の積荷画面では、カード全体を一つの出航操作にする。
     /// 名前だけが編集ボタンになる旧ホーム配置を持ち込まず、選択の迷いをなくす。
     private func manifestItemTile(_ item: StudyItem) -> some View {
-        let timing = timerStart > 0 && timerItemID == item.uuid.uuidString
+        let timing = hasActiveTimer && timerItemID == item.uuid.uuidString
         // 持ち上がっているのは、指が動いて浮きの札が出ているときだけ。
         // 長押ししただけの札は、見た目を変えずにその場へ留める。
         let lifted = manifestDraggedItemID == item.uuid && manifestDragLocation != nil
@@ -1705,7 +1713,7 @@ struct VoyageHomeView: View {
 
     private func manifestItemTileArtwork(_ item: StudyItem) -> some View {
         let total = totalByItem[item.uuid] ?? 0
-        let timing = timerStart > 0 && timerItemID == item.uuid.uuidString
+        let timing = hasActiveTimer && timerItemID == item.uuid.uuidString
 
         return VStack(spacing: 6) {
             ItemTileArt(item: item)
@@ -2156,7 +2164,7 @@ struct VoyageHomeView: View {
     // MARK: - 更新
 
     private func openOrStartVoyage(for item: StudyItem) {
-        if timerStart > 0 {
+        if hasActiveTimer {
             if timerItemID == item.uuid.uuidString {
                 presentTimerVoyage(item)
                 Haptics.tap(.light)
@@ -2334,7 +2342,8 @@ struct VoyageHomeView: View {
     }
 
     private func clearOrphanedTimer() {
-        guard timerStart > 0, currentTimerItem == nil else { return }
+        let hasStoredTimerState = timerStart != 0 || !timerItemID.isEmpty
+        guard hasStoredTimerState, !hasActiveTimer || currentTimerItem == nil else { return }
         StudyTimer.clearAll()
     }
 

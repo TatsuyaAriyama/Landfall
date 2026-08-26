@@ -155,10 +155,10 @@ enum TutorialFirstVoyageRecorder {
     ) throws {
         if fetchSession(id: sessionID, context: context) != nil { return }
 
-        let savedNote = String(
-            note.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120)
-        )
-        guard savedNote == TutorialState.requiredNote else {
+        guard FirstVoyageNotePolicy.matches(
+            note,
+            requiredNote: TutorialState.requiredNote
+        ) else {
             throw TutorialFirstVoyageRecordingError.invalidNote
         }
 

@@ -74,14 +74,17 @@ enum KeelMiraWidgetStore {
     }
 
     static func toggleBreak(at date: Date = Date()) {
-        guard timer.isActive(at: date) else { return }
+        let current = timer
+        guard current.isActive(at: date) else {
+            clearTimer()
+            return
+        }
         let now = date.timeIntervalSince1970
-        let restingSince = defaults.double(forKey: Key.breakStartedAt)
-        if restingSince > 0 {
-            let accumulated = defaults.double(forKey: Key.breakSeconds)
-            defaults.set(accumulated + max(0, now - restingSince), forKey: Key.breakSeconds)
+        if current.isResting(at: date) {
+            defaults.set(current.breakSecondsAfterEnding(at: date), forKey: Key.breakSeconds)
             defaults.set(0, forKey: Key.breakStartedAt)
         } else {
+            defaults.set(current.sanitizedBreakSeconds(at: date), forKey: Key.breakSeconds)
             defaults.set(now, forKey: Key.breakStartedAt)
         }
         defaults.synchronize()
@@ -226,9 +229,11 @@ struct KeelMiraWidgetTimer: Codable, Hashable, Sendable {
     let breakStartedAt: Double
 
     var isActive: Bool { isActive(at: Date()) }
-    var isResting: Bool {
-        let now = Date().timeIntervalSince1970
-        return isActive
+    var isResting: Bool { isResting(at: Date()) }
+
+    func isResting(at date: Date) -> Bool {
+        let now = date.timeIntervalSince1970
+        return isActive(at: date)
             && breakStartedAt.isFinite
             && breakStartedAt >= startedAt
             && breakStartedAt <= now
@@ -248,9 +253,7 @@ struct KeelMiraWidgetTimer: Codable, Hashable, Sendable {
         guard isActive(at: date) else { return 0 }
         let now = date.timeIntervalSince1970
         let wallElapsed = max(0, now - startedAt)
-        let accumulatedBreak = breakSeconds.isFinite
-            ? min(wallElapsed, max(0, breakSeconds))
-            : 0
+        let accumulatedBreak = sanitizedBreakSeconds(at: date)
         let activeBreak: Double
         if breakStartedAt.isFinite,
            breakStartedAt >= startedAt,
@@ -265,6 +268,21 @@ struct KeelMiraWidgetTimer: Codable, Hashable, Sendable {
         let elapsed = max(0, wallElapsed - accumulatedBreak - activeBreak)
         guard elapsed.isFinite, elapsed < Double(Int.max) else { return 0 }
         return Int(elapsed)
+    }
+
+    func sanitizedBreakSeconds(at date: Date = Date()) -> Double {
+        guard isActive(at: date), breakSeconds.isFinite else { return 0 }
+        let wallElapsed = max(0, date.timeIntervalSince1970 - startedAt)
+        return min(wallElapsed, max(0, breakSeconds))
+    }
+
+    func breakSecondsAfterEnding(at date: Date = Date()) -> Double {
+        let now = date.timeIntervalSince1970
+        guard isResting(at: date) else { return sanitizedBreakSeconds(at: date) }
+        return min(
+            max(0, now - startedAt),
+            sanitizedBreakSeconds(at: date) + max(0, now - breakStartedAt)
+        )
     }
 
     func workedSeconds(at date: Date = Date()) -> Int {

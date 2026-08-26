@@ -91,3 +91,16 @@ enum FirstVoyageRoutingPolicy {
         return deviceTutorialCompleted ? .home : .tutorial
     }
 }
+
+enum FirstVoyageNotePolicy {
+    static let maximumLength = 80
+
+    static func normalized(_ input: String) -> String? {
+        let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : String(value.prefix(maximumLength))
+    }
+
+    static func matches(_ input: String, requiredNote: String) -> Bool {
+        normalized(input) == requiredNote
+    }
+}

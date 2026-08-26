@@ -89,6 +89,7 @@ struct SettingsView: View {
     @StateObject private var voyagePass = VoyagePassStore.shared
     @AppStorage(NotificationService.enabledKey) private var notifyEnabled = false
     @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID = ""
     @AppStorage(StudyTimer.soundKey, store: StudyTimer.defaults)
     private var timerSoundMode = HomeVoyageSound.initialTimerSound.rawValue
     @AppStorage(StudyTimer.breakStartedAtKey, store: StudyTimer.defaults) private var timerBreakStartedAt: Double = 0
@@ -463,7 +464,7 @@ struct SettingsView: View {
     private func resumeHomeAudio() {
         HomeVoyageAudio.shared.stop()
         guard scenePhase == .active else { return }
-        if timerStart > 0 {
+        if VoyageTimerMath.isActive(startedAt: timerStart, itemID: timerItemID) {
             if timerBreakStartedAt <= 0 {
                 HomeVoyageAudio.shared.play(timerSoundMode)
             }

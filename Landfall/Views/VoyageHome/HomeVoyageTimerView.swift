@@ -34,14 +34,14 @@ struct HomeTimerSnapshot {
     let breakSeconds: Double
     let breakStartedAt: Double
 
-    var isResting: Bool {
-        let now = Date().timeIntervalSince1970
-        return breakStartedAt.isFinite
-            && startedAt.isFinite
-            && startedAt > 0
-            && startedAt <= now
-            && breakStartedAt >= startedAt
-            && breakStartedAt <= now
+    var isResting: Bool { isResting(at: Date()) }
+
+    func isResting(at date: Date) -> Bool {
+        VoyageTimerMath.isResting(
+            startedAt: startedAt,
+            breakStartedAt: breakStartedAt,
+            at: date
+        )
     }
 
     func elapsedSeconds(at date: Date = Date()) -> Int {
@@ -367,13 +367,15 @@ struct HomeVoyageTimerView: View {
     }
 
     private var normalizedReflection: String? {
-        let value = reflection.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : String(value.prefix(80))
+        FirstVoyageNotePolicy.normalized(reflection)
     }
 
     private var requiredNoteSatisfied: Bool {
         guard let firstVoyageRequiredNote else { return true }
-        return normalizedReflection == firstVoyageRequiredNote
+        return FirstVoyageNotePolicy.matches(
+            reflection,
+            requiredNote: firstVoyageRequiredNote
+        )
     }
 
     private var temporaryMemoHasUnsavedChanges: Bool {
@@ -1446,9 +1448,30 @@ struct HomeVoyageTimerView: View {
     }
 
     private func toggleBreak() {
-        let now = Date().timeIntervalSince1970
-        if breakStartedAt > 0 {
-            breakSeconds += max(0, now - breakStartedAt)
+        let date = Date()
+        let now = date.timeIntervalSince1970
+        guard VoyageTimerMath.isActive(
+            startedAt: timerStart,
+            itemID: timerItemID,
+            at: date
+        ), timerItemID == item.uuid.uuidString else {
+            StudyTimer.clearAll()
+            return
+        }
+        let accumulated = VoyageTimerMath.sanitizedBreakSeconds(
+            breakSeconds,
+            startedAt: timerStart,
+            at: date
+        )
+        if VoyageTimerMath.isResting(
+            startedAt: timerStart,
+            breakStartedAt: breakStartedAt,
+            at: date
+        ) {
+            breakSeconds = min(
+                max(0, now - timerStart),
+                accumulated + max(0, now - breakStartedAt)
+            )
             breakStartedAt = 0
             if isVoyageResting {
                 HomeVoyageAudio.shared.stop()
@@ -1456,6 +1479,7 @@ struct HomeVoyageTimerView: View {
                 playVoyageAudio(soundMode)
             }
         } else {
+            breakSeconds = accumulated
             breakStartedAt = now
             HomeVoyageAudio.shared.stop()
         }
@@ -1956,9 +1980,30 @@ struct HomeVoyageTimerChip: View {
     }
 
     private func toggleBreak() {
-        let now = Date().timeIntervalSince1970
-        if breakStartedAt > 0 {
-            breakSeconds += max(0, now - breakStartedAt)
+        let date = Date()
+        let now = date.timeIntervalSince1970
+        guard VoyageTimerMath.isActive(
+            startedAt: timerStart,
+            itemID: timerItemID,
+            at: date
+        ), timerItemID == item.uuid.uuidString else {
+            StudyTimer.clearAll()
+            return
+        }
+        let accumulated = VoyageTimerMath.sanitizedBreakSeconds(
+            breakSeconds,
+            startedAt: timerStart,
+            at: date
+        )
+        if VoyageTimerMath.isResting(
+            startedAt: timerStart,
+            breakStartedAt: breakStartedAt,
+            at: date
+        ) {
+            breakSeconds = min(
+                max(0, now - timerStart),
+                accumulated + max(0, now - breakStartedAt)
+            )
             breakStartedAt = 0
             if isEffectivelyResting {
                 HomeVoyageAudio.shared.stop()
@@ -1966,6 +2011,7 @@ struct HomeVoyageTimerChip: View {
                 HomeVoyageAudio.shared.play(soundMode)
             }
         } else {
+            breakSeconds = accumulated
             breakStartedAt = now
             HomeVoyageAudio.shared.stop()
         }
@@ -1975,7 +2021,10 @@ struct HomeVoyageTimerChip: View {
 
     private func finishAndRecord() {
         guard !saving,
-              timerStart > 0,
+              VoyageTimerMath.isActive(
+                startedAt: timerStart,
+                itemID: timerItemID
+              ),
               timerItemID == item.uuid.uuidString
         else { return }
         saving = true

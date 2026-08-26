@@ -3886,6 +3886,7 @@ private struct HomeIslandMusicPanel: View {
     @ObservedObject var music: HomeBackgroundMusic
     @ObservedObject private var voyageMusic = HomeVoyageAudio.shared
     @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
+    @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID = ""
     @AppStorage(StudyTimer.soundKey, store: StudyTimer.defaults)
     private var timerSoundID = HomeVoyageSound.initialTimerSound.rawValue
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -3898,6 +3899,10 @@ private struct HomeIslandMusicPanel: View {
     /// list needs — artwork, title, state, checkmark — stays; it is drawn at
     /// phone scale.
     private var onPhone: Bool { compact && horizontalSizeClass == .compact }
+
+    private var hasActiveTimer: Bool {
+        VoyageTimerMath.isActive(startedAt: timerStart, itemID: timerItemID)
+    }
 
     var body: some View {
         if compact {
@@ -4014,7 +4019,7 @@ private struct HomeIslandMusicPanel: View {
         return Button {
             selectedTrackID = track.rawValue
             isEnabled = true
-            if timerStart > 0 {
+            if hasActiveTimer {
                 timerSoundID = track.rawValue
                 voyageMusic.play(track.rawValue)
             } else {
@@ -4082,15 +4087,15 @@ private struct HomeIslandMusicPanel: View {
     }
 
     private var isCurrentContextPlaying: Bool {
-        timerStart > 0 ? voyageMusic.isPlaying : music.isPlaying
+        hasActiveTimer ? voyageMusic.isPlaying : music.isPlaying
     }
 
     private var currentPlaybackFailed: Bool {
-        timerStart > 0 ? voyageMusic.playbackFailed : music.playbackFailed
+        hasActiveTimer ? voyageMusic.playbackFailed : music.playbackFailed
     }
 
     private var currentContextTrack: HomeVoyageSound {
-        timerStart > 0 ? voyageMusic.currentSound : music.currentTrack
+        hasActiveTimer ? voyageMusic.currentSound : music.currentTrack
     }
 
     /// 島で聞こえている音を直接操作する。計測を最小化して島へ戻った場合は
@@ -4098,7 +4103,7 @@ private struct HomeIslandMusicPanel: View {
     private func togglePlayback() {
         if isCurrentContextPlaying {
             isEnabled = false
-            if timerStart > 0 {
+            if hasActiveTimer {
                 timerSoundID = HomeVoyageSound.off.rawValue
                 voyageMusic.stop()
             } else {
@@ -4108,7 +4113,7 @@ private struct HomeIslandMusicPanel: View {
         }
 
         isEnabled = true
-        if timerStart > 0 {
+        if hasActiveTimer {
             timerSoundID = selectedTrack.rawValue
             voyageMusic.play(selectedTrack.rawValue)
         } else {

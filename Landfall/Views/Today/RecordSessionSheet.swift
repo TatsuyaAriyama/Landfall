@@ -345,13 +345,32 @@ struct RecordSessionSheet: View {
     }
 
     private func elapsedText(at now: Date) -> String {
-        let seconds = max(0, Int(now.timeIntervalSince1970 - timerStart))
+        let seconds = VoyageTimerMath.elapsedSeconds(
+            startedAt: timerStart,
+            breakSeconds: 0,
+            breakStartedAt: 0,
+            at: now
+        )
         return String(format: "%d:%02d:%02d", seconds / 3600, (seconds / 60) % 60, seconds % 60)
     }
 
     private func stopTimerAndSave() {
-        let elapsed = Date().timeIntervalSince1970 - timerStart
-        let measured = max(1, Int((elapsed / 60).rounded()))
+        let date = Date()
+        guard VoyageTimerMath.isActive(
+            startedAt: timerStart,
+            itemID: timerItemID,
+            at: date
+        ), timerItemID == item.uuid.uuidString else {
+            clearTimer()
+            return
+        }
+        let elapsed = VoyageTimerMath.elapsedSeconds(
+            startedAt: timerStart,
+            breakSeconds: 0,
+            breakStartedAt: 0,
+            at: date
+        )
+        let measured = max(1, Int((Double(elapsed) / 60).rounded()))
         // 閉じ忘れ疑いの長時間は、そのまま巨大記録にせず確認する(タイマーは残したまま)。
         if measured >= StudyTimer.longSessionMinutes {
             pendingMinutes = measured
