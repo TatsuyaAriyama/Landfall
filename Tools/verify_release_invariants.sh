@@ -51,4 +51,16 @@ if [[ "$build_version_count" != "1" ]]; then
   exit 1
 fi
 
+marketing_version_count="$(
+  /usr/bin/grep -E -o 'MARKETING_VERSION = [0-9]+\.[0-9]+' Landfall.xcodeproj/project.pbxproj \
+    | awk '{print $3}' \
+    | sort -u \
+    | wc -l \
+    | tr -d ' '
+)"
+if [[ "$marketing_version_count" != "1" ]]; then
+  print -u2 'Release gate failed: app and widget marketing versions do not match.'
+  exit 1
+fi
+
 print 'KeelMira release invariants: PASS'
