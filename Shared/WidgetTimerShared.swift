@@ -57,8 +57,10 @@ enum KeelMiraWidgetStore {
     }
 
     static func start(itemID: String, itemName: String, at date: Date = Date()) {
-        guard timer.startedAt <= 0 else { return }
-        defaults.set(date.timeIntervalSince1970, forKey: Key.timerStart)
+        guard !itemID.isEmpty else { return }
+        let current = timer
+        guard !current.isActive(at: date) else { return }
+        clearTimer()
         defaults.set(itemID, forKey: Key.timerItem)
         defaults.set(itemName, forKey: Key.timerItemName)
         defaults.set("free", forKey: Key.timerMode)
@@ -66,11 +68,13 @@ enum KeelMiraWidgetStore {
         defaults.set(0, forKey: Key.breakSeconds)
         defaults.set(0, forKey: Key.breakStartedAt)
         defaults.set(itemID, forKey: Key.lastItemID)
+        // Activation is committed last so readers never see a half-written timer.
+        defaults.set(date.timeIntervalSince1970, forKey: Key.timerStart)
         defaults.synchronize()
     }
 
     static func toggleBreak(at date: Date = Date()) {
-        guard timer.startedAt > 0 else { return }
+        guard timer.isActive(at: date) else { return }
         let now = date.timeIntervalSince1970
         let restingSince = defaults.double(forKey: Key.breakStartedAt)
         if restingSince > 0 {
@@ -86,7 +90,7 @@ enum KeelMiraWidgetStore {
     @discardableResult
     static func makeLandfall(at date: Date = Date()) -> KeelMiraPendingLandfall? {
         let current = timer
-        guard current.startedAt > 0, !current.itemID.isEmpty else { return nil }
+        guard current.isActive(at: date) else { return nil }
         // Interactive Widgetは出航ボタンのタップ中に表示が航海中へ切り替わる。
         // 同じタップの指が、切り替え後の「着岸」へ誤って落ちるのを防ぐ。
         guard current.elapsedSeconds(at: date) >= 2 else { return nil }
@@ -109,6 +113,7 @@ enum KeelMiraWidgetStore {
     }
 
     static func clearTimer() {
+        // Deactivate first; the remaining fields can then be cleared safely.
         defaults.set(0, forKey: Key.timerStart)
         defaults.set("", forKey: Key.timerItem)
         defaults.set("", forKey: Key.timerItemName)
@@ -210,6 +215,8 @@ struct KeelMiraWidgetItem: Codable, Hashable, Identifiable, Sendable {
 }
 
 struct KeelMiraWidgetTimer: Codable, Hashable, Sendable {
+    private static let maximumRecoverableDuration: Double = 7 * 24 * 60 * 60
+
     let startedAt: Double
     let itemID: String
     let itemName: String
@@ -218,20 +225,60 @@ struct KeelMiraWidgetTimer: Codable, Hashable, Sendable {
     let breakSeconds: Double
     let breakStartedAt: Double
 
-    var isActive: Bool { startedAt > 0 && !itemID.isEmpty }
-    var isResting: Bool { isActive && breakStartedAt > 0 }
+    var isActive: Bool { isActive(at: Date()) }
+    var isResting: Bool {
+        let now = Date().timeIntervalSince1970
+        return isActive
+            && breakStartedAt.isFinite
+            && breakStartedAt >= startedAt
+            && breakStartedAt <= now
+    }
+
+    func isActive(at date: Date) -> Bool {
+        let now = date.timeIntervalSince1970
+        return now.isFinite
+            && startedAt.isFinite
+            && startedAt > 0
+            && startedAt <= now
+            && now - startedAt <= Self.maximumRecoverableDuration
+            && !itemID.isEmpty
+    }
 
     func elapsedSeconds(at date: Date = Date()) -> Int {
-        guard isActive else { return 0 }
+        guard isActive(at: date) else { return 0 }
         let now = date.timeIntervalSince1970
-        let activeBreak = isResting ? max(0, now - breakStartedAt) : 0
-        return max(0, Int(now - startedAt - breakSeconds - activeBreak))
+        let wallElapsed = max(0, now - startedAt)
+        let accumulatedBreak = breakSeconds.isFinite
+            ? min(wallElapsed, max(0, breakSeconds))
+            : 0
+        let activeBreak: Double
+        if breakStartedAt.isFinite,
+           breakStartedAt >= startedAt,
+           breakStartedAt <= now {
+            activeBreak = min(
+                max(0, wallElapsed - accumulatedBreak),
+                max(0, now - breakStartedAt)
+            )
+        } else {
+            activeBreak = 0
+        }
+        let elapsed = max(0, wallElapsed - accumulatedBreak - activeBreak)
+        guard elapsed.isFinite, elapsed < Double(Int.max) else { return 0 }
+        return Int(elapsed)
     }
 
     func workedSeconds(at date: Date = Date()) -> Int {
         let elapsed = elapsedSeconds(at: date)
         guard timerMode == "pomodoro" else { return elapsed }
-        let anchor = min(elapsed, max(0, Int(pomodoroStartElapsed)))
+        let anchor: Int
+        if pomodoroStartElapsed.isFinite {
+            anchor = min(
+                elapsed,
+                max(0, Int(min(pomodoroStartElapsed, Double(Int.max - 1))))
+            )
+        } else {
+            anchor = 0
+        }
         let pomodoroElapsed = max(0, elapsed - anchor)
         let cycles = pomodoroElapsed / 1_800
         return anchor + cycles * 1_500 + min(pomodoroElapsed % 1_800, 1_500)

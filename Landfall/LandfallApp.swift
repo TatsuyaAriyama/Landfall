@@ -108,7 +108,12 @@ struct LandfallApp: App {
                         .transition(.opacity)
                     }
                 } else if auth.canEnterApp || Self.skipAuth {
-                    if !hasCompletedTutorial || (Self.forceOnboarding && !dismissedForcedTutorial) {
+                    switch firstVoyageRoute {
+                    case .waitingForAccountClassification:
+                        LaunchTransitionView()
+                            .transition(.opacity)
+
+                    case .tutorial:
                         // 操作を読んだら、同じ海で最初のメモと作業記録まで残す。
                         FirstVoyageExperienceView(
                             recoverPreviouslySavedRecord: !Self.forceOnboarding
@@ -116,13 +121,17 @@ struct LandfallApp: App {
                             // Persist before swapping roots. If the app closes
                             // mid-approach, the next launch still finishes homecoming.
                             homeArrivalPending = true
+                            if let uid = auth.user?.uid {
+                                FirstVoyageAccountProgress.markTutorialCompleted(for: uid)
+                            }
                             withAnimation(.easeInOut(duration: 0.52)) {
                                 hasCompletedTutorial = true
                                 dismissedForcedTutorial = true
                             }
                         }
                         .transition(.opacity)
-                    } else {
+
+                    case .home:
                         ContentView()
                             .transition(.opacity)
                     }
@@ -172,6 +181,7 @@ struct LandfallApp: App {
             }
             .onAppear {
                 StudyTimer.migrateLegacyTimerIfNeeded()
+                StudyTimer.repairInvalidStateIfNeeded()
                 WidgetTimerInbox.importPending(context: container.mainContext)
                 WidgetBridge.refresh(context: container.mainContext)
                 if !Self.usesDebugSeed, let uid = auth.user?.uid {
@@ -293,6 +303,18 @@ struct LandfallApp: App {
         #else
         return false
         #endif
+    }
+
+    private var firstVoyageRoute: FirstVoyageRoute {
+        FirstVoyageRoutingPolicy.route(
+            forceTutorial: Self.forceOnboarding && !dismissedForcedTutorial,
+            deviceTutorialCompleted: hasCompletedTutorial,
+            firebaseUID: auth.user?.uid,
+            signedInEntry: auth.signedInPlayerEntry,
+            canUseDeviceOnlyMode: auth.isUsingLocalMode
+                || auth.isSimulatorPreviewing
+                || Self.skipAuth
+        )
     }
 }
 

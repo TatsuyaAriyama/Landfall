@@ -38,7 +38,10 @@ struct FirstVoyageExperienceView: View {
                     item: tutorialItem,
                     hasDestination: false,
                     onManual: { _ in },
-                    onReturnHome: {},
+                    // The first voyage is the tutorial itself. Its return control
+                    // is hidden, but keeping this callback safe prevents a stranded
+                    // timer screen if another accessibility path ever invokes it.
+                    onReturnHome: restartTutorialVoyage,
                     firstVoyageRequiredNote: TutorialState.requiredNote,
                     onFirstVoyageRecorded: finishExperience
                 )
@@ -107,6 +110,15 @@ struct FirstVoyageExperienceView: View {
         let selectedSound = StudyTimer.defaults.string(forKey: StudyTimer.soundKey)
             ?? HomeVoyageSound.initialTimerSound.rawValue
         HomeVoyageAudio.shared.playLooping(selectedSound)
+    }
+
+    private func restartTutorialVoyage() {
+        StudyTimer.clearAll()
+        StudyTimer.begin(
+            itemID: tutorialItem.uuid.uuidString,
+            itemName: tutorialItem.name
+        )
+        updateAudio()
     }
 
     private func finishExperience() {

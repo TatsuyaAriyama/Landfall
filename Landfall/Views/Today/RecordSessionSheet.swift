@@ -9,6 +9,7 @@ enum StudyTimer {
     static let itemKey = KeelMiraWidgetStore.Key.timerItem
     /// これを超える航海は「閉じ忘れ」の可能性が高いので、着岸時に確認する。
     static let longSessionMinutes = 8 * 60
+    private static let legacyMigrationKey = "landfall.timer.legacyMigration.completed.v1"
 
     /// 項目の削除経路が増えても、孤立したタイマーを残さないための共通処理。
     static func clear(ifMatching itemID: String? = nil) {
@@ -19,14 +20,46 @@ enum StudyTimer {
 
     /// 旧版の標準UserDefaultsに航海が残っている場合だけ、App Groupへ一度移す。
     static func migrateLegacyTimerIfNeeded() {
-        guard defaults.double(forKey: startKey) <= 0 else { return }
         let legacy = UserDefaults.standard
+        guard !legacy.bool(forKey: legacyMigrationKey) else { return }
+        defer {
+            legacy.set(true, forKey: legacyMigrationKey)
+            for key in [
+                startKey,
+                itemKey,
+                KeelMiraWidgetStore.Key.timerItemName,
+                KeelMiraWidgetStore.Key.timerMode,
+                KeelMiraWidgetStore.Key.pomodoroStartElapsed,
+                KeelMiraWidgetStore.Key.breakSeconds,
+                KeelMiraWidgetStore.Key.breakStartedAt,
+                KeelMiraWidgetStore.Key.sound,
+            ] {
+                legacy.removeObject(forKey: key)
+            }
+        }
+
+        let currentStart = defaults.double(forKey: startKey)
+        let currentItem = defaults.string(forKey: itemKey) ?? ""
+        guard !VoyageTimerMath.isActive(
+            startedAt: currentStart,
+            itemID: currentItem
+        ) else { return }
+        if currentStart != 0 || !currentItem.isEmpty {
+            KeelMiraWidgetStore.clearTimer()
+        }
+
         let legacyStart = legacy.double(forKey: startKey)
         let legacyItem = legacy.string(forKey: itemKey) ?? ""
-        guard legacyStart > 0, !legacyItem.isEmpty else { return }
-        defaults.set(legacyStart, forKey: startKey)
+        guard VoyageTimerMath.isActive(
+            startedAt: legacyStart,
+            itemID: legacyItem
+        ) else { return }
+
+        // Write the activation timestamp last so app and widget never observe a
+        // partially migrated timer as active.
         defaults.set(legacyItem, forKey: itemKey)
         for key in [
+            KeelMiraWidgetStore.Key.timerItemName,
             KeelMiraWidgetStore.Key.timerMode,
             KeelMiraWidgetStore.Key.pomodoroStartElapsed,
             KeelMiraWidgetStore.Key.breakSeconds,
@@ -35,7 +68,20 @@ enum StudyTimer {
         ] {
             if let value = legacy.object(forKey: key) { defaults.set(value, forKey: key) }
         }
+        defaults.set(legacyStart, forKey: startKey)
         defaults.synchronize()
+    }
+
+    /// Run on every launch, including after the one-time legacy migration has
+    /// already completed. Partial App Group writes must not keep Home in a
+    /// permanent or epoch-sized voyage state.
+    static func repairInvalidStateIfNeeded() {
+        let start = defaults.double(forKey: startKey)
+        let itemID = defaults.string(forKey: itemKey) ?? ""
+        guard start != 0 || !itemID.isEmpty else { return }
+        guard !VoyageTimerMath.isActive(startedAt: start, itemID: itemID) else { return }
+        KeelMiraWidgetStore.clearTimer()
+        WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
     }
 }
 
@@ -62,11 +108,13 @@ struct RecordSessionSheet: View {
     @FocusState private var noteFocused: Bool
 
     private var timerRunningHere: Bool {
-        timerStart > 0 && timerItemID == item.uuid.uuidString
+        VoyageTimerMath.isActive(startedAt: timerStart, itemID: timerItemID)
+            && timerItemID == item.uuid.uuidString
     }
 
     private var timerRunningElsewhere: Bool {
-        timerStart > 0 && timerItemID != item.uuid.uuidString
+        VoyageTimerMath.isActive(startedAt: timerStart, itemID: timerItemID)
+            && timerItemID != item.uuid.uuidString
     }
 
     /// Arbitrary backfilled time changes level progression, so it remains an

@@ -34,19 +34,30 @@ struct HomeTimerSnapshot {
     let breakSeconds: Double
     let breakStartedAt: Double
 
-    var isResting: Bool { breakStartedAt > 0 }
+    var isResting: Bool {
+        let now = Date().timeIntervalSince1970
+        return breakStartedAt.isFinite
+            && startedAt.isFinite
+            && startedAt > 0
+            && startedAt <= now
+            && breakStartedAt >= startedAt
+            && breakStartedAt <= now
+    }
 
     func elapsedSeconds(at date: Date = Date()) -> Int {
-        let now = date.timeIntervalSince1970
-        let activeBreak = isResting ? max(0, now - breakStartedAt) : 0
-        return max(0, Int(now - startedAt - breakSeconds - activeBreak))
+        VoyageTimerMath.elapsedSeconds(
+            startedAt: startedAt,
+            breakSeconds: breakSeconds,
+            breakStartedAt: breakStartedAt,
+            at: date
+        )
     }
 
     func workedSeconds(at date: Date = Date()) -> Int {
         let elapsed = elapsedSeconds(at: date)
         guard mode == .pomodoro else { return elapsed }
         // ポモドーロを途中から始めても、それ以前の通常計測を失わない。
-        let anchor = min(elapsed, max(0, Int(pomodoroStartElapsed)))
+        let anchor = VoyageTimerMath.clampedAnchor(pomodoroStartElapsed, elapsed: elapsed)
         let pomodoroElapsed = max(0, elapsed - anchor)
         let cycles = pomodoroElapsed / 1_800
         return anchor + cycles * 1_500 + min(pomodoroElapsed % 1_800, 1_500)
@@ -63,7 +74,14 @@ struct HomeTimerSnapshot {
     /// switched on. Shown so a long session reads as progress, not a number.
     func completedPomodoroCycles(at date: Date = Date()) -> Int {
         guard mode == .pomodoro else { return 0 }
-        let elapsed = max(0, elapsedSeconds(at: date) - Int(pomodoroStartElapsed))
+        let totalElapsed = elapsedSeconds(at: date)
+        let elapsed = max(
+            0,
+            totalElapsed - VoyageTimerMath.clampedAnchor(
+                pomodoroStartElapsed,
+                elapsed: totalElapsed
+            )
+        )
         return elapsed / 1_800
     }
 
@@ -71,7 +89,14 @@ struct HomeTimerSnapshot {
         guard mode == .pomodoro else { return nil }
         // 通常の合計時計とは別に、オンにした瞬間から25:00を始める。
         // elapsedSecondsは手動休憩中に止まるため、こちらも同じ位置で自然に止まる。
-        let elapsed = max(0, elapsedSeconds(at: date) - Int(pomodoroStartElapsed))
+        let totalElapsed = elapsedSeconds(at: date)
+        let elapsed = max(
+            0,
+            totalElapsed - VoyageTimerMath.clampedAnchor(
+                pomodoroStartElapsed,
+                elapsed: totalElapsed
+            )
+        )
         let remainder = elapsed % 1_800
         let focusing = remainder < 1_500
         return HomePomodoroPhase(
@@ -348,7 +373,7 @@ struct HomeVoyageTimerView: View {
 
     private var requiredNoteSatisfied: Bool {
         guard let firstVoyageRequiredNote else { return true }
-        return normalizedNote == firstVoyageRequiredNote
+        return normalizedReflection == firstVoyageRequiredNote
     }
 
     private var temporaryMemoHasUnsavedChanges: Bool {
@@ -495,6 +520,7 @@ struct HomeVoyageTimerView: View {
             }
         }
         .onAppear {
+            ensureFirstVoyageTimerIsActive()
             let migratedSound = HomeVoyageSound.resolve(soundMode)
             if migratedSound.rawValue != soundMode {
                 soundMode = migratedSound.rawValue
@@ -609,17 +635,19 @@ struct HomeVoyageTimerView: View {
                     Haptics.tap(.light)
                 }
 
-                compactToolButton(
-                    systemImage: "chevron.backward",
-                    active: false,
-                    accessibilityLabel: LF.text("Return to my island")
-                ) {
-                    noteFocused = false
-                    reflectionFocused = false
-                    showingSoundPicker = false
-                    showingTemporaryMemo = false
-                    confirmingReturnHome = true
-                    Haptics.tap(.light)
+                if !isFirstVoyage {
+                    compactToolButton(
+                        systemImage: "chevron.backward",
+                        active: false,
+                        accessibilityLabel: LF.text("Return to my island")
+                    ) {
+                        noteFocused = false
+                        reflectionFocused = false
+                        showingSoundPicker = false
+                        showingTemporaryMemo = false
+                        confirmingReturnHome = true
+                        Haptics.tap(.light)
+                    }
                 }
             }
 
@@ -1137,21 +1165,13 @@ struct HomeVoyageTimerView: View {
     private var recordButton: some View {
         HStack(alignment: .center) {
             Button {
-                if requiredNoteSatisfied {
-                    noteFocused = false
-                    showingSoundPicker = false
-                    showingTemporaryMemo = false
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
-                        showingReflection = true
-                    }
-                    Task { @MainActor in reflectionFocused = true }
-                } else {
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
-                        showingTemporaryMemo = true
-                        showingSoundPicker = false
-                    }
-                    Task { @MainActor in noteFocused = true }
+                noteFocused = false
+                showingSoundPicker = false
+                showingTemporaryMemo = false
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                    showingReflection = true
                 }
+                Task { @MainActor in reflectionFocused = true }
             } label: {
                 HStack(spacing: 8) {
                     if saving {
@@ -1161,23 +1181,22 @@ struct HomeVoyageTimerView: View {
                     Text("Record")
                         .font(LFFont.copy(compactHUD ? 14 : 16))
                 }
-                .foregroundStyle(Color.black.opacity(requiredNoteSatisfied ? 0.88 : 0.42))
+                .foregroundStyle(Color.black.opacity(0.88))
                 .frame(width: compactHUD ? 126 : 144, height: compactHUD ? 52 : 56)
                 .background(
-                    Color.white.opacity(requiredNoteSatisfied ? 1 : 0.45),
+                    Color.white,
                     in: Capsule()
                 )
                 .overlay(
                     Capsule().strokeBorder(
-                        requiredNoteSatisfied
-                            ? Color.black.opacity(0.10)
-                            : Color.black.opacity(0.08),
+                        Color.black.opacity(0.10),
                         lineWidth: 1
                     )
                 )
             }
             .buttonStyle(LFPressableButtonStyle())
             .disabled(saving)
+            .accessibilityIdentifier(isFirstVoyage ? "firstVoyage.record" : "voyage.record")
 
             Spacer(minLength: 0)
         }
@@ -1205,7 +1224,11 @@ struct HomeVoyageTimerView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Color.black.opacity(0.68))
 
-                TextField("How did the work feel?", text: $reflection)
+                TextField(
+                    "",
+                    text: $reflection,
+                    prompt: Text(verbatim: reflectionPrompt)
+                )
                     .font(LFFont.copy(compactHUD ? 12 : 14))
                     .foregroundStyle(Color.black)
                     .tint(LFColor.coral)
@@ -1217,6 +1240,17 @@ struct HomeVoyageTimerView: View {
                             reflection = String(value.prefix(80))
                         }
                     }
+                    .accessibilityLabel(Text(verbatim: reflectionPrompt))
+                    .accessibilityHint(
+                        Text(
+                            verbatim: isFirstVoyage
+                                ? LF.text("Enter \"Tutorial\".")
+                                : ""
+                        )
+                    )
+                    .accessibilityIdentifier(
+                        isFirstVoyage ? "firstVoyage.note" : "voyage.reflection"
+                    )
 
                 if !reflection.isEmpty {
                     Button {
@@ -1254,8 +1288,18 @@ struct HomeVoyageTimerView: View {
                 .overlay(Capsule().strokeBorder(Color.white.opacity(0.22), lineWidth: 1))
             }
             .buttonStyle(LFPressableButtonStyle())
-            .disabled(saving)
+            .disabled(saving || !requiredNoteSatisfied)
+            .opacity(requiredNoteSatisfied ? 1 : 0.48)
+            .accessibilityIdentifier(
+                isFirstVoyage ? "firstVoyage.complete" : "voyage.complete"
+            )
         }
+    }
+
+    private var reflectionPrompt: String {
+        isFirstVoyage
+            ? LF.text("Enter \"Tutorial\".")
+            : LF.text("How did the work feel?")
     }
 
     /// 枠のないメモ欄。彫った罫線だけが書く場所を示し、書き始めると
@@ -1421,7 +1465,10 @@ struct HomeVoyageTimerView: View {
 
     private func finishVoyage() {
         guard !saving,
-              timerStart > 0,
+              VoyageTimerMath.isActive(
+                startedAt: timerStart,
+                itemID: timerItemID
+              ),
               timerItemID == item.uuid.uuidString,
               requiredNoteSatisfied
         else { return }
@@ -1430,7 +1477,7 @@ struct HomeVoyageTimerView: View {
         if isFirstVoyage {
             do {
                 try TutorialFirstVoyageRecorder.record(
-                    note: normalizedNote,
+                    note: normalizedReflection ?? "",
                     elapsedSeconds: snapshot.elapsedSeconds(at: clockNow),
                     context: modelContext
                 )
@@ -1489,10 +1536,34 @@ struct HomeVoyageTimerView: View {
     /// 永続タイマーまで消してから島へ戻さないと、次に船を開いたとき
     /// 同じ作業項目が「航海へ戻る」として復活してしまう。
     private func discardVoyageAndReturnHome() {
+        guard !isFirstVoyage else {
+            ensureFirstVoyageTimerIsActive()
+            return
+        }
         stopTimer()
         HomeVoyageAudio.shared.stop()
         onReturnHome()
         Haptics.tap(.medium)
+    }
+
+    /// The tutorial must remain recordable even if an old migration or another
+    /// process left the App Group defaults half-cleared before this view appeared.
+    private func ensureFirstVoyageTimerIsActive() {
+        guard isFirstVoyage else { return }
+        let expectedItemID = item.uuid.uuidString
+        guard !VoyageTimerMath.isActive(
+            startedAt: timerStart,
+            itemID: timerItemID == expectedItemID ? timerItemID : ""
+        ) else { return }
+
+        StudyTimer.clearAll()
+        StudyTimer.begin(itemID: expectedItemID, itemName: item.name)
+        timerStart = StudyTimer.defaults.double(forKey: StudyTimer.startKey)
+        timerItemID = expectedItemID
+        timerMode = HomeTimerMode.free.rawValue
+        pomodoroStartElapsed = 0
+        breakSeconds = 0
+        breakStartedAt = 0
     }
 
     private func playVoyageAudio(_ storedValue: String) {

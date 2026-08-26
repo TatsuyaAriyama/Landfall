@@ -17,6 +17,7 @@ final class AuthService: ObservableObject {
     )
 
     @Published private(set) var user: User?
+    @Published private(set) var signedInPlayerEntry: SignedInPlayerEntry?
     /// Firebase restores a saved session asynchronously. Until its first
     /// callback lands, "no user" means "not known yet" rather than "signed
     /// out" — routing on it directly is what made sign-in flash at launch.
@@ -57,6 +58,7 @@ final class AuthService: ObservableObject {
         // A session already restored from the keychain is available right away;
         // taking it here means a returning player never sees a launch gap.
         user = Auth.auth().currentUser
+        signedInPlayerEntry = user == nil ? nil : .returning
         hasResolvedInitialAuthState = user != nil || isUsingLocalMode
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             guard let self else { return }
@@ -64,6 +66,14 @@ final class AuthService: ObservableObject {
             self.hasResolvedInitialAuthState = true
             if user != nil {
                 self.setLocalMode(false)
+                // Interactive sign-in publishes its authoritative isNewUser value
+                // immediately after this callback. A restored keychain session has
+                // no pending sign-in operation and is necessarily a returning user.
+                if self.signedInPlayerEntry == nil, !self.isWorking {
+                    self.signedInPlayerEntry = .returning
+                }
+            } else {
+                self.signedInPlayerEntry = nil
             }
         }
     }
@@ -156,7 +166,14 @@ final class AuthService: ObservableObject {
         isWorking = true
         defer { isWorking = false }
         do {
-            try await Auth.auth().signIn(with: credential)
+            let result = try await Auth.auth().signIn(with: credential)
+            let entry: SignedInPlayerEntry = result.additionalUserInfo?.isNewUser == true
+                ? .newlyCreated
+                : .returning
+            if entry == .newlyCreated {
+                FirstVoyageAccountProgress.markTutorialRequired(for: result.user.uid)
+            }
+            signedInPlayerEntry = entry
         } catch {
             Self.logSignInError(error, stage: "firebase-credential")
             errorMessage = Self.signInErrorMessage(for: error)
@@ -186,6 +203,7 @@ final class AuthService: ObservableObject {
     func signOut() {
         isSimulatorPreviewing = false
         setLocalMode(false)
+        signedInPlayerEntry = nil
         GIDSignIn.sharedInstance.signOut()
         try? Auth.auth().signOut()
     }
