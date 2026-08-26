@@ -29,6 +29,9 @@ struct ShipDesign: Identifiable, Hashable {
     let symbolName: String
     /// この船が開くレベル。1は最初から乗っている船。
     let unlockLevel: Int
+    /// Level-independent entitlement. A lapsed pass hides the ship without
+    /// deleting the player's saved choice, so renewing restores it.
+    var requiresVoyagePass = false
 
     static func == (lhs: ShipDesign, rhs: ShipDesign) -> Bool {
         lhs.id == rhs.id
@@ -55,7 +58,8 @@ enum ShipCatalog {
             title: "Garden Estate",
             summary: "Granite decks, iron railings, two lamps burning at the stern.",
             symbolName: "leaf.fill",
-            unlockLevel: 5
+            unlockLevel: 1,
+            requiresVoyagePass: true
         ),
         ShipDesign(
             id: "corsair",
@@ -109,6 +113,7 @@ enum BoatCustomization {
 
     private static let sailStorageKey = "boat.sail"
     private static let shipStorageKey = "boat.ship"
+    private static let passStorageKey = "boat.passActive"
 
     static var selectedSailID: String {
         let saved = UserDefaults.standard.string(forKey: sailStorageKey)
@@ -130,8 +135,31 @@ enum BoatCustomization {
         ShipCatalog.design(id: selectedShipID)
     }
 
+    /// StoreKit is main-actor isolated while SceneKit can assemble a boat on a
+    /// render thread. Mirror the last verified entitlement like navigator
+    /// colours do, and always render a safe ship while access is inactive.
+    static var isPassActive: Bool {
+        UserDefaults.standard.bool(forKey: passStorageKey)
+    }
+
+    static func updatePassState(_ active: Bool) {
+        UserDefaults.standard.set(active, forKey: passStorageKey)
+    }
+
+    static var effectiveSelectedShip: ShipDesign {
+        let selected = selectedShip
+        guard !selected.requiresVoyagePass || isPassActive else {
+            return ShipCatalog.default
+        }
+        return selected
+    }
+
+    static var effectiveSelectedShipID: String { effectiveSelectedShip.id }
+
     static func selectShip(_ id: String) {
-        guard ShipCatalog.all.contains(where: { $0.id == id }) else { return }
+        guard let ship = ShipCatalog.all.first(where: { $0.id == id }),
+              !ship.requiresVoyagePass || isPassActive
+        else { return }
         UserDefaults.standard.set(id, forKey: shipStorageKey)
     }
 
@@ -148,7 +176,7 @@ enum BoatCustomization {
     /// 描き直し判定に使う。船を足しても書き換えずに済むよう、船と帆の
     /// 両方をここへ含める。
     static var appearanceKey: String {
-        "\(selectedShipID)-\(selectedSailID)"
+        "\(effectiveSelectedShipID)-\(selectedSailID)"
     }
 
     /// 選択色は両方の帆へ適用し、廃止した部位は常に標準値にする。
@@ -160,7 +188,7 @@ enum BoatCustomization {
             hull: BoatParts.default.hull,
             stripe: nil,
             flag: "none",
-            shipID: selectedShipID
+            shipID: effectiveSelectedShipID
         )
     }
 
@@ -173,7 +201,7 @@ enum BoatCustomization {
         return [
             "boatSail": sail,
             "boatJib": sail,
-            "boatHull": selectedShipID,
+            "boatHull": effectiveSelectedShipID,
             "boatStripe": "none",
             "boatFlag": "none",
         ]

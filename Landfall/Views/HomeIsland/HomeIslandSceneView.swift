@@ -331,6 +331,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
         boatCustomizationActive || destinationGazeActive
     }
 
+    var islandScale: Float {
+        HomeIslandExpansionPolicy.scale(for: playerLevel)
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(owner: self)
     }
@@ -1686,7 +1690,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             scene.lightingEnvironment.contents = UIColor(rgb: 0xD9FFF5)
             scene.lightingEnvironment.intensity = 0.96
 
-            let ocean = HomeIslandOceanEffects.makeScene()
+            let ocean = HomeIslandOceanEffects.makeScene(islandScale: owner.islandScale)
             scene.rootNode.addChildNode(ocean.root)
             seaMaterial = ocean.animatedMaterial
 
@@ -1695,13 +1699,16 @@ struct HomeIslandSceneView: UIViewRepresentable {
             ) {
                 foundation.name = "home-island-locked-foundation"
                 HomeIslandSandSurface.apply(to: foundation)
+                foundation.scale = SCNVector3(owner.islandScale, 1, owner.islandScale)
                 scene.rootNode.addChildNode(foundation)
                 foundationNode = foundation
             }
 
             if let jetty = AssetPlacementRuntime.makeAssetNode(resourceName: "wooden_jetty") {
                 jetty.name = "home-island-locked-arrival-jetty"
-                let coast = HomeIslandMetrics.arrivalJettyPosition
+                let coast = HomeIslandMetrics.arrivalJettyPosition(
+                    islandScale: owner.islandScale
+                )
                 let transform = HomeIslandTransform(
                     x: coast.x,
                     z: coast.z,
@@ -1720,7 +1727,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 resourceName: "voyage_notice_board"
             ) {
                 noticeBoard.name = "home-island-locked-notice-board"
-                let position = HomeIslandMetrics.fixedNoticeBoardPosition
+                let position = HomeIslandMetrics.fixedNoticeBoardPosition(
+                    islandScale: owner.islandScale
+                )
                 HomeIslandTransform(
                     x: position.x,
                     z: position.z,
@@ -1926,7 +1935,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
             // island. Both now ship as placeable `council_table` / `council_chair`
             // props the player arranges wherever they like.
 
-            for (index, position) in HomeIslandMetrics.welcomeBeaconPositions.enumerated() {
+            for (index, position) in HomeIslandMetrics.welcomeBeaconPositions(
+                islandScale: owner.islandScale
+            ).enumerated() {
                 if addAsset(
                     "harbor_welcome_beacon",
                     name: "home-island-locked-welcome-beacon-\(index + 1)",
@@ -2035,9 +2046,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 )
             }
             if fixedNoticeBoardNode?.parent != nil {
+                let noticePosition = HomeIslandMetrics.fixedNoticeBoardPosition(
+                    islandScale: owner.islandScale
+                )
                 walkingObstacles.append(WalkingObstacle(
-                    x: HomeIslandMetrics.fixedNoticeBoardPosition.x,
-                    z: HomeIslandMetrics.fixedNoticeBoardPosition.z,
+                    x: noticePosition.x,
+                    z: noticePosition.z,
                     radius: HomeIslandMetrics.fixedNoticeBoardObstacleRadius
                 ))
             }
@@ -2749,7 +2763,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
             if let assetID = owner.placementAssetID,
                let point = groundPoint(at: screenPoint) {
                 guard assetID == "wooden_jetty"
-                        || HomeIslandMetrics.contains(x: point.x, z: point.z)
+                        || HomeIslandMetrics.contains(
+                            x: point.x,
+                            z: point.z,
+                            islandScale: owner.islandScale
+                        )
                 else {
                     owner.onPlacementRejected(.outsideBuildArea)
                     Haptics.error()
@@ -2862,7 +2880,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 !isOceanNode($0.node) && !isDestinationIslandNode($0.node)
             })?.worldCoordinates
                 ?? groundPoint(at: screenPoint).flatMap { point in
-                    HomeIslandMetrics.contains(x: point.x, z: point.z) ? point : nil
+                    HomeIslandMetrics.contains(
+                        x: point.x,
+                        z: point.z,
+                        islandScale: owner.islandScale
+                    ) ? point : nil
                 }
             guard let focusPoint else { return }
             target.position = focusPoint
@@ -4345,7 +4367,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
             landing: SCNVector3,
             deck: SCNVector3
         ) {
-            let fallbackCoast = HomeIslandMetrics.arrivalJettyPosition
+            let fallbackCoast = HomeIslandMetrics.arrivalJettyPosition(
+                islandScale: owner.islandScale
+            )
             let surface = arrivalJettyWalkSurface
             let transferXZ = surface?.worldPosition(
                 localX: HomeIslandMetrics.arrivalJettyTransferLocalX,
@@ -4897,7 +4921,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func enterIslandOverviewCamera(animated duration: TimeInterval) {
             azimuth = nearestEquivalentAzimuth(to: 0.72)
             elevation = 0.42
-            radius = 30.8
+            radius = 30.8 * owner.islandScale
             cameraTarget?.position = SCNVector3(0, 0.34, 0)
             camera?.camera?.fieldOfView = 48
             updateCamera(animated: duration)
@@ -4919,7 +4943,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
             if ProcessInfo.processInfo.environment["LANDFALL_EDGE_DEMO"] != nil {
                 let edgeAngles = stride(from: Float(0), to: Float.pi * 2, by: Float.pi / 12)
                 for angle in edgeAngles {
-                    let edge = HomeIslandMetrics.sandEdgePoint(angle: angle)
+                    let edge = HomeIslandMetrics.sandEdgePoint(
+                        angle: angle,
+                        islandScale: owner.islandScale
+                    )
                     let length = sqrt(edge.x * edge.x + edge.z * edge.z)
                     let inset = max(0, length - 0.18) / max(length, 0.001)
                     let x = edge.x * inset
@@ -5001,7 +5028,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let isOnSand = HomeIslandMetrics.containsWalkableSand(
                 x: x,
                 z: z,
-                margin: 0.18
+                margin: 0.18,
+                islandScale: owner.islandScale
             )
             let isOnJetty = jettyWalkSurfaces.contains {
                 $0.contains(x: x, z: z, playerRadius: playerRadius)
@@ -5069,8 +5097,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private func reportNoticeBoardProximityIfNeeded() {
             let isNear: Bool
             if let navigator = navigatorNode, fixedNoticeBoardNode?.parent != nil {
-                let dx = navigator.position.x - HomeIslandMetrics.fixedNoticeBoardPosition.x
-                let dz = navigator.position.z - HomeIslandMetrics.fixedNoticeBoardPosition.z
+                let position = HomeIslandMetrics.fixedNoticeBoardPosition(
+                    islandScale: owner.islandScale
+                )
+                let dx = navigator.position.x - position.x
+                let dz = navigator.position.z - position.z
                 let radius = Self.noticeBoardProximityRadius
                 isNear = dx * dx + dz * dz <= radius * radius
             } else {

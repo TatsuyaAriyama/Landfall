@@ -187,6 +187,7 @@ enum HomeIslandOceanEffects {
     float3 uSurfaceSize;
     float3 uCoordinateOffset;
     float uShoreline;
+    float uIslandScale;
     float3 uBoatPosition;
     float3 uBoatHeading;
     float uBoatSpeed;
@@ -239,14 +240,20 @@ enum HomeIslandOceanEffects {
     float shoreAngle = 0.0;
     float shoreDistance = 1000.0;
     if (uShoreline > 0.5) {
-        shoreAngle = atan2(p.y / 9.10 + 0.00001, p.x / 13.10 + 0.00001);
+        shoreAngle = atan2(
+            p.y / (9.10 * uIslandScale) + 0.00001,
+            p.x / (13.10 * uIslandScale) + 0.00001
+        );
         float shorelineRipple = sin(shoreAngle * 3.0 + 0.45) * 0.045
             + sin(shoreAngle * 7.0 - 0.82) * 0.026
             + sin(shoreAngle * 11.0 + 1.30) * 0.012;
         float shorelineShift = sin(shoreAngle * 5.0 + 0.91) * 0.018;
         float shorelineScale = 0.955 * (1.0 + shorelineRipple + shorelineShift);
-        float ellipseRadius = length(float2(p.x / 13.10, p.y / 9.10));
-        shoreDistance = (ellipseRadius - shorelineScale) * 10.8;
+        float ellipseRadius = length(float2(
+            p.x / (13.10 * uIslandScale),
+            p.y / (9.10 * uIslandScale)
+        ));
+        shoreDistance = (ellipseRadius - shorelineScale) * 10.8 * uIslandScale;
         waterDepth = max(0.12, shoreDistance * 0.72 + 0.12);
     }
 
@@ -398,7 +405,8 @@ enum HomeIslandOceanEffects {
 
     static func makeScene(
         layout: Layout = .homeIsland,
-        appearance: Appearance = .daylight
+        appearance: Appearance = .daylight,
+        islandScale: Float = HomeIslandExpansionPolicy.baseScale
     ) -> HomeIslandOceanScene {
         let root = SCNNode()
         root.name = layout.rootName
@@ -435,6 +443,7 @@ enum HomeIslandOceanEffects {
             NSNumber(value: layout.includesShoreline ? Float(1) : Float(0)),
             forKey: "uShoreline"
         )
+        material.setValue(NSNumber(value: islandScale), forKey: "uIslandScale")
         material.setValue(SCNVector3Zero, forKey: "uBoatPosition")
         material.setValue(SCNVector3(0, 1, 0), forKey: "uBoatHeading")
         material.setValue(NSNumber(value: Float(0)), forKey: "uBoatSpeed")

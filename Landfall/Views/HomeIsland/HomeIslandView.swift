@@ -179,7 +179,7 @@ struct HomeIslandView: View {
     @State private var isNavigatorNearNoticeBoard = false
     @State private var showingBoatCustomization = false
     @State private var selectedBoatSailID = BoatCustomization.selectedSailID
-    @State private var selectedBoatShipID = BoatCustomization.selectedShipID
+    @State private var selectedBoatShipID = BoatCustomization.effectiveSelectedShipID
     /// 航海士を触ったときに出す、色替えだけの小さな表示。
     @State private var showingNavigatorColors = false
     @State private var selectedNavColorID = NavigatorCustomization.selectedID
@@ -294,7 +294,8 @@ struct HomeIslandView: View {
             wrappedValue: HomeIslandStore(
                 ownerID: readOnly ? (multiplayerSession?.room.hostUid ?? ownerID) : ownerID,
                 snapshot: readOnly ? multiplayerSession?.snapshot : nil,
-                readOnly: readOnly
+                readOnly: readOnly,
+                playerLevel: levelProgress.level
             )
         )
         _mode = State(
@@ -351,7 +352,19 @@ struct HomeIslandView: View {
             // 証を取った直後・切れた直後に、鍵と航海士の姿を合わせ直す。
             .onChange(of: voyagePass.isActive) { _, active in
                 NavigatorCustomization.updatePassState(active)
+                BoatCustomization.updatePassState(active)
                 selectedNavColorID = NavigatorCustomization.selectedID
+                selectedBoatShipID = BoatCustomization.effectiveSelectedShipID
+            }
+            .onAppear {
+                NavigatorCustomization.updatePassState(voyagePass.isActive)
+                BoatCustomization.updatePassState(voyagePass.isActive)
+                selectedNavColorID = NavigatorCustomization.selectedID
+                selectedBoatShipID = BoatCustomization.effectiveSelectedShipID
+                store.updatePlayerLevel(levelProgress.level)
+            }
+            .onChange(of: levelProgress.level) { _, level in
+                store.updatePlayerLevel(level)
             }
             .fullScreenCover(isPresented: $showingLogbook) {
                 LogbookView()
@@ -527,6 +540,7 @@ struct HomeIslandView: View {
                     multiplayerSession?.onLocalPlayerStateChanged(state)
                 }
             )
+            .id("home-island-scene-\(HomeIslandExpansionPolicy.scale(for: levelProgress.level))")
             .ignoresSafeArea()
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text("Photo composition"))
@@ -1922,9 +1936,16 @@ struct HomeIslandView: View {
 
     private func boatShipButton(_ ship: ShipDesign) -> some View {
         let selected = selectedBoatShipID == ship.id
-        let unlocked = levelProgress.unlocks(requiredLevel: ship.unlockLevel)
+        let lockReason = ShipUnlockPolicy.lockReason(
+            requiredLevel: ship.unlockLevel,
+            requiresVoyagePass: ship.requiresVoyagePass,
+            playerLevel: levelProgress.level,
+            hasVoyagePass: voyagePass.isActive,
+            alreadySelected: selected
+        )
+        let unlocked = lockReason == nil
         return Button {
-            selectBoatShip(ship, unlocked: unlocked)
+            selectBoatShip(ship, lockReason: lockReason)
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: unlocked ? ship.symbolName : "lock.fill")
@@ -1934,7 +1955,7 @@ struct HomeIslandView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
                 if !unlocked {
-                    Text(verbatim: "LV\(ship.unlockLevel)")
+                    Text(verbatim: lockReason == .voyagePass ? "PASS" : "LV\(ship.unlockLevel)")
                         .font(LFFont.label(9))
                 }
             }
@@ -1960,7 +1981,7 @@ struct HomeIslandView: View {
         .accessibilityHint(
             unlocked
                 ? Text(ship.summary)
-                : Text(verbatim: LF.format("Unlocks at Level %lld", Int64(ship.unlockLevel)))
+                : shipLockText(ship)
         )
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -2145,7 +2166,7 @@ struct HomeIslandView: View {
         walkInput = .zero
         showingNavigatorColors = false
         selectedBoatSailID = BoatCustomization.selectedSailID
-        selectedBoatShipID = BoatCustomization.selectedShipID
+        selectedBoatShipID = BoatCustomization.effectiveSelectedShipID
         withAnimation(.easeOut(duration: 0.22)) {
             showingBoatCustomization = true
         }
@@ -2170,17 +2191,33 @@ struct HomeIslandView: View {
         PublicHarborService.shared.pushProfile()
     }
 
-    private func selectBoatShip(_ ship: ShipDesign, unlocked: Bool) {
-        guard unlocked else {
+    private func selectBoatShip(
+        _ ship: ShipDesign,
+        lockReason: ShipUnlockPolicy.LockReason?
+    ) {
+        if lockReason == .voyagePass {
+            walkInput = .zero
+            showingVoyagePass = true
+            Haptics.tap(.medium)
+            return
+        }
+        guard lockReason == nil else {
             Haptics.error()
             return
         }
         guard selectedBoatShipID != ship.id else { return }
         BoatCustomization.selectShip(ship.id)
-        selectedBoatShipID = ship.id
+        selectedBoatShipID = BoatCustomization.effectiveSelectedShipID
         Haptics.tap(.light)
         Task { await PrivateIslandService.shared.publishProfileToJoinedIslands() }
         PublicHarborService.shared.pushProfile()
+    }
+
+    private func shipLockText(_ ship: ShipDesign) -> Text {
+        if ship.requiresVoyagePass, !voyagePass.isActive {
+            return Text("Opens with a Voyage Pass")
+        }
+        return Text(verbatim: LF.format("Unlocks at Level %lld", Int64(ship.unlockLevel)))
     }
 
     private var cameraCaptureControls: some View {

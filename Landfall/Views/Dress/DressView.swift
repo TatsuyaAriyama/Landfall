@@ -9,6 +9,7 @@ struct DressView: View {
     /// 別立ての残高は持たない。
     @Query private var sessions: [StudySession]
     var onClose: (() -> Void)?
+    @StateObject private var voyagePass = VoyagePassStore.shared
 
     /// Web版と同じく、色を替えてもカメラの向きは保ったまま船だけ更新する。
     @State private var boatParts = BoatCustomization.currentParts
@@ -16,6 +17,7 @@ struct DressView: View {
     @State private var cameraResetToken = 0
     /// 鍵の掛かった船を触ったときだけ、開く条件を見出しへ出す。
     @State private var lockedShipTapped: ShipDesign?
+    @State private var showingVoyagePass = false
     /// 航海士のポーズ。Web版と同じローカルキーへ保存する。
     @State private var navPose: PhoenixPose = {
         #if DEBUG
@@ -96,6 +98,18 @@ struct DressView: View {
             .background(Color(hex: 0x123830).ignoresSafeArea())
         }
         .toolbar(.hidden, for: .navigationBar)
+        .fullScreenCover(isPresented: $showingVoyagePass) {
+            VoyagePassView()
+        }
+        .onChange(of: voyagePass.isActive) { _, active in
+            BoatCustomization.updatePassState(active)
+            boatParts = BoatCustomization.currentParts
+            lockedShipTapped = nil
+        }
+        .onAppear {
+            BoatCustomization.updatePassState(voyagePass.isActive)
+            boatParts = BoatCustomization.currentParts
+        }
     }
 
     private var topControls: some View {
@@ -268,23 +282,35 @@ struct DressView: View {
     /// 触ったときだけ、開く条件へ差し替わる。
     private var shipHint: Text {
         if let locked = lockedShipTapped {
-            return Text(verbatim: LF.format("Unlocks at Level %lld", Int64(locked.unlockLevel)))
+            return shipLockText(locked)
         }
-        return Text(BoatCustomization.selectedShip.summary)
+        return Text(BoatCustomization.effectiveSelectedShip.summary)
     }
 
     private func shipChip(_ ship: ShipDesign) -> some View {
         let selected = boatParts.shipID == ship.id
         // 進水済みの船は鍵を外して見せる。記録を削ってレベルが下がっても
         // 取り上げない決まりなので、いま乗っている船に錠前を描くと嘘になる。
-        let unlocked = selected || levelProgress.unlocks(requiredLevel: ship.unlockLevel)
+        let lockReason = ShipUnlockPolicy.lockReason(
+            requiredLevel: ship.unlockLevel,
+            requiresVoyagePass: ship.requiresVoyagePass,
+            playerLevel: levelProgress.level,
+            hasVoyagePass: voyagePass.isActive,
+            alreadySelected: selected
+        )
+        let unlocked = lockReason == nil
         return Button {
-            guard unlocked else {
-                withAnimation(.easeOut(duration: 0.18)) { lockedShipTapped = ship }
-                Haptics.error()
+            guard let lockReason else {
+                selectShip(ship)
                 return
             }
-            selectShip(ship)
+            if lockReason == .voyagePass {
+                showingVoyagePass = true
+                Haptics.tap(.medium)
+            } else {
+                withAnimation(.easeOut(duration: 0.18)) { lockedShipTapped = ship }
+                Haptics.error()
+            }
         } label: {
             HStack(spacing: 7) {
                 Image(systemName: unlocked ? ship.symbolName : "lock.fill")
@@ -296,7 +322,7 @@ struct DressView: View {
                     .foregroundStyle(chipForeground(selected: selected, unlocked: unlocked))
 
                 if !unlocked {
-                    Text(verbatim: "LV\(ship.unlockLevel)")
+                    Text(verbatim: lockReason == .voyagePass ? "PASS" : "LV\(ship.unlockLevel)")
                         .font(LFFont.label(11))
                         .foregroundStyle(LFColor.harborSand.opacity(0.82))
                 }
@@ -317,7 +343,7 @@ struct DressView: View {
         .accessibilityHint(
             unlocked
                 ? Text(ship.summary)
-                : Text(verbatim: LF.format("Unlocks at Level %lld", Int64(ship.unlockLevel)))
+                : shipLockText(ship)
         )
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -335,6 +361,13 @@ struct DressView: View {
         Haptics.tap(.light)
         Task { await PrivateIslandService.shared.publishProfileToJoinedIslands() }
         PublicHarborService.shared.pushProfile()
+    }
+
+    private func shipLockText(_ ship: ShipDesign) -> Text {
+        if ship.requiresVoyagePass, !voyagePass.isActive {
+            return Text("Opens with a Voyage Pass")
+        }
+        return Text(verbatim: LF.format("Unlocks at Level %lld", Int64(ship.unlockLevel)))
     }
 
     private func modeChip(_ title: LocalizedStringKey, _ value: Mode) -> some View {

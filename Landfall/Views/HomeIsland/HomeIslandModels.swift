@@ -57,6 +57,7 @@ enum HomeIslandMetrics {
     /// far inland as its full placement footprint once did.
     static let placementEdgeSizeInsetLimit: Float = 0.30
     static let maximumPlacements = 120
+    static let maximumIslandScale = HomeIslandExpansionPolicy.expandedScale
     static let arrivalJettyScale: Float = 0.72
     static let arrivalJettyYaw: Float = .pi
     // Authored wooden_jetty model-space dimensions. Keeping these beside the
@@ -101,6 +102,19 @@ enum HomeIslandMetrics {
     static let fixedNoticeBoardScale: Float = 0.78
     static let fixedNoticeBoardObstacleRadius: Float = 0.63
     static let fixedNoticeBoardPlacementRadius: Float = 0.68
+
+    static func welcomeBeaconPositions(islandScale: Float) -> [(x: Float, z: Float)] {
+        welcomeBeaconPositions.map { position in
+            (x: position.x * islandScale, z: position.z * islandScale)
+        }
+    }
+
+    static func fixedNoticeBoardPosition(islandScale: Float) -> (x: Float, z: Float) {
+        (
+            x: fixedNoticeBoardPosition.x * islandScale,
+            z: fixedNoticeBoardPosition.z * islandScale
+        )
+    }
 
     // MARK: - 目的地の島
     // 桟橋の正面(+Z)のはるか沖に、いま向かっている島を置く。孤立した飾りではなく
@@ -150,26 +164,34 @@ enum HomeIslandMetrics {
     /// Matches `outline(..., layer: 1)` from the deterministic Blender source.
     /// Keeping rendering and collision on this one boundary prevents a visible
     /// strip that looks walkable but rejects the player.
-    static func sandEdgePoint(angle: Float) -> (x: Float, z: Float) {
+    static func sandEdgePoint(
+        angle: Float,
+        islandScale: Float = HomeIslandExpansionPolicy.baseScale
+    ) -> (x: Float, z: Float) {
         let ripple = sin(angle * 3 + 0.45) * 0.045
             + sin(angle * 7 - 0.82) * 0.026
             + sin(angle * 11 + 1.3) * 0.012
         let layerShift = sin(angle * 5 + 0.91) * 0.018
         let scale = sandApronScale * (1 + ripple + layerShift)
         return (
-            cos(angle) * foundationRadiusX * scale,
+            cos(angle) * foundationRadiusX * scale * islandScale,
             // USDZ imports Blender's horizontal Y axis as negative SceneKit Z.
-            -sin(angle) * foundationRadiusZ * scale
+            -sin(angle) * foundationRadiusZ * scale * islandScale
         )
     }
 
-    static var arrivalJettyPosition: (x: Float, z: Float) {
-        sandEdgePoint(angle: -.pi / 2)
+    static func arrivalJettyPosition(islandScale: Float) -> (x: Float, z: Float) {
+        sandEdgePoint(angle: -.pi / 2, islandScale: islandScale)
     }
 
-    static func containsWalkableSand(x: Float, z: Float, margin: Float) -> Bool {
+    static func containsWalkableSand(
+        x: Float,
+        z: Float,
+        margin: Float,
+        islandScale: Float = HomeIslandExpansionPolicy.baseScale
+    ) -> Bool {
         let angle = atan2(-z / foundationRadiusZ, x / foundationRadiusX)
-        let edge = sandEdgePoint(angle: angle)
+        let edge = sandEdgePoint(angle: angle, islandScale: islandScale)
         let edgeDistance = sqrt(edge.x * edge.x + edge.z * edge.z)
         let distance = sqrt(x * x + z * z)
         return distance <= max(0, edgeDistance - margin)
@@ -183,12 +205,13 @@ enum HomeIslandMetrics {
     static func clampedPosition(
         x: Float,
         z: Float,
-        footprintMargin: Float = 0
+        footprintMargin: Float = 0,
+        islandScale: Float = HomeIslandExpansionPolicy.baseScale
     ) -> (x: Float, z: Float) {
         let distance = sqrt(x * x + z * z)
         guard distance > 0.0001 else { return (x, z) }
         let angle = atan2(-z / foundationRadiusZ, x / foundationRadiusX)
-        let edge = sandEdgePoint(angle: angle)
+        let edge = sandEdgePoint(angle: angle, islandScale: islandScale)
         let edgeDistance = sqrt(edge.x * edge.x + edge.z * edge.z)
         let limit = max(0.5, edgeDistance - placementEdgeInset(footprintMargin: footprintMargin))
         guard distance > limit else { return (x, z) }
@@ -196,8 +219,17 @@ enum HomeIslandMetrics {
         return (x * scale, z * scale)
     }
 
-    static func contains(x: Float, z: Float) -> Bool {
-        containsWalkableSand(x: x, z: z, margin: placementEdgeLip)
+    static func contains(
+        x: Float,
+        z: Float,
+        islandScale: Float = HomeIslandExpansionPolicy.baseScale
+    ) -> Bool {
+        containsWalkableSand(
+            x: x,
+            z: z,
+            margin: placementEdgeLip,
+            islandScale: islandScale
+        )
     }
 
     /// A jetty is authored along local Z: positive Z is the low shore ramp and
@@ -206,13 +238,14 @@ enum HomeIslandMetrics {
     static func jettyCoastPlacement(
         nearX x: Float,
         z: Float,
-        requireCoastalInput: Bool
+        requireCoastalInput: Bool,
+        islandScale: Float = HomeIslandExpansionPolicy.baseScale
     ) -> (x: Float, z: Float, yaw: Float)? {
         let inputDistance = sqrt(x * x + z * z)
         guard inputDistance > 0.5 else { return nil }
 
         let angle = atan2(-z / foundationRadiusZ, x / foundationRadiusX)
-        let edge = sandEdgePoint(angle: angle)
+        let edge = sandEdgePoint(angle: angle, islandScale: islandScale)
         let edgeDistance = sqrt(edge.x * edge.x + edge.z * edge.z)
         guard edgeDistance > 0.001 else { return nil }
 
@@ -1444,13 +1477,15 @@ enum HomeIslandAssetCatalog {
         z: Float,
         yaw: Float,
         scale: Float,
-        requireValidCoastPoint: Bool
+        requireValidCoastPoint: Bool,
+        islandScale: Float = HomeIslandMetrics.maximumIslandScale
     ) -> HomeIslandTransform? {
         if assetID == "wooden_jetty" {
             guard let coast = HomeIslandMetrics.jettyCoastPlacement(
                 nearX: x,
                 z: z,
-                requireCoastalInput: requireValidCoastPoint
+                requireCoastalInput: requireValidCoastPoint,
+                islandScale: islandScale
             ) else { return nil }
             return HomeIslandTransform(
                 x: coast.x,
@@ -1464,7 +1499,8 @@ enum HomeIslandAssetCatalog {
         let position = HomeIslandMetrics.clampedPosition(
             x: x,
             z: z,
-            footprintMargin: margin
+            footprintMargin: margin,
+            islandScale: islandScale
         )
         return HomeIslandTransform(
             x: position.x,
@@ -1849,6 +1885,11 @@ final class HomeIslandStore: ObservableObject {
     private var redoStack: [EditState] = []
     private let maximumUndoDepth = 60
     private var snapshotSchemaVersion = 1
+    private var playerLevel: Int
+
+    private var islandScale: Float {
+        HomeIslandExpansionPolicy.scale(for: playerLevel)
+    }
 
     let ownerKey: String
     /// Read-only stores are used for islands owned by another player. This is
@@ -1866,10 +1907,12 @@ final class HomeIslandStore: ObservableObject {
     init(
         ownerID: String,
         snapshot suppliedSnapshot: HomeIslandSnapshot? = nil,
-        readOnly: Bool = false
+        readOnly: Bool = false,
+        playerLevel: Int = 1
     ) {
         let localOwnerKey = HomeIslandPersistence.ownerKey(for: ownerID)
         isReadOnly = readOnly
+        self.playerLevel = max(1, playerLevel)
         ownerKey = readOnly ? (suppliedSnapshot?.ownerKey ?? localOwnerKey) : localOwnerKey
 
         let snapshot: HomeIslandSnapshot
@@ -1916,8 +1959,13 @@ final class HomeIslandStore: ObservableObject {
                 updatedAt: .distantPast,
                 placements: placements
             ),
-            readOnly: readOnly
+            readOnly: readOnly,
+            playerLevel: 1
         )
+    }
+
+    func updatePlayerLevel(_ level: Int) {
+        playerLevel = max(1, level)
     }
 
     var snapshot: HomeIslandSnapshot {
@@ -2039,7 +2087,8 @@ final class HomeIslandStore: ObservableObject {
             z: z,
             yaw: placements[index].transform.yaw,
             scale: placements[index].transform.scale,
-            requireValidCoastPoint: false
+            requireValidCoastPoint: false,
+            islandScale: islandScale
         ) else { return false }
         placements[index].transform = rescued
         finishEdit(from: previous)
@@ -2193,7 +2242,8 @@ final class HomeIslandStore: ObservableObject {
                 z: z,
                 yaw: yaw,
                 scale: scale,
-                requireValidCoastPoint: requireValidCoastPoint
+                requireValidCoastPoint: requireValidCoastPoint,
+                islandScale: islandScale
               ),
               // User gestures must never be silently clamped to a distant
               // edge position. Persistence still sanitizes legacy snapshots
@@ -2247,8 +2297,8 @@ final class HomeIslandStore: ObservableObject {
         // of the front shore; only the landing itself actually has to stay
         // walkable. Ground paths remain allowed — they are traversable.
         if HomeIslandAssetCatalog.blocksWalking(assetID: assetID),
-           transform.z >= 6.60 - candidateRadius,
-           transform.z <= 8.90 + candidateRadius,
+           transform.z >= 6.60 * islandScale - candidateRadius,
+           transform.z <= 8.90 * islandScale + candidateRadius,
            abs(transform.x) <= 0.72 + candidateRadius {
             return false
         }
@@ -2264,8 +2314,11 @@ final class HomeIslandStore: ObservableObject {
 
         // The notice board is a permanent public fixture beside the fixed jetty.
         // Keep player-built assets from covering it even though it is not saved.
-        let noticeDX = transform.x - HomeIslandMetrics.fixedNoticeBoardPosition.x
-        let noticeDZ = transform.z - HomeIslandMetrics.fixedNoticeBoardPosition.z
+        let noticePosition = HomeIslandMetrics.fixedNoticeBoardPosition(
+            islandScale: islandScale
+        )
+        let noticeDX = transform.x - noticePosition.x
+        let noticeDZ = transform.z - noticePosition.z
         let noticeMinimumDistance = candidateRadius
             + HomeIslandMetrics.fixedNoticeBoardPlacementRadius
         if noticeDX * noticeDX + noticeDZ * noticeDZ
