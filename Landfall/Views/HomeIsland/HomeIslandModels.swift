@@ -60,6 +60,10 @@ enum HomeIslandMetrics {
     static let maximumIslandScale = HomeIslandExpansionPolicy.expandedScale
     static let arrivalJettyScale: Float = 0.72
     static let arrivalJettyYaw: Float = .pi
+    /// The authored pier previously sat almost 1.5 m above the water. Lowering
+    /// the fixed harbor by 24 cm keeps its deck close to the beach while the
+    /// landward ramp still meets the sand without a step or buried boards.
+    static let arrivalJettyVerticalOffset: Float = -0.24
     // Authored wooden_jetty model-space dimensions. Keeping these beside the
     // fixed placement prevents rendering, walking and arrival choreography
     // from drifting apart when the source asset changes.

@@ -949,6 +949,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         private struct JettyWalkSurface {
             let transform: HomeIslandTransform
+            let verticalOffset: Float
+
+            init(transform: HomeIslandTransform, verticalOffset: Float = 0) {
+                self.transform = transform
+                self.verticalOffset = verticalOffset
+            }
 
             private func localPosition(x: Float, z: Float) -> (x: Float, z: Float) {
                 let dx = x - transform.x
@@ -1081,10 +1087,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let local = localPosition(x: x, z: z)
                 let localZ = local.z
                 let scale = max(transform.scale, 0.05)
-                let flatDeck = HomeIslandMetrics.surfaceY + 0.445 * scale
+                let flatDeck = HomeIslandMetrics.surfaceY + verticalOffset + 0.445 * scale
                 let floatCenterX = HomeIslandMetrics.boardingFloatCenterLocalX * scale
                 let floatCenterZ = HomeIslandMetrics.boardingFloatCenterLocalZ * scale
-                let lowDeck = HomeIslandMetrics.surfaceY - 0.215 * scale
+                let lowDeck = HomeIslandMetrics.surfaceY + verticalOffset - 0.215 * scale
                 // Ground sampling must cover every point accepted by
                 // `contains`. Previously its narrower connector rectangle
                 // exposed strips that were walkable but sampled the water or
@@ -1108,7 +1114,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     let authoredTop = HomeIslandBoardingStairProfile.authoredTop(
                         at: local.x / scale
                     )
-                    return HomeIslandMetrics.surfaceY + authoredTop * scale
+                    return HomeIslandMetrics.surfaceY + verticalOffset + authoredTop * scale
                 }
                 let isOnFloat = abs(local.x - floatCenterX)
                         <= HomeIslandMetrics.boardingFloatHalfWidth * scale
@@ -1119,7 +1125,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let shoreEnd = 2.30 * scale
                 guard localZ > rampStart else { return max(baseHeight, flatDeck) }
                 let progress = min(max((localZ - rampStart) / max(shoreEnd - rampStart, 0.001), 0), 1)
-                let shoreHeight = max(baseHeight, HomeIslandMetrics.surfaceY + 0.055 * scale)
+                let shoreHeight = max(
+                    baseHeight,
+                    HomeIslandMetrics.surfaceY + verticalOffset + 0.055 * scale
+                )
                 return flatDeck + (shoreHeight - flatDeck) * progress
             }
 
@@ -1717,8 +1726,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 )
                 installJettyCollision(on: jetty)
                 transform.apply(to: jetty)
+                jetty.position.y += HomeIslandMetrics.arrivalJettyVerticalOffset
                 scene.rootNode.addChildNode(jetty)
-                arrivalJettyWalkSurface = JettyWalkSurface(transform: transform)
+                arrivalJettyWalkSurface = JettyWalkSurface(
+                    transform: transform,
+                    verticalOffset: HomeIslandMetrics.arrivalJettyVerticalOffset
+                )
             }
 
             installHarborCommons(in: scene)
@@ -1922,13 +1935,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     localX: HomeIslandMetrics.boardingFloatCenterLocalX,
                     localZ: HomeIslandMetrics.boardingFloatCenterLocalZ
                 )
-                addAsset(
+                let boardingFloat = addAsset(
                     "harbor_boarding_float",
                     name: "home-island-locked-boarding-float",
                     position: floatCenter,
                     yaw: HomeIslandMetrics.arrivalJettyYaw,
                     scale: HomeIslandMetrics.arrivalJettyScale
                 )
+                boardingFloat?.position.y += HomeIslandMetrics.arrivalJettyVerticalOffset
             }
 
             // The council table and its stools are no longer authored into every
