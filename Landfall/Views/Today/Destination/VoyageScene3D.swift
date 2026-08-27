@@ -188,7 +188,8 @@ enum VoyageSceneKit {
     static func makeIsland(
         position: SCNVector3 = SCNVector3(3.5, 0, -0.9),
         scale: SCNVector3 = SCNVector3(1.34, 1.38, 1.34),
-        includesCustomAssets: Bool = true
+        includesCustomAssets: Bool = true,
+        oceanAppearance: HomeIslandOceanEffects.Appearance = .daylight
     ) -> SCNNode {
         let group = SCNNode()
         group.name = "island"
@@ -218,7 +219,7 @@ enum VoyageSceneKit {
         shadow.scale.z = 0.74
         group.addChildNode(shadow)
 
-        group.addChildNode(makeShoreBreakers())
+        group.addChildNode(makeShoreBreakers(appearance: oceanAppearance))
 
         let beachGeo = SCNCone(topRadius: 3.18, bottomRadius: 3.48, height: 0.15)
         beachGeo.radialSegmentCount = 28
@@ -361,9 +362,11 @@ enum VoyageSceneKit {
     /// 海岸線を均一なチューブで囲まず、海面上で途切れながら進む二筋の砕波にする。
     /// 外周形状は島の地形と同じ複数周期で揺らし、細い外波を少し遅らせることで
     /// 静止画でも輪郭が自然に崩れ、動画では寄せては消える奥行きが生まれる。
-    private static func makeShoreBreakers() -> SCNNode {
+    private static func makeShoreBreakers(
+        appearance: HomeIslandOceanEffects.Appearance
+    ) -> SCNNode {
         let geometry = makeShoreBreakerRibbon()
-        let material = shoreBreakerMaterial()
+        let material = shoreBreakerMaterial(appearance: appearance)
         geometry.firstMaterial = material
         let node = SCNNode(geometry: geometry)
         node.name = "island-shore-breakers"
@@ -436,8 +439,12 @@ enum VoyageSceneKit {
         )
     }
 
-    private static func shoreBreakerMaterial() -> SCNMaterial {
-        let material = unlitMaterial(UIColor(rgb: 0xEAF8F0).withAlphaComponent(0.68))
+    private static func shoreBreakerMaterial(
+        appearance: HomeIslandOceanEffects.Appearance
+    ) -> SCNMaterial {
+        let tint = mixedColor(appearance.light, appearance.shallow, weight: 0.14)
+        let opacity = CGFloat(0.42 + appearance.sunStrength * 0.24)
+        let material = unlitMaterial(tint.withAlphaComponent(opacity))
         material.blendMode = .alpha
         material.writesToDepthBuffer = false
         material.readsFromDepthBuffer = true
@@ -471,6 +478,22 @@ enum VoyageSceneKit {
         _output.color.a *= foam * surge;
         """]
         return material
+    }
+
+    private static func mixedColor(_ primary: UInt, _ secondary: UInt, weight: Float) -> UIColor {
+        func component(_ rgb: UInt, shift: UInt) -> Float {
+            Float((rgb >> shift) & 0xFF) / 255
+        }
+        let amount = min(max(weight, 0), 1)
+        return UIColor(
+            red: CGFloat(component(primary, shift: 16) * (1 - amount)
+                + component(secondary, shift: 16) * amount),
+            green: CGFloat(component(primary, shift: 8) * (1 - amount)
+                + component(secondary, shift: 8) * amount),
+            blue: CGFloat(component(primary, shift: 0) * (1 - amount)
+                + component(secondary, shift: 0) * amount),
+            alpha: 1
+        )
     }
 
     /// 海岸から複数の丘が連続して立ち上がる、低ポリの一枚地形。
@@ -1974,7 +1997,8 @@ enum VoyageSceneKit {
         let islandPosition = SCNVector3(1.65, 0, -0.72)
         let island = makeIsland(
             position: islandPosition,
-            scale: SCNVector3(1.16, 1.16, 1.16)
+            scale: SCNVector3(1.16, 1.16, 1.16),
+            oceanAppearance: oceanAppearance
         )
         island.name = "landfallIsland"
 
@@ -2120,7 +2144,7 @@ enum VoyageSceneKit {
             let approach = SCNNode()
             approach.name = "approachingIsland"
             approach.scale = SCNVector3(0.7, 0.7, 0.7)
-            approach.addChildNode(makeIsland())
+            approach.addChildNode(makeIsland(oceanAppearance: oceanAppearance))
             scene.rootNode.addChildNode(approach)
         }
 

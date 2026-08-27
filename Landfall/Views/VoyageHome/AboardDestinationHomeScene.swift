@@ -1485,7 +1485,8 @@ enum AftideHomeSceneFactory {
         // ホームだけ簡略化された山に戻らないよう一つのモデルへ統一する。
         let island = VoyageSceneKit.makeIsland(
             position: SCNVector3Zero,
-            scale: SCNVector3(1, 1, 1)
+            scale: SCNVector3(1, 1, 1),
+            oceanAppearance: oceanVisual
         )
         island.name = "homeIsland"
         markHotspot(island, as: .destination)
@@ -1504,7 +1505,9 @@ enum AftideHomeSceneFactory {
         timerIsland.name = "timerApproachingIsland"
         timerIsland.scale = SCNVector3(0.7, 0.7, 0.7)
         timerIsland.opacity = 0
-        timerIsland.addChildNode(VoyageSceneKit.makeIsland())
+        timerIsland.addChildNode(
+            VoyageSceneKit.makeIsland(oceanAppearance: oceanVisual)
+        )
         scene.rootNode.addChildNode(timerIsland)
 
         // 縦長画面でも日月が左上UIへ潜らず、Web版と同じ空の中央寄りに見える位置。
