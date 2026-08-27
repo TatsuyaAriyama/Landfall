@@ -533,17 +533,8 @@ enum HomeIslandOceanEffects {
     // The final mesh rows converge on the exact sky-haze color. Otherwise the
     // finite plane advertises its edge as a perfectly straight horizon line.
     float farAtmosphere = smoothstep(0.72, 0.97, normalizedViewRange);
-    float grazingAtmosphere = 1.0 - smoothstep(
-        0.040,
-        0.150,
-        abs(viewDirection.y)
-    );
     float samplingHaze = (1.0 - macroVisibility) * 0.08;
-    float atmosphericHaze = clamp(
-        max(farAtmosphere, grazingAtmosphere) + samplingHaze,
-        0.0,
-        1.0
-    );
+    float atmosphericHaze = clamp(farAtmosphere + samplingHaze, 0.0, 1.0);
     col = mix(col, uFog, atmosphericHaze);
     _surface.diffuse = float4(clamp(col, 0.0, 1.0), 1.0);
     """
