@@ -393,7 +393,6 @@ static inline half4 landfallShadeOcean(
     float2 p = in.oceanPosition;
     float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
     float macroVisibility = 1.0 - smoothstep(0.85, 4.20, pixelFootprint);
-    float rippleVisibility = 1.0 - smoothstep(0.08, 0.52, pixelFootprint);
     // Relative range gives every ocean layout the same near-to-horizon LOD.
     float surfaceRadius = max(min(ocean.surfaceSize.x, ocean.surfaceSize.y) * 0.5, 1.0);
     float normalizedViewRange = length(
@@ -402,7 +401,23 @@ static inline half4 landfallShadeOcean(
     float nearField = 1.0 - smoothstep(0.18, 0.72, normalizedViewRange);
     float midField = 1.0 - smoothstep(0.62, 0.96, normalizedViewRange);
     float horizonField = smoothstep(0.60, 0.98, normalizedViewRange);
-    rippleVisibility *= mix(0.34, 1.0, nearField);
+    // Filter each normal octave at its own projected wavelength. The former
+    // shared cutoff discarded the long 3.4 m ripple as soon as the shortest
+    // 1.3 m band became undersampled, flattening every oblique voyage view.
+    float nearRippleVisibility = mix(0.34, 1.0, nearField);
+    float rippleVisibilityA = (
+        1.0 - smoothstep(0.42, 1.15, pixelFootprint)
+    ) * nearRippleVisibility;
+    float rippleVisibilityB = (
+        1.0 - smoothstep(0.28, 0.82, pixelFootprint)
+    ) * nearRippleVisibility;
+    float rippleVisibilityC = (
+        1.0 - smoothstep(0.12, 0.46, pixelFootprint)
+    ) * nearRippleVisibility;
+    float rippleVisibility = max(
+        rippleVisibilityA,
+        max(rippleVisibilityB, rippleVisibilityC)
+    );
     macroVisibility *= mix(0.58, 1.0, midField);
     LandfallBoatFrame boat = landfallBoatFrame(p, ocean);
     LandfallWakeSample wake = landfallSampleWake(ocean, boat);
@@ -432,14 +447,14 @@ static inline half4 landfallShadeOcean(
         capillarySlope = (
             capillaryDirectionA * (cos(rippleD) * 0.0044)
             + capillaryDirectionB * (cos(rippleE) * 0.0032)
-        ) * visibility * tierBlend * interference;
+        ) * visibility * tierBlend * interference * nearRippleVisibility;
     }
     float2 detailSlope = (
-        float2(0.829, 0.559) * (cos(rippleA) * 0.032)
-        + float2(-0.616, 0.788) * (cos(rippleB) * 0.023)
-        + float2(0.225, 0.974) * (cos(rippleC) * 0.010)
+        float2(0.829, 0.559) * (cos(rippleA) * 0.032 * rippleVisibilityA)
+        + float2(-0.616, 0.788) * (cos(rippleB) * 0.023 * rippleVisibilityB)
+        + float2(0.225, 0.974) * (cos(rippleC) * 0.010 * rippleVisibilityC)
         + capillarySlope
-    ) * ocean.microNormalScale * rippleVisibility * mix(0.72, 1.14, nearField);
+    ) * ocean.microNormalScale * mix(0.72, 1.14, nearField);
     detailSlope += wake.slope * macroVisibility * mix(0.76, 1.0, detailQuality);
     detailSlope += hull.slope * macroVisibility;
     float3 detailedNormal = normalize(
@@ -501,7 +516,21 @@ static inline half4 landfallShadeOcean(
     float3 reflectionDirection = reflect(-viewDirection, normal);
     float skyHeight = saturate(reflectionDirection.y * 0.72 + 0.36);
     float skyBlend = smoothstep(0.06, 0.90, skyHeight);
-    float3 reflectedSky = mix(ocean.horizonColor, ocean.skyColor * 1.08, skyBlend);
+    // The zenith is optically deeper than the bright, humid horizon. Feeding
+    // a little water-body color into that part of the environment gives each
+    // real normal a different radiance to bend, instead of reflecting one cyan
+    // wash regardless of its orientation.
+    float zenithDepth = mix(0.16, 0.24, nearField);
+    float3 zenithReflection = mix(
+        ocean.skyColor * 1.04,
+        ocean.deepColor,
+        zenithDepth
+    );
+    float3 reflectedSky = mix(
+        ocean.horizonColor * 1.035,
+        zenithReflection,
+        skyBlend
+    );
     float horizonHaze = 1.0 - smoothstep(0.02, 0.34, abs(reflectionDirection.y));
     reflectedSky = mix(reflectedSky, ocean.horizonColor * 1.06, horizonHaze * 0.28);
     color = mix(color, reflectedSky, 0.12 + fresnel * 0.64);
@@ -537,6 +566,33 @@ static inline half4 landfallShadeOcean(
     float3 facetSky = mix(ocean.horizonColor, ocean.skyColor, 0.32);
     color = mix(color, facetSky, facetLift * facetVisibility * 0.120);
     color = mix(color, ocean.deepColor, facetShade * facetVisibility * 0.085);
+
+    // Preserve the fine normal field in color as well as in specular response.
+    // These facets borrow the same environment colors and light direction as
+    // the broad waves; no second wave/noise pattern is introduced here.
+    float microSlopeLength = length(detailSlope);
+    float2 microSlopeDirection = detailSlope / max(microSlopeLength, 0.001);
+    float microSunwardFacet = saturate(
+        0.5 + dot(microSlopeDirection, sunAcrossWater) * 0.5
+    );
+    float microFacetLift = smoothstep(0.54, 0.76, microSunwardFacet);
+    float microFacetShade = 1.0 - smoothstep(0.24, 0.46, microSunwardFacet);
+    float microFacetVisibility = rippleVisibility
+        * mix(0.34, 1.0, nearField)
+        * (1.0 - horizonField * 0.96)
+        * smoothstep(0.004, 0.035, microSlopeLength);
+    float microFacetRadiance = (microSunwardFacet - 0.5) * 2.0;
+    color *= 1.0 + microFacetRadiance * microFacetVisibility * 0.21;
+    color = mix(
+        color,
+        facetSky,
+        microFacetLift * microFacetVisibility * 0.028
+    );
+    color = mix(
+        color,
+        ocean.deepColor,
+        microFacetShade * microFacetVisibility * 0.022
+    );
 
     float3 halfVector = normalize(viewDirection + normalize(ocean.sunDirection));
     float sunFacing = max(dot(normal, halfVector), 0.0);

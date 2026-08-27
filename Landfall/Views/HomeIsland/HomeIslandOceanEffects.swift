@@ -235,7 +235,6 @@ enum HomeIslandOceanEffects {
     slope *= surfaceEdge;
     float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
     float macroVisibility = 1.0 - smoothstep(0.85, 4.20, pixelFootprint);
-    float rippleVisibility = 1.0 - smoothstep(0.08, 0.52, pixelFootprint);
     // Relative range gives every ocean layout the same near-to-horizon LOD.
     float surfaceRadius = max(min(uSurfaceSize.x, uSurfaceSize.y) * 0.5, 1.0);
     float normalizedViewRange = length(
@@ -244,24 +243,44 @@ enum HomeIslandOceanEffects {
     float nearField = 1.0 - smoothstep(0.18, 0.72, normalizedViewRange);
     float midField = 1.0 - smoothstep(0.62, 0.96, normalizedViewRange);
     float horizonField = smoothstep(0.60, 0.98, normalizedViewRange);
-    rippleVisibility *= mix(0.34, 1.0, nearField);
+    // Each wavelength gets a matching derivative cutoff. Long, resolvable
+    // normals therefore survive an oblique camera even after shorter ripples
+    // have been filtered away.
+    float nearRippleVisibility = mix(0.34, 1.0, nearField);
+    float rippleVisibilityA = (
+        1.0 - smoothstep(0.42, 1.15, pixelFootprint)
+    ) * nearRippleVisibility;
+    float rippleVisibilityB = (
+        1.0 - smoothstep(0.28, 0.82, pixelFootprint)
+    ) * nearRippleVisibility;
+    float rippleVisibilityC = (
+        1.0 - smoothstep(0.12, 0.46, pixelFootprint)
+    ) * nearRippleVisibility;
+    float rippleVisibility = max(
+        rippleVisibilityA,
+        max(rippleVisibilityB, rippleVisibilityC)
+    );
     macroVisibility *= mix(0.58, 1.0, midField);
 
     // Mid and fine ripples alter only the fragment normal. Three crossed
     // directions retain close-range detail without multiplying vertex cost.
-    float rippleA = dot(p, float2(0.829, 0.559)) * 1.82 - uTime * 1.18;
-    float rippleB = dot(p, float2(-0.616, 0.788)) * 2.66 - uTime * 1.47;
-    float rippleC = dot(p, float2(0.225, 0.974)) * 4.85 - uTime * 2.05;
+    float rippleWarp = sin(dot(p, float2(0.173, -0.241)) - uTime * 0.31);
+    float rippleA = dot(p, float2(0.829, 0.559)) * 1.82
+        - uTime * 1.18 + rippleWarp * 0.28;
+    float rippleB = dot(p, float2(-0.616, 0.788)) * 2.66
+        - uTime * 1.47 - rippleWarp * 0.36;
+    float rippleC = dot(p, float2(0.225, 0.974)) * 4.85
+        - uTime * 2.05 + rippleWarp * 0.52;
     float detailCalm = mix(
         0.68,
         1.0,
         smoothstep(10.0, 34.0, distanceFromIsland)
     );
     float2 detailSlope = (
-        float2(0.829, 0.559) * (cos(rippleA) * 0.032)
-        + float2(-0.616, 0.788) * (cos(rippleB) * 0.023)
-        + float2(0.225, 0.974) * (cos(rippleC) * 0.010)
-    ) * detailCalm * surfaceEdge * uMicroNormalScale * rippleVisibility
+        float2(0.829, 0.559) * (cos(rippleA) * 0.032 * rippleVisibilityA)
+        + float2(-0.616, 0.788) * (cos(rippleB) * 0.023 * rippleVisibilityB)
+        + float2(0.225, 0.974) * (cos(rippleC) * 0.010 * rippleVisibilityC)
+    ) * detailCalm * surfaceEdge * uMicroNormalScale
         * mix(0.72, 1.14, nearField);
     float3 worldUp = normalize(
         (scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz
@@ -348,7 +367,16 @@ enum HomeIslandOceanEffects {
         0.0,
         1.0
     );
-    float3 reflectedSky = mix(uHorizon, uSky, smoothstep(0.08, 0.88, skyHeight));
+    // Give upward-facing facets the deeper zenith and grazing facets the
+    // brighter horizon, so the existing normal field remains legible without
+    // adding an independent decorative wave pattern.
+    float zenithDepth = mix(0.16, 0.24, nearField);
+    float3 zenithReflection = mix(uSky * 1.04, uDeep, zenithDepth);
+    float3 reflectedSky = mix(
+        uHorizon * 1.035,
+        zenithReflection,
+        smoothstep(0.08, 0.88, skyHeight)
+    );
     col = mix(col, reflectedSky, 0.085 + fresnel * 0.60);
 
     // Broad facets borrow sky color when they turn toward the light and expose
@@ -368,6 +396,34 @@ enum HomeIslandOceanEffects {
     float3 facetSky = mix(uHorizon, uSky, 0.32);
     col = mix(col, facetSky, facetLift * facetVisibility * 0.120);
     col = mix(col, uDeep, facetShade * facetVisibility * 0.085);
+
+    // The fine normals use the same sky/deep radiance split as the broad
+    // facets, making them readable without layering on a detached pattern.
+    float microSlopeLength = length(detailSlope);
+    float2 microSlopeDirection = detailSlope / max(microSlopeLength, 0.001);
+    float microSunwardFacet = clamp(
+        0.5 + dot(microSlopeDirection, sunAcrossWater) * 0.5,
+        0.0,
+        1.0
+    );
+    float microFacetLift = smoothstep(0.54, 0.76, microSunwardFacet);
+    float microFacetShade = 1.0 - smoothstep(0.24, 0.46, microSunwardFacet);
+    float microFacetVisibility = rippleVisibility
+        * mix(0.34, 1.0, nearField)
+        * (1.0 - horizonField * 0.96)
+        * smoothstep(0.004, 0.035, microSlopeLength);
+    float microFacetRadiance = (microSunwardFacet - 0.5) * 2.0;
+    col *= 1.0 + microFacetRadiance * microFacetVisibility * 0.21;
+    col = mix(
+        col,
+        facetSky,
+        microFacetLift * microFacetVisibility * 0.028
+    );
+    col = mix(
+        col,
+        uDeep,
+        microFacetShade * microFacetVisibility * 0.022
+    );
 
     float3 sunDirection = normalize(
         (scn_frame.viewTransform * float4(uSunDirection, 0.0)).xyz
