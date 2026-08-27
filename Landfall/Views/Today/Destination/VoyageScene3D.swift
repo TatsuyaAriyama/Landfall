@@ -2120,10 +2120,22 @@ enum VoyageSceneKit {
 
     /// 航海中と同じ海・船・航海士・島を、浜へ到着した瞬間の構図へ組み直す。
     /// 静止画へ切り替えず、航海の世界がそのまま上陸記録へ続く。
-    static func makeLandfallScene() -> SCNScene {
+    static func makeLandfallScene(
+        nativeMetalRollout: MetalOceanProgram.RolloutScene = .standard
+    ) -> SCNScene {
+        let oceanAppearance = makeVoyagingOceanAppearance(
+            timeOfDay: .night,
+            palette: .voyagingNight
+        )
         let scene = SCNScene()
         scene.background.contents = nightBG
-        scene.rootNode.addChildNode(makeSea(moonX: -5.2))
+        scene.rootNode.addChildNode(
+            HomeIslandOceanEffects.makeScene(
+                layout: .timerVoyage,
+                appearance: oceanAppearance,
+                nativeMetalRollout: nativeMetalRollout
+            ).root
+        )
         scene.rootNode.addChildNode(makeStars(count: 560))
         scene.rootNode.addChildNode(makeMoon(position: SCNVector3(-5.2, 3.6, -17)))
         scene.rootNode.addChildNode(makeHorizon())
@@ -2160,7 +2172,10 @@ enum VoyageSceneKit {
         travel.addChildNode(makeRipples())
         let bob = SCNNode()
         bob.name = "landfallBoatBob"
-        let boat = makeBoatModel(BoatCustomization.currentParts)
+        let boat = makeBoatModel(
+            BoatCustomization.currentParts,
+            seaBounce: oceanAppearance.sea
+        )
         attachNavigator(to: boat)
         if let boatNavigator = boat.childNode(withName: "navigator", recursively: true) {
             boatNavigator.name = "landfallBoatNavigator"

@@ -1,3 +1,4 @@
+import OSLog
 import SceneKit
 import SwiftUI
 
@@ -123,7 +124,9 @@ private struct LandfallArrivalSceneView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
-        view.scene = VoyageSceneKit.makeLandfallScene()
+        view.scene = VoyageSceneKit.makeLandfallScene(
+            nativeMetalRollout: .entryExperience
+        )
         view.backgroundColor = VoyageSceneKit.nightBG
         view.antialiasingMode = .multisampling4X
         view.contentScaleFactor = min(UIScreen.main.scale, 2)
@@ -131,6 +134,7 @@ private struct LandfallArrivalSceneView: UIViewRepresentable {
         view.autoenablesDefaultLighting = false
         view.isUserInteractionEnabled = false
         view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
+        view.delegate = context.coordinator
         context.coordinator.attach(
             to: view,
             reduceMotion: UIAccessibility.isReduceMotionEnabled
@@ -141,15 +145,27 @@ private struct LandfallArrivalSceneView: UIViewRepresentable {
     func updateUIView(_ view: SCNView, context: Context) {}
 
     static func dismantleUIView(_ view: SCNView, coordinator: Coordinator) {
+        view.delegate = nil
         view.scene?.rootNode.removeAllActions()
         view.isPlaying = false
     }
 
-    final class Coordinator {
+    final class Coordinator: NSObject, SCNSceneRendererDelegate {
         private weak var view: SCNView?
+        private weak var seaMaterial: SCNMaterial?
+        private var framePacing = MetalOceanFramePacingMonitor()
+        private var hasReducedRenderingQuality = false
+        private let performanceLogger = Logger(
+            subsystem: Bundle.main.bundleIdentifier ?? "Landfall",
+            category: "MetalOceanPerformance"
+        )
 
         func attach(to view: SCNView, reduceMotion: Bool) {
             self.view = view
+            seaMaterial = view.scene?.rootNode
+                .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
+                .geometry?.firstMaterial
+            framePacing.reset()
             guard let scene = view.scene,
                   let travel = scene.rootNode.childNode(withName: "landfallTravel", recursively: false),
                   let camera = scene.rootNode.childNode(withName: "camera", recursively: false) else { return }
@@ -200,6 +216,26 @@ private struct LandfallArrivalSceneView: UIViewRepresentable {
             let dolly = SCNAction.move(to: finalCameraPosition, duration: 2.25)
             dolly.timingMode = .easeInEaseOut
             camera.runAction(.sequence([.wait(duration: 0.08), dolly]), forKey: "landfallDolly")
+        }
+
+        func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+            guard seaMaterial?.program != nil, framePacing.observe(at: time) else { return }
+            reduceRenderingQualityIfNeeded()
+        }
+
+        private func reduceRenderingQualityIfNeeded() {
+            guard !hasReducedRenderingQuality else { return }
+            hasReducedRenderingQuality = true
+#if DEBUG
+            print("[MetalOceanPerformance] Landfall overload detected")
+#endif
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let view = self.view else { return }
+                view.antialiasingMode = .multisampling2X
+                self.performanceLogger.notice(
+                    "Reduced landfall ocean antialiasing after frame pacing pressure"
+                )
+            }
         }
     }
 }
