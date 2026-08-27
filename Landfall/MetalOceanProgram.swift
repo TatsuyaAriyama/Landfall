@@ -7,14 +7,23 @@ import simd
 /// rolls out first on Ultra-tier timer voyages, while Debug builds can opt in
 /// on every scene for visual comparison and regression testing.
 enum MetalOceanProgram {
+    enum RolloutScene {
+        case standard
+        case timerVoyage
+    }
+
     private static let rolloutDefaultsKey = "LandfallNativeMetalOcean"
     private static let diagnostics = Diagnostics()
 
-    private static func isRolloutEnabled(for layout: HomeIslandOceanEffects.Layout) -> Bool {
+    private static func isRolloutEnabled(for scene: RolloutScene) -> Bool {
 #if DEBUG
-        return UserDefaults.standard.bool(forKey: rolloutDefaultsKey)
+        guard UserDefaults.standard.bool(forKey: rolloutDefaultsKey) else { return false }
+        if UserDefaults.standard.bool(forKey: "LandfallMetalTimerRolloutOnly") {
+            return scene == .timerVoyage
+        }
+        return true
 #else
-        return layout.sceneRole == .timerVoyage
+        return scene == .timerVoyage
             && MetalRenderingProfile.current.tier == .ultra
 #endif
     }
@@ -22,9 +31,10 @@ enum MetalOceanProgram {
     static func make(
         layout: HomeIslandOceanEffects.Layout,
         appearance: HomeIslandOceanEffects.Appearance,
-        islandScale: Float
+        islandScale: Float,
+        rolloutScene: RolloutScene = .standard
     ) -> SCNProgram? {
-        guard isRolloutEnabled(for: layout),
+        guard isRolloutEnabled(for: rolloutScene),
               MetalRenderingProfile.current.supportsNativeOceanProgram,
               let device = MTLCreateSystemDefaultDevice(),
               let library = MetalOceanShaderLibrary.makeLibrary(on: device),

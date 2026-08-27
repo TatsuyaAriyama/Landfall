@@ -1,3 +1,4 @@
+import OSLog
 import SceneKit
 import SwiftUI
 import UIKit
@@ -2224,7 +2225,8 @@ enum VoyageSceneKit {
         showIsland: Bool,
         timeOfDay: AftideHomeTimeOfDay = .night,
         date: Date = .now,
-        boatParts: BoatParts = BoatCustomization.currentParts
+        boatParts: BoatParts = BoatCustomization.currentParts,
+        nativeMetalRollout: MetalOceanProgram.RolloutScene = .standard
     ) -> SCNScene {
         let palette = timeOfDay == .night ? AftideHomePalette.voyagingNight : timeOfDay.palette
         let scene = SCNScene()
@@ -2243,7 +2245,8 @@ enum VoyageSceneKit {
                 appearance: makeVoyagingOceanAppearance(
                     timeOfDay: timeOfDay,
                     palette: palette
-                )
+                ),
+                nativeMetalRollout: nativeMetalRollout
             ).root
         )
         // Web Horizon と同じ、z=-20の細い平面。円形の水平線は投影位置が変わり、
@@ -3155,7 +3158,8 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             showIsland: showIsland,
             timeOfDay: timeOfDay,
             date: date,
-            boatParts: boatParts
+            boatParts: boatParts,
+            nativeMetalRollout: .timerVoyage
         )
         view.scene = scene
         view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
@@ -3219,7 +3223,8 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
                 showIsland: showIsland,
                 timeOfDay: timeOfDay,
                 date: date,
-                boatParts: boatParts
+                boatParts: boatParts,
+                nativeMetalRollout: .timerVoyage
             )
             view.scene = scene
             view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
@@ -3263,6 +3268,13 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         private weak var view: SCNView?
         private weak var camera: SCNNode?
         private weak var moon: SCNNode?
+        private weak var seaMaterial: SCNMaterial?
+        private var framePacing = FramePacingMonitor()
+        private var hasReducedRenderingQuality = false
+        private let performanceLogger = Logger(
+            subsystem: Bundle.main.bundleIdentifier ?? "Landfall",
+            category: "MetalOceanPerformance"
+        )
 
         // Web VoyagingWorld:
         // camera [-5.6, 2.4, 8.6], target [0.8, 1.15, 0], fov 38
@@ -3315,6 +3327,8 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
 
         func attach(to view: SCNView) {
             self.view = view
+            framePacing.reset()
+            hasReducedRenderingQuality = false
             bindCamera()
             bindMoon()
         }
@@ -3400,6 +3414,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
 
         func bindCamera() {
             camera = view?.scene?.rootNode.childNode(withName: "camera", recursively: false)
+            bindSeaMaterial()
             bindMoon()
             if !orbitIsInitialized {
                 azimuth = initialAzimuth
@@ -3409,6 +3424,15 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             }
             applyCamera()
             updateAccessibilityValue()
+        }
+
+        private func bindSeaMaterial() {
+            let material = view?.scene?.rootNode
+                .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
+                .geometry?.firstMaterial
+            guard seaMaterial !== material else { return }
+            seaMaterial = material
+            framePacing.reset()
         }
 
         private func bindMoon() {
@@ -3535,10 +3559,75 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         }
 
         func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+            if seaMaterial?.program != nil, framePacing.observe(at: time) {
+                reduceRenderingQualityIfNeeded()
+            }
             guard let revision = animator.renderFrame(renderer, updateAtTime: time)
             else { return }
             DispatchQueue.main.async { [weak self] in
                 self?.finishReducedMotionFrame(revision: revision)
+            }
+        }
+
+        private func reduceRenderingQualityIfNeeded() {
+            guard !hasReducedRenderingQuality else { return }
+            hasReducedRenderingQuality = true
+#if DEBUG
+            print("[MetalOceanPerformance] Sustained overload detected")
+#endif
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let view = self.view else { return }
+                view.contentScaleFactor = min(UIScreen.main.scale, 2)
+                view.antialiasingMode = .multisampling2X
+                self.performanceLogger.notice(
+                    "Reduced voyage ocean resolution after sustained frame pacing pressure"
+                )
+            }
+        }
+
+        private struct FramePacingMonitor {
+            private var sampleStart: TimeInterval?
+            private var previousFrame: TimeInterval?
+            private var frameCount = 0
+            private var slowFrameCount = 0
+
+            mutating func reset() {
+                sampleStart = nil
+                previousFrame = nil
+                frameCount = 0
+                slowFrameCount = 0
+            }
+
+            mutating func observe(at time: TimeInterval) -> Bool {
+                guard let previousFrame else {
+                    sampleStart = time
+                    self.previousFrame = time
+                    return false
+                }
+                let interval = time - previousFrame
+                self.previousFrame = time
+                guard interval > 0, interval < 0.25 else {
+                    reset()
+                    return false
+                }
+
+                frameCount += 1
+#if DEBUG
+                let simulatesOverload = UserDefaults.standard.bool(
+                    forKey: "LandfallMetalSimulateOverload"
+                )
+#else
+                let simulatesOverload = false
+#endif
+                if simulatesOverload || interval > (1.0 / 45.0) {
+                    slowFrameCount += 1
+                }
+
+                let duration = time - (sampleStart ?? time)
+                guard duration >= 8, frameCount >= 60 else { return false }
+                let overloaded = Double(slowFrameCount) / Double(frameCount) >= 0.35
+                reset()
+                return overloaded
             }
         }
 

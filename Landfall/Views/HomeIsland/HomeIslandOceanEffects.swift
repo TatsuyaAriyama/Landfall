@@ -46,13 +46,6 @@ enum HomeIslandOceanEffects {
     }
 
     struct Layout {
-        enum SceneRole {
-            case homeIsland
-            case voyageHome
-            case timerVoyage
-        }
-
-        let sceneRole: SceneRole
         let width: CGFloat
         let depth: CGFloat
         let widthSegments: Int
@@ -63,7 +56,6 @@ enum HomeIslandOceanEffects {
         let rootName: String
 
         static let homeIsland = Layout(
-            sceneRole: .homeIsland,
             width: 180,
             depth: 180,
             widthSegments: MetalRenderingProfile.current.oceanSegments(base: 144),
@@ -77,7 +69,6 @@ enum HomeIslandOceanEffects {
         /// The voyage home needs a longer plane and a zero waterline, but uses
         /// the exact same colors, wave field, caustics and glints as My Island.
         static let voyageHome = Layout(
-            sceneRole: .voyageHome,
             width: 240,
             depth: 170,
             widthSegments: MetalRenderingProfile.current.oceanSegments(base: 144),
@@ -92,7 +83,6 @@ enum HomeIslandOceanEffects {
         /// square surface centered on the boat. Density matches My Island while
         /// staying below the fragment/vertex cost that would compromise 60 fps.
         static let timerVoyage = Layout(
-            sceneRole: .timerVoyage,
             width: 96,
             depth: 96,
             widthSegments: MetalRenderingProfile.current.oceanSegments(base: 144),
@@ -417,7 +407,8 @@ enum HomeIslandOceanEffects {
     static func makeScene(
         layout: Layout = .homeIsland,
         appearance: Appearance = .daylight,
-        islandScale: Float = HomeIslandExpansionPolicy.baseScale
+        islandScale: Float = HomeIslandExpansionPolicy.baseScale,
+        nativeMetalRollout: MetalOceanProgram.RolloutScene = .standard
     ) -> HomeIslandOceanScene {
         let root = SCNNode()
         root.name = layout.rootName
@@ -433,7 +424,8 @@ enum HomeIslandOceanEffects {
         if let nativeProgram = MetalOceanProgram.make(
             layout: layout,
             appearance: appearance,
-            islandScale: islandScale
+            islandScale: islandScale,
+            rolloutScene: nativeMetalRollout
         ) {
             material.program = nativeProgram
         } else {
