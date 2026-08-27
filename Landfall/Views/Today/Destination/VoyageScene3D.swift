@@ -2428,7 +2428,6 @@ enum VoyageSceneKit {
             sunX = 0.72
         }
         let upperHaze = mixColor(sky, fog, amount: 0.55)
-        let lowerHaze = mixColor(fog, sky, amount: timeOfDay == .night ? 0.10 : 0.24)
         let format = UIGraphicsImageRendererFormat()
         format.opaque = true
         format.scale = 1
@@ -2444,7 +2443,7 @@ enum VoyageSceneKit {
                 upperHaze.cgColor,
                 fog.cgColor,
                 fog.cgColor,
-                lowerHaze.cgColor,
+                fog.cgColor,
             ] as CFArray
             if let gradient = CGGradient(
                 colorsSpace: colorSpace,
@@ -2474,12 +2473,16 @@ enum VoyageSceneKit {
                 locations: [0, 0.34, 1]
             ) else { return }
             context.setBlendMode(.screen)
+            // Keep the solar bloom in the upper atmosphere. Letting this
+            // background-only light cross the geometric horizon brightens the
+            // sky without brightening the water and reveals a ruler-straight
+            // seam, even when the ocean itself has converged to the fog color.
             context.drawRadialGradient(
                 halo,
-                startCenter: CGPoint(x: 192 * sunX, y: 150),
+                startCenter: CGPoint(x: 192 * sunX, y: 92),
                 startRadius: 0,
-                endCenter: CGPoint(x: 192 * sunX, y: 150),
-                endRadius: 112,
+                endCenter: CGPoint(x: 192 * sunX, y: 92),
+                endRadius: 78,
                 options: []
             )
         }

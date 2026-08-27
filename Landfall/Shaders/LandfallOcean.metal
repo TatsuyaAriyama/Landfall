@@ -636,8 +636,15 @@ static inline half4 landfallShadeOcean(
     // the finite mesh. Leaving even a small amount of body color at the final
     // row exposes the plane as a straight horizontal cut.
     float farAtmosphere = smoothstep(0.72, 0.97, normalizedViewRange);
+    float grazingAtmosphere = 1.0 - smoothstep(
+        0.040,
+        0.150,
+        abs(viewDirection.y)
+    );
     float samplingHaze = (1.0 - macroVisibility) * 0.08;
-    float atmosphericHaze = saturate(farAtmosphere + samplingHaze);
+    float atmosphericHaze = saturate(
+        max(farAtmosphere, grazingAtmosphere) + samplingHaze
+    );
     color = 1.0 - exp(-max(color, 0.0) * 1.16);
     color = mix(color, sqrt(max(color, 0.0)), 0.07);
     color = mix(color, ocean.fogColor, atmosphericHaze);
