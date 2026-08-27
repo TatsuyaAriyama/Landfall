@@ -1514,17 +1514,33 @@ enum VoyageSceneKit {
     // 飛沫跡は水面直上にまばらに残し、横一文字の塗装に見せない。
     float splashNoise = sin(boatP.x * 15.1 + boatP.z * 8.7)
         * sin(boatP.z * 13.3 - boatP.x * 5.9);
-    float splashTop = 0.055 + (splashNoise * 0.5 + 0.5) * 0.075;
+    float splashTop = 0.065 + (splashNoise * 0.5 + 0.5) * 0.115;
     float splashDamp = uBoatWettable
         * smoothstep(-0.010, 0.018, waterlineDistance)
-        * (1.0 - smoothstep(splashTop - 0.020, splashTop + 0.025, waterlineDistance))
-        * smoothstep(-0.30, 0.28, splashNoise);
-    float wetColorWeight = clamp(belowSurface * 0.42 + splashDamp * 0.13, 0.0, 0.46);
-    float3 wetColor = _surface.diffuse.rgb * float3(0.52, 0.68, 0.66)
-        + uBoatSeaBounce * 0.035;
+        * (1.0 - smoothstep(splashTop - 0.026, splashTop + 0.034, waterlineDistance))
+        * smoothstep(-0.24, 0.30, splashNoise);
+    // A wet hull is not one uniformly dark band. Water near the meniscus keeps
+    // the paint color and gains sheen; deeper fragments lose warm light through
+    // absorption and pick up more of the same sea color reflected around them.
+    float submersionDepth = max(-waterlineDistance, 0.0) * uBoatWettable;
+    float deepWetness = belowSurface * smoothstep(0.045, 0.42, submersionDepth);
+    float wetColorWeight = clamp(
+        belowSurface * 0.30 + deepWetness * 0.16 + splashDamp * 0.17,
+        0.0,
+        0.48
+    );
+    float3 surfaceWetColor = _surface.diffuse.rgb * float3(0.62, 0.74, 0.72)
+        + uBoatSeaBounce * 0.040;
+    float3 deepWetColor = _surface.diffuse.rgb * float3(0.43, 0.58, 0.57)
+        + uBoatSeaBounce * 0.060;
+    float3 wetColor = mix(surfaceWetColor, deepWetColor, deepWetness);
     _surface.diffuse.rgb = mix(_surface.diffuse.rgb, wetColor, wetColorWeight);
 
-    float wetSheen = clamp(belowSurface * 0.88 + waterlineRim + splashDamp * 0.42, 0.0, 1.0);
+    float wetSheen = clamp(
+        belowSurface * 0.76 + waterlineRim + splashDamp * 0.58,
+        0.0,
+        1.0
+    );
     _surface.roughness = mix(_surface.roughness, 0.11, wetSheen * 0.88);
     _surface.clearCoat = max(_surface.clearCoat, wetSheen * 0.92);
     _surface.clearCoatRoughness = mix(_surface.clearCoatRoughness, 0.045, wetSheen);
@@ -1556,6 +1572,7 @@ enum VoyageSceneKit {
 
     float skyLobe = smoothstep(-0.28, 0.72, upFacing);
     float seaLobe = smoothstep(-0.18, 0.78, -upFacing);
+    float horizonLobe = 1.0 - smoothstep(0.08, 0.72, abs(upFacing));
     float environmentStrength = reflectionResponse
         * (0.010 + gloss * 0.030 + fresnel * 0.032);
     _surface.emission.rgb += uBoatSunColor
@@ -1563,7 +1580,8 @@ enum VoyageSceneKit {
     _surface.emission.rgb += uBoatSeaBounce
         * (seaLobe * environmentStrength * 0.82
             + belowSurface * 0.018
-            + waterlineRim * 0.012);
+            + waterlineRim * 0.020
+            + horizonLobe * wetSheen * (0.012 + fresnel * 0.024));
 
     // 直接光の鏡面に、遠景の太陽と同じ色の小さな芯だけを足す。
     // 粗い木や布では広がって消え、金属・塗膜・濡れ面だけに残る。
