@@ -101,7 +101,7 @@ struct CompanionVoyagePreviewView: View {
             if deckMode != nil {
                 VoyagingHomeSceneView(
                     showIsland: false,
-                    timeOfDay: .day,
+                    timeOfDay: .current(),
                     resting: false,
                     elapsedSeconds: 60,
                     boatParts: previewBoatIdentity.boatParts,

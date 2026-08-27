@@ -641,7 +641,16 @@ static inline half4 landfallShadeOcean(
     );
     float crestFoam = crest * crestSteepness
         * smoothstep(0.42, 0.80, crestBreakup) * macroVisibility;
-    color = mix(color, ocean.lightColor, crestFoam * 0.46);
+    // Foam scatters the light available in the scene; it does not glow with a
+    // fixed white value after sunset. Keep the same material response at every
+    // time of day while letting the shared lighting palette set its radiance.
+    float foamIllumination = saturate(0.34 + ocean.sunStrength * 0.50);
+    float3 foamColor = mix(
+        ocean.shallowColor,
+        ocean.lightColor,
+        foamIllumination
+    );
+    color = mix(color, foamColor, crestFoam * 0.46);
 
     if (ocean.shoreline > 0.5) {
         float wash = 0.18
@@ -665,7 +674,7 @@ static inline half4 landfallShadeOcean(
         );
         float waterSide = smoothstep(-0.03, 0.08, shoreDistance);
         float shoreFoam = min(primary + secondary * 0.38, 1.0) * fragments * waterSide;
-        color = mix(color, ocean.lightColor, shoreFoam * 0.76);
+        color = mix(color, foamColor, shoreFoam * 0.76);
     }
 
     if (ocean.boatPresence > 0.5) {
@@ -675,9 +684,9 @@ static inline half4 landfallShadeOcean(
             ocean.boatReflectionColor,
             hull.reflectedHull * (0.035 + hull.reflectionBreakup * 0.070)
         );
-        color = mix(color, ocean.lightColor, hull.meniscusLight * 0.10);
+        color = mix(color, foamColor, hull.meniscusLight * 0.10);
         color = mix(color, ocean.shallowColor, hull.bowDisturbance * 0.022);
-        color = mix(color, ocean.lightColor, hull.bowAeration * 0.13);
+        color = mix(color, foamColor, hull.bowAeration * 0.13);
     }
 
     if (wake.disturbance > 0.0) {
@@ -685,7 +694,7 @@ static inline half4 landfallShadeOcean(
         // most aerated fragments become foam. The same sample already perturbed
         // the normal above, so the wake bends reflections instead of sitting on top.
         color = mix(color, ocean.shallowColor, wake.disturbance * 0.020);
-        color = mix(color, ocean.lightColor, wake.aeration * 0.15);
+        color = mix(color, foamColor, wake.aeration * 0.15);
     }
 
     // Aerial perspective must finish at the same radiance as the sky behind

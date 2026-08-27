@@ -455,7 +455,12 @@ enum HomeIslandOceanEffects {
     );
     float crestFoam = crest * crestSteepness
         * smoothstep(0.42, 0.80, crestBreakup) * macroVisibility;
-    col = mix(col, uLight, crestFoam * 0.46);
+    // Aerated water reflects the current environment instead of acting as a
+    // white emissive overlay. This keeps moonlit wake visible but attached to
+    // the night sea, while daylight foam retains its brighter scattering.
+    float foamIllumination = clamp(0.34 + uSunStrength * 0.50, 0.0, 1.0);
+    float3 foamColor = mix(uShallow, uLight, foamIllumination);
+    col = mix(col, foamColor, crestFoam * 0.46);
 
     if (uShoreline > 0.5) {
         // Two advancing shore bands and angular breakup form broad, irregular lace.
@@ -482,7 +487,7 @@ enum HomeIslandOceanEffects {
         float waterSide = smoothstep(-0.03, 0.08, shoreDistance);
         float shoreFoam = min(shorePrimary + shoreSecondary * 0.38, 1.0)
             * fragments * waterSide;
-        col = mix(col, uLight, shoreFoam * 0.76);
+        col = mix(col, foamColor, shoreFoam * 0.76);
     }
 
     // Boat uniforms use ocean-plane coordinates: (world X, -world Z). A soft
@@ -521,7 +526,7 @@ enum HomeIslandOceanEffects {
             uBoatReflectionColor,
             reflectedHull * (0.035 + reflectionBreak * 0.070) * surfaceEdge
         );
-        col = mix(col, uLight, meniscus * meniscusBreak * 0.10 * surfaceEdge);
+        col = mix(col, foamColor, meniscus * meniscusBreak * 0.10 * surfaceEdge);
     }
 
     // Keep the wake below foam contrast: it is a short veil of aerated water
@@ -582,7 +587,7 @@ enum HomeIslandOceanEffects {
                     + sin(aft * 0.83) * 1.15 - uTime * 0.91
             );
             float aeration = disturbance * mix(0.34, 0.72, turbulence);
-            col = mix(col, uLight, aeration * 0.22);
+            col = mix(col, foamColor, aeration * 0.15);
         }
     }
 
