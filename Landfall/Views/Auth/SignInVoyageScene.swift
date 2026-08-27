@@ -1,3 +1,4 @@
+import OSLog
 import SceneKit
 import SwiftUI
 import UIKit
@@ -65,7 +66,14 @@ struct SignInVoyageSceneView: UIViewRepresentable {
         private weak var moon: SCNNode?
         private weak var bob: SCNNode?
         private weak var wake: SCNNode?
+        private weak var seaMaterial: SCNMaterial?
         private var gulls: [SCNNode] = []
+        private var framePacing = MetalOceanFramePacingMonitor()
+        private var hasReducedRenderingQuality = false
+        private let performanceLogger = Logger(
+            subsystem: Bundle.main.bundleIdentifier ?? "Landfall",
+            category: "MetalOceanPerformance"
+        )
         private var baseCamera = SCNVector3(-5.8, 3, 11.8)
         private var portrait = true
         private var viewportConfigured = false
@@ -93,11 +101,15 @@ struct SignInVoyageSceneView: UIViewRepresentable {
             )
             bob = view.scene?.rootNode.childNode(withName: "boatBob", recursively: true)
             wake = view.scene?.rootNode.childNode(withName: "wake", recursively: true)
+            seaMaterial = view.scene?.rootNode
+                .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
+                .geometry?.firstMaterial
             gulls = view.scene?.rootNode
                 .childNode(withName: "gulls", recursively: false)?
                 .childNodes ?? []
             startTime = nil
             lastTime = 0
+            framePacing.reset()
             viewportConfigured = false
             sailor.pose = .idle
             sailor.animate = true
@@ -126,6 +138,7 @@ struct SignInVoyageSceneView: UIViewRepresentable {
             view.rendersContinuously = value
             view.isPlaying = value
             if !value {
+                framePacing.reset()
                 applyFrame(time: 0, delta: 0)
                 view.setNeedsDisplay()
             }
@@ -133,6 +146,9 @@ struct SignInVoyageSceneView: UIViewRepresentable {
 
         func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
             guard view?.isPlaying == true else { return }
+            if seaMaterial?.program != nil, framePacing.observe(at: time) {
+                reduceRenderingQualityIfNeeded()
+            }
             if startTime == nil {
                 startTime = time
                 lastTime = time
@@ -141,6 +157,22 @@ struct SignInVoyageSceneView: UIViewRepresentable {
             let delta = Float(min(max(time - lastTime, 0), 0.1))
             lastTime = time
             applyFrame(time: elapsed, delta: delta)
+        }
+
+        private func reduceRenderingQualityIfNeeded() {
+            guard !hasReducedRenderingQuality else { return }
+            hasReducedRenderingQuality = true
+#if DEBUG
+            print("[MetalOceanPerformance] Entry experience overload detected")
+#endif
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let view = self.view else { return }
+                view.contentScaleFactor = min(UIScreen.main.scale, 2)
+                view.antialiasingMode = .multisampling2X
+                self.performanceLogger.notice(
+                    "Reduced entry ocean resolution after sustained frame pacing pressure"
+                )
+            }
         }
 
         private func applyFrame(time: Float, delta: Float) {
@@ -219,7 +251,8 @@ private enum SignInVoyageSceneFactory {
         let scene = VoyageSceneKit.makeVoyagingScene(
             showIsland: true,
             timeOfDay: timeOfDay,
-            date: date
+            date: date,
+            nativeMetalRollout: .entryExperience
         )
         scene.background.contents = UIColor(rgb: palette.sky)
         scene.fogColor = UIColor(rgb: palette.fog)

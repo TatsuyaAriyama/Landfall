@@ -504,7 +504,8 @@ private enum PrologueVoyageLaunchSceneFactory {
         let scene = VoyageSceneKit.makeVoyagingScene(
             showIsland: showIsland,
             timeOfDay: .night,
-            date: date
+            date: date,
+            nativeMetalRollout: .entryExperience
         )
 
         if let stars = scene.rootNode.childNodes.first(where: { node in

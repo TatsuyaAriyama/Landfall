@@ -11,6 +11,7 @@ enum MetalOceanProgram {
         case standard
         case timerVoyage
         case homeIsland
+        case entryExperience
     }
 
     private static let rolloutDefaultsKey = "LandfallNativeMetalOcean"
@@ -30,6 +31,8 @@ enum MetalOceanProgram {
         case .timerVoyage:
             return true
         case .homeIsland:
+            return MetalRenderingProfile.current.tier != .compatible
+        case .entryExperience:
             return MetalRenderingProfile.current.tier != .compatible
         }
 #endif
