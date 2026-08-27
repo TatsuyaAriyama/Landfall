@@ -2214,7 +2214,10 @@ enum VoyageSceneKit {
         let oceanAppearance = customOceanAppearance
             ?? makeVoyagingOceanAppearance(timeOfDay: timeOfDay, palette: palette)
         let scene = SCNScene()
-        scene.background.contents = UIColor(rgb: palette.sky)
+        scene.background.contents = makeVoyagingSkyBackground(
+            timeOfDay: timeOfDay,
+            palette: palette
+        )
         scene.fogColor = UIColor(rgb: palette.fog)
         scene.fogStartDistance = 12
         scene.fogEndDistance = 34
@@ -2283,6 +2286,107 @@ enum VoyageSceneKit {
         camera.camera?.screenSpaceAmbientOcclusionDepthThreshold = 2.0
         scene.rootNode.addChildNode(camera)
         return scene
+    }
+
+    /// 単色の背景では海面が平面に見えるため、天頂から水平線までの
+    /// 大気の厚みを小さな手続きテクスチャにする。海の反射と同じ時間帯パレットを使う。
+    private static func makeVoyagingSkyBackground(
+        timeOfDay: AftideHomeTimeOfDay,
+        palette: AftideHomePalette
+    ) -> UIImage {
+        let sky = UIColor(rgb: palette.sky)
+        let fog = UIColor(rgb: palette.fog)
+        let reflection = UIColor(rgb: palette.reflection)
+        let zenithScale: CGFloat
+        let horizonWarmth: CGFloat
+        let sunX: CGFloat
+        switch timeOfDay {
+        case .morning:
+            zenithScale = 0.82
+            horizonWarmth = 0.24
+            sunX = 0.24
+        case .day:
+            zenithScale = 0.88
+            horizonWarmth = 0.10
+            sunX = 0.50
+        case .evening:
+            zenithScale = 0.72
+            horizonWarmth = 0.34
+            sunX = 0.76
+        case .night:
+            zenithScale = 0.54
+            horizonWarmth = 0.035
+            sunX = 0.72
+        }
+        let horizon = mixColor(fog, reflection, amount: horizonWarmth)
+        let lowerHaze = mixColor(fog, sky, amount: timeOfDay == .night ? 0.10 : 0.24)
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = true
+        format.scale = 1
+        return UIGraphicsImageRenderer(
+            size: CGSize(width: 192, height: 512),
+            format: format
+        ).image { renderer in
+            let context = renderer.cgContext
+            let colorSpace = CGColorSpaceCreateDeviceRGB()
+            let colors = [
+                sky.scaled(zenithScale).cgColor,
+                sky.cgColor,
+                horizon.cgColor,
+                lowerHaze.cgColor,
+            ] as CFArray
+            if let gradient = CGGradient(
+                colorsSpace: colorSpace,
+                colors: colors,
+                locations: [0, 0.46, 0.79, 1]
+            ) {
+                context.drawLinearGradient(
+                    gradient,
+                    start: CGPoint(x: 96, y: 0),
+                    end: CGPoint(x: 96, y: 512),
+                    options: []
+                )
+            }
+
+            guard timeOfDay != .night else { return }
+            let haloColors = [
+                reflection.withAlphaComponent(0.18).cgColor,
+                reflection.withAlphaComponent(0.055).cgColor,
+                reflection.withAlphaComponent(0).cgColor,
+            ] as CFArray
+            guard let halo = CGGradient(
+                colorsSpace: colorSpace,
+                colors: haloColors,
+                locations: [0, 0.34, 1]
+            ) else { return }
+            context.setBlendMode(.screen)
+            context.drawRadialGradient(
+                halo,
+                startCenter: CGPoint(x: 192 * sunX, y: 350),
+                startRadius: 0,
+                endCenter: CGPoint(x: 192 * sunX, y: 350),
+                endRadius: 112,
+                options: []
+            )
+        }
+    }
+
+    private static func mixColor(
+        _ lhs: UIColor,
+        _ rhs: UIColor,
+        amount: CGFloat
+    ) -> UIColor {
+        var lr: CGFloat = 0, lg: CGFloat = 0, lb: CGFloat = 0, la: CGFloat = 0
+        var rr: CGFloat = 0, rg: CGFloat = 0, rb: CGFloat = 0, ra: CGFloat = 0
+        lhs.getRed(&lr, green: &lg, blue: &lb, alpha: &la)
+        rhs.getRed(&rr, green: &rg, blue: &rb, alpha: &ra)
+        let t = min(max(amount, 0), 1)
+        return UIColor(
+            red: lr + (rr - lr) * t,
+            green: lg + (rg - lg) * t,
+            blue: lb + (rb - lb) * t,
+            alpha: la + (ra - la) * t
+        )
     }
 
     private static func makeVoyagingCelestial(
