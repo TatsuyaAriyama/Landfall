@@ -280,11 +280,22 @@ static inline LandfallHullSample landfallSampleHullContact(
         return {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, float2(0.0)};
     }
 
-    float2 ellipsePosition = float2(
-        boat.longitudinal / boat.halfLength,
-        boat.lateral / boat.halfBeam
+    float longitudinalUnit = boat.longitudinal / boat.halfLength;
+    float lateralUnit = boat.lateral / boat.halfBeam;
+    // A symmetric ellipse leaves a rounded halo ahead of every bow. Blend a
+    // broad transom into a sharper forward waterplane so shadow, reflection,
+    // meniscus and pressure all follow one boat-like footprint.
+    float hullExponent = mix(
+        2.45,
+        1.48,
+        smoothstep(-0.24, 0.58, longitudinalUnit)
     );
-    float hullDistance = max(length(ellipsePosition), 0.001);
+    float hullDistance = pow(
+        pow(abs(longitudinalUnit), hullExponent)
+            + pow(abs(lateralUnit), hullExponent),
+        1.0 / hullExponent
+    );
+    hullDistance = max(hullDistance, 0.001);
     float submergedShadow = 1.0 - smoothstep(0.62, 1.20, hullDistance);
     float meniscus = 1.0 - smoothstep(0.035, 0.18, abs(hullDistance - 1.0));
     float contactPhase = boat.longitudinal * 8.1
@@ -301,16 +312,17 @@ static inline LandfallHullSample landfallSampleHullContact(
         )
     );
 
-    // The normalized ellipse gradient points away from the hull at every angle.
-    // A compact pressure ripple bends the water there, with extra energy at the bow.
-    float2 ellipseGradient = boat.heading
-            * (boat.longitudinal / (
-                boat.halfLength * boat.halfLength * hullDistance
-            ))
-        + boat.across * (boat.lateral / (
-            boat.halfBeam * boat.halfBeam * hullDistance
-        ));
-    float2 outward = ellipseGradient / max(length(ellipseGradient), 0.001);
+    // The implicit superellipse gradient keeps pressure normals perpendicular
+    // to the same asymmetric waterplane instead of falling back to an ellipse.
+    float2 hullGradient = boat.heading
+            * (sign(longitudinalUnit)
+                * pow(max(abs(longitudinalUnit), 0.0001), hullExponent - 1.0)
+                / boat.halfLength)
+        + boat.across
+            * (sign(lateralUnit)
+                * pow(max(abs(lateralUnit), 0.0001), hullExponent - 1.0)
+                / boat.halfBeam);
+    float2 outward = hullGradient / max(length(hullGradient), 0.001);
     float bowFacing = smoothstep(
         -0.18,
         0.82,
