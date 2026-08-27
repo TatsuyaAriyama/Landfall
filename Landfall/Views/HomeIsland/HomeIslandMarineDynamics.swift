@@ -40,15 +40,41 @@ enum HomeIslandMarineDynamics {
                 HomeIslandMarineDynamics.smoothstep(10, 34, distance)
             )
 
-            var height: Float = 0
-            var shaderSlope = SIMD2<Float>.zero
-            for wave in Self.spectrum {
-                let phase = simd_dot(p, wave.direction) * wave.waveNumber
+            var phases = Self.spectrum.map { wave in
+                simd_dot(p, wave.direction) * wave.waveNumber
                     - time * wave.angularSpeed
                     + wave.phaseOffset
-                height += sin(phase) * wave.amplitude
-                shaderSlope += wave.direction
-                    * (cos(phase) * wave.amplitude * wave.waveNumber)
+            }
+            let sinC = sin(phases[2])
+            let sinD = sin(phases[3])
+            let sinE = sin(phases[4])
+            let cosC = cos(phases[2])
+            let cosD = cos(phases[3])
+            let cosE = cos(phases[4])
+            phases[0] += sinC * 0.34 + sinD * 0.10
+            phases[1] += -sinD * 0.26 + sinE * 0.08
+
+            let cosA = cos(phases[0])
+            let cosB = cos(phases[1])
+            let phaseGradients = [
+                Self.spectrum[0].direction * Self.spectrum[0].waveNumber
+                    + Self.spectrum[2].direction * (cosC * 0.340 * 0.34)
+                    + Self.spectrum[3].direction * (cosD * 0.720 * 0.10),
+                Self.spectrum[1].direction * Self.spectrum[1].waveNumber
+                    - Self.spectrum[3].direction * (cosD * 0.720 * 0.26)
+                    + Self.spectrum[4].direction * (cosE * 1.250 * 0.08),
+                Self.spectrum[2].direction * Self.spectrum[2].waveNumber,
+                Self.spectrum[3].direction * Self.spectrum[3].waveNumber,
+                Self.spectrum[4].direction * Self.spectrum[4].waveNumber,
+            ]
+            let sines = [sin(phases[0]), sin(phases[1]), sinC, sinD, sinE]
+            let cosines = [cosA, cosB, cosC, cosD, cosE]
+            var height: Float = 0
+            var shaderSlope = SIMD2<Float>.zero
+            for index in Self.spectrum.indices {
+                height += sines[index] * Self.spectrum[index].amplitude
+                shaderSlope += phaseGradients[index]
+                    * (cosines[index] * Self.spectrum[index].amplitude)
             }
 
             let edge = edgeFade(for: localP)

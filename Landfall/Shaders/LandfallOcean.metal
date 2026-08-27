@@ -63,30 +63,50 @@ static inline LandfallWaveSample landfallSampleWaves(float2 p, float time) {
     constexpr float2 dirC = float2(0.906, 0.423);
     constexpr float2 dirD = float2(-0.259, 0.966);
     constexpr float2 dirE = float2(0.643, -0.766);
-    float phaseA = dot(p, dirA) * 0.105 - time * 0.42;
-    float phaseB = dot(p, dirB) * 0.155 - time * 0.36 + 1.70;
+    float basePhaseA = dot(p, dirA) * 0.105 - time * 0.42;
+    float basePhaseB = dot(p, dirB) * 0.155 - time * 0.36 + 1.70;
     float phaseC = dot(p, dirC) * 0.340 - time * 0.78 + 0.45;
     float phaseD = dot(p, dirD) * 0.720 - time * 1.22 + 2.10;
     float phaseE = dot(p, dirE) * 1.250 - time * 1.68 + 0.90;
+    float sinC = sin(phaseC);
+    float sinD = sin(phaseD);
+    float sinE = sin(phaseE);
+    float phaseA = basePhaseA + sinC * 0.34 + sinD * 0.10;
+    float phaseB = basePhaseB - sinD * 0.26 + sinE * 0.08;
+    float cosA = cos(phaseA);
+    float cosB = cos(phaseB);
+    float cosC = cos(phaseC);
+    float cosD = cos(phaseD);
+    float cosE = cos(phaseE);
 
     float height = (
         sin(phaseA) * 0.150
         + sin(phaseB) * 0.090
-        + sin(phaseC) * 0.035
-        + sin(phaseD) * 0.014
-        + sin(phaseE) * 0.005
+        + sinC * 0.035
+        + sinD * 0.014
+        + sinE * 0.005
     ) * calm;
+    float2 gradientA = (
+        dirA * 0.105
+        + dirC * (cosC * 0.340 * 0.34)
+        + dirD * (cosD * 0.720 * 0.10)
+    );
+    float2 gradientB = (
+        dirB * 0.155
+        - dirD * (cosD * 0.720 * 0.26)
+        + dirE * (cosE * 1.250 * 0.08)
+    );
     float2 slope = (
-        dirA * (cos(phaseA) * 0.150 * 0.105)
-        + dirB * (cos(phaseB) * 0.090 * 0.155)
-        + dirC * (cos(phaseC) * 0.035 * 0.340)
-        + dirD * (cos(phaseD) * 0.014 * 0.720)
-        + dirE * (cos(phaseE) * 0.005 * 1.250)
+        gradientA * (cosA * 0.150)
+        + gradientB * (cosB * 0.090)
+        + dirC * (cosC * 0.035 * 0.340)
+        + dirD * (cosD * 0.014 * 0.720)
+        + dirE * (cosE * 0.005 * 1.250)
     ) * calm;
     float2 horizontal = (
-        dirA * (cos(phaseA) * 0.150 * 0.62)
-        + dirB * (cos(phaseB) * 0.090 * 0.54)
-        + dirC * (cos(phaseC) * 0.035 * 0.38)
+        dirA * (cosA * 0.150 * 0.62)
+        + dirB * (cosB * 0.090 * 0.54)
+        + dirC * (cosC * 0.035 * 0.38)
     ) * calm;
     return {height, slope, horizontal};
 }

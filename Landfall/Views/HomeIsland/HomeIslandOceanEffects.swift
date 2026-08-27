@@ -106,16 +106,20 @@ enum HomeIslandOceanEffects {
     float2 dirC = float2(0.906, 0.423);
     float2 dirD = float2(-0.259, 0.966);
     float2 dirE = float2(0.643, -0.766);
-    float phaseA = dot(p, dirA) * 0.105 - uTime * 0.42;
-    float phaseB = dot(p, dirB) * 0.155 - uTime * 0.36 + 1.70;
+    float basePhaseA = dot(p, dirA) * 0.105 - uTime * 0.42;
+    float basePhaseB = dot(p, dirB) * 0.155 - uTime * 0.36 + 1.70;
     float phaseC = dot(p, dirC) * 0.340 - uTime * 0.78 + 0.45;
     float phaseD = dot(p, dirD) * 0.720 - uTime * 1.22 + 2.10;
     float phaseE = dot(p, dirE) * 1.250 - uTime * 1.68 + 0.90;
-    float sinA = sin(phaseA);
-    float sinB = sin(phaseB);
     float sinC = sin(phaseC);
     float sinD = sin(phaseD);
     float sinE = sin(phaseE);
+    // Cross seas bend the long swells without adding another wave component.
+    // This avoids evenly spaced horizon bands while keeping motion coherent.
+    float phaseA = basePhaseA + sinC * 0.34 + sinD * 0.10;
+    float phaseB = basePhaseB - sinD * 0.26 + sinE * 0.08;
+    float sinA = sin(phaseA);
+    float sinB = sin(phaseB);
     float cosA = cos(phaseA);
     float cosB = cos(phaseB);
     float cosC = cos(phaseC);
@@ -128,9 +132,19 @@ enum HomeIslandOceanEffects {
         + sinD * 0.014
         + sinE * 0.005
     ) * calm;
+    float2 gradientA = (
+        dirA * 0.105
+        + dirC * (cosC * 0.340 * 0.34)
+        + dirD * (cosD * 0.720 * 0.10)
+    );
+    float2 gradientB = (
+        dirB * 0.155
+        - dirD * (cosD * 0.720 * 0.26)
+        + dirE * (cosE * 1.250 * 0.08)
+    );
     float2 slope = (
-        dirA * (cosA * 0.150 * 0.105)
-        + dirB * (cosB * 0.090 * 0.155)
+        gradientA * (cosA * 0.150)
+        + gradientB * (cosB * 0.090)
         + dirC * (cosC * 0.035 * 0.340)
         + dirD * (cosD * 0.014 * 0.720)
         + dirE * (cosE * 0.005 * 1.250)
