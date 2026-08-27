@@ -1486,7 +1486,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 let sailor = arrivalBoatNavigator
                 sailor?.removeFromParentNode()
 
-                let replacement = VoyageSceneKit.makeBoatModel(parts)
+                let replacement = VoyageSceneKit.makeBoatModel(
+                    parts,
+                    seaBounce: HomeIslandOceanEffects.Appearance.daylight.sea
+                )
                 if let sailor {
                     if let anchor = replacement.childNode(
                         withName: "Navigator_Anchor",
@@ -1870,7 +1873,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
             let bob = SCNNode()
             bob.name = "home-island-arrival-bob"
-            let boat = VoyageSceneKit.makeBoatModel(BoatCustomization.currentParts)
+            let boat = VoyageSceneKit.makeBoatModel(
+                BoatCustomization.currentParts,
+                seaBounce: HomeIslandOceanEffects.Appearance.daylight.sea
+            )
             // The vessel now lies alongside the low float rather than pointing
             // under the high pier. Its customized beam determines the final
             // clearance, while the raised waterline keeps both decks close
@@ -2399,7 +2405,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
             // Presence does not carry another member's customization. Use the
             // neutral fleet boat instead of incorrectly borrowing this
             // observer's selected sail color.
-            let boat = VoyageSceneKit.makeBoatModel(BoatParts.default)
+            let boat = VoyageSceneKit.makeBoatModel(
+                BoatParts.default,
+                seaBounce: HomeIslandOceanEffects.Appearance.daylight.sea
+            )
             let sailor = PhoenixNavigator.makeNavigatorNode(palette: .default)
             sailor.name = "home-island-remote-boat-navigator:\(playerID)"
             sailor.scale = SCNVector3(
