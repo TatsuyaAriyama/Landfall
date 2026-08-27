@@ -447,6 +447,34 @@ static inline half4 landfallShadeOcean(
         max(rippleVisibilityB, rippleVisibilityC)
     );
     macroVisibility *= mix(0.58, 1.0, midField);
+    // Projected long swells collapse into coherent horizontal stripes before
+    // their geometry is truly undersampled. Fade their lighting contribution
+    // earlier than the surface itself while retaining filtered micro normals.
+    float longWaveVisibility = macroVisibility * mix(0.24, 1.0, midField);
+    float3 cameraVector = in.cameraPosition - in.worldPosition;
+    float cameraDistance = length(cameraVector);
+    float3 viewDirection = cameraVector / max(cameraDistance, 0.001);
+    float viewElevation = saturate(viewDirection.y);
+    float grazingVisibility = smoothstep(0.04, 0.26, viewElevation);
+    float subjectDistance = ocean.boatPresence > 0.5
+        ? length(p - ocean.boatPosition)
+        : normalizedViewRange * surfaceRadius;
+    float detailFadeStart = ocean.boatPresence > 0.5
+        ? 2.5
+        : surfaceRadius * 0.48;
+    float detailFadeEnd = ocean.boatPresence > 0.5
+        ? 14.0
+        : surfaceRadius * 0.92;
+    float distanceVisibility = 1.0 - smoothstep(
+        detailFadeStart,
+        detailFadeEnd,
+        subjectDistance
+    );
+    float sampledBroadVisibility = 1.0 - smoothstep(0.35, 1.20, pixelFootprint);
+    float sampledDetailVisibility = 1.0 - smoothstep(0.16, 0.62, pixelFootprint);
+    float reflectedNormalVisibility = longWaveVisibility
+        * distanceVisibility
+        * sampledBroadVisibility;
     LandfallBoatFrame boat = landfallBoatFrame(p, ocean);
     LandfallWakeSample wake = landfallSampleWake(ocean, boat);
     LandfallHullSample hull = landfallSampleHullContact(in.height, ocean, boat);
@@ -458,6 +486,7 @@ static inline half4 landfallShadeOcean(
     float rippleC = dot(p, float2(0.225, 0.974)) * 4.85
         - ocean.time * 2.05 + rippleWarp * 0.52;
     float2 capillarySlope = float2(0.0);
+    float capillaryFacetRadiance = 0.0;
     if (detailQuality > 0.75) {
         float visibility = 1.0 - smoothstep(0.14, 0.48, pixelFootprint * 8.4);
         constexpr float2 capillaryDirectionA = float2(-0.952, 0.306);
@@ -476,6 +505,17 @@ static inline half4 landfallShadeOcean(
             capillaryDirectionA * (cos(rippleD) * 0.0044)
             + capillaryDirectionB * (cos(rippleE) * 0.0032)
         ) * visibility * tierBlend * interference * nearRippleVisibility;
+        float capillaryGroup = 0.5 + 0.5 * sin(
+            dot(p, float2(0.673, -0.740)) * 1.17
+                - ocean.time * 0.38 + sin(rippleD * 0.21) * 1.35
+        );
+        float groupEnvelope = mix(
+            0.16,
+            1.0,
+            smoothstep(0.30, 0.78, capillaryGroup)
+        );
+        capillaryFacetRadiance = sin(rippleD) * sin(rippleE)
+            * groupEnvelope * visibility * tierBlend;
     }
     float2 detailSlope = (
         float2(0.829, 0.559) * (cos(rippleA) * 0.032 * rippleVisibilityA)
@@ -485,13 +525,16 @@ static inline half4 landfallShadeOcean(
     ) * ocean.microNormalScale * mix(0.72, 1.14, nearField);
     detailSlope += wake.slope * macroVisibility * mix(0.76, 1.0, detailQuality);
     detailSlope += hull.slope * macroVisibility;
+    float reflectionDetailGain = mix(1.20, 2.60, nearField);
     float3 detailedNormal = normalize(
-        in.worldNormal + float3(-detailSlope.x, 0.0, detailSlope.y)
+        in.worldNormal
+            + float3(-detailSlope.x, 0.0, detailSlope.y)
+                * reflectionDetailGain
     );
     float3 normal = normalize(mix(
         float3(0.0, 1.0, 0.0),
         detailedNormal,
-        mix(0.38, 1.0, macroVisibility)
+        mix(0.04, 1.0, reflectedNormalVisibility)
     ));
 
     float distanceFromIsland = length(float2(p.x * 0.72, p.y));
@@ -528,18 +571,22 @@ static inline half4 landfallShadeOcean(
     float underwaterScatter = exp(-waterDepth * 0.16);
     color += ocean.shallowColor * underwaterScatter * 0.12;
 
-    float2 shadedSlope = in.slope * mix(0.30, 1.0, macroVisibility)
-        + detailSlope * 2.2;
+    float detailColorGain = mix(
+        0.06,
+        0.85,
+        nearField * distanceVisibility * sampledDetailVisibility
+    );
+    float2 shadedSlope = in.slope * mix(0.05, 1.0, reflectedNormalVisibility)
+        + detailSlope * detailColorGain;
     float directionalShade = saturate(0.50 + dot(shadedSlope, float2(-5.2, 6.4)));
     color *= 0.82 + directionalShade * 0.32;
 
     float trough = 1.0 - smoothstep(-0.15, 0.005, in.height);
     float crest = smoothstep(0.045, 0.180, in.height);
-    float elevationVisibility = mix(0.24, 1.0, macroVisibility);
+    float elevationVisibility = mix(0.04, 1.0, reflectedNormalVisibility);
     color = mix(color, ocean.deepColor, trough * 0.16 * elevationVisibility);
     color = mix(color, ocean.shallowColor, crest * 0.14 * elevationVisibility);
 
-    float3 viewDirection = normalize(in.cameraPosition - in.worldPosition);
     float fresnel = 0.025 + 0.975 * pow(1.0 - saturate(dot(normal, viewDirection)), 5.0);
     float3 reflectionDirection = reflect(-viewDirection, normal);
     float skyHeight = saturate(reflectionDirection.y * 0.72 + 0.36);
@@ -561,7 +608,7 @@ static inline half4 landfallShadeOcean(
     );
     float horizonHaze = 1.0 - smoothstep(0.02, 0.34, abs(reflectionDirection.y));
     reflectedSky = mix(reflectedSky, ocean.horizonColor * 1.06, horizonHaze * 0.28);
-    color = mix(color, reflectedSky, 0.12 + fresnel * 0.64);
+    color = mix(color, reflectedSky, 0.04 + fresnel * 0.34);
 
     // A real water surface catches the bright horizon in narrow, broken facets.
     // Let the normal field form that ribbon, then widen it by a pixel derivative
@@ -574,7 +621,8 @@ static inline half4 landfallShadeOcean(
     );
     float ribbonVisibility = rippleVisibility
         * mix(0.30, 1.0, nearField)
-        * (1.0 - horizonField * 0.72);
+        * (1.0 - horizonField * 0.72)
+        * mix(0.06, 1.0, grazingVisibility);
     color = mix(
         color,
         ocean.horizonColor * 1.055,
@@ -589,38 +637,36 @@ static inline half4 landfallShadeOcean(
     float sunwardFacet = saturate(0.5 + dot(in.slope, sunAcrossWater) * 9.4);
     float facetLift = smoothstep(0.53, 0.74, sunwardFacet);
     float facetShade = 1.0 - smoothstep(0.27, 0.48, sunwardFacet);
-    float facetVisibility = mix(0.42, 1.0, macroVisibility)
-        * (1.0 - horizonField * 0.72);
+    float facetVisibility = mix(0.08, 1.0, reflectedNormalVisibility)
+        * (1.0 - horizonField * 0.84)
+        * sampledBroadVisibility;
     float3 facetSky = mix(ocean.horizonColor, ocean.skyColor, 0.32);
     color = mix(color, facetSky, facetLift * facetVisibility * 0.120);
     color = mix(color, ocean.deepColor, facetShade * facetVisibility * 0.085);
 
-    // Preserve the fine normal field in color as well as in specular response.
-    // These facets borrow the same environment colors and light direction as
-    // the broad waves; no second wave/noise pattern is introduced here.
+    // Preserve the fine normal field in color as well as in reflection.
     float microSlopeLength = length(detailSlope);
-    float2 microSlopeDirection = detailSlope / max(microSlopeLength, 0.001);
-    float microSunwardFacet = saturate(
-        0.5 + dot(microSlopeDirection, sunAcrossWater) * 0.5
-    );
-    float microFacetLift = smoothstep(0.54, 0.76, microSunwardFacet);
-    float microFacetShade = 1.0 - smoothstep(0.24, 0.46, microSunwardFacet);
     float microFacetVisibility = rippleVisibility
-        * mix(0.34, 1.0, nearField)
+        * nearField * nearField
         * (1.0 - horizonField * 0.96)
-        * smoothstep(0.004, 0.035, microSlopeLength);
-    float microFacetRadiance = (microSunwardFacet - 0.5) * 2.0;
-    color *= 1.0 + microFacetRadiance * microFacetVisibility * 0.21;
-    color = mix(
-        color,
-        facetSky,
-        microFacetLift * microFacetVisibility * 0.028
+        * distanceVisibility
+        * sampledDetailVisibility
+        * smoothstep(0.0015, 0.024, microSlopeLength);
+    // Intersecting ripples form short facets, not full sinusoidal bands. Build
+    // their radiance from the same normal phases so the light stays attached
+    // to the moving surface while two directions break each other's stripes.
+    float broadFacetRadiance = clamp(
+        sin(rippleA) * sin(rippleB) * 0.72
+            + sin(rippleB - rippleC) * 0.28,
+        -1.0,
+        1.0
     );
-    color = mix(
-        color,
-        ocean.deepColor,
-        microFacetShade * microFacetVisibility * 0.022
+    float microFacetRadiance = mix(
+        broadFacetRadiance,
+        capillaryFacetRadiance,
+        smoothstep(0.78, 1.0, detailQuality) * nearField * 0.92
     );
+    color *= 1.0 + microFacetRadiance * microFacetVisibility * 0.16;
 
     float3 halfVector = normalize(viewDirection + normalize(ocean.sunDirection));
     float sunFacing = max(dot(normal, halfVector), 0.0);
@@ -751,7 +797,13 @@ static inline half4 landfallShadeOcean(
     // the finite mesh. Leaving even a small amount of body color at the final
     // row exposes the plane as a straight horizontal cut.
     float farAtmosphere = smoothstep(0.72, 0.97, normalizedViewRange);
-    float samplingHaze = (1.0 - macroVisibility) * 0.08;
+    float samplingHaze = max(
+        (1.0 - longWaveVisibility) * 0.10,
+        max(
+            (1.0 - sampledBroadVisibility) * 0.14,
+            (1.0 - distanceVisibility) * 0.14
+        )
+    );
     float atmosphericHaze = saturate(farAtmosphere + samplingHaze);
     color = 1.0 - exp(-max(color, 0.0) * 1.16);
     color = mix(color, sqrt(max(color, 0.0)), 0.07);

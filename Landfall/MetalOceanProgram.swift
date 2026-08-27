@@ -48,7 +48,7 @@ enum MetalOceanProgram {
               MetalRenderingProfile.current.supportsNativeOceanProgram,
               let device = MTLCreateSystemDefaultDevice(),
               let library = MetalOceanShaderLibrary.makeLibrary(on: device),
-              MemoryLayout<Uniforms>.stride == 240 else {
+              MemoryLayout<Uniforms>.stride == 256 else {
             return nil
         }
 
