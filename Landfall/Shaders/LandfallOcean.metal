@@ -55,6 +55,12 @@ struct LandfallWaveSample {
     float2 horizontal;
 };
 
+struct LandfallWakeSample {
+    float disturbance;
+    float aeration;
+    float2 slope;
+};
+
 static inline LandfallWaveSample landfallSampleWaves(
     float2 p,
     float time,
@@ -121,6 +127,78 @@ static inline LandfallWaveSample landfallSampleWaves(
     return {height, slope, horizontal};
 }
 
+static inline LandfallWakeSample landfallSampleWake(
+    float2 p,
+    constant LandfallOceanUniforms& ocean)
+{
+    if (ocean.boatPresence <= 0.5 || ocean.boatSpeed <= 0.08) {
+        return {0.0, 0.0, float2(0.0)};
+    }
+
+    float2 heading = ocean.boatHeading / max(length(ocean.boatHeading), 0.001);
+    float2 across = float2(-heading.y, heading.x);
+    float halfHullLength = max(ocean.boatSize.x * 0.5, 0.001);
+    float originOffset = max(halfHullLength * 0.72, 0.18);
+    float2 fromWake = p - (ocean.boatPosition - heading * originOffset);
+    float aft = -dot(fromWake, heading);
+    float lateral = dot(fromWake, across);
+    float strength = smoothstep(0.08, 1.60, ocean.boatSpeed);
+    float wakeLength = mix(1.6, 3.6, strength);
+    if (aft <= 0.0 || aft >= wakeLength) {
+        return {0.0, 0.0, float2(0.0)};
+    }
+
+    float age = saturate(aft / wakeLength);
+    float remaining = 1.0 - age;
+    float lengthFade = smoothstep(0.04, 0.38, aft) * remaining * remaining;
+    float flowPhase = aft * 1.35 + lateral * 1.9 - ocean.time * 0.62;
+    float centerDrift = sin(flowPhase) * 0.5 * mix(0.04, 0.10, age);
+    float wakeWidth = mix(0.10, 0.16, strength) + aft * 0.018;
+    float centerChurn = 1.0 - smoothstep(
+        wakeWidth,
+        wakeWidth + 0.14,
+        abs(lateral - centerDrift)
+    );
+    float centerTail = 1.0 - smoothstep(0.16, 0.52, age);
+    float centerBreak = smoothstep(
+        0.34,
+        0.82,
+        0.5 + 0.5 * sin(aft * 5.7 + lateral * 3.8 - ocean.time * 2.1)
+    );
+    centerChurn *= centerTail * (0.30 + centerBreak * 0.70);
+
+    float armCenter = 0.07 + aft * 0.22;
+    float armDistance = abs(abs(lateral) - armCenter);
+    float armWidth = mix(0.035, 0.080, age);
+    float divergentArms = 1.0 - smoothstep(
+        armWidth,
+        armWidth + 0.105,
+        armDistance
+    );
+    float armPhase = aft * 5.1 - abs(lateral) * 7.3 - ocean.time * 1.18;
+    float armBreak = 0.5 + 0.5 * sin(armPhase);
+    divergentArms *= smoothstep(0.04, 0.18, aft)
+        * (0.32 + smoothstep(0.30, 0.84, armBreak) * 0.68);
+
+    float disturbance = max(centerChurn * 0.58, divergentArms * 0.84)
+        * lengthFade * strength;
+    float turbulencePhase = aft * 2.35 + lateral * 4.7
+        + sin(aft * 0.83) * 1.15 - ocean.time * 0.91;
+    float turbulence = 0.5 + 0.5 * sin(turbulencePhase);
+    float bubbleCells = (0.5 + 0.5 * sin(turbulencePhase * 1.83 + lateral * 5.1))
+        * (0.5 + 0.5 * cos(armPhase * 1.37 - aft * 3.2));
+    float bubbleBreakup = smoothstep(0.30, 0.76, bubbleCells);
+    float aeration = disturbance
+        * mix(0.06, 0.70, bubbleBreakup)
+        * mix(0.72, 1.0, turbulence);
+    float lateralSign = lateral < 0.0 ? -1.0 : 1.0;
+    float2 slope = (
+        across * lateralSign * cos(armPhase) * 0.100
+        + heading * sin(turbulencePhase) * 0.055
+    ) * disturbance;
+    return {disturbance, aeration, slope};
+}
+
 vertex LandfallOceanVertexOut landfallOceanVertex(
     LandfallOceanVertexIn in [[stage_in]],
     constant SCNSceneBuffer& scn_frame [[buffer(0)]],
@@ -185,6 +263,7 @@ static inline half4 landfallShadeOcean(
     float horizonField = smoothstep(0.60, 0.98, normalizedViewRange);
     rippleVisibility *= mix(0.34, 1.0, nearField);
     macroVisibility *= mix(0.58, 1.0, midField);
+    LandfallWakeSample wake = landfallSampleWake(p, ocean);
     float rippleWarp = sin(dot(p, float2(0.173, -0.241)) - ocean.time * 0.31);
     float rippleA = dot(p, float2(0.829, 0.559)) * 1.82
         - ocean.time * 1.18 + rippleWarp * 0.28;
@@ -207,6 +286,7 @@ static inline half4 landfallShadeOcean(
         + float2(0.225, 0.974) * (cos(rippleC) * 0.010)
         + capillarySlope
     ) * ocean.microNormalScale * rippleVisibility * mix(0.72, 1.14, nearField);
+    detailSlope += wake.slope * macroVisibility * mix(0.76, 1.0, detailQuality);
     float3 detailedNormal = normalize(
         in.worldNormal + float3(-detailSlope.x, 0.0, detailSlope.y)
     );
@@ -398,56 +478,12 @@ static inline half4 landfallShadeOcean(
         color = mix(color, ocean.lightColor, meniscus * meniscusBreak * 0.10);
     }
 
-    if (ocean.boatSpeed > 0.08) {
-        float wakeOriginOffset = max(halfHullLength * 0.72, 0.18);
-        float2 fromWake = p - (ocean.boatPosition - boatHeading * wakeOriginOffset);
-        float aft = -dot(fromWake, boatHeading);
-        float lateral = dot(fromWake, float2(-boatHeading.y, boatHeading.x));
-        float strength = smoothstep(0.08, 1.60, ocean.boatSpeed);
-        float wakeLength = mix(1.6, 3.6, strength);
-        if (aft > 0.0 && aft < wakeLength) {
-            float age = saturate(aft / wakeLength);
-            float remaining = 1.0 - age;
-            float lengthFade = smoothstep(0.04, 0.38, aft) * remaining * remaining;
-            float flow = 0.5 + 0.5 * sin(aft * 1.35 + lateral * 1.9 - ocean.time * 0.62);
-            float centerDrift = (flow - 0.5) * mix(0.04, 0.10, age);
-            float wakeWidth = mix(0.10, 0.16, strength) + aft * 0.018;
-            float centerChurn = 1.0 - smoothstep(
-                wakeWidth,
-                wakeWidth + 0.14,
-                abs(lateral - centerDrift)
-            );
-            float centerTail = 1.0 - smoothstep(0.16, 0.52, age);
-            float centerBreak = smoothstep(
-                0.34,
-                0.82,
-                0.5 + 0.5 * sin(aft * 5.7 + lateral * 3.8 - ocean.time * 2.1)
-            );
-            centerChurn *= centerTail * (0.30 + centerBreak * 0.70);
-            float armCenter = 0.07 + aft * 0.22;
-            float armDistance = abs(abs(lateral) - armCenter);
-            float armWidth = mix(0.035, 0.080, age);
-            float divergentArms = 1.0 - smoothstep(
-                armWidth,
-                armWidth + 0.105,
-                armDistance
-            );
-            float armBreak = 0.5 + 0.5 * sin(
-                aft * 5.1 - abs(lateral) * 7.3 - ocean.time * 1.18
-            );
-            divergentArms *= smoothstep(0.04, 0.18, aft)
-                * (0.32 + smoothstep(0.30, 0.84, armBreak) * 0.68);
-            float disturbance = max(
-                centerChurn * 0.58,
-                divergentArms * 0.84
-            ) * lengthFade * strength;
-            float turbulence = 0.5 + 0.5 * sin(
-                aft * 2.35 + lateral * 4.7
-                    + sin(aft * 0.83) * 1.15 - ocean.time * 0.91
-            );
-            float aeration = disturbance * mix(0.34, 0.72, turbulence);
-            color = mix(color, ocean.lightColor, aeration * 0.22);
-        }
+    if (wake.disturbance > 0.0) {
+        // Disturbed water first exposes a little shallow body color; only the
+        // most aerated fragments become foam. The same sample already perturbed
+        // the normal above, so the wake bends reflections instead of sitting on top.
+        color = mix(color, ocean.shallowColor, wake.disturbance * 0.020);
+        color = mix(color, ocean.lightColor, wake.aeration * 0.15);
     }
 
     // Aerial perspective must finish at the same radiance as the sky behind
