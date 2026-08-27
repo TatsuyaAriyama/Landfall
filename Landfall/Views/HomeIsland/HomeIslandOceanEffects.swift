@@ -422,7 +422,8 @@ enum HomeIslandOceanEffects {
         material.isDoubleSided = true
         if let nativeProgram = MetalOceanProgram.make(
             layout: layout,
-            appearance: appearance
+            appearance: appearance,
+            islandScale: islandScale
         ) {
             material.program = nativeProgram
         } else {

@@ -20,12 +20,13 @@ enum MetalOceanProgram {
 
     static func make(
         layout: HomeIslandOceanEffects.Layout,
-        appearance: HomeIslandOceanEffects.Appearance
+        appearance: HomeIslandOceanEffects.Appearance,
+        islandScale: Float
     ) -> SCNProgram? {
         guard isRolloutEnabled,
               let device = MTLCreateSystemDefaultDevice(),
               let library = MetalOceanShaderLibrary.makeLibrary(on: device),
-              MemoryLayout<Uniforms>.stride == 160 else {
+              MemoryLayout<Uniforms>.stride == 224 else {
             return nil
         }
 
@@ -45,7 +46,14 @@ enum MetalOceanProgram {
             sunStrength: appearance.sunStrength,
             surfaceSize: SIMD2(Float(layout.width), Float(layout.depth)),
             coordinateOffset: SIMD2(layout.centerX, 0),
-            microNormalScale: MetalRenderingProfile.current.oceanMicroNormalScale
+            microNormalScale: MetalRenderingProfile.current.oceanMicroNormalScale,
+            lightColor: linearColor(appearance.light),
+            fogColor: linearColor(appearance.fog),
+            shoreline: layout.includesShoreline ? 1 : 0,
+            islandScale: islandScale,
+            boatPosition: .zero,
+            boatHeading: SIMD2(0, 1),
+            boatSpeed: 0
         )
         let program = SCNProgram()
         program.library = library
@@ -54,9 +62,17 @@ enum MetalOceanProgram {
         program.isOpaque = true
         program.delegate = diagnostics
         program.handleBinding(ofBufferNamed: "ocean", frequency: .perNode) {
-            stream, _, _, _ in
+            stream, _, shadable, _ in
             var uniforms = baseUniforms
             uniforms.time = HomeIslandOceanEffects.currentTime
+            if let material = shadable as? SCNMaterial {
+                uniforms.boatPosition = vector2(named: "uBoatPosition", from: material)
+                    ?? uniforms.boatPosition
+                uniforms.boatHeading = vector2(named: "uBoatHeading", from: material)
+                    ?? uniforms.boatHeading
+                uniforms.boatSpeed = (material.value(forKey: "uBoatSpeed") as? NSNumber)?.floatValue
+                    ?? uniforms.boatSpeed
+            }
             withUnsafeBytes(of: &uniforms) { bytes in
                 guard let address = bytes.baseAddress else { return }
                 stream.writeBytes(address, count: bytes.count)
@@ -68,6 +84,11 @@ enum MetalOceanProgram {
     private static func linearColor(_ rgb: UInt) -> SIMD3<Float> {
         let color = HomeIslandOceanEffects.linearColorVector(rgb)
         return SIMD3(color.x, color.y, color.z)
+    }
+
+    private static func vector2(named key: String, from material: SCNMaterial) -> SIMD2<Float>? {
+        guard let value = material.value(forKey: key) as? SCNVector3 else { return nil }
+        return SIMD2(value.x, value.y)
     }
 
     private struct Uniforms {
@@ -83,6 +104,13 @@ enum MetalOceanProgram {
         var surfaceSize: SIMD2<Float>
         var coordinateOffset: SIMD2<Float>
         var microNormalScale: Float
+        var lightColor: SIMD3<Float>
+        var fogColor: SIMD3<Float>
+        var shoreline: Float
+        var islandScale: Float
+        var boatPosition: SIMD2<Float>
+        var boatHeading: SIMD2<Float>
+        var boatSpeed: Float
     }
 
     private final class Diagnostics: NSObject, SCNProgramDelegate {

@@ -26,6 +26,13 @@ struct LandfallOceanUniforms {
     float2 surfaceSize;
     float2 coordinateOffset;
     float microNormalScale;
+    float3 lightColor;
+    float3 fogColor;
+    float shoreline;
+    float islandScale;
+    float2 boatPosition;
+    float2 boatHeading;
+    float boatSpeed;
 };
 
 struct LandfallOceanVertexOut {
@@ -136,11 +143,40 @@ fragment half4 landfallOceanFragment(
 
     float distanceFromIsland = length(float2(p.x * 0.72, p.y));
     float waterDepth = 5.0 + smoothstep(0.0, 90.0, distanceFromIsland) * 13.0;
+    float shoreAngle = 0.0;
+    float shoreDistance = 1000.0;
+    if (ocean.shoreline > 0.5) {
+        shoreAngle = atan2(
+            p.y / (9.10 * ocean.islandScale) + 0.00001,
+            p.x / (13.10 * ocean.islandScale) + 0.00001
+        );
+        float shorelineRipple = sin(shoreAngle * 3.0 + 0.45) * 0.045
+            + sin(shoreAngle * 7.0 - 0.82) * 0.026
+            + sin(shoreAngle * 11.0 + 1.30) * 0.012;
+        float shorelineShift = sin(shoreAngle * 5.0 + 0.91) * 0.018;
+        float shorelineScale = 0.955 * (1.0 + shorelineRipple + shorelineShift);
+        float ellipseRadius = length(float2(
+            p.x / (13.10 * ocean.islandScale),
+            p.y / (9.10 * ocean.islandScale)
+        ));
+        shoreDistance = (ellipseRadius - shorelineScale) * 10.8 * ocean.islandScale;
+        waterDepth = max(0.12, shoreDistance * 0.72 + 0.12);
+    }
+
     float3 transmission = exp(-float3(0.155, 0.061, 0.027) * min(waterDepth, 24.0));
     float3 filteredWater = ocean.deepColor + (ocean.shallowColor - ocean.deepColor) * transmission;
     float3 body = mix(ocean.shallowColor, ocean.seaColor, smoothstep(0.35, 4.6, waterDepth));
     body = mix(body, ocean.deepColor, smoothstep(4.0, 20.0, waterDepth) * 0.82);
     float3 color = mix(body, filteredWater, 0.46);
+
+    float2 shadedSlope = in.slope + detailSlope * 2.2;
+    float directionalShade = saturate(0.50 + dot(shadedSlope, float2(-5.2, 6.4)));
+    color *= 0.82 + directionalShade * 0.32;
+
+    float trough = 1.0 - smoothstep(-0.15, 0.005, in.height);
+    float crest = smoothstep(0.045, 0.180, in.height);
+    color = mix(color, ocean.deepColor, trough * 0.16);
+    color = mix(color, ocean.shallowColor, crest * 0.14);
 
     float3 cameraPosition = frame.inverseViewTransform[3].xyz;
     float3 viewDirection = normalize(cameraPosition - in.worldPosition);
@@ -154,10 +190,76 @@ fragment half4 landfallOceanFragment(
     float sunFacing = max(dot(normal, halfVector), 0.0);
     float sunBroad = pow(sunFacing, 48.0);
     float sunCore = pow(sunFacing, 192.0);
-    color += ocean.sunColor * ocean.sunStrength * (sunBroad * 0.015 + sunCore * 0.18);
+    float glintA = 0.5 + 0.5 * sin(
+        dot(p, float2(1.47, -1.91)) + sin(p.y * 0.19) * 1.7 - ocean.time * 1.46
+    );
+    float glintB = 0.5 + 0.5 * sin(
+        dot(p, float2(0.73, 2.31)) + sin(p.x * 0.23) * 1.3 + ocean.time * 1.13
+    );
+    float glintBreakup = 0.02 + 0.98 * smoothstep(0.38, 0.92, glintA * glintB);
+    color += ocean.sunColor * ocean.sunStrength
+        * (sunBroad * 0.015 + sunCore * glintBreakup * 0.32);
 
-    float crest = smoothstep(0.045, 0.180, in.height);
     float crestSteepness = smoothstep(0.028, 0.058, length(in.slope));
-    color = mix(color, float3(0.92, 0.99, 0.97), crest * crestSteepness * 0.38);
+    float crestBreakup = 0.5 + 0.5 * sin(
+        dot(p, float2(0.91, 0.67))
+            + sin(dot(p, float2(-0.21, 0.34))) * 1.8
+            - ocean.time * 0.61
+    );
+    float crestFoam = crest * crestSteepness * smoothstep(0.42, 0.80, crestBreakup);
+    color = mix(color, ocean.lightColor, crestFoam * 0.46);
+
+    if (ocean.shoreline > 0.5) {
+        float wash = 0.18
+            + sin(shoreAngle * 5.0 - ocean.time * 0.58) * 0.055
+            + sin(shoreAngle * 13.0 + ocean.time * 0.37) * 0.024;
+        float primary = 1.0 - smoothstep(0.025, 0.145, abs(shoreDistance - wash));
+        float secondary = 1.0 - smoothstep(
+            0.035,
+            0.180,
+            abs(shoreDistance - wash - 0.48)
+        );
+        float foamBreak = 0.5 + 0.5 * sin(
+            shoreAngle * 23.0 + sin(shoreAngle * 9.0) * 1.6 - ocean.time * 0.84
+        );
+        float foamLace = 0.5 + 0.5 * sin(
+            shoreAngle * 41.0 - sin(shoreAngle * 17.0) * 1.1 + ocean.time * 0.56
+        );
+        float fragments = max(
+            smoothstep(0.38, 0.76, foamBreak),
+            smoothstep(0.68, 0.92, foamLace) * 0.55
+        );
+        float waterSide = smoothstep(-0.03, 0.08, shoreDistance);
+        float shoreFoam = min(primary + secondary * 0.38, 1.0) * fragments * waterSide;
+        color = mix(color, ocean.lightColor, shoreFoam * 0.76);
+    }
+
+    if (ocean.boatSpeed > 0.08) {
+        float2 heading = ocean.boatHeading / max(length(ocean.boatHeading), 0.001);
+        float2 fromWake = p - (ocean.boatPosition - heading * 0.72);
+        float aft = -dot(fromWake, heading);
+        float lateral = dot(fromWake, float2(-heading.y, heading.x));
+        float strength = smoothstep(0.08, 1.60, ocean.boatSpeed);
+        float wakeLength = mix(1.8, 4.2, strength);
+        if (aft > 0.0 && aft < wakeLength) {
+            float age = saturate(aft / wakeLength);
+            float remaining = 1.0 - age;
+            float lengthFade = smoothstep(0.04, 0.38, aft) * remaining * remaining;
+            float flow = 0.5 + 0.5 * sin(aft * 1.35 + lateral * 1.9 - ocean.time * 0.62);
+            float centerDrift = (flow - 0.5) * mix(0.04, 0.10, age);
+            float wakeWidth = mix(0.20, 0.31, strength) + aft * 0.055;
+            float plume = 1.0 - smoothstep(
+                wakeWidth,
+                wakeWidth + 0.34,
+                abs(lateral - centerDrift)
+            );
+            float disturbance = plume * lengthFade * strength;
+            float3 wakeWater = mix(ocean.shallowColor, ocean.deepColor, 0.48 + flow * 0.18);
+            color = mix(color, wakeWater, disturbance * 0.065);
+        }
+    }
+
+    float horizon = smoothstep(58.0, 90.0, distanceFromIsland);
+    color = mix(color, ocean.fogColor, horizon * 0.18);
     return half4(half3(saturate(color)), 1.0h);
 }
