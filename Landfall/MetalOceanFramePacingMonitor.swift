@@ -8,15 +8,25 @@ struct MetalOceanFramePacingMonitor {
     private var previousFrame: TimeInterval?
     private var frameCount = 0
     private var slowFrameCount = 0
+    private var hasSignaledThermalPressure = false
 
     mutating func reset() {
         sampleStart = nil
         previousFrame = nil
         frameCount = 0
         slowFrameCount = 0
+        hasSignaledThermalPressure = false
     }
 
     mutating func observe(at time: TimeInterval) -> Bool {
+        if isUnderSeriousThermalPressure {
+            guard !hasSignaledThermalPressure else { return false }
+            reset()
+            hasSignaledThermalPressure = true
+            return true
+        }
+        hasSignaledThermalPressure = false
+
         guard let previousFrame else {
             sampleStart = time
             self.previousFrame = time
@@ -46,5 +56,19 @@ struct MetalOceanFramePacingMonitor {
         let overloaded = Double(slowFrameCount) / Double(frameCount) >= 0.35
         reset()
         return overloaded
+    }
+
+    private var isUnderSeriousThermalPressure: Bool {
+#if DEBUG
+        if UserDefaults.standard.bool(forKey: "LandfallMetalSimulateThermalPressure") {
+            return true
+        }
+#endif
+        switch ProcessInfo.processInfo.thermalState {
+        case .serious, .critical:
+            return true
+        default:
+            return false
+        }
     }
 }
