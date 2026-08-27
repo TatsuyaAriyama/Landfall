@@ -61,6 +61,14 @@ struct LandfallWakeSample {
     float2 slope;
 };
 
+struct LandfallHullSample {
+    float submergedShadow;
+    float meniscusLight;
+    float reflectedHull;
+    float reflectionBreakup;
+    float2 slope;
+};
+
 static inline LandfallWaveSample landfallSampleWaves(
     float2 p,
     float time,
@@ -199,6 +207,65 @@ static inline LandfallWakeSample landfallSampleWake(
     return {disturbance, aeration, slope};
 }
 
+static inline LandfallHullSample landfallSampleHullContact(
+    float2 p,
+    float waveHeight,
+    constant LandfallOceanUniforms& ocean)
+{
+    if (ocean.boatPresence <= 0.5) {
+        return {0.0, 0.0, 0.0, 0.0, float2(0.0)};
+    }
+
+    float2 heading = ocean.boatHeading / max(length(ocean.boatHeading), 0.001);
+    float2 across = float2(-heading.y, heading.x);
+    float2 fromBoat = p - ocean.boatPosition;
+    float longitudinal = dot(fromBoat, heading);
+    float lateral = dot(fromBoat, across);
+    float halfLength = max(ocean.boatSize.x * 0.5, 0.001);
+    float halfBeam = max(ocean.boatSize.y * 0.5, 0.001);
+    float2 ellipsePosition = float2(
+        longitudinal / halfLength,
+        lateral / halfBeam
+    );
+    float hullDistance = max(length(ellipsePosition), 0.001);
+    float submergedShadow = 1.0 - smoothstep(0.62, 1.20, hullDistance);
+    float meniscus = 1.0 - smoothstep(0.035, 0.18, abs(hullDistance - 1.0));
+    float contactPhase = longitudinal * 8.1 - lateral * 10.7 + ocean.time * 0.34;
+    float meniscusLight = meniscus * (0.72 + 0.28 * sin(contactPhase));
+    float reflectedHull = smoothstep(0.70, 1.02, hullDistance)
+        * (1.0 - smoothstep(1.02, 1.72, hullDistance));
+    float reflectionBreakup = smoothstep(
+        0.28,
+        0.82,
+        0.5 + 0.5 * sin(
+            longitudinal * 5.7 + lateral * 9.3
+                + waveHeight * 18.0 - ocean.time * 0.24
+        )
+    );
+
+    // The normalized ellipse gradient points away from the hull at every angle.
+    // A compact pressure ripple bends the water there, with extra energy at the bow.
+    float2 ellipseGradient = heading
+            * (longitudinal / (halfLength * halfLength * hullDistance))
+        + across * (lateral / (halfBeam * halfBeam * hullDistance));
+    float2 outward = ellipseGradient / max(length(ellipseGradient), 0.001);
+    float speed = smoothstep(0.08, 1.60, ocean.boatSpeed);
+    float bowFacing = smoothstep(-0.18, 0.82, longitudinal / halfLength);
+    float pressurePhase = (hullDistance - 1.0) * 13.0
+        + contactPhase * 0.23 - ocean.time * mix(0.28, 0.72, speed);
+    float pressureStrength = meniscus
+        * mix(0.022, 0.072, speed)
+        * mix(0.58, 1.0, bowFacing);
+    float2 slope = outward * (cos(pressurePhase) * pressureStrength);
+    return {
+        submergedShadow,
+        meniscusLight,
+        reflectedHull,
+        reflectionBreakup,
+        slope
+    };
+}
+
 vertex LandfallOceanVertexOut landfallOceanVertex(
     LandfallOceanVertexIn in [[stage_in]],
     constant SCNSceneBuffer& scn_frame [[buffer(0)]],
@@ -264,6 +331,7 @@ static inline half4 landfallShadeOcean(
     rippleVisibility *= mix(0.34, 1.0, nearField);
     macroVisibility *= mix(0.58, 1.0, midField);
     LandfallWakeSample wake = landfallSampleWake(p, ocean);
+    LandfallHullSample hull = landfallSampleHullContact(p, in.height, ocean);
     float rippleWarp = sin(dot(p, float2(0.173, -0.241)) - ocean.time * 0.31);
     float rippleA = dot(p, float2(0.829, 0.559)) * 1.82
         - ocean.time * 1.18 + rippleWarp * 0.28;
@@ -287,6 +355,7 @@ static inline half4 landfallShadeOcean(
         + capillarySlope
     ) * ocean.microNormalScale * rippleVisibility * mix(0.72, 1.14, nearField);
     detailSlope += wake.slope * macroVisibility * mix(0.76, 1.0, detailQuality);
+    detailSlope += hull.slope * macroVisibility;
     float3 detailedNormal = normalize(
         in.worldNormal + float3(-detailSlope.x, 0.0, detailSlope.y)
     );
@@ -443,39 +512,14 @@ static inline half4 landfallShadeOcean(
         color = mix(color, ocean.lightColor, shoreFoam * 0.76);
     }
 
-    float2 boatHeading = ocean.boatHeading / max(length(ocean.boatHeading), 0.001);
-    float2 fromBoat = p - ocean.boatPosition;
-    float boatLongitudinal = dot(fromBoat, boatHeading);
-    float boatLateral = dot(fromBoat, float2(-boatHeading.y, boatHeading.x));
-    float halfHullLength = max(ocean.boatSize.x * 0.5, 0.001);
-    float halfHullBeam = max(ocean.boatSize.y * 0.5, 0.001);
     if (ocean.boatPresence > 0.5) {
-        float hullDistance = length(float2(
-            boatLongitudinal / halfHullLength,
-            boatLateral / halfHullBeam
-        ));
-        float submergedShadow = 1.0 - smoothstep(0.62, 1.20, hullDistance);
-        float meniscus = 1.0 - smoothstep(0.035, 0.18, abs(hullDistance - 1.0));
-        float meniscusBreak = 0.72 + 0.28 * sin(
-            boatLongitudinal * 8.1 - boatLateral * 10.7 + ocean.time * 0.34
-        );
-        float reflectedHull = smoothstep(0.70, 1.02, hullDistance)
-            * (1.0 - smoothstep(1.02, 1.72, hullDistance));
-        float reflectionBreak = smoothstep(
-            0.28,
-            0.82,
-            0.5 + 0.5 * sin(
-                boatLongitudinal * 5.7 + boatLateral * 9.3
-                    + in.height * 18.0 - ocean.time * 0.24
-            )
-        );
-        color = mix(color, ocean.deepColor, submergedShadow * 0.13);
+        color = mix(color, ocean.deepColor, hull.submergedShadow * 0.13);
         color = mix(
             color,
             ocean.boatReflectionColor,
-            reflectedHull * (0.035 + reflectionBreak * 0.070)
+            hull.reflectedHull * (0.035 + hull.reflectionBreakup * 0.070)
         );
-        color = mix(color, ocean.lightColor, meniscus * meniscusBreak * 0.10);
+        color = mix(color, ocean.lightColor, hull.meniscusLight * 0.10);
     }
 
     if (wake.disturbance > 0.0) {
