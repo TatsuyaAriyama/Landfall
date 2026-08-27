@@ -1064,7 +1064,7 @@ struct DressStudioSceneView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
-        let scene = VoyageSceneKit.makeDressStudioWorld()
+        let scene = VoyageSceneKit.makeDressStudioWorld(nativeMetalRollout: .boatStudio)
         scene.rootNode.addChildNode(VoyageSceneKit.makeBoatStudioSubject(parts: parts))
         scene.rootNode.addChildNode(PhoenixNavigator.makeNavigatorStage())
 

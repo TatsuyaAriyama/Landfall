@@ -2163,7 +2163,7 @@ enum VoyageSceneKit {
     /// 装い専用の夜の海。Web版の Canvas と同じく、船と航海士のどちらを
     /// 表示しても背景・照明・カメラはこの一つの世界を使い続ける。
     static func makeDressStudioWorld(
-        nativeMetalRollout: MetalOceanProgram.RolloutScene = .standard
+        nativeMetalRollout: MetalOceanProgram.RolloutScene
     ) -> SCNScene {
         let oceanAppearance = makeVoyagingOceanAppearance(
             timeOfDay: .night,
