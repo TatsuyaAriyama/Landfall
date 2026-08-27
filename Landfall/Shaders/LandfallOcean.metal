@@ -277,19 +277,34 @@ static inline half4 landfallShadeOcean(
             float lengthFade = smoothstep(0.04, 0.38, aft) * remaining * remaining;
             float flow = 0.5 + 0.5 * sin(aft * 1.35 + lateral * 1.9 - ocean.time * 0.62);
             float centerDrift = (flow - 0.5) * mix(0.04, 0.10, age);
-            float wakeWidth = mix(0.20, 0.31, strength) + aft * 0.055;
-            float plume = 1.0 - smoothstep(
+            float wakeWidth = mix(0.16, 0.25, strength) + aft * 0.045;
+            float centerChurn = 1.0 - smoothstep(
                 wakeWidth,
-                wakeWidth + 0.34,
+                wakeWidth + 0.24,
                 abs(lateral - centerDrift)
             );
-            float disturbance = plume * lengthFade * strength;
+            float armCenter = 0.20 + aft * 0.20;
+            float armDistance = abs(abs(lateral) - armCenter);
+            float armWidth = mix(0.035, 0.080, age);
+            float divergentArms = 1.0 - smoothstep(
+                armWidth,
+                armWidth + 0.105,
+                armDistance
+            );
+            float armBreak = 0.5 + 0.5 * sin(
+                aft * 5.1 - abs(lateral) * 7.3 - ocean.time * 1.18
+            );
+            divergentArms *= 0.42 + smoothstep(0.30, 0.84, armBreak) * 0.58;
+            float disturbance = max(
+                centerChurn * 0.64,
+                divergentArms * 0.88
+            ) * lengthFade * strength;
             float turbulence = 0.5 + 0.5 * sin(
                 aft * 2.35 + lateral * 4.7
                     + sin(aft * 0.83) * 1.15 - ocean.time * 0.91
             );
-            float aeration = disturbance * mix(0.34, 0.62, turbulence);
-            color = mix(color, ocean.lightColor, aeration * 0.18);
+            float aeration = disturbance * mix(0.42, 0.76, turbulence);
+            color = mix(color, ocean.lightColor, aeration * 0.25);
         }
     }
 

@@ -367,8 +367,8 @@ enum HomeIslandOceanEffects {
     }
 
     // Boat uniforms use ocean-plane coordinates: (world X, -world Z). Keep the
-    // wake below foam contrast: it is only a short, continuous veil of aerated
-    // water, never a row of particles or a geometric V.
+    // wake below foam contrast: it is a short veil of aerated water with two
+    // broken divergent arms, never a row of detached particles.
     if (uBoatSpeed > 0.08) {
         float2 heading = uBoatHeading.xy;
         heading /= max(length(heading), 0.001);
@@ -387,19 +387,34 @@ enum HomeIslandOceanEffects {
                 aft * 1.35 + signedLateral * 1.9 - uTime * 0.62
             );
             float centerDrift = (slowFlow - 0.5) * mix(0.04, 0.10, wakeAge);
-            float wakeWidth = mix(0.20, 0.31, wakeStrength) + aft * 0.055;
-            float plume = 1.0 - smoothstep(
+            float wakeWidth = mix(0.16, 0.25, wakeStrength) + aft * 0.045;
+            float centerChurn = 1.0 - smoothstep(
                 wakeWidth,
-                wakeWidth + 0.34,
+                wakeWidth + 0.24,
                 abs(signedLateral - centerDrift)
             );
-            float disturbance = plume * lengthFade * wakeStrength * surfaceEdge;
+            float armCenter = 0.20 + aft * 0.20;
+            float armDistance = abs(abs(signedLateral) - armCenter);
+            float armWidth = mix(0.035, 0.080, wakeAge);
+            float divergentArms = 1.0 - smoothstep(
+                armWidth,
+                armWidth + 0.105,
+                armDistance
+            );
+            float armBreak = 0.5 + 0.5 * sin(
+                aft * 5.1 - abs(signedLateral) * 7.3 - uTime * 1.18
+            );
+            divergentArms *= 0.42 + smoothstep(0.30, 0.84, armBreak) * 0.58;
+            float disturbance = max(
+                centerChurn * 0.64,
+                divergentArms * 0.88
+            ) * lengthFade * wakeStrength * surfaceEdge;
             float turbulence = 0.5 + 0.5 * sin(
                 aft * 2.35 + signedLateral * 4.7
                     + sin(aft * 0.83) * 1.15 - uTime * 0.91
             );
-            float aeration = disturbance * mix(0.34, 0.62, turbulence);
-            col = mix(col, uLight, aeration * 0.18);
+            float aeration = disturbance * mix(0.42, 0.76, turbulence);
+            col = mix(col, uLight, aeration * 0.25);
         }
     }
 
