@@ -342,11 +342,22 @@ static inline half4 landfallShadeOcean(
     float2 capillarySlope = float2(0.0);
     if (detailQuality > 0.75) {
         float visibility = 1.0 - smoothstep(0.14, 0.48, pixelFootprint * 8.4);
-        float rippleD = dot(p, float2(-0.952, 0.306)) * 8.4
+        constexpr float2 capillaryDirectionA = float2(-0.952, 0.306);
+        constexpr float2 capillaryDirectionB = float2(0.391, 0.920);
+        float rippleD = dot(p, capillaryDirectionA) * 8.4
             - ocean.time * 2.72 - rippleWarp * 0.81;
+        float rippleE = dot(p, capillaryDirectionB) * 10.7
+            - ocean.time * 3.16 + rippleWarp * 0.54 - sin(rippleD) * 0.18;
         float tierBlend = smoothstep(0.75, 1.0, detailQuality);
-        capillarySlope = float2(-0.952, 0.306)
-            * (cos(rippleD) * 0.005 * visibility * tierBlend);
+        float interference = mix(
+            0.72,
+            1.0,
+            0.5 + 0.5 * sin(rippleD - rippleE)
+        );
+        capillarySlope = (
+            capillaryDirectionA * (cos(rippleD) * 0.0044)
+            + capillaryDirectionB * (cos(rippleE) * 0.0032)
+        ) * visibility * tierBlend * interference;
     }
     float2 detailSlope = (
         float2(0.829, 0.559) * (cos(rippleA) * 0.032)
@@ -464,6 +475,20 @@ static inline half4 landfallShadeOcean(
         dot(p, float2(0.73, 2.31)) + sin(p.x * 0.23) * 1.3 + ocean.time * 1.13
     );
     float glintBreakup = 0.02 + 0.98 * smoothstep(0.38, 0.92, glintA * glintB);
+    // Ultra lets the same capillary normals that bend the sky reflection gate
+    // the finest sunlight facets. This keeps sparkles attached to real surface
+    // orientation instead of adding an independent decorative noise layer.
+    float capillaryFacing = saturate(
+        0.5 + dot(capillarySlope, sunAcrossWater) * 48.0
+    );
+    float capillaryFootprint = max(fwidth(capillaryFacing), 0.025);
+    float capillarySparkle = smoothstep(
+        0.56 - capillaryFootprint,
+        0.78 + capillaryFootprint,
+        capillaryFacing
+    );
+    float ultraGlintBlend = smoothstep(0.80, 1.0, detailQuality) * nearField;
+    glintBreakup *= mix(1.0, 0.34 + capillarySparkle * 0.66, ultraGlintBlend);
     float glintVisibility = rippleVisibility
         * mix(0.34, 1.0, nearField)
         * (1.0 - horizonField * 0.58);
