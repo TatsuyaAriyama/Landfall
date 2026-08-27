@@ -801,7 +801,7 @@ static inline half4 landfallShadeOcean(
         (1.0 - longWaveVisibility) * 0.10,
         max(
             (1.0 - sampledBroadVisibility) * 0.14,
-            (1.0 - distanceVisibility) * 0.14
+            (1.0 - distanceVisibility) * 0.52
         )
     );
     float atmosphericHaze = saturate(farAtmosphere + samplingHaze);
