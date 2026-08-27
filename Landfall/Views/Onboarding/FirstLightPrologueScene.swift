@@ -323,11 +323,6 @@ private enum FirstLightPrologueSceneFactory {
             ).root
         )
 
-        let horizon = VoyageSceneKit.makeHorizon()
-        horizon.position.z = -38
-        horizon.opacity = 0.52
-        scene.rootNode.addChildNode(horizon)
-
         let stars = VoyageSceneKit.makeStars(count: 220)
         stars.opacity = 0.54
         scene.rootNode.addChildNode(stars)

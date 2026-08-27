@@ -167,20 +167,6 @@ enum VoyageSceneKit {
         return SCNNode(geometry: geo)
     }
 
-    /// 水平線。霧に沈む海の縁の、sandの淡い一線(Web Horizon)。
-    static func makeHorizon() -> SCNNode {
-        let plane = SCNPlane(width: 180, height: 0.08)
-        let m = SCNMaterial()
-        m.lightingModel = .constant
-        m.diffuse.contents = sand.withAlphaComponent(0.22)
-        m.writesToDepthBuffer = false
-        m.isDoubleSided = true
-        plane.firstMaterial = m
-        let node = SCNNode(geometry: plane)
-        node.position = SCNVector3(0, 0.04, -20)
-        return node
-    }
-
     // MARK: - 壮大な目的地の島
 
     /// 航海のすべての画面で共有する目的地の島。遠景では段状の長い稜線、
@@ -1992,8 +1978,6 @@ enum VoyageSceneKit {
         )
         scene.rootNode.addChildNode(makeStars(count: 560))
         scene.rootNode.addChildNode(makeMoon(position: SCNVector3(-5.2, 3.6, -17)))
-        scene.rootNode.addChildNode(makeHorizon())
-
         let islandPosition = SCNVector3(1.65, 0, -0.72)
         let island = makeIsland(
             position: islandPosition,
@@ -2133,9 +2117,6 @@ enum VoyageSceneKit {
                 nativeMetalRollout: nativeMetalRollout
             ).root
         )
-        // Web Horizon と同じ、z=-20の細い平面。円形の水平線は投影位置が変わり、
-        // 同じカメラ定数でも世界全体が上下にずれて見えるため使わない。
-        scene.rootNode.addChildNode(makeHorizon())
         scene.rootNode.addChildNode(makeVoyagingGulls())
 
         if showIsland {
