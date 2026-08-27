@@ -685,6 +685,20 @@ static inline half4 landfallShadeOcean(
     float sunShoulder = pow(sunFacing, 18.0);
     float sunBroad = pow(sunFacing, 54.0);
     float sunCore = pow(sunFacing, 192.0);
+    // The night palette uses the moon as this directional source. Its physical
+    // intensity is low, but an eye adapted to the dark still reads a narrow
+    // reflection path on the water. Lift only that low-light specular response;
+    // diffuse water and foam continue to use the scene's actual sun strength.
+    float lowLightAdaptation = 1.0 - smoothstep(
+        0.18,
+        0.48,
+        ocean.sunStrength
+    );
+    float celestialReflectionStrength = mix(
+        ocean.sunStrength,
+        max(ocean.sunStrength, 0.24),
+        lowLightAdaptation
+    );
     float glintA = 0.5 + 0.5 * sin(
         dot(p, float2(1.47, -1.91)) + sin(p.y * 0.19) * 1.7 - ocean.time * 1.46
     );
@@ -709,10 +723,10 @@ static inline half4 landfallShadeOcean(
     float glintVisibility = rippleVisibility
         * mix(0.34, 1.0, nearField)
         * (1.0 - horizonField * 0.58);
-    color += ocean.sunColor * ocean.sunStrength
+    color += ocean.sunColor * celestialReflectionStrength
         * (sunShoulder * glintBreakup * glintVisibility * 0.020
             + sunBroad * 0.018
-            + sunCore * glintBreakup * 0.28);
+            + sunCore * glintBreakup * mix(0.28, 0.36, lowLightAdaptation));
     float forwardScatter = pow(
         saturate(dot(viewDirection, -normalize(ocean.sunDirection))),
         4.0
