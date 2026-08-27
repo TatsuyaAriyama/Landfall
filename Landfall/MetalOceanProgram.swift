@@ -109,7 +109,8 @@ enum MetalOceanProgram {
             boatHeading: SIMD2(0, 1),
             boatSpeed: 0,
             boatSize: .zero,
-            boatPresence: 0
+            boatPresence: 0,
+            boatReflectionColor: linearColor(0xA6B7AF)
         )
         objc_setAssociatedObject(
             material,
@@ -141,6 +142,11 @@ enum MetalOceanProgram {
         return SIMD2(value.x, value.y)
     }
 
+    private static func vector3(named key: String, from material: SCNMaterial) -> SIMD3<Float>? {
+        guard let value = material.value(forKey: key) as? SCNVector3 else { return nil }
+        return SIMD3(value.x, value.y, value.z)
+    }
+
     private static func linearColor(_ rgb: UInt) -> SIMD3<Float> {
         let color = HomeIslandOceanEffects.linearColorVector(rgb)
         return SIMD3(color.x, color.y, color.z)
@@ -166,6 +172,10 @@ enum MetalOceanProgram {
         uniforms.boatSize = vector2(named: "uBoatSize", from: material)
             ?? uniforms.boatSize
         uniforms.boatPresence = number(named: "uBoatPresence", from: material)
+        uniforms.boatReflectionColor = vector3(
+            named: "uBoatReflectionColor",
+            from: material
+        ) ?? uniforms.boatReflectionColor
         withUnsafeBytes(of: &uniforms) { bytes in
             guard let address = bytes.baseAddress else { return }
             stream.writeBytes(address, count: bytes.count)
@@ -202,6 +212,7 @@ enum MetalOceanProgram {
         var boatSpeed: Float
         var boatSize: SIMD2<Float>
         var boatPresence: Float
+        var boatReflectionColor: SIMD3<Float>
     }
 
     private final class UniformStorage: NSObject {

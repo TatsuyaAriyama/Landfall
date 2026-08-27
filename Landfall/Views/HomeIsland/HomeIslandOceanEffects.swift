@@ -207,6 +207,7 @@ enum HomeIslandOceanEffects {
     float uBoatSpeed;
     float3 uBoatSize;
     float uBoatPresence;
+    float3 uBoatReflectionColor;
     float uMicroNormalScale;
     #pragma body
     float2 localP = (_surface.diffuseTexcoord - 0.5) * uSurfaceSize.xy;
@@ -413,7 +414,22 @@ enum HomeIslandOceanEffects {
         float meniscusBreak = 0.72 + 0.28 * sin(
             boatLongitudinal * 8.1 - boatLateral * 10.7 + uTime * 0.34
         );
+        float reflectedHull = smoothstep(0.70, 1.02, hullDistance)
+            * (1.0 - smoothstep(1.02, 1.72, hullDistance));
+        float reflectionBreak = smoothstep(
+            0.28,
+            0.82,
+            0.5 + 0.5 * sin(
+                boatLongitudinal * 5.7 + boatLateral * 9.3
+                    + height * 18.0 - uTime * 0.24
+            )
+        );
         col = mix(col, uDeep, submergedShadow * 0.13 * surfaceEdge);
+        col = mix(
+            col,
+            uBoatReflectionColor,
+            reflectedHull * (0.035 + reflectionBreak * 0.070) * surfaceEdge
+        );
         col = mix(col, uLight, meniscus * meniscusBreak * 0.10 * surfaceEdge);
     }
 
@@ -548,6 +564,10 @@ enum HomeIslandOceanEffects {
         material.setValue(NSNumber(value: Float(0)), forKey: "uBoatSpeed")
         material.setValue(SCNVector3Zero, forKey: "uBoatSize")
         material.setValue(NSNumber(value: Float(0)), forKey: "uBoatPresence")
+        material.setValue(
+            linearColorVector(0xA6B7AF),
+            forKey: "uBoatReflectionColor"
+        )
         material.setValue(
             NSNumber(value: MetalRenderingProfile.current.oceanMicroNormalScale),
             forKey: "uMicroNormalScale"

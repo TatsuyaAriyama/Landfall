@@ -2261,13 +2261,16 @@ enum VoyageSceneKit {
         }
 
         scene.rootNode.addChildNode(makeVoyagingCelestial(timeOfDay: timeOfDay, date: date))
-        scene.rootNode.addChildNode(
-            HomeIslandOceanEffects.makeScene(
-                layout: .timerVoyage,
-                appearance: oceanAppearance,
-                nativeMetalRollout: nativeMetalRollout
-            ).root
+        let ocean = HomeIslandOceanEffects.makeScene(
+            layout: .timerVoyage,
+            appearance: oceanAppearance,
+            nativeMetalRollout: nativeMetalRollout
         )
+        ocean.animatedMaterial.setValue(
+            linearRGB(boatParts.hull),
+            forKey: "uBoatReflectionColor"
+        )
+        scene.rootNode.addChildNode(ocean.root)
         scene.rootNode.addChildNode(makeVoyagingGulls())
 
         if showIsland {
@@ -2427,6 +2430,18 @@ enum VoyageSceneKit {
             blue: lb + (rb - lb) * t,
             alpha: la + (ra - la) * t
         )
+    }
+
+    private static func linearRGB(_ color: UIColor) -> SCNVector3 {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        func linear(_ component: CGFloat) -> Float {
+            let value = Float(component)
+            return value > 0.04045
+                ? powf((value + 0.055) / 1.055, 2.4)
+                : value / 12.92
+        }
+        return SCNVector3(linear(red), linear(green), linear(blue))
     }
 
     private static func makeVoyagingCelestial(

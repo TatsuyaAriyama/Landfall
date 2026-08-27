@@ -35,6 +35,7 @@ struct LandfallOceanUniforms {
     float boatSpeed;
     float2 boatSize;
     float boatPresence;
+    float3 boatReflectionColor;
 };
 
 struct LandfallOceanVertexOut {
@@ -317,7 +318,22 @@ static inline half4 landfallShadeOcean(
         float meniscusBreak = 0.72 + 0.28 * sin(
             boatLongitudinal * 8.1 - boatLateral * 10.7 + ocean.time * 0.34
         );
+        float reflectedHull = smoothstep(0.70, 1.02, hullDistance)
+            * (1.0 - smoothstep(1.02, 1.72, hullDistance));
+        float reflectionBreak = smoothstep(
+            0.28,
+            0.82,
+            0.5 + 0.5 * sin(
+                boatLongitudinal * 5.7 + boatLateral * 9.3
+                    + in.height * 18.0 - ocean.time * 0.24
+            )
+        );
         color = mix(color, ocean.deepColor, submergedShadow * 0.13);
+        color = mix(
+            color,
+            ocean.boatReflectionColor,
+            reflectedHull * (0.035 + reflectionBreak * 0.070)
+        );
         color = mix(color, ocean.lightColor, meniscus * meniscusBreak * 0.10);
     }
 
