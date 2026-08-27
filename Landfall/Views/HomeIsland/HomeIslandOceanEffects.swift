@@ -271,6 +271,10 @@ enum HomeIslandOceanEffects {
     );
     waterBody = mix(waterBody, uDeep, smoothstep(4.0, 20.0, waterDepth) * 0.82);
     float3 col = mix(waterBody, filteredWater, 0.46);
+    if (uShoreline > 0.5) {
+        float coastalLift = 1.0 - smoothstep(0.0, 11.0, max(shoreDistance, 0.0));
+        col = mix(col, uShallow, coastalLift * 0.22);
+    }
 
     float2 shadedSlope = slope + detailSlope * 2.2;
     float directionalShade = clamp(
@@ -363,8 +367,8 @@ enum HomeIslandOceanEffects {
     }
 
     // Boat uniforms use ocean-plane coordinates: (world X, -world Z). Keep the
-    // wake below foam contrast: it is only a short, continuous change in the
-    // water body, never a row of white particles or a geometric V.
+    // wake below foam contrast: it is only a short, continuous veil of aerated
+    // water, never a row of particles or a geometric V.
     if (uBoatSpeed > 0.08) {
         float2 heading = uBoatHeading.xy;
         heading /= max(length(heading), 0.001);
@@ -390,12 +394,12 @@ enum HomeIslandOceanEffects {
                 abs(signedLateral - centerDrift)
             );
             float disturbance = plume * lengthFade * wakeStrength * surfaceEdge;
-            float3 wakeWater = mix(
-                uShallow,
-                uDeep,
-                0.48 + slowFlow * 0.18
+            float turbulence = 0.5 + 0.5 * sin(
+                aft * 2.35 + signedLateral * 4.7
+                    + sin(aft * 0.83) * 1.15 - uTime * 0.91
             );
-            col = mix(col, wakeWater, disturbance * 0.065);
+            float aeration = disturbance * mix(0.34, 0.62, turbulence);
+            col = mix(col, uLight, aeration * 0.18);
         }
     }
 

@@ -1,3 +1,4 @@
+import OSLog
 import SceneKit
 import SwiftUI
 import UIKit
@@ -376,6 +377,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private weak var camera: SCNNode?
         private weak var cameraTarget: SCNNode?
         private weak var seaMaterial: SCNMaterial?
+        private var oceanFramePacing = MetalOceanFramePacingMonitor()
+        private var hasReducedOceanRenderingQuality = false
+        private let oceanPerformanceLogger = Logger(
+            subsystem: Bundle.main.bundleIdentifier ?? "Landfall",
+            category: "MetalOceanPerformance"
+        )
         private let marineController = HomeIslandMarineDynamics.BoatController()
         private var oceanReduceMotionEnabled = UIAccessibility.isReduceMotionEnabled
         private var frozenOceanTime = HomeIslandOceanEffects.currentTime
@@ -1705,9 +1712,13 @@ struct HomeIslandSceneView: UIViewRepresentable {
             scene.lightingEnvironment.contents = UIColor(rgb: 0xD9FFF5)
             scene.lightingEnvironment.intensity = 0.96
 
-            let ocean = HomeIslandOceanEffects.makeScene(islandScale: owner.islandScale)
+            let ocean = HomeIslandOceanEffects.makeScene(
+                islandScale: owner.islandScale,
+                nativeMetalRollout: .homeIsland
+            )
             scene.rootNode.addChildNode(ocean.root)
             seaMaterial = ocean.animatedMaterial
+            oceanFramePacing.reset()
 
             if let foundation = AssetPlacementRuntime.makeAssetNode(
                 resourceName: HomeIslandMetrics.foundationResourceName
@@ -6066,6 +6077,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+            if owner.rendersThrottled {
+                oceanFramePacing.reset()
+            } else if seaMaterial?.program != nil,
+                      oceanFramePacing.observe(at: time) {
+                reduceOceanRenderingQualityIfNeeded()
+            }
             let reduceMotion = UIAccessibility.isReduceMotionEnabled
             if reduceMotion != oceanReduceMotionEnabled {
                 oceanReduceMotionEnabled = reduceMotion
@@ -6132,6 +6149,22 @@ struct HomeIslandSceneView: UIViewRepresentable {
             reportLocalPlayerStateIfNeeded(at: time)
             reportNavigatorJettyPresenceIfNeeded()
             reportNoticeBoardProximityIfNeeded()
+        }
+
+        private func reduceOceanRenderingQualityIfNeeded() {
+            guard !hasReducedOceanRenderingQuality else { return }
+            hasReducedOceanRenderingQuality = true
+#if DEBUG
+            print("[MetalOceanPerformance] Home island overload detected")
+#endif
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let view = self.view else { return }
+                view.contentScaleFactor = min(UIScreen.main.scale, 2)
+                view.antialiasingMode = .multisampling2X
+                self.oceanPerformanceLogger.notice(
+                    "Reduced home island ocean resolution after sustained frame pacing pressure"
+                )
+            }
         }
 
         func gestureRecognizer(

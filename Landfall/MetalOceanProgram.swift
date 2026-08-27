@@ -4,12 +4,13 @@ import SceneKit
 import simd
 
 /// Owns the native Metal program and its packed per-frame inputs. The program
-/// rolls out first on Enhanced/Ultra timer voyages, while Debug builds can opt
-/// in on every scene for visual comparison and regression testing.
+/// rolls out first on modern-GPU timer voyages and Ultra home islands, while
+/// Debug builds can opt in on every scene for visual regression testing.
 enum MetalOceanProgram {
     enum RolloutScene {
         case standard
         case timerVoyage
+        case homeIsland
     }
 
     private static let rolloutDefaultsKey = "LandfallNativeMetalOcean"
@@ -23,8 +24,14 @@ enum MetalOceanProgram {
         }
         return true
 #else
-        return scene == .timerVoyage
-            && MetalRenderingProfile.current.tier != .compatible
+        switch scene {
+        case .standard:
+            return false
+        case .timerVoyage:
+            return MetalRenderingProfile.current.tier != .compatible
+        case .homeIsland:
+            return MetalRenderingProfile.current.tier == .ultra
+        }
 #endif
     }
 

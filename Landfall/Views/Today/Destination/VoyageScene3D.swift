@@ -3269,7 +3269,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         private weak var camera: SCNNode?
         private weak var moon: SCNNode?
         private weak var seaMaterial: SCNMaterial?
-        private var framePacing = FramePacingMonitor()
+        private var framePacing = MetalOceanFramePacingMonitor()
         private var hasReducedRenderingQuality = false
         private let performanceLogger = Logger(
             subsystem: Bundle.main.bundleIdentifier ?? "Landfall",
@@ -3582,52 +3582,6 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
                 self.performanceLogger.notice(
                     "Reduced voyage ocean resolution after sustained frame pacing pressure"
                 )
-            }
-        }
-
-        private struct FramePacingMonitor {
-            private var sampleStart: TimeInterval?
-            private var previousFrame: TimeInterval?
-            private var frameCount = 0
-            private var slowFrameCount = 0
-
-            mutating func reset() {
-                sampleStart = nil
-                previousFrame = nil
-                frameCount = 0
-                slowFrameCount = 0
-            }
-
-            mutating func observe(at time: TimeInterval) -> Bool {
-                guard let previousFrame else {
-                    sampleStart = time
-                    self.previousFrame = time
-                    return false
-                }
-                let interval = time - previousFrame
-                self.previousFrame = time
-                guard interval > 0, interval < 0.25 else {
-                    reset()
-                    return false
-                }
-
-                frameCount += 1
-#if DEBUG
-                let simulatesOverload = UserDefaults.standard.bool(
-                    forKey: "LandfallMetalSimulateOverload"
-                )
-#else
-                let simulatesOverload = false
-#endif
-                if simulatesOverload || interval > (1.0 / 45.0) {
-                    slowFrameCount += 1
-                }
-
-                let duration = time - (sampleStart ?? time)
-                guard duration >= 8, frameCount >= 60 else { return false }
-                let overloaded = Double(slowFrameCount) / Double(frameCount) >= 0.35
-                reset()
-                return overloaded
             }
         }
 

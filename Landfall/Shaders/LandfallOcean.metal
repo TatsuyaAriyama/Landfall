@@ -184,6 +184,10 @@ static inline half4 landfallShadeOcean(
     float3 body = mix(ocean.shallowColor, ocean.seaColor, smoothstep(0.35, 4.6, waterDepth));
     body = mix(body, ocean.deepColor, smoothstep(4.0, 20.0, waterDepth) * 0.82);
     float3 color = mix(body, filteredWater, 0.46);
+    if (ocean.shoreline > 0.5) {
+        float coastalLift = 1.0 - smoothstep(0.0, 11.0, max(shoreDistance, 0.0));
+        color = mix(color, ocean.shallowColor, coastalLift * 0.22);
+    }
     float underwaterScatter = exp(-waterDepth * 0.16);
     color += ocean.shallowColor * underwaterScatter * 0.12;
 
@@ -280,8 +284,12 @@ static inline half4 landfallShadeOcean(
                 abs(lateral - centerDrift)
             );
             float disturbance = plume * lengthFade * strength;
-            float3 wakeWater = mix(ocean.shallowColor, ocean.deepColor, 0.48 + flow * 0.18);
-            color = mix(color, wakeWater, disturbance * 0.065);
+            float turbulence = 0.5 + 0.5 * sin(
+                aft * 2.35 + lateral * 4.7
+                    + sin(aft * 0.83) * 1.15 - ocean.time * 0.91
+            );
+            float aeration = disturbance * mix(0.34, 0.62, turbulence);
+            color = mix(color, ocean.lightColor, aeration * 0.18);
         }
     }
 
