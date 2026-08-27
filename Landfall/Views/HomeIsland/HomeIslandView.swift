@@ -1254,12 +1254,11 @@ struct HomeIslandView: View {
             HStack(spacing: 10) {
                 Image(systemName: "mountain.2.fill")
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
 
                 Text("Destinations")
-                    .font(LFFont.label(11))
-                    .tracking(0.8)
-                    .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+                    .font(LFFont.copy(15))
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
 
                 Spacer(minLength: 8)
 
@@ -1268,7 +1267,7 @@ struct HomeIslandView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -1281,16 +1280,16 @@ struct HomeIslandView: View {
                 text: $destinationNameDraft
             )
             .font(LFFont.copy(16))
-            .foregroundStyle(.white)
-            .tint(Color(uiColor: VoyageSceneKit.returnOrange))
+            .foregroundStyle(LFHomeFeatureStyle.ink)
+            .tint(LFHomeFeatureStyle.ink)
             .focused($destinationNameFocused)
             .textInputAutocapitalization(.never)
             .submitLabel(.done)
             .onSubmit { destinationNameFocused = false }
             .padding(.horizontal, 14)
             .frame(height: 46)
-            .background(.white.opacity(0.10), in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
+            .background(LFHomeFeatureStyle.field, in: Capsule())
+            .overlay(Capsule().stroke(LFHomeFeatureStyle.outline, lineWidth: 1))
             .accessibilityLabel(Text("Island name"))
 
             DatePicker(
@@ -1300,15 +1299,15 @@ struct HomeIslandView: View {
             ) {
                 Text("Target date")
                     .font(LFFont.copy(14))
-                    .foregroundStyle(.white.opacity(0.86))
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
             }
             .datePickerStyle(.compact)
-            .tint(Color(uiColor: VoyageSceneKit.returnOrange))
-            .foregroundStyle(.white)
+            .tint(LFHomeFeatureStyle.ink)
+            .foregroundStyle(LFHomeFeatureStyle.ink)
 
             Text("The island waits beyond the horizon until the final week. Over those last seven days, it draws closer day by day.")
-                .font(LFFont.label(10))
-                .foregroundStyle(.white.opacity(0.52))
+                .font(LFFont.label(11))
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
 
             Button {
@@ -1316,11 +1315,11 @@ struct HomeIslandView: View {
             } label: {
                 Text("Save")
                     .font(LFFont.copy(15))
-                    .foregroundStyle(LFColor.inkFixed)
+                    .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 46)
                     .background(
-                        Color(uiColor: VoyageSceneKit.returnOrange)
+                        LFHomeFeatureStyle.primaryFill
                             .opacity(destinationDraftIsValid ? 1 : 0.36),
                         in: Capsule()
                     )
@@ -1335,11 +1334,11 @@ struct HomeIslandView: View {
                     } label: {
                         Text("Go ashore")
                             .font(LFFont.copy(13))
-                            .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+                            .foregroundStyle(LFHomeFeatureStyle.ink)
                             .frame(maxWidth: .infinity)
                             .frame(height: 42)
-                            .background(.white.opacity(0.10), in: Capsule())
-                            .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
+                            .background(LFHomeFeatureStyle.field, in: Capsule())
+                            .overlay(Capsule().stroke(LFHomeFeatureStyle.outline, lineWidth: 1))
                     }
                     .buttonStyle(LFPressableButtonStyle())
 
@@ -1348,11 +1347,11 @@ struct HomeIslandView: View {
                     } label: {
                         Text("Delete")
                             .font(LFFont.copy(13))
-                            .foregroundStyle(Color(uiColor: VoyageSceneKit.returnOrange))
+                            .foregroundStyle(LFColor.returnOrange)
                             .frame(maxWidth: .infinity)
                             .frame(height: 42)
-                            .background(.white.opacity(0.10), in: Capsule())
-                            .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 1))
+                            .background(LFHomeFeatureStyle.field, in: Capsule())
+                            .overlay(Capsule().stroke(LFHomeFeatureStyle.outline, lineWidth: 1))
                     }
                     .buttonStyle(LFPressableButtonStyle())
                 }
@@ -1361,13 +1360,8 @@ struct HomeIslandView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .frame(maxWidth: 440)
-        .background(hudBackground, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(.white.opacity(0.14), lineWidth: 1)
-        )
+        .lfHomeFeatureCard()
         // 面の余白を叩いた指が、後ろの島まで抜けてカメラを動かさないように。
-        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .padding(.horizontal, 12)
         .accessibilityElement(children: .contain)
     }

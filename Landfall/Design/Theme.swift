@@ -68,6 +68,44 @@ enum LFMetrics {
     static let cardPadding: CGFloat = 36
 }
 
+/// ホーム島で新しい機能を足すときの基本となる視覚言語。
+/// 白いガラス面・濃い港色の文字・控えめな同色の境界で、景色の上でも
+/// 読みやすさを保つ。危険操作など、意味がある場合だけ別の色を使う。
+enum LFHomeFeatureStyle {
+    static let surface = Color.white.opacity(0.86)
+    static let ink = LFColor.harborTeal
+    static let secondaryInk = LFColor.harborTeal.opacity(0.62)
+    static let field = LFColor.harborTeal.opacity(0.07)
+    static let outline = LFColor.harborTeal.opacity(0.14)
+    static let primaryFill = LFColor.harborTeal
+}
+
+private struct LFHomeFeatureCardModifier: ViewModifier {
+    var cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                LFHomeFeatureStyle.surface,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(LFHomeFeatureStyle.outline, lineWidth: 1)
+            }
+            .contentShape(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+    }
+}
+
+extension View {
+    /// ホーム上のカード型機能は原則この面から始める。
+    func lfHomeFeatureCard(cornerRadius: CGFloat = 24) -> some View {
+        modifier(LFHomeFeatureCardModifier(cornerRadius: cornerRadius))
+    }
+}
+
 /// 太字は使わない。weight は .medium(500)まで。
 /// 既定サイズは端末の文字サイズ設定(Dynamic Type)に追従する(UIFontMetricsで基準サイズをスケール)。
 /// 航海誌カードは固定寸法の絵はがきなので、`*Fixed` を使い .large 相当に焼き付けてレイアウトを保つ

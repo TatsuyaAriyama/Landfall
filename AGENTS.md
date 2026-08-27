@@ -11,4 +11,6 @@
 ## Home Island visual language
 
 - Use translucent white glass as the default surface for persistent Home Island HUD elements, with deep harbor-green text and icons for contrast.
+- Use the app's readable system typography through `LFFont.copy` for primary text and `LFFont.label` for secondary guidance. Do not introduce decorative display type into functional UI.
+- Start new Home Island feature cards with `LFHomeFeatureStyle` and `.lfHomeFeatureCard()` so new functionality inherits the established surface, ink, outline, and typography instead of defining another visual language.
 - New Home Island controls, player-facing cards, compact status surfaces, and navigation items should extend this visual language unless a distinct mode (such as photography or a destructive confirmation) has a clear functional reason to differ.
