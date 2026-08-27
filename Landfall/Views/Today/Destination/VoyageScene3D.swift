@@ -1540,14 +1540,24 @@ enum VoyageSceneKit {
         }
 
         let detail = profile.detail
+        let detailMultiplier = MetalRenderingProfile.current.boatSurfaceDetailMultiplier
         var modifiers = material.shaderModifiers ?? [:]
         modifiers[.surface] = boatSurfaceShader
         material.shaderModifiers = modifiers
         material.setValue(NSNumber(value: surface.rawValue), forKey: "uBoatSurfaceKind")
         material.setValue(NSNumber(value: detail.scale), forKey: "uBoatDetailScale")
-        material.setValue(NSNumber(value: detail.strength), forKey: "uBoatDetailStrength")
-        material.setValue(NSNumber(value: detail.roughness), forKey: "uBoatRoughnessVariation")
-        material.setValue(NSNumber(value: detail.color), forKey: "uBoatColorVariation")
+        material.setValue(
+            NSNumber(value: detail.strength * detailMultiplier),
+            forKey: "uBoatDetailStrength"
+        )
+        material.setValue(
+            NSNumber(value: detail.roughness * detailMultiplier),
+            forKey: "uBoatRoughnessVariation"
+        )
+        material.setValue(
+            NSNumber(value: detail.color * min(detailMultiplier, 1.05)),
+            forKey: "uBoatColorVariation"
+        )
         material.setValue(
             NSNumber(value: profile.isWettable ? Float(1) : Float(0)),
             forKey: "uBoatWettable"

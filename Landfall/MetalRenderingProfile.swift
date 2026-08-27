@@ -47,6 +47,16 @@ struct MetalRenderingProfile {
         }
     }
 
+    /// Keeps material grain calm on lower-resolution devices while letting
+    /// Ultra preserve wood, cloth and metal breakup in close camera views.
+    var boatSurfaceDetailMultiplier: Float {
+        switch tier {
+        case .compatible: return 0.82
+        case .enhanced: return 1
+        case .ultra: return 1.14
+        }
+    }
+
     static func sceneViewOptions() -> [String: Any] {
         [SCNView.Option.preferredRenderingAPI.rawValue: SCNRenderingAPI.metal.rawValue]
     }
