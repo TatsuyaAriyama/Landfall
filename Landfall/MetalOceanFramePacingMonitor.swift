@@ -18,7 +18,13 @@ struct MetalOceanFramePacingMonitor {
         hasSignaledThermalPressure = false
     }
 
-    mutating func observe(at time: TimeInterval) -> Bool {
+    /// Returns true when at least 35% of a sustained sample falls below 75%
+    /// of the scene's intended frame rate. Passing the target prevents an
+    /// intentionally cinematic 30 fps scene from being treated as overloaded.
+    mutating func observe(
+        at time: TimeInterval,
+        targetFramesPerSecond: Int = 60
+    ) -> Bool {
         if isUnderSeriousThermalPressure {
             guard !hasSignaledThermalPressure else { return false }
             reset()
@@ -47,7 +53,9 @@ struct MetalOceanFramePacingMonitor {
 #else
         let simulatesOverload = false
 #endif
-        if simulatesOverload || interval > (1.0 / 45.0) {
+        let target = Double(max(targetFramesPerSecond, 1))
+        let slowFrameInterval = 1.0 / (target * 0.75)
+        if simulatesOverload || interval > slowFrameInterval {
             slowFrameCount += 1
         }
 

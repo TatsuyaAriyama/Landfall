@@ -3335,7 +3335,11 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         }
 
         func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
-            if seaMaterial?.program != nil, framePacing.observe(at: time) {
+            if seaMaterial?.program != nil,
+               framePacing.observe(
+                   at: time,
+                   targetFramesPerSecond: view?.preferredFramesPerSecond ?? 60
+               ) {
                 reduceRenderingQualityIfNeeded()
             }
             guard let revision = animator.renderFrame(renderer, updateAtTime: time)

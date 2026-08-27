@@ -205,7 +205,8 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
             let pulse = 0.84 + sin(elapsed * 2.4) * 0.12
             bottleGlow?.scale = SCNVector3(pulse, pulse, pulse)
             updateCameraDirection()
-            if seaMaterial?.program != nil, framePacing.observe(at: time) {
+            if seaMaterial?.program != nil,
+               framePacing.observe(at: time, targetFramesPerSecond: 30) {
                 reduceRenderingQualityIfNeeded()
             }
         }
