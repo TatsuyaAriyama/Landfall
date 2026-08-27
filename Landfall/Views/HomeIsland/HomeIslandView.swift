@@ -2941,10 +2941,11 @@ struct HomeIslandView: View {
                 Text(LF.format("Island %lld", Int64(islandSlots.effectiveIndex)))
                     .font(LFFont.label(10))
             }
-            .foregroundStyle(.white.opacity(0.72))
+            .foregroundStyle(LFHomeFeatureStyle.ink)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(.white.opacity(0.10), in: Capsule())
+            .background(LFHomeFeatureStyle.field, in: Capsule())
+            .overlay(Capsule().stroke(LFHomeFeatureStyle.outline, lineWidth: 1))
         }
         .buttonStyle(LFPressableButtonStyle())
         .accessibilityHint(Text("Sail to this island"))
@@ -2955,7 +2956,7 @@ struct HomeIslandView: View {
             HStack(spacing: 8) {
                 Label("Build", systemImage: "hammer.fill")
                     .font(LFFont.copy(13))
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
                 islandSlotChip
                 Spacer()
                 Text(
@@ -2963,7 +2964,7 @@ struct HomeIslandView: View {
                 )
                 .font(LFFont.label(9))
                 .monospacedDigit()
-                .foregroundStyle(.white.opacity(0.38))
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -2999,19 +3000,10 @@ struct HomeIslandView: View {
         .padding(.horizontal, 13)
         .padding(.top, 10)
         .padding(.bottom, 7)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color(uiColor: VoyageSceneKit.nightBG).opacity(0.94),
-                    Color(uiColor: VoyageSceneKit.seaDeep).opacity(0.91)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        )
+        .background(LFHomeFeatureStyle.surface)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(.white.opacity(0.13))
+                .fill(LFHomeFeatureStyle.outline)
                 .frame(height: 1)
         }
         .safeAreaPadding(.bottom, 3)
@@ -3058,7 +3050,10 @@ struct HomeIslandView: View {
                     )
                         .opacity(canPlace ? 1 : 0.38)
                         .frame(width: assetThumbnailSide, height: assetThumbnailSide)
-                        .background(.white.opacity(selected ? 0.13 : 0.055), in: RoundedRectangle(cornerRadius: 14))
+                        .background(
+                            LFHomeFeatureStyle.ink.opacity(selected ? 0.12 : 0.055),
+                            in: RoundedRectangle(cornerRadius: 14)
+                        )
                     assetCornerMarker(
                         unlocked: unlocked,
                         passLocked: passLocked,
@@ -3067,7 +3062,9 @@ struct HomeIslandView: View {
                 }
                 Text(verbatim: family?.title ?? asset.title)
                     .font(LFFont.label(10))
-                    .foregroundStyle(.white.opacity(canPlace ? (selected ? 1 : 0.72) : 0.34))
+                    .foregroundStyle(
+                        LFHomeFeatureStyle.ink.opacity(canPlace ? (selected ? 1 : 0.76) : 0.34)
+                    )
                     .multilineTextAlignment(.center)
                     // A family name is short by design, so it keeps to one
                     // line and leaves the row below for the variant.
@@ -3090,7 +3087,7 @@ struct HomeIslandView: View {
                                         .overlay {
                                             Circle()
                                                 .stroke(
-                                                    .white.opacity(current ? 0.9 : 0.22),
+                                                    LFHomeFeatureStyle.ink.opacity(current ? 0.82 : 0.22),
                                                     lineWidth: 1
                                                 )
                                         }
@@ -3102,13 +3099,17 @@ struct HomeIslandView: View {
                             // there is more than one of these under the tile.
                             Image(systemName: "chevron.down")
                                 .font(.system(size: 7, weight: .bold))
-                                .foregroundStyle(.white.opacity(selected ? 0.8 : 0.5))
+                                .foregroundStyle(
+                                    LFHomeFeatureStyle.ink.opacity(selected ? 0.8 : 0.5)
+                                )
                         }
                         if let variant = family.variants.first(where: { $0.assetID == asset.id }) {
                             Text(verbatim: variant.name)
                                 .font(LFFont.label(8))
                                 .foregroundStyle(
-                                    .white.opacity(canPlace ? (selected ? 0.92 : 0.58) : 0.3)
+                                    LFHomeFeatureStyle.ink.opacity(
+                                        canPlace ? (selected ? 0.92 : 0.58) : 0.3
+                                    )
                                 )
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.7)
@@ -3121,16 +3122,16 @@ struct HomeIslandView: View {
             .frame(width: assetTileSide, height: assetTileHeight)
             .background(
                 selected || expanded
-                    ? Color(uiColor: VoyageSceneKit.ember).opacity(selected ? 0.24 : 0.14)
-                    : .white.opacity(canPlace ? 0.045 : 0.018),
+                    ? LFHomeFeatureStyle.ink.opacity(selected ? 0.13 : 0.08)
+                    : LFHomeFeatureStyle.field.opacity(canPlace ? 1 : 0.46),
                 in: RoundedRectangle(cornerRadius: 15)
             )
             .overlay {
                 RoundedRectangle(cornerRadius: 15)
                     .stroke(
                         selected || expanded
-                            ? Color(uiColor: VoyageSceneKit.sand).opacity(selected ? 0.58 : 0.34)
-                            : .white.opacity(0.07),
+                            ? LFHomeFeatureStyle.ink.opacity(selected ? 0.48 : 0.30)
+                            : LFHomeFeatureStyle.outline,
                         lineWidth: 1
                     )
             }
@@ -3144,10 +3145,12 @@ struct HomeIslandView: View {
                 )
                     .font(LFFont.label(7))
                     .monospacedDigit()
-                    .foregroundStyle(assetTagTint(unlocked: unlocked, passLocked: passLocked))
+                    .foregroundStyle(
+                        passLocked ? LFColor.returnOrange : Color.white.opacity(0.84)
+                    )
                     .padding(.horizontal, 5)
                     .frame(height: 16)
-                    .background(.black.opacity(0.62), in: Capsule())
+                    .background(LFHomeFeatureStyle.ink.opacity(0.92), in: Capsule())
                     .offset(x: 3, y: -3)
             }
         }
@@ -3211,16 +3214,16 @@ struct HomeIslandView: View {
         if !unlocked || passLocked {
             Image(systemName: "lock.fill")
                 .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(assetTagTint(unlocked: unlocked, passLocked: passLocked))
+                .foregroundStyle(passLocked ? LFColor.returnOrange : .white)
                 .padding(3)
-                .background(.black.opacity(0.72), in: Circle())
+                .background(LFHomeFeatureStyle.ink.opacity(0.94), in: Circle())
                 .offset(x: 3, y: 3)
         } else if atLimit {
             Image(systemName: "checkmark")
                 .font(.system(size: 8, weight: .bold))
-                .foregroundStyle(Color(uiColor: VoyageSceneKit.nightBG))
+                .foregroundStyle(.white)
                 .padding(3)
-                .background(Color(uiColor: VoyageSceneKit.sand), in: Circle())
+                .background(LFHomeFeatureStyle.ink, in: Circle())
                 .offset(x: 3, y: 3)
         }
     }
@@ -3246,9 +3249,9 @@ struct HomeIslandView: View {
 
     private func assetTagTint(unlocked: Bool, passLocked: Bool) -> Color {
         if !unlocked {
-            return Color(uiColor: VoyageSceneKit.sand)
+            return LFHomeFeatureStyle.secondaryInk
         }
-        return passLocked ? LFColor.returnOrange : .white.opacity(0.64)
+        return passLocked ? LFColor.returnOrange : LFHomeFeatureStyle.secondaryInk
     }
 
     private func assetHintText(
@@ -3371,7 +3374,7 @@ struct HomeIslandView: View {
                     .font(LFFont.label(10))
                     .lineLimit(1)
             }
-            .foregroundStyle(Color(uiColor: VoyageSceneKit.sand).opacity(0.86))
+            .foregroundStyle(LFHomeFeatureStyle.ink)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
@@ -3390,19 +3393,19 @@ struct HomeIslandView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.6))
+                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.72))
                     .frame(width: 24, height: 24)
-                    .background(.white.opacity(0.07), in: Circle())
+                    .background(LFHomeFeatureStyle.field, in: Circle())
             }
             .buttonStyle(LFPressableButtonStyle())
             .accessibilityLabel(Text("Close"))
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 7)
-        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(LFHomeFeatureStyle.field, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.09), lineWidth: 1)
+                .stroke(LFHomeFeatureStyle.outline, lineWidth: 1)
         }
     }
 
@@ -3445,8 +3448,8 @@ struct HomeIslandView: View {
                             Circle()
                                 .stroke(
                                     armed
-                                        ? Color(uiColor: VoyageSceneKit.sand)
-                                        : .white.opacity(0.30),
+                                        ? LFHomeFeatureStyle.ink
+                                        : LFHomeFeatureStyle.outline,
                                     lineWidth: armed ? 2 : 1
                                 )
                                 .frame(width: 20, height: 20)
@@ -3459,15 +3462,15 @@ struct HomeIslandView: View {
                             )
                                 .frame(width: 24, height: 24)
                                 .background(
-                                    .white.opacity(armed ? 0.14 : 0.06),
+                                    LFHomeFeatureStyle.ink.opacity(armed ? 0.14 : 0.06),
                                     in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                                 )
                                 .overlay {
                                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                                         .stroke(
                                             armed
-                                                ? Color(uiColor: VoyageSceneKit.sand)
-                                                : .white.opacity(0.20),
+                                                ? LFHomeFeatureStyle.ink
+                                                : LFHomeFeatureStyle.outline,
                                             lineWidth: armed ? 2 : 1
                                         )
                                 }
@@ -3482,7 +3485,9 @@ struct HomeIslandView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(verbatim: variant.name)
                             .font(LFFont.label(10))
-                            .foregroundStyle(.white.opacity(canPlace ? 0.92 : 0.42))
+                            .foregroundStyle(
+                                LFHomeFeatureStyle.ink.opacity(canPlace ? 0.92 : 0.42)
+                            )
                         assetTagText(
                             asset,
                             unlocked: unlocked,
@@ -3501,16 +3506,16 @@ struct HomeIslandView: View {
                 .frame(height: 34)
                 .background(
                     armed
-                        ? Color(uiColor: VoyageSceneKit.ember).opacity(0.26)
-                        : .white.opacity(0.05),
+                        ? LFHomeFeatureStyle.ink.opacity(0.13)
+                        : LFHomeFeatureStyle.field,
                     in: Capsule()
                 )
                 .overlay {
                     Capsule()
                         .stroke(
                             armed
-                                ? Color(uiColor: VoyageSceneKit.sand).opacity(0.55)
-                                : .white.opacity(0.08),
+                                ? LFHomeFeatureStyle.ink.opacity(0.48)
+                                : LFHomeFeatureStyle.outline,
                             lineWidth: 1
                         )
                 }
@@ -3542,17 +3547,26 @@ struct HomeIslandView: View {
                 .font(LFFont.label(9))
                 .foregroundStyle(
                     selected
-                        ? Color(uiColor: VoyageSceneKit.nightBG)
-                        : .white.opacity(0.68)
+                        ? LFHomeFeatureStyle.ink
+                        : LFHomeFeatureStyle.secondaryInk
                 )
                 .padding(.horizontal, 10)
                 .frame(height: 28)
                 .background(
                     selected
-                        ? Color(uiColor: VoyageSceneKit.sand)
-                        : .white.opacity(0.06),
+                        ? LFHomeFeatureStyle.ink.opacity(0.14)
+                        : LFHomeFeatureStyle.field,
                     in: Capsule()
                 )
+                .overlay {
+                    Capsule()
+                        .stroke(
+                            selected
+                                ? LFHomeFeatureStyle.ink.opacity(0.34)
+                                : LFHomeFeatureStyle.outline,
+                            lineWidth: 1
+                        )
+                }
         }
         .buttonStyle(LFPressableButtonStyle())
     }
