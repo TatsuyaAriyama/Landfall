@@ -2177,11 +2177,12 @@ enum VoyageSceneKit {
             target: SCNVector3(0.8, 1.15, 0),
             fov: 38
         )
-        camera.camera?.exposureOffset = 0.32
+        // 海面の発光感は残しつつ、帆・木・金属のハイライトを白飛びさせない。
+        camera.camera?.exposureOffset = 0.14
         // タイマーの近景だけ、甲板・航海士・島の接地感を補う。
         // ブルームや被写界深度は輪郭をぼかすため使わず、控えめなAOと色調整に留める。
-        camera.camera?.contrast = 0.06
-        camera.camera?.saturation = 1.04
+        camera.camera?.contrast = 0.10
+        camera.camera?.saturation = 1.05
         camera.camera?.screenSpaceAmbientOcclusionIntensity = 0.42
         camera.camera?.screenSpaceAmbientOcclusionRadius = 1.25
         camera.camera?.screenSpaceAmbientOcclusionBias = 0.025
@@ -2267,13 +2268,13 @@ enum VoyageSceneKit {
         ambient.light = SCNLight()
         ambient.light?.type = .ambient
         ambient.light?.color = UIColor(rgb: palette.ambient)
-        ambient.light?.intensity = timeOfDay == .day ? 850 : 520
+        ambient.light?.intensity = timeOfDay == .day ? 620 : 440
 
         let key = SCNNode()
         key.light = SCNLight()
         key.light?.type = .directional
         key.light?.color = UIColor(rgb: palette.key)
-        key.light?.intensity = timeOfDay == .day ? 1_450 : 1_080
+        key.light?.intensity = timeOfDay == .day ? 1_100 : 900
         key.position = voyagingCelestialPosition(for: timeOfDay)
         key.look(at: voyagingLightTarget)
 
@@ -2281,7 +2282,7 @@ enum VoyageSceneKit {
         fill.light = SCNLight()
         fill.light?.type = .directional
         fill.light?.color = UIColor(rgb: palette.fill)
-        fill.light?.intensity = 240
+        fill.light?.intensity = 180
         fill.position = SCNVector3(5, 3, 6)
         fill.look(at: voyagingLightTarget)
         return [ambient, key, fill]
