@@ -230,6 +230,16 @@ enum HomeIslandOceanEffects {
     float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
     float macroVisibility = 1.0 - smoothstep(0.85, 4.20, pixelFootprint);
     float rippleVisibility = 1.0 - smoothstep(0.08, 0.52, pixelFootprint);
+    // Relative range gives every ocean layout the same near-to-horizon LOD.
+    float surfaceRadius = max(min(uSurfaceSize.x, uSurfaceSize.y) * 0.5, 1.0);
+    float normalizedViewRange = length(
+        float2(localP.x * 0.72, localP.y)
+    ) / surfaceRadius;
+    float nearField = 1.0 - smoothstep(0.18, 0.72, normalizedViewRange);
+    float midField = 1.0 - smoothstep(0.62, 0.96, normalizedViewRange);
+    float horizonField = smoothstep(0.60, 0.98, normalizedViewRange);
+    rippleVisibility *= mix(0.34, 1.0, nearField);
+    macroVisibility *= mix(0.58, 1.0, midField);
 
     // Mid and fine ripples alter only the fragment normal. Three crossed
     // directions retain close-range detail without multiplying vertex cost.
@@ -245,7 +255,8 @@ enum HomeIslandOceanEffects {
         float2(0.829, 0.559) * (cos(rippleA) * 0.032)
         + float2(-0.616, 0.788) * (cos(rippleB) * 0.023)
         + float2(0.225, 0.974) * (cos(rippleC) * 0.010)
-    ) * detailCalm * surfaceEdge * uMicroNormalScale * rippleVisibility;
+    ) * detailCalm * surfaceEdge * uMicroNormalScale * rippleVisibility
+        * mix(0.72, 1.14, nearField);
     float3 worldUp = normalize(
         (scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz
     );
@@ -495,9 +506,12 @@ enum HomeIslandOceanEffects {
         }
     }
 
-    float horizon = smoothstep(58.0, 90.0, distanceFromIsland);
     float samplingHaze = (1.0 - macroVisibility) * 0.08;
-    col = mix(col, uFog, min(horizon * 0.18 + samplingHaze, 0.24));
+    col = mix(
+        col,
+        uFog,
+        min(horizonField * 0.58 + samplingHaze, 0.66)
+    );
     _surface.diffuse = float4(clamp(col, 0.0, 1.0), 1.0);
     """
 

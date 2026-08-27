@@ -162,6 +162,16 @@ static inline half4 landfallShadeOcean(
     float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
     float macroVisibility = 1.0 - smoothstep(0.85, 4.20, pixelFootprint);
     float rippleVisibility = 1.0 - smoothstep(0.08, 0.52, pixelFootprint);
+    // Relative range gives every ocean layout the same near-to-horizon LOD.
+    float surfaceRadius = max(min(ocean.surfaceSize.x, ocean.surfaceSize.y) * 0.5, 1.0);
+    float normalizedViewRange = length(
+        float2(in.localPosition.x * 0.72, in.localPosition.y)
+    ) / surfaceRadius;
+    float nearField = 1.0 - smoothstep(0.18, 0.72, normalizedViewRange);
+    float midField = 1.0 - smoothstep(0.62, 0.96, normalizedViewRange);
+    float horizonField = smoothstep(0.60, 0.98, normalizedViewRange);
+    rippleVisibility *= mix(0.34, 1.0, nearField);
+    macroVisibility *= mix(0.58, 1.0, midField);
     float rippleWarp = sin(dot(p, float2(0.173, -0.241)) - ocean.time * 0.31);
     float rippleA = dot(p, float2(0.829, 0.559)) * 1.82
         - ocean.time * 1.18 + rippleWarp * 0.28;
@@ -183,7 +193,7 @@ static inline half4 landfallShadeOcean(
         + float2(-0.616, 0.788) * (cos(rippleB) * 0.023)
         + float2(0.225, 0.974) * (cos(rippleC) * 0.010)
         + capillarySlope
-    ) * ocean.microNormalScale * rippleVisibility;
+    ) * ocean.microNormalScale * rippleVisibility * mix(0.72, 1.14, nearField);
     float3 detailedNormal = normalize(
         in.worldNormal + float3(-detailSlope.x, 0.0, detailSlope.y)
     );
@@ -389,9 +399,12 @@ static inline half4 landfallShadeOcean(
         }
     }
 
-    float horizon = smoothstep(58.0, 90.0, distanceFromIsland);
     float samplingHaze = (1.0 - macroVisibility) * 0.08;
-    color = mix(color, ocean.fogColor, min(horizon * 0.24 + samplingHaze, 0.30));
+    color = mix(
+        color,
+        ocean.fogColor,
+        min(horizonField * 0.58 + samplingHaze, 0.66)
+    );
     color = 1.0 - exp(-max(color, 0.0) * 1.16);
     color = mix(color, sqrt(max(color, 0.0)), 0.07);
     return half4(half3(saturate(color)), 1.0h);
