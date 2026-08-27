@@ -1,3 +1,4 @@
+import OSLog
 import SceneKit
 import SwiftUI
 import UIKit
@@ -75,9 +76,16 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
         private weak var cameraTarget: SCNNode?
         private weak var bottleGlow: SCNNode?
         private weak var lighthouseRotor: SCNNode?
+        private weak var seaMaterial: SCNMaterial?
         private var currentStage: Stage?
         private var startTime: TimeInterval?
         private var animationEnabled = true
+        private var framePacing = MetalOceanFramePacingMonitor()
+        private var hasReducedRenderingQuality = false
+        private let performanceLogger = Logger(
+            subsystem: Bundle.main.bundleIdentifier ?? "Landfall",
+            category: "MetalOceanPerformance"
+        )
 
         init(owner: FirstLightPrologueSceneView) {
             self.owner = owner
@@ -102,6 +110,10 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
                 withName: FirstLightPrologueSceneFactory.lighthouseRotorName,
                 recursively: true
             )
+            seaMaterial = view.scene?.rootNode
+                .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
+                .geometry?.firstMaterial
+            framePacing.reset()
             view.delegate = self
         }
 
@@ -184,17 +196,25 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
                 startTime = time
             }
             let elapsed = Float(time - (startTime ?? time))
+            seaMaterial?.setValue(
+                NSNumber(value: HomeIslandOceanEffects.currentTime),
+                forKey: "uTime"
+            )
 
             lighthouseRotor?.eulerAngles.y = elapsed * 0.24
             let pulse = 0.84 + sin(elapsed * 2.4) * 0.12
             bottleGlow?.scale = SCNVector3(pulse, pulse, pulse)
             updateCameraDirection()
+            if seaMaterial?.program != nil, framePacing.observe(at: time) {
+                reduceRenderingQualityIfNeeded()
+            }
         }
 
         private func settleStaticFrame() {
             guard scene != nil else { return }
             updateCameraDirection()
             bottleGlow?.scale = SCNVector3(0.9, 0.9, 0.9)
+            seaMaterial?.setValue(NSNumber(value: Float(0)), forKey: "uTime")
         }
 
         private func updateCameraDirection() {
@@ -204,6 +224,21 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
                 up: SCNVector3(0, 1, 0),
                 localFront: SCNVector3(0, 0, -1)
             )
+        }
+
+        private func reduceRenderingQualityIfNeeded() {
+            guard !hasReducedRenderingQuality else { return }
+            hasReducedRenderingQuality = true
+#if DEBUG
+            print("[MetalOceanPerformance] First Light overload detected")
+#endif
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let view = self.view else { return }
+                view.contentScaleFactor = min(view.contentScaleFactor, 1.5)
+                self.performanceLogger.notice(
+                    "Reduced First Light render scale after frame pacing pressure"
+                )
+            }
         }
     }
 }
@@ -258,9 +293,35 @@ private enum FirstLightPrologueSceneFactory {
         scene.lightingEnvironment.contents = UIColor(rgb: 0xB9D7CF)
         scene.lightingEnvironment.intensity = 0.72
 
-        let sea = VoyageSceneKit.makeSea(moonX: -9)
-        sea.name = "firstLightSea"
-        scene.rootNode.addChildNode(sea)
+        let oceanAppearance = HomeIslandOceanEffects.Appearance(
+            shallow: 0x267E7A,
+            sea: 0x0D5B69,
+            deep: 0x062F3C,
+            light: 0xDCE9DD,
+            sky: 0x071B1A,
+            horizon: 0x426D6A,
+            sun: 0xE6D9B8,
+            fog: 0x173937,
+            sunDirection: SCNVector3(-0.42, 0.78, 0.46),
+            sunStrength: 0.24
+        )
+        scene.rootNode.addChildNode(
+            HomeIslandOceanEffects.makeScene(
+                layout: HomeIslandOceanEffects.Layout(
+                    width: 180,
+                    depth: 180,
+                    widthSegments: MetalRenderingProfile.current.oceanSegments(base: 140),
+                    depthSegments: MetalRenderingProfile.current.oceanSegments(base: 140),
+                    centerX: 0,
+                    surfaceY: surfaceY,
+                    includesShoreline: true,
+                    rootName: "firstLightSea"
+                ),
+                appearance: oceanAppearance,
+                islandScale: 0.72,
+                nativeMetalRollout: .entryExperience
+            ).root
+        )
 
         let horizon = VoyageSceneKit.makeHorizon()
         horizon.position.z = -38
