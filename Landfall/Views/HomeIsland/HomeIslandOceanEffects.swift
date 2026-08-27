@@ -412,7 +412,7 @@ enum HomeIslandOceanEffects {
         layout: Layout = .homeIsland,
         appearance: Appearance = .daylight,
         islandScale: Float = HomeIslandExpansionPolicy.baseScale,
-        nativeMetalRollout: MetalOceanProgram.RolloutScene = .standard
+        nativeMetalRollout: MetalOceanProgram.RolloutScene
     ) -> HomeIslandOceanScene {
         let root = SCNNode()
         root.name = layout.rootName

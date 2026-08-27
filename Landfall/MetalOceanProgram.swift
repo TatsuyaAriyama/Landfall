@@ -8,7 +8,7 @@ import simd
 /// scene for visual regression testing.
 enum MetalOceanProgram {
     enum RolloutScene {
-        case standard
+        case stillImage
         case timerVoyage
         case homeIsland
         case entryExperience
@@ -27,7 +27,7 @@ enum MetalOceanProgram {
         return true
 #else
         switch scene {
-        case .standard:
+        case .stillImage:
             return false
         case .timerVoyage:
             return true
@@ -43,7 +43,7 @@ enum MetalOceanProgram {
         layout: HomeIslandOceanEffects.Layout,
         appearance: HomeIslandOceanEffects.Appearance,
         islandScale: Float,
-        rolloutScene: RolloutScene = .standard
+        rolloutScene: RolloutScene
     ) -> SCNProgram? {
         guard isRolloutEnabled(for: rolloutScene),
               MetalRenderingProfile.current.supportsNativeOceanProgram,

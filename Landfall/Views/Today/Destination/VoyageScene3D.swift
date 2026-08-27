@@ -1952,7 +1952,7 @@ enum VoyageSceneKit {
     /// 航海中と同じ海・船・航海士・島を、浜へ到着した瞬間の構図へ組み直す。
     /// 静止画へ切り替えず、航海の世界がそのまま上陸記録へ続く。
     static func makeLandfallScene(
-        nativeMetalRollout: MetalOceanProgram.RolloutScene = .standard
+        nativeMetalRollout: MetalOceanProgram.RolloutScene
     ) -> SCNScene {
         let oceanAppearance = makeVoyagingOceanAppearance(
             timeOfDay: .night,
@@ -2087,7 +2087,7 @@ enum VoyageSceneKit {
         date: Date = .now,
         oceanAppearance customOceanAppearance: HomeIslandOceanEffects.Appearance? = nil,
         boatParts: BoatParts = BoatCustomization.currentParts,
-        nativeMetalRollout: MetalOceanProgram.RolloutScene = .standard
+        nativeMetalRollout: MetalOceanProgram.RolloutScene
     ) -> SCNScene {
         let palette = timeOfDay == .night ? AftideHomePalette.voyagingNight : timeOfDay.palette
         let oceanAppearance = customOceanAppearance

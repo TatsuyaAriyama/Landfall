@@ -326,7 +326,8 @@ private enum ShareVoyageBackdropRenderer {
 
         let scene = VoyageSceneKit.makeVoyagingScene(
             showIsland: true,
-            timeOfDay: theme.timeOfDay
+            timeOfDay: theme.timeOfDay,
+            nativeMetalRollout: .stillImage
         )
 
         // アニメータが無い静止画でも、島を航路の先に置き、カモメを原点へ固めない。

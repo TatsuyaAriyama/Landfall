@@ -237,7 +237,7 @@ enum LandfallShareRenderer {
         )
         let view = SCNView(frame: CGRect(origin: .zero, size: size))
         view.contentScaleFactor = 1
-        view.scene = VoyageSceneKit.makeLandfallScene()
+        view.scene = VoyageSceneKit.makeLandfallScene(nativeMetalRollout: .stillImage)
         view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
         view.backgroundColor = VoyageSceneKit.nightBG
         view.antialiasingMode = .multisampling4X

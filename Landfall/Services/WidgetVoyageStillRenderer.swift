@@ -18,7 +18,11 @@ enum WidgetVoyageStillRenderer {
             return
         }
 
-        let scene = VoyageSceneKit.makeVoyagingScene(showIsland: true, timeOfDay: .night)
+        let scene = VoyageSceneKit.makeVoyagingScene(
+            showIsland: true,
+            timeOfDay: .night,
+            nativeMetalRollout: .stillImage
+        )
         let navigator = PhoenixAnimator()
         navigator.pose = PhoenixPose.selected
         navigator.animate = false
