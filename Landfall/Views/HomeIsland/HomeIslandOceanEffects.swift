@@ -508,6 +508,12 @@ enum HomeIslandOceanEffects {
         ]
         if let nativeProgram = MetalOceanProgram.make(rolloutScene: nativeMetalRollout) {
             material.program = nativeProgram
+            MetalOceanProgram.installUniforms(
+                on: material,
+                layout: layout,
+                appearance: appearance,
+                islandScale: islandScale
+            )
             MetalOceanProgram.installRuntimeFallback(
                 for: nativeProgram,
                 on: material,

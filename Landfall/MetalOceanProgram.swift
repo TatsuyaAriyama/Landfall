@@ -1,4 +1,5 @@
 import Metal
+import ObjectiveC
 import OSLog
 import SceneKit
 import simd
@@ -19,6 +20,7 @@ enum MetalOceanProgram {
     private static let diagnostics = Diagnostics()
     private static let programLock = NSLock()
     private static var programs: [String: SCNProgram] = [:]
+    private static var uniformStorageKey: UInt8 = 0
 
     private static func isRolloutEnabled(for scene: RolloutScene) -> Bool {
 #if DEBUG
@@ -76,6 +78,47 @@ enum MetalOceanProgram {
         return program
     }
 
+    static func installUniforms(
+        on material: SCNMaterial,
+        layout: HomeIslandOceanEffects.Layout,
+        appearance: HomeIslandOceanEffects.Appearance,
+        islandScale: Float
+    ) {
+        let uniforms = Uniforms(
+            time: 0,
+            shallowColor: linearColor(appearance.shallow),
+            seaColor: linearColor(appearance.sea),
+            deepColor: linearColor(appearance.deep),
+            skyColor: linearColor(appearance.sky),
+            horizonColor: linearColor(appearance.horizon),
+            sunColor: linearColor(appearance.sun),
+            sunDirection: SIMD3(
+                appearance.sunDirection.x,
+                appearance.sunDirection.y,
+                appearance.sunDirection.z
+            ),
+            sunStrength: appearance.sunStrength,
+            surfaceSize: SIMD2(Float(layout.width), Float(layout.depth)),
+            coordinateOffset: SIMD2(layout.centerX, 0),
+            microNormalScale: MetalRenderingProfile.current.oceanMicroNormalScale,
+            lightColor: linearColor(appearance.light),
+            fogColor: linearColor(appearance.fog),
+            shoreline: layout.includesShoreline ? 1 : 0,
+            islandScale: islandScale,
+            boatPosition: .zero,
+            boatHeading: SIMD2(0, 1),
+            boatSpeed: 0,
+            boatSize: .zero,
+            boatPresence: 0
+        )
+        objc_setAssociatedObject(
+            material,
+            &uniformStorageKey,
+            UniformStorage(uniforms),
+            .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+        )
+    }
+
     static func installRuntimeFallback(
         for program: SCNProgram,
         on material: SCNMaterial,
@@ -98,9 +141,9 @@ enum MetalOceanProgram {
         return SIMD2(value.x, value.y)
     }
 
-    private static func vector3(named key: String, from material: SCNMaterial) -> SIMD3<Float>? {
-        guard let value = material.value(forKey: key) as? SCNVector3 else { return nil }
-        return SIMD3(value.x, value.y, value.z)
+    private static func linearColor(_ rgb: UInt) -> SIMD3<Float> {
+        let color = HomeIslandOceanEffects.linearColorVector(rgb)
+        return SIMD3(color.x, color.y, color.z)
     }
 
     /// The vertex and fragment stages use separate buffer names because SceneKit
@@ -108,35 +151,21 @@ enum MetalOceanProgram {
     /// this encoder and the material remains the source of scene-specific data.
     private static let oceanBufferBinding: SCNBufferBindingBlock = {
         stream, _, shadable, _ in
-        guard let material = shadable as? SCNMaterial else { return }
-        var uniforms = Uniforms(
-            time: HomeIslandOceanEffects.currentTime,
-            shallowColor: vector3(named: "uShallow", from: material) ?? .zero,
-            seaColor: vector3(named: "uSea", from: material) ?? .zero,
-            deepColor: vector3(named: "uDeep", from: material) ?? .zero,
-            skyColor: vector3(named: "uSky", from: material) ?? .zero,
-            horizonColor: vector3(named: "uHorizon", from: material) ?? .zero,
-            sunColor: vector3(named: "uSun", from: material) ?? .zero,
-            sunDirection: vector3(named: "uSunDirection", from: material)
-                ?? SIMD3(0, 1, 0),
-            sunStrength: number(named: "uSunStrength", from: material, default: 1),
-            surfaceSize: vector2(named: "uSurfaceSize", from: material) ?? .zero,
-            coordinateOffset: vector2(named: "uCoordinateOffset", from: material) ?? .zero,
-            microNormalScale: number(
-                named: "uMicroNormalScale",
-                from: material,
-                default: 1
-            ),
-            lightColor: vector3(named: "uLight", from: material) ?? .zero,
-            fogColor: vector3(named: "uFog", from: material) ?? .zero,
-            shoreline: number(named: "uShoreline", from: material),
-            islandScale: number(named: "uIslandScale", from: material, default: 1),
-            boatPosition: vector2(named: "uBoatPosition", from: material) ?? .zero,
-            boatHeading: vector2(named: "uBoatHeading", from: material) ?? SIMD2(0, 1),
-            boatSpeed: number(named: "uBoatSpeed", from: material),
-            boatSize: vector2(named: "uBoatSize", from: material) ?? .zero,
-            boatPresence: number(named: "uBoatPresence", from: material)
-        )
+        guard let material = shadable as? SCNMaterial,
+              let storage = objc_getAssociatedObject(
+                material,
+                &uniformStorageKey
+              ) as? UniformStorage else { return }
+        var uniforms = storage.uniforms
+        uniforms.time = HomeIslandOceanEffects.currentTime
+        uniforms.boatPosition = vector2(named: "uBoatPosition", from: material)
+            ?? uniforms.boatPosition
+        uniforms.boatHeading = vector2(named: "uBoatHeading", from: material)
+            ?? uniforms.boatHeading
+        uniforms.boatSpeed = number(named: "uBoatSpeed", from: material)
+        uniforms.boatSize = vector2(named: "uBoatSize", from: material)
+            ?? uniforms.boatSize
+        uniforms.boatPresence = number(named: "uBoatPresence", from: material)
         withUnsafeBytes(of: &uniforms) { bytes in
             guard let address = bytes.baseAddress else { return }
             stream.writeBytes(address, count: bytes.count)
@@ -173,6 +202,14 @@ enum MetalOceanProgram {
         var boatSpeed: Float
         var boatSize: SIMD2<Float>
         var boatPresence: Float
+    }
+
+    private final class UniformStorage: NSObject {
+        let uniforms: Uniforms
+
+        init(_ uniforms: Uniforms) {
+            self.uniforms = uniforms
+        }
     }
 
     private final class Diagnostics: NSObject, SCNProgramDelegate {
