@@ -152,7 +152,9 @@ enum VoyageBowSpray {
             let impact = powf(wave, 2.3)
             let surfaceWave = max(0, sin(time * 1.9 - 0.72))
             return Rates(
-                bowWave: strength * CGFloat(0.56 + impact * 0.44),
+                // The pressure seam should flash as the bow meets a crest, not
+                // remain as a permanently bright ribbon attached to the hull.
+                bowWave: strength * CGFloat(0.22 + impact * 0.78),
                 streaks: 18 * strength * CGFloat(0.06 + impact * 0.94),
                 mist: 6 * strength * CGFloat(impact),
                 flecks: 36 * strength
@@ -247,7 +249,7 @@ enum VoyageBowSpray {
         let material = SCNMaterial()
         material.name = "LF_BowWave"
         material.lightingModel = .constant
-        material.diffuse.contents = palette.highlight.withAlphaComponent(0.54)
+        material.diffuse.contents = palette.highlight.withAlphaComponent(0.42)
         material.emission.contents = palette.sea.withAlphaComponent(0.10)
         material.blendMode = .alpha
         material.isDoubleSided = true
@@ -259,14 +261,21 @@ enum VoyageBowSpray {
         #pragma body
         float u = _surface.diffuseTexcoord.x;
         float v = _surface.diffuseTexcoord.y;
-        float edge = smoothstep(0.02, 0.18, v)
-            * (1.0 - smoothstep(0.74, 0.98, v));
+        float edge = smoothstep(0.10, 0.27, v)
+            * (1.0 - smoothstep(0.54, 0.84, v));
         float bow = smoothstep(0.0, 0.08, u);
-        float trail = 1.0 - smoothstep(0.46, 1.0, u);
+        float trail = 1.0 - smoothstep(0.38, 0.88, u);
         float crestA = 0.5 + 0.5 * sin(u * 27.0 + v * 8.0 - scn_frame.time * 4.2);
         float crestB = 0.5 + 0.5 * sin(u * 53.0 - v * 11.0 - scn_frame.time * 2.7);
-        float breakup = smoothstep(0.34, 0.78, crestA * 0.72 + crestB * 0.28);
-        float foam = bow * trail * edge * (0.34 + breakup * 0.66);
+        float crossBreak = 0.5 + 0.5 * sin(
+            u * 17.0 - v * 29.0 + scn_frame.time * 1.6
+        );
+        float breakup = smoothstep(
+            0.56,
+            0.84,
+            crestA * 0.58 + crestB * 0.25 + crossBreak * 0.17
+        );
+        float foam = bow * trail * edge * (0.10 + breakup * 0.90);
         _output.color.rgb *= 0.92 + breakup * 0.14;
         _output.color.a *= foam * uSprayStrength;
         """]
