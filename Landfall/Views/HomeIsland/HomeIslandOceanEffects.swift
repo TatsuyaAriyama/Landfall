@@ -401,7 +401,7 @@ enum HomeIslandOceanEffects {
         float aft = -dot(fromWake, boatHeading);
         float signedLateral = dot(fromWake, float2(-boatHeading.y, boatHeading.x));
         float wakeStrength = smoothstep(0.08, 1.60, uBoatSpeed);
-        float wakeLength = mix(1.8, 4.2, wakeStrength);
+        float wakeLength = mix(1.6, 3.6, wakeStrength);
         if (aft > 0.0 && aft < wakeLength) {
             float wakeAge = clamp(aft / wakeLength, 0.0, 1.0);
             float remainingWake = 1.0 - wakeAge;
@@ -411,13 +411,24 @@ enum HomeIslandOceanEffects {
                 aft * 1.35 + signedLateral * 1.9 - uTime * 0.62
             );
             float centerDrift = (slowFlow - 0.5) * mix(0.04, 0.10, wakeAge);
-            float wakeWidth = mix(0.16, 0.25, wakeStrength) + aft * 0.045;
+            float wakeWidth = mix(0.10, 0.16, wakeStrength) + aft * 0.018;
             float centerChurn = 1.0 - smoothstep(
                 wakeWidth,
-                wakeWidth + 0.24,
+                wakeWidth + 0.14,
                 abs(signedLateral - centerDrift)
             );
-            float armCenter = 0.20 + aft * 0.20;
+            // Dense prop wash belongs only at the stern. Farther back, the
+            // energy separates into two divergent arms instead of a white strip.
+            float centerTail = 1.0 - smoothstep(0.16, 0.52, wakeAge);
+            float centerBreak = smoothstep(
+                0.34,
+                0.82,
+                0.5 + 0.5 * sin(
+                    aft * 5.7 + signedLateral * 3.8 - uTime * 2.1
+                )
+            );
+            centerChurn *= centerTail * (0.30 + centerBreak * 0.70);
+            float armCenter = 0.07 + aft * 0.22;
             float armDistance = abs(abs(signedLateral) - armCenter);
             float armWidth = mix(0.035, 0.080, wakeAge);
             float divergentArms = 1.0 - smoothstep(
@@ -428,17 +439,18 @@ enum HomeIslandOceanEffects {
             float armBreak = 0.5 + 0.5 * sin(
                 aft * 5.1 - abs(signedLateral) * 7.3 - uTime * 1.18
             );
-            divergentArms *= 0.42 + smoothstep(0.30, 0.84, armBreak) * 0.58;
+            divergentArms *= smoothstep(0.04, 0.18, aft)
+                * (0.32 + smoothstep(0.30, 0.84, armBreak) * 0.68);
             float disturbance = max(
-                centerChurn * 0.64,
-                divergentArms * 0.88
+                centerChurn * 0.58,
+                divergentArms * 0.84
             ) * lengthFade * wakeStrength * surfaceEdge;
             float turbulence = 0.5 + 0.5 * sin(
                 aft * 2.35 + signedLateral * 4.7
                     + sin(aft * 0.83) * 1.15 - uTime * 0.91
             );
-            float aeration = disturbance * mix(0.42, 0.76, turbulence);
-            col = mix(col, uLight, aeration * 0.25);
+            float aeration = disturbance * mix(0.34, 0.72, turbulence);
+            col = mix(col, uLight, aeration * 0.22);
         }
     }
 
