@@ -2341,27 +2341,22 @@ enum VoyageSceneKit {
         let fog = UIColor(rgb: palette.fog)
         let reflection = UIColor(rgb: palette.reflection)
         let zenithScale: CGFloat
-        let horizonWarmth: CGFloat
         let sunX: CGFloat
         switch timeOfDay {
         case .morning:
             zenithScale = 0.82
-            horizonWarmth = 0.24
             sunX = 0.24
         case .day:
             zenithScale = 0.88
-            horizonWarmth = 0.10
             sunX = 0.50
         case .evening:
             zenithScale = 0.72
-            horizonWarmth = 0.34
             sunX = 0.76
         case .night:
             zenithScale = 0.54
-            horizonWarmth = 0.035
             sunX = 0.72
         }
-        let horizon = mixColor(fog, reflection, amount: horizonWarmth)
+        let upperHaze = mixColor(sky, fog, amount: 0.55)
         let lowerHaze = mixColor(fog, sky, amount: timeOfDay == .night ? 0.10 : 0.24)
         let format = UIGraphicsImageRendererFormat()
         format.opaque = true
@@ -2375,13 +2370,18 @@ enum VoyageSceneKit {
             let colors = [
                 sky.scaled(zenithScale).cgColor,
                 sky.cgColor,
-                horizon.cgColor,
+                upperHaze.cgColor,
+                fog.cgColor,
+                fog.cgColor,
                 lowerHaze.cgColor,
             ] as CFArray
             if let gradient = CGGradient(
                 colorsSpace: colorSpace,
                 colors: colors,
-                locations: [0, 0.46, 0.79, 1]
+                // The default voyage camera places the geometric horizon at
+                // roughly 30% of the portrait viewport. Center the dense haze
+                // there so the sky and the far rows of water share one color.
+                locations: [0, 0.18, 0.245, 0.285, 0.36, 1]
             ) {
                 context.drawLinearGradient(
                     gradient,
@@ -2405,9 +2405,9 @@ enum VoyageSceneKit {
             context.setBlendMode(.screen)
             context.drawRadialGradient(
                 halo,
-                startCenter: CGPoint(x: 192 * sunX, y: 350),
+                startCenter: CGPoint(x: 192 * sunX, y: 150),
                 startRadius: 0,
-                endCenter: CGPoint(x: 192 * sunX, y: 350),
+                endCenter: CGPoint(x: 192 * sunX, y: 150),
                 endRadius: 112,
                 options: []
             )

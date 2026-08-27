@@ -426,14 +426,15 @@ static inline half4 landfallShadeOcean(
         }
     }
 
+    // Aerial perspective must finish at the same radiance as the sky behind
+    // the finite mesh. Leaving even a small amount of body color at the final
+    // row exposes the plane as a straight horizontal cut.
+    float farAtmosphere = smoothstep(0.72, 0.97, normalizedViewRange);
     float samplingHaze = (1.0 - macroVisibility) * 0.08;
-    color = mix(
-        color,
-        ocean.fogColor,
-        min(horizonField * 0.58 + samplingHaze, 0.66)
-    );
+    float atmosphericHaze = saturate(farAtmosphere + samplingHaze);
     color = 1.0 - exp(-max(color, 0.0) * 1.16);
     color = mix(color, sqrt(max(color, 0.0)), 0.07);
+    color = mix(color, ocean.fogColor, atmosphericHaze);
     return half4(half3(saturate(color)), 1.0h);
 }
 
