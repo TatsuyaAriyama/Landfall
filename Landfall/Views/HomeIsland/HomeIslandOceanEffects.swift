@@ -100,7 +100,12 @@ enum HomeIslandOceanEffects {
     /// sampler on one compact wave spectrum. `p`, `uTime` and
     /// `distanceFromIsland` are supplied by each modifier stage.
     private static let waveSpectrumShader = """
-    float calm = mix(0.36, 1.0, smoothstep(10.0, 34.0, distanceFromIsland));
+    float coastalCalm = mix(
+        0.36,
+        1.0,
+        smoothstep(10.0, 34.0, distanceFromIsland)
+    );
+    float calm = mix(0.72, coastalCalm, clamp(uShoreline, 0.0, 1.0));
     float2 dirA = float2(0.342, 0.940);
     float2 dirB = float2(-0.766, 0.643);
     float2 dirC = float2(0.906, 0.423);
@@ -156,6 +161,7 @@ enum HomeIslandOceanEffects {
     float uTime;
     float3 uSurfaceSize;
     float3 uCoordinateOffset;
+    float uShoreline;
     #pragma body
     float2 localP = _geometry.position.xy;
     float2 p = localP + uCoordinateOffset.xy;

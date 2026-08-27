@@ -55,9 +55,18 @@ struct LandfallWaveSample {
     float2 horizontal;
 };
 
-static inline LandfallWaveSample landfallSampleWaves(float2 p, float time) {
+static inline LandfallWaveSample landfallSampleWaves(
+    float2 p,
+    float time,
+    float includesShoreline)
+{
     float distanceFromIsland = length(float2(p.x * 0.72, p.y));
-    float calm = mix(0.36, 1.0, smoothstep(10.0, 34.0, distanceFromIsland));
+    float coastalCalm = mix(
+        0.36,
+        1.0,
+        smoothstep(10.0, 34.0, distanceFromIsland)
+    );
+    float calm = mix(0.72, coastalCalm, saturate(includesShoreline));
 
     constexpr float2 dirA = float2(0.342, 0.940);
     constexpr float2 dirB = float2(-0.766, 0.643);
@@ -120,7 +129,11 @@ vertex LandfallOceanVertexOut landfallOceanVertex(
 {
     float2 localPosition = in.position.xy;
     float2 oceanPosition = localPosition + vertexOcean.coordinateOffset;
-    LandfallWaveSample waves = landfallSampleWaves(oceanPosition, vertexOcean.time);
+    LandfallWaveSample waves = landfallSampleWaves(
+        oceanPosition,
+        vertexOcean.time,
+        vertexOcean.shoreline
+    );
 
     float edgeX = 1.0 - smoothstep(
         vertexOcean.surfaceSize.x * 0.43,

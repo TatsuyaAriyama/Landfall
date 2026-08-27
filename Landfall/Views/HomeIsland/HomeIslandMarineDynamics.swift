@@ -18,6 +18,7 @@ enum HomeIslandMarineDynamics {
         let width: Float
         let depth: Float
         let centerX: Float
+        let includesShoreline: Bool
 
         static let homeIsland = WaveField(layout: .homeIsland)
 
@@ -26,6 +27,7 @@ enum HomeIslandMarineDynamics {
             width = Float(layout.width)
             depth = Float(layout.depth)
             centerX = layout.centerX
+            includesShoreline = layout.includesShoreline
         }
 
         func sample(atWorldXZ worldXZ: SIMD2<Float>, time: Float) -> WaveSample {
@@ -34,11 +36,12 @@ enum HomeIslandMarineDynamics {
             let localP = SIMD2(worldXZ.x - centerX, -worldXZ.y)
             let p = localP + SIMD2(centerX, 0)
             let distance = simd_length(SIMD2(p.x * 0.72, p.y))
-            let calm = HomeIslandMarineDynamics.mix(
+            let coastalCalm = HomeIslandMarineDynamics.mix(
                 0.36,
                 1,
                 HomeIslandMarineDynamics.smoothstep(10, 34, distance)
             )
+            let calm: Float = includesShoreline ? coastalCalm : 0.72
 
             var phases = Self.spectrum.map { wave in
                 simd_dot(p, wave.direction) * wave.waveNumber
