@@ -345,6 +345,24 @@ enum HomeIslandOceanEffects {
     float3 reflectedSky = mix(uHorizon, uSky, smoothstep(0.08, 0.88, skyHeight));
     col = mix(col, reflectedSky, 0.085 + fresnel * 0.60);
 
+    // Broad facets borrow sky color when they turn toward the light and expose
+    // deeper water on the opposing face. The variation follows displaced waves,
+    // so it cannot detach into a decorative surface pattern.
+    float2 sunAcrossWater = float2(-uSunDirection.x, uSunDirection.z);
+    sunAcrossWater /= max(length(sunAcrossWater), 0.001);
+    float sunwardFacet = clamp(
+        0.5 + dot(slope, sunAcrossWater) * 9.4,
+        0.0,
+        1.0
+    );
+    float facetLift = smoothstep(0.53, 0.74, sunwardFacet);
+    float facetShade = 1.0 - smoothstep(0.27, 0.48, sunwardFacet);
+    float facetVisibility = mix(0.42, 1.0, macroVisibility)
+        * (1.0 - horizonField * 0.72);
+    float3 facetSky = mix(uHorizon, uSky, 0.32);
+    col = mix(col, facetSky, facetLift * facetVisibility * 0.120);
+    col = mix(col, uDeep, facetShade * facetVisibility * 0.085);
+
     float3 sunDirection = normalize(
         (scn_frame.viewTransform * float4(uSunDirection, 0.0)).xyz
     );

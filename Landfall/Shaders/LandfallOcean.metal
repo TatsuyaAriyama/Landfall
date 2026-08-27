@@ -258,6 +258,20 @@ static inline half4 landfallShadeOcean(
     reflectedSky = mix(reflectedSky, ocean.horizonColor * 1.06, horizonHaze * 0.28);
     color = mix(color, reflectedSky, 0.12 + fresnel * 0.64);
 
+    // Broad facets borrow sky color when they turn toward the light and expose
+    // deeper water on the opposing face. The variation follows displaced waves,
+    // so it cannot detach into a decorative surface pattern.
+    float2 sunAcrossWater = float2(-ocean.sunDirection.x, ocean.sunDirection.z);
+    sunAcrossWater /= max(length(sunAcrossWater), 0.001);
+    float sunwardFacet = saturate(0.5 + dot(in.slope, sunAcrossWater) * 9.4);
+    float facetLift = smoothstep(0.53, 0.74, sunwardFacet);
+    float facetShade = 1.0 - smoothstep(0.27, 0.48, sunwardFacet);
+    float facetVisibility = mix(0.42, 1.0, macroVisibility)
+        * (1.0 - horizonField * 0.72);
+    float3 facetSky = mix(ocean.horizonColor, ocean.skyColor, 0.32);
+    color = mix(color, facetSky, facetLift * facetVisibility * 0.120);
+    color = mix(color, ocean.deepColor, facetShade * facetVisibility * 0.085);
+
     float3 halfVector = normalize(viewDirection + normalize(ocean.sunDirection));
     float sunFacing = max(dot(normal, halfVector), 0.0);
     float sunBroad = pow(sunFacing, 48.0);
