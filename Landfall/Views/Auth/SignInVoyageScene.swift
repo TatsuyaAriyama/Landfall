@@ -287,6 +287,7 @@ private enum SignInVoyageSceneFactory {
             showIsland: true,
             timeOfDay: timeOfDay,
             date: date,
+            oceanAppearance: oceanAppearance(timeOfDay: timeOfDay, palette: palette),
             nativeMetalRollout: .entryExperience
         )
         scene.background.contents = UIColor(rgb: palette.sky)
@@ -296,7 +297,6 @@ private enum SignInVoyageSceneFactory {
 
         restageStars(in: scene, count: palette.stars)
         restageCelestial(in: scene, timeOfDay: timeOfDay, date: date, palette: palette)
-        recolorSea(in: scene, palette: palette)
         recolorLights(in: scene, palette: palette)
 
         if let island = scene.rootNode.childNode(
@@ -328,6 +328,48 @@ private enum SignInVoyageSceneFactory {
         UIColor(rgb: palette(for: timeOfDay).sky)
     }
 
+    private static func oceanAppearance(
+        timeOfDay: AftideHomeTimeOfDay,
+        palette: Palette
+    ) -> HomeIslandOceanEffects.Appearance {
+        let source = celestialPosition(for: timeOfDay)
+        let target = SCNVector3(0.8, 1.15, 0)
+        let strength: Float
+        switch timeOfDay {
+        case .morning: strength = 0.65
+        case .day: strength = 1
+        case .evening: strength = 0.55
+        case .night: strength = 0.10
+        }
+        return HomeIslandOceanEffects.Appearance(
+            shallow: timeOfDay == .night ? palette.sea : palette.fill,
+            sea: palette.sea,
+            deep: palette.seaDeep,
+            light: palette.reflection,
+            sky: palette.sky,
+            horizon: palette.fog,
+            sun: palette.reflection,
+            fog: palette.fog,
+            sunDirection: SCNVector3(
+                source.x - target.x,
+                source.y - target.y,
+                source.z - target.z
+            ),
+            sunStrength: strength
+        )
+    }
+
+    private static func celestialPosition(
+        for timeOfDay: AftideHomeTimeOfDay
+    ) -> SCNVector3 {
+        switch timeOfDay {
+        case .morning: SCNVector3(-5.4, 2.1, -8.5)
+        case .day: SCNVector3(0.8, 6.1, -9.5)
+        case .evening: SCNVector3(5.8, 2, -8.5)
+        case .night: SCNVector3(5.6, 4.2, -8.5)
+        }
+    }
+
     private static func restageStars(in scene: SCNScene, count: Int) {
         for node in scene.rootNode.childNodes
         where node.geometry?.elements.first?.primitiveType == .point {
@@ -346,18 +388,13 @@ private enum SignInVoyageSceneFactory {
         date: Date,
         palette: Palette
     ) {
-        let positions: [AftideHomeTimeOfDay: SCNVector3] = [
-            .morning: SCNVector3(-5.4, 2.1, -8.5),
-            .day: SCNVector3(0.8, 6.1, -9.5),
-            .evening: SCNVector3(5.8, 2, -8.5),
-            .night: SCNVector3(5.6, 4.2, -8.5)
-        ]
+        let position = celestialPosition(for: timeOfDay)
         if palette.moon,
            let moon = scene.rootNode.childNode(
                withName: LandfallMoonEffects.rootNodeName,
                recursively: false
            ) {
-            moon.position = positions[timeOfDay] ?? SCNVector3(5.6, 4.2, -8.5)
+            moon.position = position
             moon.scale = SCNVector3(0.38, 0.38, 0.38)
             LandfallMoonEffects.update(moon, phase: .current(at: date))
             return
@@ -369,7 +406,7 @@ private enum SignInVoyageSceneFactory {
         ), let sphere = node.geometry as? SCNSphere else { return }
 
         node.name = "signinCelestial"
-        node.position = positions[timeOfDay] ?? SCNVector3(5.6, 4.2, -8.5)
+        node.position = position
         node.scale = SCNVector3(1, 1, 1)
         sphere.radius = 0.72
         let material = sphere.firstMaterial ?? SCNMaterial()
@@ -378,17 +415,6 @@ private enum SignInVoyageSceneFactory {
         material.emission.contents = UIColor(rgb: palette.reflection)
         material.emission.intensity = 0.35
         sphere.firstMaterial = material
-    }
-
-    private static func recolorSea(in scene: SCNScene, palette: Palette) {
-        let root = scene.rootNode.childNode(withName: "voyagingSea", recursively: false)
-        let surface = root?.childNode(withName: "voyagingSeaSurface", recursively: false)
-        surface?.geometry?.firstMaterial?.setValue(vector(palette.sea), forKey: "uSea")
-        surface?.geometry?.firstMaterial?.setValue(vector(palette.seaDeep), forKey: "uDeep")
-        surface?.geometry?.firstMaterial?.setValue(vector(palette.reflection), forKey: "uLight")
-        surface?.geometry?.firstMaterial?.setValue(vector(palette.fog), forKey: "uFog")
-        root?.childNode(withName: "voyagingSeaUnderlay", recursively: false)?
-            .geometry?.firstMaterial?.diffuse.contents = UIColor(rgb: palette.seaDeep)
     }
 
     private static func recolorLights(in scene: SCNScene, palette: Palette) {
@@ -436,11 +462,4 @@ private enum SignInVoyageSceneFactory {
         }
     }
 
-    private static func vector(_ rgb: UInt) -> SCNVector3 {
-        SCNVector3(
-            Float((rgb >> 16) & 0xFF) / 255,
-            Float((rgb >> 8) & 0xFF) / 255,
-            Float(rgb & 0xFF) / 255
-        )
-    }
 }

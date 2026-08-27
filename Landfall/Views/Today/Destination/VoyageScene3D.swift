@@ -1979,14 +1979,13 @@ enum VoyageSceneKit {
         showIsland: Bool,
         timeOfDay: AftideHomeTimeOfDay = .night,
         date: Date = .now,
+        oceanAppearance customOceanAppearance: HomeIslandOceanEffects.Appearance? = nil,
         boatParts: BoatParts = BoatCustomization.currentParts,
         nativeMetalRollout: MetalOceanProgram.RolloutScene = .standard
     ) -> SCNScene {
         let palette = timeOfDay == .night ? AftideHomePalette.voyagingNight : timeOfDay.palette
-        let oceanAppearance = makeVoyagingOceanAppearance(
-            timeOfDay: timeOfDay,
-            palette: palette
-        )
+        let oceanAppearance = customOceanAppearance
+            ?? makeVoyagingOceanAppearance(timeOfDay: timeOfDay, palette: palette)
         let scene = SCNScene()
         scene.background.contents = UIColor(rgb: palette.sky)
         scene.fogColor = UIColor(rgb: palette.fog)
