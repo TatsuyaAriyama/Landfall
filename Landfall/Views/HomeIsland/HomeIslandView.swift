@@ -1463,22 +1463,20 @@ struct HomeIslandView: View {
         horizontalSizeClass == .compact
     }
 
-    /// The catalog has grown past thirty props, several of which differ only by
-    /// flower colour. Tiles are sized so the model and its full name are both
-    /// legible rather than fitting the most items on screen; iPad gets the
+    /// Keep the shelf compact enough to show the whole tile—including its
+    /// placement badge—without crowding the island view. iPad keeps the
     /// roomier size because the shelf spans the whole width there.
     private var assetTileSide: CGFloat {
-        compactTopHUD ? 88 : 100
+        compactTopHUD ? 82 : 96
     }
 
-    /// A little taller than it is wide: the extra room is what lets a long name
-    /// like "オレンジのハイビスカス" wrap onto a second line instead of eliding.
+    /// A little taller than it is wide so long names can still wrap cleanly.
     private var assetTileHeight: CGFloat {
-        assetTileSide + 10
+        assetTileSide + 6
     }
 
     private var assetThumbnailSide: CGFloat {
-        compactTopHUD ? 54 : 62
+        compactTopHUD ? 48 : 58
     }
 
     /// Keep the clock visible while chat is open. On compact layouts the chat
@@ -3118,7 +3116,7 @@ struct HomeIslandView: View {
                     .opacity(canPlace ? 1 : 0.4)
                 }
             }
-            .padding(6)
+            .padding(5)
             .frame(width: assetTileSide, height: assetTileHeight)
             .background(
                 selected || expanded
@@ -3151,7 +3149,9 @@ struct HomeIslandView: View {
                     .padding(.horizontal, 5)
                     .frame(height: 16)
                     .background(LFHomeFeatureStyle.ink.opacity(0.92), in: Capsule())
-                    .offset(x: 3, y: -3)
+                    // Keep the whole badge inside the tile. A negative top
+                    // offset looked clipped by the horizontal scroll view.
+                    .offset(x: -4, y: 4)
             }
         }
         .buttonStyle(LFPressableButtonStyle())
