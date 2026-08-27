@@ -1462,21 +1462,39 @@ enum VoyageSceneKit {
         _surface.diffuse.rgb *= 1.0 + height * uBoatColorVariation;
     }
 
-    // しぶきの上端だけを少し不揃いにし、船と一緒に揺れる濡れ帯にする。
-    float brokenLine = uBoatWaterline
-        + sin(localP.x * 8.3 + sin(localP.z * 11.7) * 0.9) * 0.018;
-    float wet = uBoatWettable
-        * (1.0 - smoothstep(brokenLine - 0.055, brokenLine + 0.16, localP.y));
-    float3 wetColor = _surface.diffuse.rgb * float3(0.58, 0.75, 0.72);
-    _surface.diffuse.rgb = mix(_surface.diffuse.rgb, wetColor, wet * 0.32);
-    _surface.roughness = mix(_surface.roughness, 0.16, wet * 0.82);
-    _surface.clearCoat = max(_surface.clearCoat, wet * 0.82);
-    _surface.clearCoatRoughness = mix(_surface.clearCoatRoughness, 0.08, wet);
+    // 水没部、水面の細い鏡面リム、上に残る飛沫跡を分ける。
+    // 広いグラデーションにすると船体全体が灰色に見えるため、境界は海面付近へ絞る。
+    float lineBreakup = sin(localP.x * 7.1 + sin(localP.z * 10.9) * 0.82) * 0.014
+        + sin(localP.z * 18.7 - localP.x * 3.4) * 0.006;
+    float brokenLine = uBoatWaterline + lineBreakup;
+    float belowSurface = uBoatWettable
+        * (1.0 - smoothstep(brokenLine - 0.025, brokenLine + 0.055, localP.y));
+    float waterlineRim = uBoatWettable
+        * (1.0 - smoothstep(0.012, 0.060, abs(localP.y - brokenLine)));
+
+    // 飛沫跡は水面直上にまばらに残し、横一文字の塗装に見せない。
+    float splashNoise = sin(localP.x * 15.1 + localP.z * 8.7)
+        * sin(localP.z * 13.3 - localP.x * 5.9);
+    float splashTop = brokenLine + 0.055 + (splashNoise * 0.5 + 0.5) * 0.075;
+    float splashDamp = uBoatWettable
+        * smoothstep(brokenLine - 0.010, brokenLine + 0.018, localP.y)
+        * (1.0 - smoothstep(splashTop - 0.020, splashTop + 0.025, localP.y))
+        * smoothstep(-0.30, 0.28, splashNoise);
+    float wetColorWeight = clamp(belowSurface * 0.42 + splashDamp * 0.13, 0.0, 0.46);
+    float3 wetColor = _surface.diffuse.rgb * float3(0.52, 0.68, 0.66)
+        + uBoatSeaBounce * 0.035;
+    _surface.diffuse.rgb = mix(_surface.diffuse.rgb, wetColor, wetColorWeight);
+
+    float wetSheen = clamp(belowSurface * 0.88 + waterlineRim + splashDamp * 0.42, 0.0, 1.0);
+    _surface.roughness = mix(_surface.roughness, 0.11, wetSheen * 0.88);
+    _surface.clearCoat = max(_surface.clearCoat, wetSheen * 0.92);
+    _surface.clearCoatRoughness = mix(_surface.clearCoatRoughness, 0.045, wetSheen);
     _surface.clearCoatNormal = normal;
 
     // 海からの青緑の照り返し。フレネル輪郭へ絞って色移りを防ぐ。
     float rim = pow(1.0 - clamp(dot(normal, normalize(_surface.view)), 0.0, 1.0), 3.0);
-    _surface.emission.rgb += uBoatSeaBounce * (rim * 0.032 + wet * 0.020);
+    _surface.emission.rgb += uBoatSeaBounce
+        * (rim * 0.032 + belowSurface * 0.018 + waterlineRim * 0.012);
     """
 
     private static func styleBoatMaterial(
