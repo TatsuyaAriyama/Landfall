@@ -58,8 +58,8 @@ enum HomeIslandOceanEffects {
         static let homeIsland = Layout(
             width: 180,
             depth: 180,
-            widthSegments: 144,
-            depthSegments: 144,
+            widthSegments: MetalRenderingProfile.current.oceanSegments(base: 144),
+            depthSegments: MetalRenderingProfile.current.oceanSegments(base: 144),
             centerX: 0,
             surfaceY: -0.55,
             includesShoreline: true,
@@ -71,8 +71,8 @@ enum HomeIslandOceanEffects {
         static let voyageHome = Layout(
             width: 240,
             depth: 170,
-            widthSegments: 144,
-            depthSegments: 96,
+            widthSegments: MetalRenderingProfile.current.oceanSegments(base: 144),
+            depthSegments: MetalRenderingProfile.current.oceanSegments(base: 96),
             centerX: 24,
             surfaceY: 0,
             includesShoreline: false,
@@ -85,8 +85,8 @@ enum HomeIslandOceanEffects {
         static let timerVoyage = Layout(
             width: 96,
             depth: 96,
-            widthSegments: 144,
-            depthSegments: 144,
+            widthSegments: MetalRenderingProfile.current.oceanSegments(base: 144),
+            depthSegments: MetalRenderingProfile.current.oceanSegments(base: 144),
             centerX: 0,
             surfaceY: 0,
             includesShoreline: false,
@@ -191,6 +191,7 @@ enum HomeIslandOceanEffects {
     float3 uBoatPosition;
     float3 uBoatHeading;
     float uBoatSpeed;
+    float uMicroNormalScale;
     #pragma body
     float2 localP = (_surface.diffuseTexcoord - 0.5) * uSurfaceSize.xy;
     float2 p = localP + uCoordinateOffset.xy;
@@ -224,7 +225,7 @@ enum HomeIslandOceanEffects {
         float2(0.829, 0.559) * (cos(rippleA) * 0.032)
         + float2(-0.616, 0.788) * (cos(rippleB) * 0.023)
         + float2(0.225, 0.974) * (cos(rippleC) * 0.010)
-    ) * detailCalm * surfaceEdge;
+    ) * detailCalm * surfaceEdge * uMicroNormalScale;
     float3 waterNormal = normalize(
         _surface.normal
         - _surface.tangent * detailSlope.x
@@ -447,6 +448,10 @@ enum HomeIslandOceanEffects {
         material.setValue(SCNVector3Zero, forKey: "uBoatPosition")
         material.setValue(SCNVector3(0, 1, 0), forKey: "uBoatHeading")
         material.setValue(NSNumber(value: Float(0)), forKey: "uBoatSpeed")
+        material.setValue(
+            NSNumber(value: MetalRenderingProfile.current.oceanMicroNormalScale),
+            forKey: "uMicroNormalScale"
+        )
         plane.firstMaterial = material
 
         let surface = SCNNode(geometry: plane)

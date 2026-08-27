@@ -3145,7 +3145,11 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> VoyagingSceneKitView {
-        let view = VoyagingSceneKitView()
+        let metalProfile = MetalRenderingProfile.current
+        let view = VoyagingSceneKitView(
+            frame: .zero,
+            options: MetalRenderingProfile.sceneViewOptions()
+        )
         let guidedIntroduction = renderingMode == .guidedIntroduction
         let scene = VoyageSceneKit.makeVoyagingScene(
             showIsland: showIsland,
@@ -3155,8 +3159,12 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         )
         view.scene = scene
         view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
-        view.antialiasingMode = guidedIntroduction ? .multisampling2X : .multisampling4X
-        view.preferredFramesPerSecond = guidedIntroduction ? 30 : 60
+        view.antialiasingMode = guidedIntroduction
+            ? .multisampling2X
+            : metalProfile.antialiasingMode
+        view.preferredFramesPerSecond = guidedIntroduction
+            ? 30
+            : metalProfile.interactiveFramesPerSecond
         view.contentScaleFactor = guidedIntroduction
             ? min(UIScreen.main.scale, 2)
             : UIScreen.main.scale

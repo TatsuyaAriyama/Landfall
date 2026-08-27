@@ -340,11 +340,15 @@ struct HomeIslandSceneView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> SCNView {
-        let view = HomeIslandInteractiveSceneView(frame: .zero)
+        let metalProfile = MetalRenderingProfile.current
+        let view = HomeIslandInteractiveSceneView(
+            frame: .zero,
+            options: MetalRenderingProfile.sceneViewOptions()
+        )
         view.backgroundColor = .clear
         view.isOpaque = false
-        view.antialiasingMode = .multisampling4X
-        view.preferredFramesPerSecond = 60
+        view.antialiasingMode = metalProfile.antialiasingMode
+        view.preferredFramesPerSecond = metalProfile.interactiveFramesPerSecond
         // Walking is renderer-driven and must remain responsive even when the
         // user asks to reduce non-essential motion. The arrival/camera effects
         // themselves are shortened or skipped below.
@@ -1311,7 +1315,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         func update(owner: HomeIslandSceneView) {
             self.owner = owner
-            let framesPerSecond = owner.rendersThrottled ? 20 : 60
+            let framesPerSecond = owner.rendersThrottled
+                ? 20
+                : MetalRenderingProfile.current.interactiveFramesPerSecond
             if view?.preferredFramesPerSecond != framesPerSecond {
                 view?.preferredFramesPerSecond = framesPerSecond
             }
