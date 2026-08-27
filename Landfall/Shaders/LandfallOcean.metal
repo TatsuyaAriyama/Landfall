@@ -10,7 +10,6 @@ struct LandfallOceanVertexIn {
 
 struct LandfallOceanNodeBuffer {
     float4x4 modelTransform;
-    float4x4 normalTransform;
     float4x4 modelViewProjectionTransform;
 };
 
@@ -111,7 +110,7 @@ vertex LandfallOceanVertexOut landfallOceanVertex(
     LandfallOceanVertexOut out;
     out.position = node.modelViewProjectionTransform * float4(displaced, 1.0);
     out.worldPosition = (node.modelTransform * float4(displaced, 1.0)).xyz;
-    out.worldNormal = normalize((node.normalTransform * float4(localNormal, 0.0)).xyz);
+    out.worldNormal = normalize((node.modelTransform * float4(localNormal, 0.0)).xyz);
     out.localPosition = localPosition;
     out.oceanPosition = oceanPosition;
     out.slope = waves.slope * edge;

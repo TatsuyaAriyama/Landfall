@@ -420,10 +420,17 @@ enum HomeIslandOceanEffects {
         material.lightingModel = .constant
         material.diffuse.contents = UIColor(rgb: 0x168BA1)
         material.isDoubleSided = true
-        material.shaderModifiers = [
-            .geometry: geometryShader,
-            .surface: surfaceShader,
-        ]
+        if let nativeProgram = MetalOceanProgram.make(
+            layout: layout,
+            appearance: appearance
+        ) {
+            material.program = nativeProgram
+        } else {
+            material.shaderModifiers = [
+                .geometry: geometryShader,
+                .surface: surfaceShader,
+            ]
+        }
         material.setValue(NSNumber(value: currentTime), forKey: "uTime")
         material.setValue(linearColorVector(appearance.shallow), forKey: "uShallow")
         material.setValue(linearColorVector(appearance.sea), forKey: "uSea")

@@ -8,8 +8,15 @@ enum MetalOceanShaderLibrary {
     static let fragmentFunctionName = "landfallOceanFragment"
 
     static func isAvailable(on device: MTLDevice) -> Bool {
-        guard let library = device.makeDefaultLibrary() else { return false }
-        return library.makeFunction(name: vertexFunctionName) != nil
-            && library.makeFunction(name: fragmentFunctionName) != nil
+        makeLibrary(on: device) != nil
+    }
+
+    static func makeLibrary(on device: MTLDevice) -> MTLLibrary? {
+        guard let library = device.makeDefaultLibrary(),
+              library.makeFunction(name: vertexFunctionName) != nil,
+              library.makeFunction(name: fragmentFunctionName) != nil else {
+            return nil
+        }
+        return library
     }
 }
