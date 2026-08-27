@@ -1531,14 +1531,16 @@ enum AftideHomeSceneFactory {
         ambient.light = SCNLight()
         ambient.light?.type = .ambient
         ambient.light?.color = UIColor(rgb: palette.ambient)
-        ambient.light?.intensity = timeOfDay == .day ? 1_000 : 680
+        // PBR素材の地色を残しつつ影を開く。旧値は主光源と合算すると白レベルを
+        // 超え、木・砂・帆が同じ白い面へ飽和していた。
+        ambient.light?.intensity = timeOfDay == .day ? 620 : 480
         scene.rootNode.addChildNode(ambient)
 
         let key = SCNNode()
         key.light = SCNLight()
         key.light?.type = .directional
         key.light?.color = UIColor(rgb: palette.key)
-        key.light?.intensity = timeOfDay == .day ? 1_550 : 1_250
+        key.light?.intensity = timeOfDay == .day ? 1_080 : 920
         key.position = celestial.position
         key.look(at: SCNVector3Zero)
         scene.rootNode.addChildNode(key)
@@ -1547,7 +1549,7 @@ enum AftideHomeSceneFactory {
         fill.light = SCNLight()
         fill.light?.type = .directional
         fill.light?.color = UIColor(rgb: palette.fill)
-        fill.light?.intensity = 420
+        fill.light?.intensity = 220
         fill.position = SCNVector3(18, 7, -9)
         fill.look(at: SCNVector3Zero)
         scene.rootNode.addChildNode(fill)
