@@ -1323,7 +1323,7 @@ enum VoyageSceneKit {
                 BoatSurfaceProfile(
                     roughness: 0.94,
                     ambientOcclusion: 0.90,
-                    detail: (26, 0.020, 0.040, 0.030)
+                    detail: (26, 0.012, 0.030, 0.018)
                 )
             case .rope:
                 BoatSurfaceProfile(
@@ -1403,6 +1403,8 @@ enum VoyageSceneKit {
     float uBoatWaterline;
     float3 uBoatGrainAxis;
     float3 uBoatSeaBounce;
+    float3 uBoatSunDirection;
+    float3 uBoatSunColor;
     #pragma body
     float3 localP = (scn_node.inverseModelViewTransform
         * float4(_surface.position, 1.0)).xyz;
@@ -1440,6 +1442,12 @@ enum VoyageSceneKit {
         height = sin(p.x * 0.82 + p.y * 0.37) * sin(p.z * 0.91 - p.y * 0.28) * 0.29;
     }
 
+    // 小さく映るときは糸や導管がピクセルより細くなる。そのまま残すと
+    // 帆が等間隔の縞模様に見えるため、画面上の微分でミップ相当の減衰をかける。
+    float detailFootprint = max(length(dfdx(p)), length(dfdy(p)));
+    float detailVisibility = 1.0 - smoothstep(0.12, 0.58, detailFootprint);
+    height *= detailVisibility;
+
     float3 normal = normalize(_surface.normal);
     if (uBoatDetailStrength > 0.0) {
         // 高さの画面微分から接線空間を復元。UV がない USDZ でも泳がない。
@@ -1460,6 +1468,22 @@ enum VoyageSceneKit {
             1.0
         );
         _surface.diffuse.rgb *= 1.0 + height * uBoatColorVariation;
+    }
+
+    if (uBoatSurfaceKind > 3.5 && uBoatSurfaceKind < 4.5) {
+        // 表からの反射だけでなく、太陽と視点が帆の反対側にあるときは
+        // 布の糸の間から暖色が薄く抜ける。発光板にならないよう透過は逆光時だけに絞る。
+        float3 viewDirection = normalize(_surface.view);
+        float3 sailLightDirection = normalize(
+            (scn_frame.viewTransform * float4(uBoatSunDirection, 0.0)).xyz
+        );
+        float viewSide = dot(normal, viewDirection);
+        float lightSide = dot(normal, sailLightDirection);
+        float backlit = smoothstep(0.05, 0.62, -viewSide * lightSide);
+        float threadOpenings = 0.72 + height * 0.32;
+        _surface.emission.rgb += uBoatSunColor
+            * (backlit * threadOpenings * 0.075);
+        _surface.roughness = mix(_surface.roughness, 0.82, backlit * 0.16);
     }
 
     // 水没部、水面の細い鏡面リム、上に残る飛沫跡を分ける。
@@ -1501,7 +1525,9 @@ enum VoyageSceneKit {
         _ material: SCNMaterial,
         on node: SCNNode,
         identity: String,
-        seaBounce: UInt
+        seaBounce: UInt,
+        sunDirection: SCNVector3,
+        sunColor: UInt
     ) {
         let surface = BoatSurfaceKind.resolve(identity.lowercased())
         let profile = surface.profile
@@ -1554,6 +1580,11 @@ enum VoyageSceneKit {
             HomeIslandOceanEffects.linearColorVector(seaBounce),
             forKey: "uBoatSeaBounce"
         )
+        material.setValue(sunDirection, forKey: "uBoatSunDirection")
+        material.setValue(
+            HomeIslandOceanEffects.linearColorVector(sunColor),
+            forKey: "uBoatSunColor"
+        )
     }
 
     private static func longestLocalAxis(of node: SCNNode) -> SCNVector3 {
@@ -1578,7 +1609,9 @@ enum VoyageSceneKit {
     /// 船ごとの分岐なしに動く。
     static func makeBoatModel(
         _ parts: BoatParts,
-        seaBounce: UInt = 0x2E7063
+        seaBounce: UInt = 0x2E7063,
+        sunDirection: SCNVector3 = SCNVector3(-0.34, 0.72, 0.60),
+        sunColor: UInt = 0xFFF1C7
     ) -> SCNNode {
         let ship = parts.ship
         guard let url = Bundle.main.url(forResource: ship.resourceName, withExtension: "usdz"),
@@ -1629,7 +1662,9 @@ enum VoyageSceneKit {
                     material,
                     on: node,
                     identity: "\(materialName) \(node.name ?? "")",
-                    seaBounce: seaBounce
+                    seaBounce: seaBounce,
+                    sunDirection: sunDirection,
+                    sunColor: sunColor
                 )
                 return material
             }
@@ -2251,7 +2286,12 @@ enum VoyageSceneKit {
         travel.scale = SCNVector3(0.55, 0.55, 0.55)
         let bob = SCNNode()
         bob.name = "boatBob"
-        let boat = makeBoatModel(boatParts, seaBounce: oceanAppearance.sea)
+        let boat = makeBoatModel(
+            boatParts,
+            seaBounce: oceanAppearance.sea,
+            sunDirection: oceanAppearance.sunDirection,
+            sunColor: oceanAppearance.sun
+        )
         attachNavigator(to: boat)
         bob.addChildNode(boat)
         // しぶきは船体と一緒に上下し、その時間帯の海色と反射色を受け継ぐ。
@@ -2551,7 +2591,12 @@ enum VoyageSceneKit {
             timeOfDay: .night,
             palette: .voyagingNight
         )
-        return makeBoatModel(parts, seaBounce: oceanAppearance.sea)
+        return makeBoatModel(
+            parts,
+            seaBounce: oceanAppearance.sea,
+            sunDirection: oceanAppearance.sunDirection,
+            sunColor: oceanAppearance.sun
+        )
     }
 
     // MARK: - 航海士(プレイヤー)
