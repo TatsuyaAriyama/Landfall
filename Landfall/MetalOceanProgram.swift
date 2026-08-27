@@ -58,7 +58,9 @@ enum MetalOceanProgram {
         let program = SCNProgram()
         program.library = library
         program.vertexFunctionName = MetalOceanShaderLibrary.vertexFunctionName
-        program.fragmentFunctionName = MetalOceanShaderLibrary.fragmentFunctionName
+        program.fragmentFunctionName = MetalOceanShaderLibrary.fragmentFunctionName(
+            for: MetalRenderingProfile.current.tier
+        )
         program.isOpaque = true
         program.delegate = diagnostics
         program.handleBinding(ofBufferNamed: "ocean", frequency: .perNode) {

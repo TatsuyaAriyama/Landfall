@@ -125,10 +125,11 @@ vertex LandfallOceanVertexOut landfallOceanVertex(
     return out;
 }
 
-fragment half4 landfallOceanFragment(
-    LandfallOceanVertexOut in [[stage_in]],
-    constant SCNSceneBuffer& frame [[buffer(0)]],
-    constant LandfallOceanUniforms& ocean [[buffer(2)]])
+static inline half4 landfallShadeOcean(
+    LandfallOceanVertexOut in,
+    constant SCNSceneBuffer& frame,
+    constant LandfallOceanUniforms& ocean,
+    float detailQuality)
 {
     float2 p = in.oceanPosition;
     float rippleWarp = sin(dot(p, float2(0.173, -0.241)) - ocean.time * 0.31);
@@ -138,15 +139,21 @@ fragment half4 landfallOceanFragment(
         - ocean.time * 1.47 - rippleWarp * 0.36;
     float rippleC = dot(p, float2(0.225, 0.974)) * 4.85
         - ocean.time * 2.05 + rippleWarp * 0.52;
-    float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
-    float capillaryVisibility = 1.0 - smoothstep(0.14, 0.48, pixelFootprint * 8.4);
-    float rippleD = dot(p, float2(-0.952, 0.306)) * 8.4
-        - ocean.time * 2.72 - rippleWarp * 0.81;
+    float2 capillarySlope = float2(0.0);
+    if (detailQuality > 0.75) {
+        float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
+        float visibility = 1.0 - smoothstep(0.14, 0.48, pixelFootprint * 8.4);
+        float rippleD = dot(p, float2(-0.952, 0.306)) * 8.4
+            - ocean.time * 2.72 - rippleWarp * 0.81;
+        float tierBlend = smoothstep(0.75, 1.0, detailQuality);
+        capillarySlope = float2(-0.952, 0.306)
+            * (cos(rippleD) * 0.005 * visibility * tierBlend);
+    }
     float2 detailSlope = (
         float2(0.829, 0.559) * (cos(rippleA) * 0.032)
         + float2(-0.616, 0.788) * (cos(rippleB) * 0.023)
         + float2(0.225, 0.974) * (cos(rippleC) * 0.010)
-        + float2(-0.952, 0.306) * (cos(rippleD) * 0.005 * capillaryVisibility)
+        + capillarySlope
     ) * ocean.microNormalScale;
     float3 normal = normalize(in.worldNormal + float3(-detailSlope.x, 0.0, detailSlope.y));
 
@@ -283,4 +290,28 @@ fragment half4 landfallOceanFragment(
     color = 1.0 - exp(-max(color, 0.0) * 1.16);
     color = mix(color, sqrt(max(color, 0.0)), 0.07);
     return half4(half3(saturate(color)), 1.0h);
+}
+
+fragment half4 landfallOceanFragmentCompatible(
+    LandfallOceanVertexOut in [[stage_in]],
+    constant SCNSceneBuffer& frame [[buffer(0)]],
+    constant LandfallOceanUniforms& ocean [[buffer(2)]])
+{
+    return landfallShadeOcean(in, frame, ocean, 0.62);
+}
+
+fragment half4 landfallOceanFragmentEnhanced(
+    LandfallOceanVertexOut in [[stage_in]],
+    constant SCNSceneBuffer& frame [[buffer(0)]],
+    constant LandfallOceanUniforms& ocean [[buffer(2)]])
+{
+    return landfallShadeOcean(in, frame, ocean, 0.86);
+}
+
+fragment half4 landfallOceanFragmentUltra(
+    LandfallOceanVertexOut in [[stage_in]],
+    constant SCNSceneBuffer& frame [[buffer(0)]],
+    constant LandfallOceanUniforms& ocean [[buffer(2)]])
+{
+    return landfallShadeOcean(in, frame, ocean, 1.0);
 }
