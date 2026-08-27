@@ -242,11 +242,19 @@ static inline LandfallWakeSample landfallSampleWake(
     float turbulencePhase = aft * 2.35 + boat.lateral * 4.7
         + sin(aft * 0.83) * 1.15 - ocean.time * 0.91;
     float turbulence = 0.5 + 0.5 * sin(turbulencePhase);
-    float bubbleCells = (0.5 + 0.5 * sin(turbulencePhase * 1.83 + boat.lateral * 5.1))
-        * (0.5 + 0.5 * cos(armPhase * 1.37 - aft * 3.2));
-    float bubbleBreakup = smoothstep(0.30, 0.76, bubbleCells);
+    float bubblePrimary = 0.5 + 0.5 * sin(
+        turbulencePhase * 1.83 + boat.lateral * 5.1
+    );
+    float bubbleSecondary = 0.5 + 0.5 * cos(
+        armPhase * 1.37 - aft * 3.2
+    );
+    // Entrained air forms short overlapping pockets. Multiplying both cell
+    // fields outright made almost every fragment vanish on a phone display;
+    // retain a sparse primary pocket while the secondary field breaks its edge.
+    float bubbleCells = bubblePrimary * mix(0.28, 1.0, bubbleSecondary);
+    float bubbleBreakup = smoothstep(0.32, 0.74, bubbleCells);
     float aeration = disturbance
-        * mix(0.06, 0.70, bubbleBreakup)
+        * mix(0.07, 0.78, bubbleBreakup)
         * mix(0.72, 1.0, turbulence);
 
     // The foamy core dissipates quickly, but its energy continues outward as
@@ -859,11 +867,18 @@ static inline half4 landfallShadeOcean(
     }
 
     if (wake.disturbance > 0.0) {
-        // Disturbed water first exposes a little shallow body color; only the
-        // most aerated fragments become foam. The same sample already perturbed
-        // the normal above, so the wake bends reflections instead of sitting on top.
-        color = mix(color, ocean.shallowColor, wake.disturbance * 0.020);
-        color = mix(color, foamColor, wake.aeration * 0.15);
+        // Disturbed water scatters a small amount of horizon radiance before the
+        // most aerated pockets become foam. Both use the wake sample that already
+        // perturbed the normal above, so this reads as rough water instead of a
+        // white V decal and remains legible at the 17 Pro Max voyage distance.
+        float3 wakeScatterColor = mix(
+            ocean.shallowColor,
+            ocean.horizonColor,
+            0.38 + fresnel * 0.22
+        );
+        float wakeScatter = wake.disturbance * (0.030 + fresnel * 0.040);
+        color = mix(color, wakeScatterColor, wakeScatter);
+        color = mix(color, foamColor, wake.aeration * 0.22);
     }
 
     // Aerial perspective must finish at the same radiance as the sky behind
