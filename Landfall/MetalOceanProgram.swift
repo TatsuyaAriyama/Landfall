@@ -49,7 +49,7 @@ enum MetalOceanProgram {
               MetalRenderingProfile.current.supportsNativeOceanProgram,
               let device = MTLCreateSystemDefaultDevice(),
               let library = MetalOceanShaderLibrary.makeLibrary(on: device),
-              MemoryLayout<Uniforms>.stride == 224 else {
+              MemoryLayout<Uniforms>.stride == 240 else {
             return nil
         }
 
@@ -76,7 +76,9 @@ enum MetalOceanProgram {
             islandScale: islandScale,
             boatPosition: .zero,
             boatHeading: SIMD2(0, 1),
-            boatSpeed: 0
+            boatSpeed: 0,
+            boatSize: .zero,
+            boatPresence: 0
         )
         let program = SCNProgram()
         program.library = library
@@ -97,6 +99,11 @@ enum MetalOceanProgram {
                     ?? uniforms.boatHeading
                 uniforms.boatSpeed = (material.value(forKey: "uBoatSpeed") as? NSNumber)?.floatValue
                     ?? uniforms.boatSpeed
+                uniforms.boatSize = vector2(named: "uBoatSize", from: material)
+                    ?? uniforms.boatSize
+                uniforms.boatPresence = (
+                    material.value(forKey: "uBoatPresence") as? NSNumber
+                )?.floatValue ?? uniforms.boatPresence
             }
             withUnsafeBytes(of: &uniforms) { bytes in
                 guard let address = bytes.baseAddress else { return }
@@ -153,6 +160,8 @@ enum MetalOceanProgram {
         var boatPosition: SIMD2<Float>
         var boatHeading: SIMD2<Float>
         var boatSpeed: Float
+        var boatSize: SIMD2<Float>
+        var boatPresence: Float
     }
 
     private final class Diagnostics: NSObject, SCNProgramDelegate {

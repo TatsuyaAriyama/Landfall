@@ -33,6 +33,8 @@ struct LandfallOceanUniforms {
     float2 boatPosition;
     float2 boatHeading;
     float boatSpeed;
+    float2 boatSize;
+    float boatPresence;
 };
 
 struct LandfallOceanVertexOut {
@@ -264,11 +266,31 @@ static inline half4 landfallShadeOcean(
         color = mix(color, ocean.lightColor, shoreFoam * 0.76);
     }
 
+    float2 boatHeading = ocean.boatHeading / max(length(ocean.boatHeading), 0.001);
+    float2 fromBoat = p - ocean.boatPosition;
+    float boatLongitudinal = dot(fromBoat, boatHeading);
+    float boatLateral = dot(fromBoat, float2(-boatHeading.y, boatHeading.x));
+    float halfHullLength = max(ocean.boatSize.x * 0.5, 0.001);
+    float halfHullBeam = max(ocean.boatSize.y * 0.5, 0.001);
+    if (ocean.boatPresence > 0.5) {
+        float hullDistance = length(float2(
+            boatLongitudinal / halfHullLength,
+            boatLateral / halfHullBeam
+        ));
+        float submergedShadow = 1.0 - smoothstep(0.62, 1.20, hullDistance);
+        float meniscus = 1.0 - smoothstep(0.035, 0.18, abs(hullDistance - 1.0));
+        float meniscusBreak = 0.72 + 0.28 * sin(
+            boatLongitudinal * 8.1 - boatLateral * 10.7 + ocean.time * 0.34
+        );
+        color = mix(color, ocean.deepColor, submergedShadow * 0.13);
+        color = mix(color, ocean.lightColor, meniscus * meniscusBreak * 0.10);
+    }
+
     if (ocean.boatSpeed > 0.08) {
-        float2 heading = ocean.boatHeading / max(length(ocean.boatHeading), 0.001);
-        float2 fromWake = p - (ocean.boatPosition - heading * 0.72);
-        float aft = -dot(fromWake, heading);
-        float lateral = dot(fromWake, float2(-heading.y, heading.x));
+        float wakeOriginOffset = max(halfHullLength * 0.72, 0.18);
+        float2 fromWake = p - (ocean.boatPosition - boatHeading * wakeOriginOffset);
+        float aft = -dot(fromWake, boatHeading);
+        float lateral = dot(fromWake, float2(-boatHeading.y, boatHeading.x));
         float strength = smoothstep(0.08, 1.60, ocean.boatSpeed);
         float wakeLength = mix(1.8, 4.2, strength);
         if (aft > 0.0 && aft < wakeLength) {

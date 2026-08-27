@@ -145,11 +145,16 @@ enum HomeIslandMarineDynamics {
         /// Normalized travel direction in the same shader coordinate space.
         let heading: SIMD2<Float>
         let speed: Float
+        /// Water-contact footprint in world metres: (length, beam).
+        let hullSize: SIMD2<Float>
+        let isPresent: Bool
 
         static let inactive = WakeState(
             boatPosition: .zero,
             heading: SIMD2(1, 0),
-            speed: 0
+            speed: 0,
+            hullSize: .zero,
+            isPresent: false
         )
 
         func apply(to material: SCNMaterial?) {
@@ -162,6 +167,14 @@ enum HomeIslandMarineDynamics {
                 forKey: "uBoatHeading"
             )
             material?.setValue(NSNumber(value: speed), forKey: "uBoatSpeed")
+            material?.setValue(
+                SCNVector3(hullSize.x, hullSize.y, 0),
+                forKey: "uBoatSize"
+            )
+            material?.setValue(
+                NSNumber(value: isPresent ? Float(1) : Float(0)),
+                forKey: "uBoatPresence"
+            )
         }
     }
 
@@ -322,7 +335,9 @@ enum HomeIslandMarineDynamics {
                 wake: WakeState(
                     boatPosition: SIMD2(worldPosition.x, -worldPosition.z),
                     heading: SIMD2(wakeHeading.x, -wakeHeading.y),
-                    speed: smoothedSpeed
+                    speed: smoothedSpeed,
+                    hullSize: SIMD2(tuning.hullLength, tuning.beam),
+                    isPresent: true
                 )
             )
         }
@@ -383,7 +398,9 @@ enum HomeIslandMarineDynamics {
             WakeState(
                 boatPosition: SIMD2(position.x, -position.z),
                 heading: SIMD2(wakeHeading.x, -wakeHeading.y),
-                speed: 0
+                speed: 0,
+                hullSize: SIMD2(tuning.hullLength, tuning.beam),
+                isPresent: true
             )
         }
     }

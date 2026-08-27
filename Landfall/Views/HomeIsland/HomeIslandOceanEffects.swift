@@ -191,6 +191,8 @@ enum HomeIslandOceanEffects {
     float3 uBoatPosition;
     float3 uBoatHeading;
     float uBoatSpeed;
+    float3 uBoatSize;
+    float uBoatPresence;
     float uMicroNormalScale;
     #pragma body
     float2 localP = (_surface.diffuseTexcoord - 0.5) * uSurfaceSize.xy;
@@ -366,16 +368,38 @@ enum HomeIslandOceanEffects {
         col = mix(col, uLight, shoreFoam * 0.76);
     }
 
-    // Boat uniforms use ocean-plane coordinates: (world X, -world Z). Keep the
-    // wake below foam contrast: it is a short veil of aerated water with two
-    // broken divergent arms, never a row of detached particles.
+    // Boat uniforms use ocean-plane coordinates: (world X, -world Z). A soft
+    // underwater footprint and narrow meniscus keep the hull attached to the
+    // surface even at rest; both scale with the actual boat used by the scene.
+    float2 boatHeading = uBoatHeading.xy;
+    boatHeading /= max(length(boatHeading), 0.001);
+    float2 fromBoat = p - uBoatPosition.xy;
+    float boatLongitudinal = dot(fromBoat, boatHeading);
+    float boatLateral = dot(fromBoat, float2(-boatHeading.y, boatHeading.x));
+    float halfHullLength = max(uBoatSize.x * 0.5, 0.001);
+    float halfHullBeam = max(uBoatSize.y * 0.5, 0.001);
+    if (uBoatPresence > 0.5) {
+        float hullDistance = length(float2(
+            boatLongitudinal / halfHullLength,
+            boatLateral / halfHullBeam
+        ));
+        float submergedShadow = 1.0 - smoothstep(0.62, 1.20, hullDistance);
+        float meniscus = 1.0 - smoothstep(0.035, 0.18, abs(hullDistance - 1.0));
+        float meniscusBreak = 0.72 + 0.28 * sin(
+            boatLongitudinal * 8.1 - boatLateral * 10.7 + uTime * 0.34
+        );
+        col = mix(col, uDeep, submergedShadow * 0.13 * surfaceEdge);
+        col = mix(col, uLight, meniscus * meniscusBreak * 0.10 * surfaceEdge);
+    }
+
+    // Keep the wake below foam contrast: it is a short veil of aerated water
+    // with two broken divergent arms, never a row of detached particles.
     if (uBoatSpeed > 0.08) {
-        float2 heading = uBoatHeading.xy;
-        heading /= max(length(heading), 0.001);
-        float2 wakeOrigin = uBoatPosition.xy - heading * 0.72;
+        float wakeOriginOffset = max(halfHullLength * 0.72, 0.18);
+        float2 wakeOrigin = uBoatPosition.xy - boatHeading * wakeOriginOffset;
         float2 fromWake = p - wakeOrigin;
-        float aft = -dot(fromWake, heading);
-        float signedLateral = dot(fromWake, float2(-heading.y, heading.x));
+        float aft = -dot(fromWake, boatHeading);
+        float signedLateral = dot(fromWake, float2(-boatHeading.y, boatHeading.x));
         float wakeStrength = smoothstep(0.08, 1.60, uBoatSpeed);
         float wakeLength = mix(1.8, 4.2, wakeStrength);
         if (aft > 0.0 && aft < wakeLength) {
@@ -483,6 +507,8 @@ enum HomeIslandOceanEffects {
         material.setValue(SCNVector3Zero, forKey: "uBoatPosition")
         material.setValue(SCNVector3(0, 1, 0), forKey: "uBoatHeading")
         material.setValue(NSNumber(value: Float(0)), forKey: "uBoatSpeed")
+        material.setValue(SCNVector3Zero, forKey: "uBoatSize")
+        material.setValue(NSNumber(value: Float(0)), forKey: "uBoatPresence")
         material.setValue(
             NSNumber(value: MetalRenderingProfile.current.oceanMicroNormalScale),
             forKey: "uMicroNormalScale"
