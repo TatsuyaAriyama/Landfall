@@ -102,6 +102,23 @@ enum MetalOceanProgram {
         return program
     }
 
+    static func installRuntimeFallback(
+        for program: SCNProgram,
+        on material: SCNMaterial,
+        shaderModifiers: [SCNShaderModifierEntryPoint: String]
+    ) {
+        diagnostics.register(
+            program: program,
+            material: material,
+            shaderModifiers: shaderModifiers
+        )
+#if DEBUG
+        if UserDefaults.standard.bool(forKey: "LandfallMetalSimulateProgramFailure") {
+            diagnostics.activateFallback(for: program, simulated: true)
+        }
+#endif
+    }
+
     private static func linearColor(_ rgb: UInt) -> SIMD3<Float> {
         let color = HomeIslandOceanEffects.linearColorVector(rgb)
         return SIMD3(color.x, color.y, color.z)
@@ -135,13 +152,65 @@ enum MetalOceanProgram {
     }
 
     private final class Diagnostics: NSObject, SCNProgramDelegate {
+        private final class Fallback {
+            weak var material: SCNMaterial?
+            let shaderModifiers: [SCNShaderModifierEntryPoint: String]
+
+            init(
+                material: SCNMaterial,
+                shaderModifiers: [SCNShaderModifierEntryPoint: String]
+            ) {
+                self.material = material
+                self.shaderModifiers = shaderModifiers
+            }
+        }
+
         private let logger = Logger(
             subsystem: Bundle.main.bundleIdentifier ?? "Landfall",
             category: "MetalOcean"
         )
+        private let lock = NSLock()
+        private var fallbacks: [ObjectIdentifier: Fallback] = [:]
+
+        func register(
+            program: SCNProgram,
+            material: SCNMaterial,
+            shaderModifiers: [SCNShaderModifierEntryPoint: String]
+        ) {
+            lock.lock()
+            fallbacks = fallbacks.filter { $0.value.material != nil }
+            fallbacks[ObjectIdentifier(program)] = Fallback(
+                material: material,
+                shaderModifiers: shaderModifiers
+            )
+            lock.unlock()
+        }
 
         func program(_ program: SCNProgram, handleError error: any Error) {
             logger.error("Native ocean program error: \(error.localizedDescription, privacy: .public)")
+            activateFallback(for: program, simulated: false)
+        }
+
+        func activateFallback(for program: SCNProgram, simulated: Bool) {
+            if simulated {
+                logger.debug("Simulating a native ocean program failure")
+            }
+            lock.lock()
+            let fallback = fallbacks.removeValue(forKey: ObjectIdentifier(program))
+            lock.unlock()
+            guard let material = fallback?.material,
+                  let shaderModifiers = fallback?.shaderModifiers else { return }
+            DispatchQueue.main.async { [weak material] in
+                guard let material else { return }
+                material.program = nil
+                material.shaderModifiers = shaderModifiers
+                self.logger.notice("Restored shader-modifier ocean after Metal program failure")
+#if DEBUG
+                if simulated {
+                    print("[MetalOcean] Simulated runtime failure restored fallback ocean")
+                }
+#endif
+            }
         }
     }
 }

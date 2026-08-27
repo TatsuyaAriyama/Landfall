@@ -425,6 +425,10 @@ enum HomeIslandOceanEffects {
         material.lightingModel = .constant
         material.diffuse.contents = UIColor(rgb: 0x168BA1)
         material.isDoubleSided = true
+        let fallbackShaderModifiers: [SCNShaderModifierEntryPoint: String] = [
+            .geometry: geometryShader,
+            .surface: surfaceShader,
+        ]
         if let nativeProgram = MetalOceanProgram.make(
             layout: layout,
             appearance: appearance,
@@ -432,11 +436,13 @@ enum HomeIslandOceanEffects {
             rolloutScene: nativeMetalRollout
         ) {
             material.program = nativeProgram
+            MetalOceanProgram.installRuntimeFallback(
+                for: nativeProgram,
+                on: material,
+                shaderModifiers: fallbackShaderModifiers
+            )
         } else {
-            material.shaderModifiers = [
-                .geometry: geometryShader,
-                .surface: surfaceShader,
-            ]
+            material.shaderModifiers = fallbackShaderModifiers
         }
         material.setValue(NSNumber(value: currentTime), forKey: "uTime")
         material.setValue(linearColorVector(appearance.shallow), forKey: "uShallow")
