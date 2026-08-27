@@ -131,6 +131,7 @@ enum VoyageSailFlutter {
 /// 舳先が波を切る瞬間を、飛沫・霧・海面の細片に分けて描く。
 enum VoyageBowSpray {
     static let nodeName = "voyageBowSpray"
+    private static let bowWaveNodeName = "voyageBowWave"
 
     struct Palette {
         let sea: UIColor
@@ -138,8 +139,9 @@ enum VoyageBowSpray {
     }
 
     struct Rates {
-        static let zero = Rates(streaks: 0, mist: 0, flecks: 0)
+        static let zero = Rates(bowWave: 0, streaks: 0, mist: 0, flecks: 0)
 
+        let bowWave: CGFloat
         let streaks: CGFloat
         let mist: CGFloat
         let flecks: CGFloat
@@ -150,6 +152,7 @@ enum VoyageBowSpray {
             let impact = powf(wave, 2.3)
             let surfaceWave = max(0, sin(time * 1.9 - 0.72))
             return Rates(
+                bowWave: strength * CGFloat(0.56 + impact * 0.44),
                 streaks: 18 * strength * CGFloat(0.06 + impact * 0.94),
                 mist: 6 * strength * CGFloat(impact),
                 flecks: 36 * strength
@@ -160,13 +163,17 @@ enum VoyageBowSpray {
 
     /// レイヤーを配列の順序で識別しない、アニメータ向けの型付きハンドル。
     struct Systems {
-        static let empty = Systems(streaks: [], mist: [], flecks: [])
+        static let empty = Systems(bowWave: [], streaks: [], mist: [], flecks: [])
 
+        let bowWave: [SCNMaterial]
         let streaks: [SCNParticleSystem]
         let mist: [SCNParticleSystem]
         let flecks: [SCNParticleSystem]
 
         func apply(_ rates: Rates) {
+            for material in bowWave {
+                material.setValue(NSNumber(value: rates.bowWave), forKey: "uSprayStrength")
+            }
             set(streaks, rate: rates.streaks)
             set(mist, rate: rates.mist)
             set(flecks, rate: rates.flecks)
@@ -197,6 +204,7 @@ enum VoyageBowSpray {
     static func makeNode(palette: Palette) -> SCNNode {
         let root = SCNNode()
         root.name = nodeName
+        root.addChildNode(makeBowWave(palette: palette))
         for layer in Layer.allCases {
             let layerNode = SCNNode()
             layerNode.name = layer.nodeName
@@ -222,9 +230,92 @@ enum VoyageBowSpray {
                 .childNodes.flatMap { $0.particleSystems ?? [] } ?? []
         }
         return Systems(
+            bowWave: container.childNode(withName: bowWaveNodeName, recursively: false)?
+                .geometry?.materials ?? [],
             streaks: systems(for: .streaks),
             mist: systems(for: .mist),
             flecks: systems(for: .flecks)
+        )
+    }
+
+    /// 粒子の発生源を海面につなぐ、左右一枚ずつの薄い船首波。
+    /// 船首から後方へ広がる帯を一つのジオメトリにまとめ、追加描画を最小限にする。
+    private static func makeBowWave(palette: Palette) -> SCNNode {
+        let node = SCNNode(geometry: makeBowWaveGeometry())
+        node.name = bowWaveNodeName
+
+        let material = SCNMaterial()
+        material.name = "LF_BowWave"
+        material.lightingModel = .constant
+        material.diffuse.contents = palette.highlight.withAlphaComponent(0.54)
+        material.emission.contents = palette.sea.withAlphaComponent(0.10)
+        material.blendMode = .alpha
+        material.isDoubleSided = true
+        material.writesToDepthBuffer = false
+        material.readsFromDepthBuffer = true
+        material.shaderModifiers = [.fragment: """
+        #pragma arguments
+        float uSprayStrength;
+        #pragma body
+        float u = _surface.diffuseTexcoord.x;
+        float v = _surface.diffuseTexcoord.y;
+        float edge = smoothstep(0.02, 0.18, v)
+            * (1.0 - smoothstep(0.74, 0.98, v));
+        float bow = smoothstep(0.0, 0.08, u);
+        float trail = 1.0 - smoothstep(0.46, 1.0, u);
+        float crestA = 0.5 + 0.5 * sin(u * 27.0 + v * 8.0 - scn_frame.time * 4.2);
+        float crestB = 0.5 + 0.5 * sin(u * 53.0 - v * 11.0 - scn_frame.time * 2.7);
+        float breakup = smoothstep(0.34, 0.78, crestA * 0.72 + crestB * 0.28);
+        float foam = bow * trail * edge * (0.34 + breakup * 0.66);
+        _output.color.rgb *= 0.92 + breakup * 0.14;
+        _output.color.a *= foam * uSprayStrength;
+        """]
+        material.setValue(NSNumber(value: CGFloat.zero), forKey: "uSprayStrength")
+        node.geometry?.materials = [material]
+        return node
+    }
+
+    private static func makeBowWaveGeometry() -> SCNGeometry {
+        let longitudinal: [Float] = [1.25, 0.98, 0.64, 0.22, -0.28, -0.82]
+        let inner: [Float] = [0.10, 0.16, 0.22, 0.29, 0.36, 0.43]
+        let outer: [Float] = [0.18, 0.31, 0.47, 0.65, 0.84, 1.02]
+        var vertices: [SCNVector3] = []
+        var normals: [SCNVector3] = []
+        var texcoords: [CGPoint] = []
+        var indices: [UInt32] = []
+
+        for side: Float in [1, -1] {
+            let start = UInt32(vertices.count)
+            for index in longitudinal.indices {
+                let progress = CGFloat(index) / CGFloat(longitudinal.count - 1)
+                let y = -0.012 - Float(progress) * 0.018
+                vertices.append(SCNVector3(longitudinal[index], y, inner[index] * side))
+                vertices.append(SCNVector3(longitudinal[index], y, outer[index] * side))
+                normals.append(contentsOf: [SCNVector3(0, 1, 0), SCNVector3(0, 1, 0)])
+                texcoords.append(CGPoint(x: progress, y: 0))
+                texcoords.append(CGPoint(x: progress, y: 1))
+            }
+            for segment in 0..<(longitudinal.count - 1) {
+                let offset = start + UInt32(segment * 2)
+                indices += [offset, offset + 2, offset + 1, offset + 1, offset + 2, offset + 3]
+            }
+        }
+
+        let element = indices.withUnsafeBufferPointer {
+            SCNGeometryElement(
+                data: Data(buffer: $0),
+                primitiveType: .triangles,
+                primitiveCount: indices.count / 3,
+                bytesPerIndex: MemoryLayout<UInt32>.size
+            )
+        }
+        return SCNGeometry(
+            sources: [
+                SCNGeometrySource(vertices: vertices),
+                SCNGeometrySource(normals: normals),
+                SCNGeometrySource(textureCoordinates: texcoords),
+            ],
+            elements: [element]
         )
     }
 
