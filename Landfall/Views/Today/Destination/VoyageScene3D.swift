@@ -1408,6 +1408,7 @@ enum VoyageSceneKit {
     float4x4 uBoatLocalToModel;
     float3 uBoatGrainAxis;
     float3 uBoatSeaBounce;
+    float3 uBoatSkyBounce;
     float3 uBoatSunDirection;
     float3 uBoatSunColor;
     #pragma body
@@ -1552,6 +1553,11 @@ enum VoyageSceneKit {
         (scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz
     );
     float upFacing = dot(normal, worldUp);
+    // A material reflects the direction opposite the incoming view ray. Using
+    // the surface normal here made every broad hull panel choose one flat
+    // palette, even while the camera moved around it.
+    float3 reflectedView = normalize(reflect(-viewDirection, normal));
+    float reflectedUp = dot(reflectedView, worldUp);
     float fresnel = pow(
         1.0 - clamp(dot(normal, viewDirection), 0.0, 1.0),
         4.0
@@ -1570,16 +1576,24 @@ enum VoyageSceneKit {
         reflectionResponse = 0.09;
     }
 
-    float skyLobe = smoothstep(-0.28, 0.72, upFacing);
-    float seaLobe = smoothstep(-0.18, 0.78, -upFacing);
+    float reflectedSky = smoothstep(-0.12, 0.48, reflectedUp);
+    float reflectedSea = 1.0 - smoothstep(-0.48, 0.12, reflectedUp);
+    float reflectedHorizon = 1.0
+        - smoothstep(0.04, 0.50, abs(reflectedUp));
     float horizonLobe = 1.0 - smoothstep(0.08, 0.72, abs(upFacing));
     float environmentStrength = reflectionResponse
         * (0.010 + gloss * 0.030 + fresnel * 0.032);
-    _surface.emission.rgb += uBoatSunColor
-        * (skyLobe * environmentStrength);
+    float skyWeight = reflectedSky / max(reflectedSky + reflectedSea, 0.0001);
+    float3 environmentColor = mix(uBoatSeaBounce, uBoatSkyBounce, skyWeight);
+    float3 horizonColor = mix(uBoatSkyBounce, uBoatSunColor, 0.18);
+    environmentColor = mix(
+        environmentColor,
+        horizonColor,
+        reflectedHorizon * 0.24
+    );
+    _surface.emission.rgb += environmentColor * environmentStrength;
     _surface.emission.rgb += uBoatSeaBounce
-        * (seaLobe * environmentStrength * 0.82
-            + belowSurface * 0.018
+        * (belowSurface * 0.018
             + waterlineRim * 0.020
             + horizonLobe * wetSheen * (0.012 + fresnel * 0.024));
 
@@ -1602,6 +1616,7 @@ enum VoyageSceneKit {
         identity: String,
         localToModel: simd_float4x4,
         seaBounce: UInt,
+        skyBounce: UInt,
         sunDirection: SCNVector3,
         sunColor: UInt
     ) {
@@ -1660,6 +1675,10 @@ enum VoyageSceneKit {
         material.setValue(
             HomeIslandOceanEffects.linearColorVector(seaBounce),
             forKey: "uBoatSeaBounce"
+        )
+        material.setValue(
+            HomeIslandOceanEffects.linearColorVector(skyBounce),
+            forKey: "uBoatSkyBounce"
         )
         material.setValue(sunDirection, forKey: "uBoatSunDirection")
         material.setValue(
@@ -1736,6 +1755,7 @@ enum VoyageSceneKit {
     static func makeBoatModel(
         _ parts: BoatParts,
         seaBounce: UInt = 0x2E7063,
+        skyBounce: UInt = 0x9FD8E4,
         sunDirection: SCNVector3 = SCNVector3(-0.34, 0.72, 0.60),
         sunColor: UInt = 0xFFF1C7
     ) -> SCNNode {
@@ -1793,6 +1813,7 @@ enum VoyageSceneKit {
                         to: model
                     ),
                     seaBounce: seaBounce,
+                    skyBounce: skyBounce,
                     sunDirection: sunDirection,
                     sunColor: sunColor
                 )
@@ -2195,7 +2216,8 @@ enum VoyageSceneKit {
         bob.name = "landfallBoatBob"
         let boat = makeBoatModel(
             BoatCustomization.currentParts,
-            seaBounce: oceanAppearance.sea
+            seaBounce: oceanAppearance.sea,
+            skyBounce: oceanAppearance.sky
         )
         attachNavigator(to: boat)
         if let boatNavigator = boat.childNode(withName: "navigator", recursively: true) {
@@ -2422,6 +2444,7 @@ enum VoyageSceneKit {
         let boat = makeBoatModel(
             boatParts,
             seaBounce: oceanAppearance.sea,
+            skyBounce: oceanAppearance.sky,
             sunDirection: oceanAppearance.sunDirection,
             sunColor: oceanAppearance.sun
         )
@@ -2742,6 +2765,7 @@ enum VoyageSceneKit {
         return makeBoatModel(
             parts,
             seaBounce: oceanAppearance.sea,
+            skyBounce: oceanAppearance.sky,
             sunDirection: oceanAppearance.sunDirection,
             sunColor: oceanAppearance.sun
         )
