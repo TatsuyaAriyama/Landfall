@@ -54,18 +54,28 @@ enum HomeIslandMarineDynamics {
             let cosC = cos(phases[2])
             let cosD = cos(phases[3])
             let cosE = cos(phases[4])
-            phases[0] += sinC * 0.34 + sinD * 0.10
-            phases[1] += -sinD * 0.26 + sinE * 0.08
+            let warpDirectionF = SIMD2<Float>(-0.940, 0.342)
+            let warpDirectionG = SIMD2<Float>(0.515, 0.857)
+            let phaseF = simd_dot(p, warpDirectionF) * 0.052
+                - time * 0.14 + 0.30
+            let phaseG = simd_dot(p, warpDirectionG) * 0.073
+                - time * 0.19 + 1.35
+            let cosF = cos(phaseF)
+            let cosG = cos(phaseG)
+            phases[0] += sinC * 0.34 + sinD * 0.10 + sin(phaseF) * 0.55
+            phases[1] += -sinD * 0.26 + sinE * 0.08 - sin(phaseG) * 0.42
 
             let cosA = cos(phases[0])
             let cosB = cos(phases[1])
             let phaseGradients = [
                 Self.spectrum[0].direction * Self.spectrum[0].waveNumber
                     + Self.spectrum[2].direction * (cosC * 0.340 * 0.34)
-                    + Self.spectrum[3].direction * (cosD * 0.720 * 0.10),
+                    + Self.spectrum[3].direction * (cosD * 0.720 * 0.10)
+                    + warpDirectionF * (cosF * 0.052 * 0.55),
                 Self.spectrum[1].direction * Self.spectrum[1].waveNumber
                     - Self.spectrum[3].direction * (cosD * 0.720 * 0.26)
-                    + Self.spectrum[4].direction * (cosE * 1.250 * 0.08),
+                    + Self.spectrum[4].direction * (cosE * 1.250 * 0.08)
+                    - warpDirectionG * (cosG * 0.073 * 0.42),
                 Self.spectrum[2].direction * Self.spectrum[2].waveNumber,
                 Self.spectrum[3].direction * Self.spectrum[3].waveNumber,
                 Self.spectrum[4].direction * Self.spectrum[4].waveNumber,

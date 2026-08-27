@@ -111,18 +111,24 @@ enum HomeIslandOceanEffects {
     float2 dirC = float2(0.906, 0.423);
     float2 dirD = float2(-0.259, 0.966);
     float2 dirE = float2(0.643, -0.766);
+    float2 dirF = float2(-0.940, 0.342);
+    float2 dirG = float2(0.515, 0.857);
     float basePhaseA = dot(p, dirA) * 0.105 - uTime * 0.42;
     float basePhaseB = dot(p, dirB) * 0.155 - uTime * 0.36 + 1.70;
     float phaseC = dot(p, dirC) * 0.340 - uTime * 0.78 + 0.45;
     float phaseD = dot(p, dirD) * 0.720 - uTime * 1.22 + 2.10;
     float phaseE = dot(p, dirE) * 1.250 - uTime * 1.68 + 0.90;
+    float phaseF = dot(p, dirF) * 0.052 - uTime * 0.14 + 0.30;
+    float phaseG = dot(p, dirG) * 0.073 - uTime * 0.19 + 1.35;
     float sinC = sin(phaseC);
     float sinD = sin(phaseD);
     float sinE = sin(phaseE);
     // Cross seas bend the long swells without adding another wave component.
     // This avoids evenly spaced horizon bands while keeping motion coherent.
-    float phaseA = basePhaseA + sinC * 0.34 + sinD * 0.10;
-    float phaseB = basePhaseB - sinD * 0.26 + sinE * 0.08;
+    float phaseA = basePhaseA + sinC * 0.34 + sinD * 0.10
+        + sin(phaseF) * 0.55;
+    float phaseB = basePhaseB - sinD * 0.26 + sinE * 0.08
+        - sin(phaseG) * 0.42;
     float sinA = sin(phaseA);
     float sinB = sin(phaseB);
     float cosA = cos(phaseA);
@@ -130,6 +136,8 @@ enum HomeIslandOceanEffects {
     float cosC = cos(phaseC);
     float cosD = cos(phaseD);
     float cosE = cos(phaseE);
+    float cosF = cos(phaseF);
+    float cosG = cos(phaseG);
     float height = (
         sinA * 0.171
         + sinB * 0.104
@@ -141,11 +149,13 @@ enum HomeIslandOceanEffects {
         dirA * 0.105
         + dirC * (cosC * 0.340 * 0.34)
         + dirD * (cosD * 0.720 * 0.10)
+        + dirF * (cosF * 0.052 * 0.55)
     );
     float2 gradientB = (
         dirB * 0.155
         - dirD * (cosD * 0.720 * 0.26)
         + dirE * (cosE * 1.250 * 0.08)
+        - dirG * (cosG * 0.073 * 0.42)
     );
     float2 slope = (
         gradientA * (cosA * 0.171)
