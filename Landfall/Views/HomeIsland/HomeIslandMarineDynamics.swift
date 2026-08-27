@@ -121,15 +121,15 @@ enum HomeIslandMarineDynamics {
         // Gerstner displacement does not change the height/slope sample point.
         private static let spectrum = [
             Wave(direction: SIMD2(0.342, 0.940), waveNumber: 0.105,
-                 angularSpeed: 0.42, phaseOffset: 0, amplitude: 0.150),
+                 angularSpeed: 0.42, phaseOffset: 0, amplitude: 0.171),
             Wave(direction: SIMD2(-0.766, 0.643), waveNumber: 0.155,
-                 angularSpeed: 0.36, phaseOffset: 1.70, amplitude: 0.090),
+                 angularSpeed: 0.36, phaseOffset: 1.70, amplitude: 0.104),
             Wave(direction: SIMD2(0.906, 0.423), waveNumber: 0.340,
-                 angularSpeed: 0.78, phaseOffset: 0.45, amplitude: 0.035),
+                 angularSpeed: 0.78, phaseOffset: 0.45, amplitude: 0.041),
             Wave(direction: SIMD2(-0.259, 0.966), waveNumber: 0.720,
-                 angularSpeed: 1.22, phaseOffset: 2.10, amplitude: 0.014),
+                 angularSpeed: 1.22, phaseOffset: 2.10, amplitude: 0.016),
             Wave(direction: SIMD2(0.643, -0.766), waveNumber: 1.250,
-                 angularSpeed: 1.68, phaseOffset: 0.90, amplitude: 0.005),
+                 angularSpeed: 1.68, phaseOffset: 0.90, amplitude: 0.006),
         ]
     }
 

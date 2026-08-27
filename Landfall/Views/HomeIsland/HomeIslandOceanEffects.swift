@@ -131,11 +131,11 @@ enum HomeIslandOceanEffects {
     float cosD = cos(phaseD);
     float cosE = cos(phaseE);
     float height = (
-        sinA * 0.150
-        + sinB * 0.090
-        + sinC * 0.035
-        + sinD * 0.014
-        + sinE * 0.005
+        sinA * 0.171
+        + sinB * 0.104
+        + sinC * 0.041
+        + sinD * 0.016
+        + sinE * 0.006
     ) * calm;
     float2 gradientA = (
         dirA * 0.105
@@ -148,11 +148,11 @@ enum HomeIslandOceanEffects {
         + dirE * (cosE * 1.250 * 0.08)
     );
     float2 slope = (
-        gradientA * (cosA * 0.150)
-        + gradientB * (cosB * 0.090)
-        + dirC * (cosC * 0.035 * 0.340)
-        + dirD * (cosD * 0.014 * 0.720)
-        + dirE * (cosE * 0.005 * 1.250)
+        gradientA * (cosA * 0.171)
+        + gradientB * (cosB * 0.104)
+        + dirC * (cosC * 0.041 * 0.340)
+        + dirD * (cosD * 0.016 * 0.720)
+        + dirE * (cosE * 0.006 * 1.250)
     ) * calm;
     """
 
@@ -171,9 +171,9 @@ enum HomeIslandOceanEffects {
     // first three also move vertices laterally, giving crests a real profile
     // instead of simply lifting a flat grid.
     float2 horizontal = (
-        dirA * (cosA * 0.150 * 0.62)
-        + dirB * (cosB * 0.090 * 0.54)
-        + dirC * (cosC * 0.035 * 0.38)
+        dirA * (cosA * 0.171 * 0.72)
+        + dirB * (cosB * 0.104 * 0.64)
+        + dirC * (cosC * 0.041 * 0.44)
     ) * calm;
     float edgeX = 1.0 - smoothstep(
         uSurfaceSize.x * 0.43,
@@ -629,7 +629,7 @@ enum HomeIslandOceanEffects {
         underlay.name = "home-island-ocean-underlay"
         underlay.categoryBitMask = 1 << 4
         underlay.eulerAngles.x = -.pi / 2
-        // The five displacement layers can reach about 0.30 m at full swell.
+        // The five displacement layers can reach about 0.34 m at full swell.
         // Keep the safety layer below that entire range so a trough never
         // reveals it as a moving dark oval.
         underlay.position = SCNVector3(layout.centerX, layout.surfaceY - 0.50, 0)

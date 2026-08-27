@@ -96,11 +96,11 @@ static inline LandfallWaveSample landfallSampleWaves(
     float cosE = cos(phaseE);
 
     float height = (
-        sin(phaseA) * 0.150
-        + sin(phaseB) * 0.090
-        + sinC * 0.035
-        + sinD * 0.014
-        + sinE * 0.005
+        sin(phaseA) * 0.171
+        + sin(phaseB) * 0.104
+        + sinC * 0.041
+        + sinD * 0.016
+        + sinE * 0.006
     ) * calm;
     float2 gradientA = (
         dirA * 0.105
@@ -113,16 +113,16 @@ static inline LandfallWaveSample landfallSampleWaves(
         + dirE * (cosE * 1.250 * 0.08)
     );
     float2 slope = (
-        gradientA * (cosA * 0.150)
-        + gradientB * (cosB * 0.090)
-        + dirC * (cosC * 0.035 * 0.340)
-        + dirD * (cosD * 0.014 * 0.720)
-        + dirE * (cosE * 0.005 * 1.250)
+        gradientA * (cosA * 0.171)
+        + gradientB * (cosB * 0.104)
+        + dirC * (cosC * 0.041 * 0.340)
+        + dirD * (cosD * 0.016 * 0.720)
+        + dirE * (cosE * 0.006 * 1.250)
     ) * calm;
     float2 horizontal = (
-        dirA * (cosA * 0.150 * 0.62)
-        + dirB * (cosB * 0.090 * 0.54)
-        + dirC * (cosC * 0.035 * 0.38)
+        dirA * (cosA * 0.171 * 0.72)
+        + dirB * (cosB * 0.104 * 0.64)
+        + dirC * (cosC * 0.041 * 0.44)
     ) * calm;
     return {height, slope, horizontal};
 }
