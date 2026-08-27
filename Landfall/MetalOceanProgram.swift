@@ -4,17 +4,18 @@ import SceneKit
 import simd
 
 /// Owns the native Metal program and its packed per-frame inputs. The program
-/// stays behind a Debug rollout gate until it matches every shoreline and wake
-/// feature provided by the current shader modifiers.
+/// rolls out first on Ultra-tier timer voyages, while Debug builds can opt in
+/// on every scene for visual comparison and regression testing.
 enum MetalOceanProgram {
     private static let rolloutDefaultsKey = "LandfallNativeMetalOcean"
     private static let diagnostics = Diagnostics()
 
-    static var isRolloutEnabled: Bool {
+    private static func isRolloutEnabled(for layout: HomeIslandOceanEffects.Layout) -> Bool {
 #if DEBUG
-        UserDefaults.standard.bool(forKey: rolloutDefaultsKey)
+        return UserDefaults.standard.bool(forKey: rolloutDefaultsKey)
 #else
-        false
+        return layout.sceneRole == .timerVoyage
+            && MetalRenderingProfile.current.tier == .ultra
 #endif
     }
 
@@ -23,7 +24,8 @@ enum MetalOceanProgram {
         appearance: HomeIslandOceanEffects.Appearance,
         islandScale: Float
     ) -> SCNProgram? {
-        guard isRolloutEnabled,
+        guard isRolloutEnabled(for: layout),
+              MetalRenderingProfile.current.supportsNativeOceanProgram,
               let device = MTLCreateSystemDefaultDevice(),
               let library = MetalOceanShaderLibrary.makeLibrary(on: device),
               MemoryLayout<Uniforms>.stride == 224 else {

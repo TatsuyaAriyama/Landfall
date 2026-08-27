@@ -5,7 +5,7 @@ import SceneKit
 /// SceneKit remains the scene graph while ocean rendering is migrated in small,
 /// reversible stages to native Metal shaders.
 struct MetalRenderingProfile {
-    enum Tier {
+    enum Tier: String {
         case compatible
         case enhanced
         case ultra
@@ -59,6 +59,14 @@ struct MetalRenderingProfile {
         }
 
         supportsNativeOceanProgram = MetalOceanShaderLibrary.isAvailable(on: device)
+
+#if DEBUG
+        if let override = UserDefaults.standard.string(forKey: "LandfallMetalTierOverride"),
+           let tierOverride = Tier(rawValue: override.lowercased()) {
+            tier = tierOverride
+            return
+        }
+#endif
 
 #if targetEnvironment(simulator)
         tier = .enhanced
