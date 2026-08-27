@@ -391,7 +391,7 @@ struct PrologueVoyageLaunchSceneView: UIViewRepresentable {
             sailMaterials.forEach {
                 $0.setValue(NSNumber(value: wind), forKey: "uWind")
             }
-            spraySystems.apply(.sailing(wind: wind, at: time))
+            spraySystems.apply(.sailing(wind: wind, at: oceanTime))
 
             for (index, bird) in gulls.enumerated() {
                 guard flock.indices.contains(index) else { continue }

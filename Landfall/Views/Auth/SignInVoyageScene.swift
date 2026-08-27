@@ -217,7 +217,7 @@ struct SignInVoyageSceneView: UIViewRepresentable {
                 $0.setValue(NSNumber(value: wind), forKey: "uWind")
             }
             spraySystems.apply(
-                isSailing ? .sailing(wind: wind, at: time) : .zero
+                isSailing ? .sailing(wind: wind, at: oceanTime) : .zero
             )
 
             if let scene = view?.scene {

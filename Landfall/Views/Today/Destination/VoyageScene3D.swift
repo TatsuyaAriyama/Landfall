@@ -3053,7 +3053,7 @@ final class VoyagingHomeAnimator: NSObject {
                 windStrength = target
             }
         }
-        applyWind(windStrength, at: animationTime)
+        applyWind(windStrength, at: oceanTime)
 
         // Scene rebuilds arrive through SwiftUI, but marine controller state is
         // only touched from this renderer callback.

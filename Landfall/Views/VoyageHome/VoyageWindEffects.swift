@@ -144,20 +144,41 @@ enum VoyageBowSpray {
         let mist: CGFloat
         let flecks: CGFloat
 
-        static func sailing(wind: Float, at time: Float) -> Rates {
+        /// Derives each burst from the same wave field that lifts the hull.
+        /// `oceanTime` must use `HomeIslandOceanEffects.currentTime` so spray,
+        /// buoyancy and the Metal surface reach the bow on the same frame.
+        static func sailing(wind: Float, at oceanTime: Float) -> Rates {
             let strength = CGFloat(min(max(wind, 0), 1))
-            let wave = max(0, sin(time * 1.9))
-            let primaryImpact = powf(wave, 2.3)
-            let secondaryImpact = powf(max(0, sin(time * 3.7 + 1.1)), 5) * 0.32
-            let impact = min(primaryImpact + secondaryImpact, 1)
-            let surfaceWave = max(0, sin(time * 1.9 - 0.72))
+            let sample = sprayWaveField.sample(
+                atWorldXZ: bowSamplePosition,
+                time: oceanTime
+            )
+            let previous = sprayWaveField.sample(
+                atWorldXZ: bowSamplePosition,
+                time: oceanTime - impactSampleInterval
+            )
+            let rise = max(
+                (sample.displacement - previous.displacement) / impactSampleInterval,
+                0
+            )
+            let risingImpact = min(rise * 8.2, 1)
+            let crestContact = min(
+                max((sample.displacement + 0.025) / 0.18, 0),
+                1
+            )
+            let impact = CGFloat(min(risingImpact * 0.78 + crestContact * 0.22, 1))
             return Rates(
-                streaks: 32 * strength * CGFloat(0.34 + impact * 0.66),
-                mist: 12 * strength * CGFloat(impact),
-                flecks: 44 * strength
-                    * CGFloat(0.22 + powf(surfaceWave, 1.45) * 0.78)
+                streaks: 16 * strength * (0.16 + impact * 0.84),
+                mist: 20 * strength * (0.20 + impact * 0.80),
+                flecks: 18 * strength * pow(impact, 1.55)
             )
         }
+
+        private static let sprayWaveField = HomeIslandMarineDynamics.WaveField(
+            layout: .timerVoyage
+        )
+        private static let bowSamplePosition = SIMD2<Float>(1.20, 0)
+        private static let impactSampleInterval: Float = 0.12
     }
 
     /// レイヤーを配列の順序で識別しない、アニメータ向けの型付きハンドル。
@@ -266,9 +287,9 @@ enum VoyageBowSpray {
             system.emittingDirection = SCNVector3(0.32, 0.68, 0.58 * side)
             system.spreadingAngle = 17
             system.acceleration = SCNVector3(0, -5.8, 0)
-            system.particleSize = 0.026
-            system.particleSizeVariation = 0.009
-            system.particleColor = palette.highlight.withAlphaComponent(0.32)
+            system.particleSize = 0.021
+            system.particleSizeVariation = 0.007
+            system.particleColor = palette.highlight.withAlphaComponent(0.24)
             system.particleColorVariation = SCNVector4(0.04, 0.10, 0.10, 0.16)
             system.particleAngle = radians(side > 0 ? -24 : 24)
             system.particleAngleVariation = radians(14)
@@ -319,9 +340,9 @@ enum VoyageBowSpray {
             system.emittingDirection = SCNVector3(-0.10, 0.22, 0.82 * side)
             system.spreadingAngle = 16
             system.acceleration = SCNVector3(0, -6.0, 0)
-            system.particleSize = 0.019
-            system.particleSizeVariation = 0.008
-            system.particleColor = palette.sea.withAlphaComponent(0.38)
+            system.particleSize = 0.015
+            system.particleSizeVariation = 0.006
+            system.particleColor = palette.sea.withAlphaComponent(0.30)
             system.particleColorVariation = SCNVector4(0.08, 0.16, 0.14, 0.24)
             system.particleAngle = radians(side > 0 ? -68 : 68)
             system.particleAngleVariation = radians(34)
