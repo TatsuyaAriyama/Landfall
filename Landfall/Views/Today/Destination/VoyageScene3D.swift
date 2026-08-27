@@ -3030,13 +3030,25 @@ final class VoyagingHomeAnimator: NSObject {
     }
 
     /// 帆には休憩中の微風を残すが、しぶきは航行中だけ三層別に駆動する。
-    private func applyWind(_ wind: Float, at t: Float) {
+    private func applyWind(
+        _ wind: Float,
+        at t: Float,
+        wake: HomeIslandMarineDynamics.WakeState? = nil
+    ) {
         for material in sailMaterials {
             material.setValue(NSNumber(value: wind), forKey: "uWind")
         }
-        let shouldSpray = !resting && !reduceMotion && wind > 0.0005
-        if shouldSpray {
-            spraySystems.apply(.sailing(wind: wind, at: t))
+        let shouldSpray = !resting
+            && !reduceMotion
+            && wind > 0.0005
+            && wake?.isPresent == true
+        if shouldSpray, let wake {
+            // Wake coordinates invert world Z for the Metal shader. Convert
+            // them back once, then sample the exact bow lifted by this frame.
+            let center = SIMD2(wake.boatPosition.x, -wake.boatPosition.y)
+            let forward = SIMD2(wake.heading.x, -wake.heading.y)
+            let bow = center + forward * (wake.hullSize.x * 0.5)
+            spraySystems.apply(.sailing(wind: wind, at: t, bowWorldXZ: bow))
         } else if sprayIsActive {
             // 描画を止める前に既存粒も消し、Reduce Motionで静止粒を残さない。
             spraySystems.reset()
@@ -3097,14 +3109,13 @@ final class VoyagingHomeAnimator: NSObject {
                 windStrength = target
             }
         }
-        applyWind(windStrength, at: oceanTime)
-
         // Scene rebuilds arrive through SwiftUI, but marine controller state is
         // only touched from this renderer callback.
         if marineScene !== currentScene {
             marineController.reset(buoyancyNode: bob)
             marineScene = currentScene
         }
+        let sprayWake: HomeIslandMarineDynamics.WakeState?
         if let travel, let bob {
             let frame = marineController.update(
                 boatRoot: travel,
@@ -3120,10 +3131,13 @@ final class VoyagingHomeAnimator: NSObject {
                 materials: boatSurfaceMaterials
             )
             frame.wake.apply(to: seaMaterial)
+            sprayWake = frame.wake
         } else {
             marineController.reset()
             HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
+            sprayWake = nil
         }
+        applyWind(windStrength, at: oceanTime, wake: sprayWake)
 
         if reduceMotion {
             flagPhase = 0

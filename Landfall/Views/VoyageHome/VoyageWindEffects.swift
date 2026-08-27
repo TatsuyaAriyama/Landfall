@@ -147,14 +147,19 @@ enum VoyageBowSpray {
         /// Derives each burst from the same wave field that lifts the hull.
         /// `oceanTime` must use `HomeIslandOceanEffects.currentTime` so spray,
         /// buoyancy and the Metal surface reach the bow on the same frame.
-        static func sailing(wind: Float, at oceanTime: Float) -> Rates {
+        static func sailing(
+            wind: Float,
+            at oceanTime: Float,
+            bowWorldXZ: SIMD2<Float>? = nil
+        ) -> Rates {
             let strength = CGFloat(min(max(wind, 0), 1))
+            let samplePosition = bowWorldXZ ?? fallbackBowSamplePosition
             let sample = sprayWaveField.sample(
-                atWorldXZ: bowSamplePosition,
+                atWorldXZ: samplePosition,
                 time: oceanTime
             )
             let previous = sprayWaveField.sample(
-                atWorldXZ: bowSamplePosition,
+                atWorldXZ: samplePosition,
                 time: oceanTime - impactSampleInterval
             )
             let rise = max(
@@ -177,7 +182,9 @@ enum VoyageBowSpray {
         private static let sprayWaveField = HomeIslandMarineDynamics.WaveField(
             layout: .timerVoyage
         )
-        private static let bowSamplePosition = SIMD2<Float>(1.20, 0)
+        /// Login/prologue scenes have no marine controller, so they retain the
+        /// authored bow point. Voyage scenes pass their frame's true world bow.
+        private static let fallbackBowSamplePosition = SIMD2<Float>(1.20, 0)
         private static let impactSampleInterval: Float = 0.12
     }
 
