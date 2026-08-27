@@ -14,6 +14,7 @@ struct MetalRenderingProfile {
     static let current = MetalRenderingProfile(device: MTLCreateSystemDefaultDevice())
 
     let tier: Tier
+    let supportsNativeOceanProgram: Bool
 
     var antialiasingMode: SCNAntialiasingMode {
         .multisampling4X
@@ -53,8 +54,11 @@ struct MetalRenderingProfile {
     private init(device: MTLDevice?) {
         guard let device else {
             tier = .compatible
+            supportsNativeOceanProgram = false
             return
         }
+
+        supportsNativeOceanProgram = MetalOceanShaderLibrary.isAvailable(on: device)
 
 #if targetEnvironment(simulator)
         tier = .enhanced
