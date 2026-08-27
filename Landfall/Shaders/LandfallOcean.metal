@@ -99,21 +99,32 @@ static inline LandfallWaveSample landfallSampleWaves(
     constexpr float2 dirC = float2(0.906, 0.423);
     constexpr float2 dirD = float2(-0.259, 0.966);
     constexpr float2 dirE = float2(0.643, -0.766);
+    constexpr float2 dirF = float2(-0.940, 0.342);
+    constexpr float2 dirG = float2(0.515, 0.857);
     float basePhaseA = dot(p, dirA) * 0.105 - time * 0.42;
     float basePhaseB = dot(p, dirB) * 0.155 - time * 0.36 + 1.70;
     float phaseC = dot(p, dirC) * 0.340 - time * 0.78 + 0.45;
     float phaseD = dot(p, dirD) * 0.720 - time * 1.22 + 2.10;
     float phaseE = dot(p, dirE) * 1.250 - time * 1.68 + 0.90;
+    // Very low-frequency cross swell slowly bends the two dominant wave trains.
+    // This prevents an oblique camera from compressing long, perfectly straight
+    // crests into parallel horizontal bands while keeping the surface coherent.
+    float phaseF = dot(p, dirF) * 0.052 - time * 0.14 + 0.30;
+    float phaseG = dot(p, dirG) * 0.073 - time * 0.19 + 1.35;
     float sinC = sin(phaseC);
     float sinD = sin(phaseD);
     float sinE = sin(phaseE);
-    float phaseA = basePhaseA + sinC * 0.34 + sinD * 0.10;
-    float phaseB = basePhaseB - sinD * 0.26 + sinE * 0.08;
+    float sinF = sin(phaseF);
+    float sinG = sin(phaseG);
+    float phaseA = basePhaseA + sinC * 0.34 + sinD * 0.10 + sinF * 0.55;
+    float phaseB = basePhaseB - sinD * 0.26 + sinE * 0.08 - sinG * 0.42;
     float cosA = cos(phaseA);
     float cosB = cos(phaseB);
     float cosC = cos(phaseC);
     float cosD = cos(phaseD);
     float cosE = cos(phaseE);
+    float cosF = cos(phaseF);
+    float cosG = cos(phaseG);
 
     float height = (
         sin(phaseA) * 0.171
@@ -126,11 +137,13 @@ static inline LandfallWaveSample landfallSampleWaves(
         dirA * 0.105
         + dirC * (cosC * 0.340 * 0.34)
         + dirD * (cosD * 0.720 * 0.10)
+        + dirF * (cosF * 0.052 * 0.55)
     );
     float2 gradientB = (
         dirB * 0.155
         - dirD * (cosD * 0.720 * 0.26)
         + dirE * (cosE * 1.250 * 0.08)
+        - dirG * (cosG * 0.073 * 0.42)
     );
     float2 slope = (
         gradientA * (cosA * 0.171)
@@ -431,7 +444,12 @@ static inline half4 landfallShadeOcean(
     float detailQuality)
 {
     float2 p = in.oceanPosition;
-    float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
+    float2 footprintX = dfdx(p);
+    float2 footprintY = dfdy(p);
+    float footprintMajor = max(length(footprintX), length(footprintY));
+    float footprintMinor = min(length(footprintX), length(footprintY));
+    float pixelFootprint = footprintMajor;
+    float projectionAnisotropy = footprintMajor / max(footprintMinor, 0.001);
     float macroVisibility = 1.0 - smoothstep(0.85, 4.20, pixelFootprint);
     // Relative range gives every ocean layout the same near-to-horizon LOD.
     float surfaceRadius = max(min(ocean.surfaceSize.x, ocean.surfaceSize.y) * 0.5, 1.0);
@@ -444,15 +462,30 @@ static inline half4 landfallShadeOcean(
     // Filter each normal octave at its own projected wavelength. The former
     // shared cutoff discarded the long 3.4 m ripple as soon as the shortest
     // 1.3 m band became undersampled, flattening every oblique voyage view.
+    constexpr float2 rippleDirectionA = float2(0.829, 0.559);
+    constexpr float2 rippleDirectionB = float2(-0.616, 0.788);
+    constexpr float2 rippleDirectionC = float2(0.225, 0.974);
+    float rippleFootprintA = max(
+        abs(dot(footprintX, rippleDirectionA)),
+        abs(dot(footprintY, rippleDirectionA))
+    );
+    float rippleFootprintB = max(
+        abs(dot(footprintX, rippleDirectionB)),
+        abs(dot(footprintY, rippleDirectionB))
+    );
+    float rippleFootprintC = max(
+        abs(dot(footprintX, rippleDirectionC)),
+        abs(dot(footprintY, rippleDirectionC))
+    );
     float nearRippleVisibility = mix(0.34, 1.0, nearField);
     float rippleVisibilityA = (
-        1.0 - smoothstep(0.42, 1.15, pixelFootprint)
+        1.0 - smoothstep(0.42, 1.15, rippleFootprintA)
     ) * nearRippleVisibility;
     float rippleVisibilityB = (
-        1.0 - smoothstep(0.28, 0.82, pixelFootprint)
+        1.0 - smoothstep(0.28, 0.82, rippleFootprintB)
     ) * nearRippleVisibility;
     float rippleVisibilityC = (
-        1.0 - smoothstep(0.12, 0.46, pixelFootprint)
+        1.0 - smoothstep(0.12, 0.46, rippleFootprintC)
     ) * nearRippleVisibility;
     float rippleVisibility = max(
         rippleVisibilityA,
@@ -462,7 +495,11 @@ static inline half4 landfallShadeOcean(
     // Projected long swells collapse into coherent horizontal stripes before
     // their geometry is truly undersampled. Fade their lighting contribution
     // earlier than the surface itself while retaining filtered micro normals.
-    float longWaveVisibility = macroVisibility * mix(0.24, 1.0, midField);
+    float stripeRisk = smoothstep(3.5, 10.0, projectionAnisotropy)
+        * smoothstep(0.28, 0.82, normalizedViewRange);
+    float longWaveVisibility = macroVisibility
+        * mix(0.24, 1.0, midField)
+        * mix(1.0, 0.42, stripeRisk);
     float3 cameraVector = in.cameraPosition - in.worldPosition;
     float cameraDistance = length(cameraVector);
     float3 viewDirection = cameraVector / max(cameraDistance, 0.001);
@@ -491,18 +528,28 @@ static inline half4 landfallShadeOcean(
     LandfallWakeSample wake = landfallSampleWake(ocean, boat);
     LandfallHullSample hull = landfallSampleHullContact(in.height, ocean, boat);
     float rippleWarp = sin(dot(p, float2(0.173, -0.241)) - ocean.time * 0.31);
-    float rippleA = dot(p, float2(0.829, 0.559)) * 1.82
+    float rippleA = dot(p, rippleDirectionA) * 1.82
         - ocean.time * 1.18 + rippleWarp * 0.28;
-    float rippleB = dot(p, float2(-0.616, 0.788)) * 2.66
+    float rippleB = dot(p, rippleDirectionB) * 2.66
         - ocean.time * 1.47 - rippleWarp * 0.36;
-    float rippleC = dot(p, float2(0.225, 0.974)) * 4.85
+    float rippleC = dot(p, rippleDirectionC) * 4.85
         - ocean.time * 2.05 + rippleWarp * 0.52;
     float2 capillarySlope = float2(0.0);
     float capillaryFacetRadiance = 0.0;
     if (detailQuality > 0.75) {
-        float visibility = 1.0 - smoothstep(0.14, 0.48, pixelFootprint * 8.4);
         constexpr float2 capillaryDirectionA = float2(-0.952, 0.306);
         constexpr float2 capillaryDirectionB = float2(0.391, 0.920);
+        float capillaryFootprint = max(
+            max(
+                abs(dot(footprintX, capillaryDirectionA)) * 8.4,
+                abs(dot(footprintY, capillaryDirectionA)) * 8.4
+            ),
+            max(
+                abs(dot(footprintX, capillaryDirectionB)) * 10.7,
+                abs(dot(footprintY, capillaryDirectionB)) * 10.7
+            )
+        );
+        float visibility = 1.0 - smoothstep(0.14, 0.48, capillaryFootprint);
         float rippleD = dot(p, capillaryDirectionA) * 8.4
             - ocean.time * 2.72 - rippleWarp * 0.81;
         float rippleE = dot(p, capillaryDirectionB) * 10.7
@@ -530,9 +577,9 @@ static inline half4 landfallShadeOcean(
             * groupEnvelope * visibility * tierBlend;
     }
     float2 detailSlope = (
-        float2(0.829, 0.559) * (cos(rippleA) * 0.032 * rippleVisibilityA)
-        + float2(-0.616, 0.788) * (cos(rippleB) * 0.023 * rippleVisibilityB)
-        + float2(0.225, 0.974) * (cos(rippleC) * 0.010 * rippleVisibilityC)
+        rippleDirectionA * (cos(rippleA) * 0.032 * rippleVisibilityA)
+        + rippleDirectionB * (cos(rippleB) * 0.023 * rippleVisibilityB)
+        + rippleDirectionC * (cos(rippleC) * 0.010 * rippleVisibilityC)
         + capillarySlope
     ) * ocean.microNormalScale * mix(0.72, 1.14, nearField);
     detailSlope += wake.slope * macroVisibility * mix(0.76, 1.0, detailQuality);
