@@ -7,10 +7,15 @@ by material, preserving stable material names for runtime color customization.
 from __future__ import annotations
 
 import math
+import os
+import sys
 from pathlib import Path
 
 import bpy
 from mathutils import Vector
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ship_hull import rounded_hull_mesh  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -18,6 +23,7 @@ BLEND_PATH = ROOT / "Assets3D/source/landfall_boat.blend"
 GLB_PATH = ROOT / "web/public/models/landfall_boat.glb"
 USDZ_PATH = ROOT / "Landfall/Resources/landfall_boat.usdz"
 RENDER_PATH = ROOT / "marketing/3d/landfall-boat.png"
+IOS_ONLY = os.environ.get("LANDFALL_IOS_ONLY") == "1"
 
 COLORS = {
     "night": "#123830",
@@ -245,25 +251,13 @@ sections = [
     (1.22, 0.72, 0.22, 0.20),
     (1.40, 0.82, 0.035, 0.48),
 ]
-hull_vertices: list[tuple[float, float, float]] = []
-for x, top, width, keel in sections:
-    hull_vertices.extend(
-        [
-            (x, top, -width),
-            (x, keel + 0.13, -width * 0.72),
-            (x, keel, 0),
-            (x, keel + 0.13, width * 0.72),
-            (x, top, width),
-        ]
-    )
-hull_faces: list[tuple[int, ...]] = []
-for section in range(len(sections) - 1):
-    a = section * 5
-    b = (section + 1) * 5
-    for strip in range(4):
-        hull_faces.append((a + strip, b + strip, b + strip + 1, a + strip + 1))
-hull_faces += [(0, 1, 2, 3, 4), tuple(range((len(sections) - 1) * 5, len(sections) * 5))]
-mesh_object("Hull", hull_vertices, hull_faces, MATS["hull"])
+
+
+hull_vertices, surface_faces, cap_faces, _ = rounded_hull_mesh(sections)
+hull_faces = [face for face, _ in surface_faces] + cap_faces
+hull = mesh_object("Hull", hull_vertices, hull_faces, MATS["hull"])
+for polygon in hull.data.polygons:
+    polygon.use_smooth = len(polygon.vertices) == 4
 
 # Deck follows the upper hull profile but leaves a dark cockpit recess above it.
 deck_vertices: list[tuple[float, float, float]] = []
@@ -431,7 +425,8 @@ scene.render.filepath = str(RENDER_PATH)
 scene.view_settings.look = "AgX - Medium High Contrast"
 
 BLEND_PATH.parent.mkdir(parents=True, exist_ok=True)
-GLB_PATH.parent.mkdir(parents=True, exist_ok=True)
+if not IOS_ONLY:
+    GLB_PATH.parent.mkdir(parents=True, exist_ok=True)
 USDZ_PATH.parent.mkdir(parents=True, exist_ok=True)
 RENDER_PATH.parent.mkdir(parents=True, exist_ok=True)
 bpy.ops.wm.save_as_mainfile(filepath=str(BLEND_PATH))
@@ -473,14 +468,15 @@ navigator_anchor.select_set(True)
 for obj in export_objects:
     obj.select_set(True)
 bpy.context.view_layer.objects.active = root
-bpy.ops.export_scene.gltf(
-    filepath=str(GLB_PATH),
-    export_format="GLB",
-    use_selection=True,
-    export_apply=True,
-    export_yup=True,
-    export_animations=False,
-)
+if not IOS_ONLY:
+    bpy.ops.export_scene.gltf(
+        filepath=str(GLB_PATH),
+        export_format="GLB",
+        use_selection=True,
+        export_apply=True,
+        export_yup=True,
+        export_animations=False,
+    )
 # SceneKit receives the same authored X-forward/Y-up coordinate system as Web.
 bpy.ops.wm.usd_export(
     filepath=str(USDZ_PATH),
@@ -503,6 +499,7 @@ bpy.ops.wm.usd_export(
 bpy.ops.render.render(write_still=True)
 
 print(f"BLEND={BLEND_PATH}")
-print(f"GLB={GLB_PATH}")
+if not IOS_ONLY:
+    print(f"GLB={GLB_PATH}")
 print(f"USDZ={USDZ_PATH}")
 print(f"RENDER={RENDER_PATH}")

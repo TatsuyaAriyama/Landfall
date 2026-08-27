@@ -42,6 +42,7 @@ _requested = os.environ.get("KEELMIRA_ASSET_IDS", "")
 os.environ["KEELMIRA_ASSET_IDS"] = "__pirate_ship_helpers_only__"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_home_island_asset_set_02 as kit  # noqa: E402
+from ship_hull import profile_at, rounded_hull_mesh  # noqa: E402
 
 os.environ["KEELMIRA_ASSET_IDS"] = _requested
 
@@ -103,28 +104,8 @@ SECTIONS = [
 
 
 def profile(x: float) -> tuple[float, float, float]:
-    """Sheer, half beam and keel anywhere along the hull, so fittings sit on
-    the hull rather than near it. A Catmull-Rom span keeps the authored
-    stations exact while removing the straight kinks between them."""
-    x = max(SECTIONS[0][0], min(SECTIONS[-1][0], x))
-    for index, (start, end) in enumerate(zip(SECTIONS, SECTIONS[1:])):
-        if start[0] <= x <= end[0]:
-            t = (x - start[0]) / (end[0] - start[0])
-            previous = SECTIONS[max(0, index - 1)]
-            following = SECTIONS[min(len(SECTIONS) - 1, index + 2)]
-
-            def interpolate(component: int) -> float:
-                p0, p1 = previous[component], start[component]
-                p2, p3 = end[component], following[component]
-                return 0.5 * (
-                    2 * p1
-                    + (-p0 + p2) * t
-                    + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t
-                    + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t
-                )
-
-            return tuple(interpolate(component) for component in range(1, 4))
-    return SECTIONS[-1][1:]
+    """Sheer, half beam and keel anywhere along the hull."""
+    return profile_at(SECTIONS, x)
 
 
 def station(x: float) -> tuple[float, float]:
@@ -140,37 +121,6 @@ def hull_samples() -> list[float]:
         samples += [start[0], (start[0] + end[0]) / 2]
     samples.append(SECTIONS[-1][0])
     return samples
-
-
-def hull_sections(subdivisions: int = 4) -> list[tuple[float, float, float, float]]:
-    """Sample the authored hull curve densely enough for a clean mobile
-    silhouette. This stays below five hundred vertices, but avoids asking
-    lighting normals to hide an eight-station outline."""
-    sections: list[tuple[float, float, float, float]] = []
-    for start, end in zip(SECTIONS, SECTIONS[1:]):
-        for step in range(subdivisions):
-            x = start[0] + (end[0] - start[0]) * step / subdivisions
-            top, width, keel = profile(x)
-            sections.append((x, top, width, keel))
-    sections.append(SECTIONS[-1])
-    return sections
-
-
-HULL_RING_FACTORS = (-1.0, -0.94, -0.84, -0.72, -0.54, -0.32, 0.0,
-                     0.32, 0.54, 0.72, 0.84, 0.94, 1.0)
-
-
-def hull_ring_height(top: float, keel: float, beam_fraction: float) -> float:
-    """Rounded cross-section preserving the original hard-working shape:
-    broad below the waterline, then quickly rising into near-vertical sides."""
-    beam = abs(beam_fraction)
-    if beam <= 0.72:
-        lift = 0.15 * (beam / 0.72) ** 2
-    else:
-        t = (beam - 0.72) / 0.28
-        smooth = t * t * (3 - 2 * t)
-        lift = 0.15 + 0.85 * smooth
-    return keel + (top - keel) * lift
 
 
 def chain(
@@ -322,31 +272,14 @@ def build() -> None:
     # --- Hull -------------------------------------------------------------
     # Rust-red topsides over a tarred bottom, split at the turn of the bilge
     # exactly where the gold line runs.
-    sampled_sections = hull_sections()
-    ring_count = len(HULL_RING_FACTORS)
-    hull_vertices = [
-        (x, hull_ring_height(top, keel, beam), width * beam)
-        for x, top, width, keel in sampled_sections
-        for beam in HULL_RING_FACTORS
-    ]
+    hull_vertices, surface_faces, cap_faces, _ = rounded_hull_mesh(SECTIONS)
     topside_faces: list[tuple[int, ...]] = []
     bottom_faces: list[tuple[int, ...]] = []
-    for index in range(len(sampled_sections) - 1):
-        a = index * ring_count
-        b = (index + 1) * ring_count
-        for strip in range(ring_count - 1):
-            face = (a + strip, b + strip, b + strip + 1, a + strip + 1)
-            beam_midpoint = abs(
-                (HULL_RING_FACTORS[strip] + HULL_RING_FACTORS[strip + 1]) * 0.5
-            )
-            (topside_faces if beam_midpoint >= 0.72 else bottom_faces).append(face)
+    for face, beam_midpoint in surface_faces:
+        (topside_faces if beam_midpoint >= 0.72 else bottom_faces).append(face)
     # End caps use the topside colour; the tar remains a continuous immersed
     # shell instead of becoming a dark polygon pasted over bow and transom.
-    topside_faces += [
-        tuple(range(ring_count - 1, -1, -1)),
-        tuple(range((len(sampled_sections) - 1) * ring_count,
-                    len(sampled_sections) * ring_count)),
-    ]
+    topside_faces += cap_faces
     topsides = kit.mesh_object(
         "Hull_Topsides", hull_vertices, topside_faces, mats["hull"], root, objects
     )
