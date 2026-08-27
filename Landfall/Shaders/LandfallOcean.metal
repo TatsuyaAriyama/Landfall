@@ -45,6 +45,7 @@ struct LandfallOceanVertexOut {
     float2 oceanPosition;
     float2 slope;
     float height;
+    float3 cameraPosition;
 };
 
 struct LandfallWaveSample {
@@ -92,8 +93,8 @@ static inline LandfallWaveSample landfallSampleWaves(float2 p, float time) {
 
 vertex LandfallOceanVertexOut landfallOceanVertex(
     LandfallOceanVertexIn in [[stage_in]],
-    constant SCNSceneBuffer& frame [[buffer(0)]],
-    constant LandfallOceanNodeBuffer& node [[buffer(1)]],
+    constant SCNSceneBuffer& scn_frame [[buffer(0)]],
+    constant LandfallOceanNodeBuffer& scn_node [[buffer(1)]],
     constant LandfallOceanUniforms& ocean [[buffer(2)]])
 {
     float2 localPosition = in.position.xy;
@@ -117,19 +118,22 @@ vertex LandfallOceanVertexOut landfallOceanVertex(
     float3 localNormal = normalize(float3(-waves.slope * edge, 1.0));
 
     LandfallOceanVertexOut out;
-    out.position = node.modelViewProjectionTransform * float4(displaced, 1.0);
-    out.worldPosition = (node.modelTransform * float4(displaced, 1.0)).xyz;
-    out.worldNormal = normalize((node.modelTransform * float4(localNormal, 0.0)).xyz);
+    out.position = scn_node.modelViewProjectionTransform * float4(displaced, 1.0);
+    out.worldPosition = (scn_node.modelTransform * float4(displaced, 1.0)).xyz;
+    out.worldNormal = normalize((scn_node.modelTransform * float4(localNormal, 0.0)).xyz);
     out.localPosition = localPosition;
     out.oceanPosition = oceanPosition;
     out.slope = waves.slope * edge;
     out.height = waves.height * edge;
+    // SceneKit supplies SCNSceneBuffer to the vertex stage. Passing the camera
+    // through avoids requesting an unbound custom `frame` attachment from each
+    // fragment function, which otherwise leaves only the safety underlay visible.
+    out.cameraPosition = scn_frame.inverseViewTransform[3].xyz;
     return out;
 }
 
 static inline half4 landfallShadeOcean(
     LandfallOceanVertexOut in,
-    constant SCNSceneBuffer& frame,
     constant LandfallOceanUniforms& ocean,
     float detailQuality)
 {
@@ -202,8 +206,7 @@ static inline half4 landfallShadeOcean(
     color = mix(color, ocean.deepColor, trough * 0.16);
     color = mix(color, ocean.shallowColor, crest * 0.14);
 
-    float3 cameraPosition = frame.inverseViewTransform[3].xyz;
-    float3 viewDirection = normalize(cameraPosition - in.worldPosition);
+    float3 viewDirection = normalize(in.cameraPosition - in.worldPosition);
     float fresnel = 0.025 + 0.975 * pow(1.0 - saturate(dot(normal, viewDirection)), 5.0);
     float3 reflectionDirection = reflect(-viewDirection, normal);
     float skyHeight = saturate(reflectionDirection.y * 0.72 + 0.36);
@@ -339,24 +342,21 @@ static inline half4 landfallShadeOcean(
 
 fragment half4 landfallOceanFragmentCompatible(
     LandfallOceanVertexOut in [[stage_in]],
-    constant SCNSceneBuffer& frame [[buffer(0)]],
     constant LandfallOceanUniforms& ocean [[buffer(2)]])
 {
-    return landfallShadeOcean(in, frame, ocean, 0.62);
+    return landfallShadeOcean(in, ocean, 0.62);
 }
 
 fragment half4 landfallOceanFragmentEnhanced(
     LandfallOceanVertexOut in [[stage_in]],
-    constant SCNSceneBuffer& frame [[buffer(0)]],
     constant LandfallOceanUniforms& ocean [[buffer(2)]])
 {
-    return landfallShadeOcean(in, frame, ocean, 0.86);
+    return landfallShadeOcean(in, ocean, 0.86);
 }
 
 fragment half4 landfallOceanFragmentUltra(
     LandfallOceanVertexOut in [[stage_in]],
-    constant SCNSceneBuffer& frame [[buffer(0)]],
     constant LandfallOceanUniforms& ocean [[buffer(2)]])
 {
-    return landfallShadeOcean(in, frame, ocean, 1.0);
+    return landfallShadeOcean(in, ocean, 1.0);
 }
