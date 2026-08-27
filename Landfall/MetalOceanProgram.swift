@@ -4,8 +4,8 @@ import SceneKit
 import simd
 
 /// Owns the native Metal program and its packed per-frame inputs. The program
-/// rolls out first on modern-GPU timer voyages and Ultra home islands, while
-/// Debug builds can opt in on every scene for visual regression testing.
+/// rolls out first on modern-GPU timer voyages and home islands, while Debug
+/// builds can opt in on every scene for visual regression testing.
 enum MetalOceanProgram {
     enum RolloutScene {
         case standard
@@ -30,7 +30,7 @@ enum MetalOceanProgram {
         case .timerVoyage:
             return MetalRenderingProfile.current.tier != .compatible
         case .homeIsland:
-            return MetalRenderingProfile.current.tier == .ultra
+            return MetalRenderingProfile.current.tier != .compatible
         }
 #endif
     }
