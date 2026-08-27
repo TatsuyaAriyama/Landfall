@@ -271,6 +271,24 @@ static inline half4 landfallShadeOcean(
     reflectedSky = mix(reflectedSky, ocean.horizonColor * 1.06, horizonHaze * 0.28);
     color = mix(color, reflectedSky, 0.12 + fresnel * 0.64);
 
+    // A real water surface catches the bright horizon in narrow, broken facets.
+    // Let the normal field form that ribbon, then widen it by a pixel derivative
+    // so distant rows converge instead of aliasing into horizontal stripes.
+    float horizonFootprint = max(fwidth(reflectionDirection.y) * 1.6, 0.012);
+    float horizonRibbon = 1.0 - smoothstep(
+        horizonFootprint,
+        horizonFootprint + 0.105,
+        abs(reflectionDirection.y)
+    );
+    float ribbonVisibility = rippleVisibility
+        * mix(0.30, 1.0, nearField)
+        * (1.0 - horizonField * 0.72);
+    color = mix(
+        color,
+        ocean.horizonColor * 1.055,
+        horizonRibbon * ribbonVisibility * (0.025 + fresnel * 0.055)
+    );
+
     // Broad facets borrow sky color when they turn toward the light and expose
     // deeper water on the opposing face. The variation follows displaced waves,
     // so it cannot detach into a decorative surface pattern.
@@ -287,7 +305,8 @@ static inline half4 landfallShadeOcean(
 
     float3 halfVector = normalize(viewDirection + normalize(ocean.sunDirection));
     float sunFacing = max(dot(normal, halfVector), 0.0);
-    float sunBroad = pow(sunFacing, 48.0);
+    float sunShoulder = pow(sunFacing, 18.0);
+    float sunBroad = pow(sunFacing, 54.0);
     float sunCore = pow(sunFacing, 192.0);
     float glintA = 0.5 + 0.5 * sin(
         dot(p, float2(1.47, -1.91)) + sin(p.y * 0.19) * 1.7 - ocean.time * 1.46
@@ -296,8 +315,13 @@ static inline half4 landfallShadeOcean(
         dot(p, float2(0.73, 2.31)) + sin(p.x * 0.23) * 1.3 + ocean.time * 1.13
     );
     float glintBreakup = 0.02 + 0.98 * smoothstep(0.38, 0.92, glintA * glintB);
+    float glintVisibility = rippleVisibility
+        * mix(0.34, 1.0, nearField)
+        * (1.0 - horizonField * 0.58);
     color += ocean.sunColor * ocean.sunStrength
-        * (sunBroad * 0.015 + sunCore * glintBreakup * 0.32);
+        * (sunShoulder * glintBreakup * glintVisibility * 0.020
+            + sunBroad * 0.018
+            + sunCore * glintBreakup * 0.28);
     float forwardScatter = pow(
         saturate(dot(viewDirection, -normalize(ocean.sunDirection))),
         4.0
