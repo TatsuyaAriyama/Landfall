@@ -1211,6 +1211,9 @@ enum VoyageSceneKit {
 
     // MARK: - 船の質感
 
+    /// USDZ が静水面に浮くときの、船体ローカル座標での喫水線。
+    private static let authoredBoatWaterline: Float = 0.07
+
     private struct BoatSurfaceProfile {
         let roughness: CGFloat?
         let metalness: CGFloat?
@@ -1574,7 +1577,7 @@ enum VoyageSceneKit {
             NSNumber(value: profile.isWettable ? Float(1) : Float(0)),
             forKey: "uBoatWettable"
         )
-        material.setValue(NSNumber(value: Float(0.07)), forKey: "uBoatWaterline")
+        material.setValue(NSNumber(value: authoredBoatWaterline), forKey: "uBoatWaterline")
         material.setValue(longestLocalAxis(of: node), forKey: "uBoatGrainAxis")
         material.setValue(
             HomeIslandOceanEffects.linearColorVector(seaBounce),
@@ -1585,6 +1588,32 @@ enum VoyageSceneKit {
             HomeIslandOceanEffects.linearColorVector(sunColor),
             forKey: "uBoatSunColor"
         )
+    }
+
+    /// 船のマテリアルを毎フレーム再探索せず、波と同期する喫水線の書き込み先を集める。
+    static func styledBoatMaterials(in root: SCNNode) -> [SCNMaterial] {
+        var materials: [SCNMaterial] = []
+        root.enumerateHierarchy { node, _ in
+            for material in node.geometry?.materials ?? [] {
+                guard material.shaderModifiers?[.surface]?.contains("uBoatWaterline") == true,
+                      !materials.contains(where: { $0 === material })
+                else { continue }
+                materials.append(material)
+            }
+        }
+        return materials
+    }
+
+    /// 船が波頭へ上がれば船体上の水面は下がり、谷へ沈めば上がる。
+    /// 浮力と同じ変位を使うことで、濡れ境界が海から剥がれない。
+    static func updateBoatWaterline(
+        localHeave: Float,
+        materials: [SCNMaterial]
+    ) {
+        let waterline = authoredBoatWaterline - localHeave
+        for material in materials {
+            material.setValue(NSNumber(value: waterline), forKey: "uBoatWaterline")
+        }
     }
 
     private static func longestLocalAxis(of node: SCNNode) -> SCNVector3 {
@@ -2747,6 +2776,7 @@ final class VoyagingHomeAnimator: NSObject {
     /// 帆としぶきへ実際に渡している風の強さ。段階が変わっても数秒かけて寄せる。
     private var windStrength: Float = 0
     private var sailMaterials: [SCNMaterial] = []
+    private var boatSurfaceMaterials: [SCNMaterial] = []
     private var spraySystems: VoyageBowSpray.Systems = .empty
     private var sprayIsActive = false
 
@@ -2842,6 +2872,7 @@ final class VoyagingHomeAnimator: NSObject {
             .geometry?.firstMaterial
         gulls = scene.rootNode.childNode(withName: "gulls", recursively: false)?.childNodes ?? []
         sailMaterials = VoyageSailFlutter.materials(in: scene.rootNode)
+        boatSurfaceMaterials = boat.map(VoyageSceneKit.styledBoatMaterials(in:)) ?? []
         spraySystems = VoyageBowSpray.systems(in: scene.rootNode)
         // 作り直したシーンでも、いま吹いている風の続きから始める。
         applyWind(windStrength, at: 0)
@@ -2996,6 +3027,14 @@ final class VoyagingHomeAnimator: NSObject {
                 deltaTime: animationDelta,
                 reduceMotion: reduceMotion,
                 propulsionSpeed: resting || reduceMotion ? 0 : windStrength * 1.6
+            )
+            let parentYAxis = travel.presentation.simdWorldTransform.columns.1
+            let parentYScale = simd_length(
+                SIMD3(parentYAxis.x, parentYAxis.y, parentYAxis.z)
+            )
+            VoyageSceneKit.updateBoatWaterline(
+                localHeave: frame.motion.heave / max(parentYScale, 0.001),
+                materials: boatSurfaceMaterials
             )
             frame.wake.apply(to: seaMaterial)
         } else {
