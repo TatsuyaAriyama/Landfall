@@ -1473,15 +1473,15 @@ enum VoyageSceneKit {
         _surface.diffuse.rgb *= 1.0 + height * uBoatColorVariation;
     }
 
+    float3 viewDirection = normalize(_surface.view);
+    float3 sunDirection = normalize(
+        (scn_frame.viewTransform * float4(uBoatSunDirection, 0.0)).xyz
+    );
     if (uBoatSurfaceKind > 3.5 && uBoatSurfaceKind < 4.5) {
         // 表からの反射だけでなく、太陽と視点が帆の反対側にあるときは
         // 布の糸の間から暖色が薄く抜ける。発光板にならないよう透過は逆光時だけに絞る。
-        float3 viewDirection = normalize(_surface.view);
-        float3 sailLightDirection = normalize(
-            (scn_frame.viewTransform * float4(uBoatSunDirection, 0.0)).xyz
-        );
         float viewSide = dot(normal, viewDirection);
-        float lightSide = dot(normal, sailLightDirection);
+        float lightSide = dot(normal, sunDirection);
         float backlit = smoothstep(0.05, 0.62, -viewSide * lightSide);
         float threadOpenings = 0.72 + height * 0.32;
         _surface.emission.rgb += uBoatSunColor
@@ -1518,10 +1518,52 @@ enum VoyageSceneKit {
     _surface.clearCoatRoughness = mix(_surface.clearCoatRoughness, 0.045, wetSheen);
     _surface.clearCoatNormal = normal;
 
-    // 海からの青緑の照り返し。フレネル輪郭へ絞って色移りを防ぐ。
-    float rim = pow(1.0 - clamp(dot(normal, normalize(_surface.view)), 0.0, 1.0), 3.0);
+    // SceneKit の単色環境光だけでは船体と海が別々に見えるため、同じ時間帯の
+    // 空・太陽・海を半球反射として戻す。材質の粗さと濡れは既存 PBR 値をそのまま使う。
+    float3 worldUp = normalize(
+        (scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz
+    );
+    float upFacing = dot(normal, worldUp);
+    float fresnel = pow(
+        1.0 - clamp(dot(normal, viewDirection), 0.0, 1.0),
+        4.0
+    );
+    float gloss = clamp(1.0 - _surface.roughness, 0.0, 1.0);
+    float reflectionResponse = 0.16;
+    if (uBoatSurfaceKind > 0.5 && uBoatSurfaceKind < 1.5) {
+        reflectionResponse = 0.70;
+    } else if (uBoatSurfaceKind > 1.5 && uBoatSurfaceKind < 2.5) {
+        reflectionResponse = 0.48;
+    } else if (uBoatSurfaceKind > 5.5 && uBoatSurfaceKind < 7.5) {
+        reflectionResponse = 0.92;
+    } else if (uBoatSurfaceKind > 9.5 && uBoatSurfaceKind < 10.5) {
+        reflectionResponse = 1.0;
+    } else if (uBoatSurfaceKind > 3.5 && uBoatSurfaceKind < 5.5) {
+        reflectionResponse = 0.09;
+    }
+
+    float skyLobe = smoothstep(-0.28, 0.72, upFacing);
+    float seaLobe = smoothstep(-0.18, 0.78, -upFacing);
+    float environmentStrength = reflectionResponse
+        * (0.010 + gloss * 0.030 + fresnel * 0.032);
+    _surface.emission.rgb += uBoatSunColor
+        * (skyLobe * environmentStrength);
     _surface.emission.rgb += uBoatSeaBounce
-        * (rim * 0.032 + belowSurface * 0.018 + waterlineRim * 0.012);
+        * (seaLobe * environmentStrength * 0.82
+            + belowSurface * 0.018
+            + waterlineRim * 0.012);
+
+    // 直接光の鏡面に、遠景の太陽と同じ色の小さな芯だけを足す。
+    // 粗い木や布では広がって消え、金属・塗膜・濡れ面だけに残る。
+    float reflectedSun = clamp(
+        dot(reflect(-sunDirection, normal), viewDirection),
+        0.0,
+        1.0
+    );
+    float sunGlint = pow(reflectedSun, mix(18.0, 104.0, gloss))
+        * smoothstep(-0.04, 0.22, dot(normal, sunDirection));
+    _surface.emission.rgb += uBoatSunColor
+        * (sunGlint * gloss * reflectionResponse * 0.075);
     """
 
     private static func styleBoatMaterial(
