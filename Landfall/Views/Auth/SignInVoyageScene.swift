@@ -64,10 +64,16 @@ struct SignInVoyageSceneView: UIViewRepresentable {
         private weak var view: SCNView?
         private weak var camera: SCNNode?
         private weak var moon: SCNNode?
+        private weak var travel: SCNNode?
         private weak var bob: SCNNode?
-        private weak var wake: SCNNode?
         private weak var seaMaterial: SCNMaterial?
         private var gulls: [SCNNode] = []
+        private var sailMaterials: [SCNMaterial] = []
+        private var spraySystems: VoyageBowSpray.Systems = .empty
+        private let marineController = HomeIslandMarineDynamics.BoatController(
+            field: .init(layout: .timerVoyage),
+            tuning: HomeIslandMarineDynamics.boatTuning(forSceneScale: 0.68)
+        )
         private var framePacing = MetalOceanFramePacingMonitor()
         private var hasReducedRenderingQuality = false
         private let performanceLogger = Logger(
@@ -99,14 +105,23 @@ struct SignInVoyageSceneView: UIViewRepresentable {
                 withName: LandfallMoonEffects.rootNodeName,
                 recursively: false
             )
+            travel = view.scene?.rootNode.childNode(withName: "travel", recursively: false)
             bob = view.scene?.rootNode.childNode(withName: "boatBob", recursively: true)
-            wake = view.scene?.rootNode.childNode(withName: "wake", recursively: true)
             seaMaterial = view.scene?.rootNode
                 .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
                 .geometry?.firstMaterial
+            if let root = view.scene?.rootNode {
+                sailMaterials = VoyageSailFlutter.materials(in: root)
+                spraySystems = VoyageBowSpray.systems(in: root)
+            } else {
+                sailMaterials = []
+                spraySystems = .empty
+            }
             gulls = view.scene?.rootNode
                 .childNode(withName: "gulls", recursively: false)?
                 .childNodes ?? []
+            marineController.requestReset(buoyancyNode: bob)
+            HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
             startTime = nil
             lastTime = 0
             framePacing.reset()
@@ -138,6 +153,9 @@ struct SignInVoyageSceneView: UIViewRepresentable {
             view.rendersContinuously = value
             view.isPlaying = value
             if !value {
+                marineController.requestReset(buoyancyNode: bob)
+                HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
+                spraySystems.reset()
                 framePacing.reset()
                 applyFrame(time: 0, delta: 0)
                 view.setNeedsDisplay()
@@ -176,14 +194,31 @@ struct SignInVoyageSceneView: UIViewRepresentable {
         }
 
         private func applyFrame(time: Float, delta: Float) {
-            if let bob {
-                bob.position.y = sin(time * 0.8) * 0.06
-                bob.eulerAngles.z = sin(time * 0.6) * 0.03
-                bob.eulerAngles.x = sin(time * 0.5 + 1.2) * 0.015
+            let isSailing = view?.isPlaying == true
+            let oceanTime = HomeIslandOceanEffects.currentTime
+            seaMaterial?.setValue(NSNumber(value: oceanTime), forKey: "uTime")
+            if let travel, let bob {
+                let frame = marineController.update(
+                    boatRoot: travel,
+                    buoyancyNode: bob,
+                    oceanTime: oceanTime,
+                    deltaTime: delta,
+                    reduceMotion: false,
+                    propulsionSpeed: isSailing ? 1.2 : 0
+                )
+                frame.wake.apply(to: seaMaterial)
                 bob.childNode(withName: "boatFlag", recursively: true)?
-                    .eulerAngles.y = sin(time * 5.2) * 0.22
+                    .eulerAngles.y = isSailing ? sin(time * 5.2) * 0.22 : 0
+            } else {
+                HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
             }
-            wake?.opacity = CGFloat(0.34 + sin(time * 1.4) * 0.07)
+            let wind: Float = isSailing ? VoyageWind.sailingStrength : 0
+            sailMaterials.forEach {
+                $0.setValue(NSNumber(value: wind), forKey: "uWind")
+            }
+            spraySystems.apply(
+                isSailing ? .sailing(wind: wind, at: time) : .zero
+            )
 
             if let scene = view?.scene {
                 sailor.bindIfNeeded(scene)

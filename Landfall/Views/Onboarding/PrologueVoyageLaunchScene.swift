@@ -99,13 +99,19 @@ struct PrologueVoyageLaunchSceneView: UIViewRepresentable {
         private weak var scene: SCNScene?
         private weak var travel: SCNNode?
         private weak var boatBob: SCNNode?
-        private weak var wake: SCNNode?
+        private weak var seaMaterial: SCNMaterial?
         private weak var camera: SCNNode?
         private weak var stars: SCNNode?
         private weak var gullRoot: SCNNode?
         private weak var approachingIsland: SCNNode?
 
         private var gulls: [SCNNode] = []
+        private var sailMaterials: [SCNMaterial] = []
+        private var spraySystems: VoyageBowSpray.Systems = .empty
+        private let marineController = HomeIslandMarineDynamics.BoatController(
+            field: .init(layout: .timerVoyage),
+            tuning: HomeIslandMarineDynamics.boatTuning(forSceneScale: 0.55)
+        )
         private var duration: TimeInterval = 3.65
         private var onComplete: () -> Void = {}
         private var startTime: TimeInterval?
@@ -198,6 +204,9 @@ struct PrologueVoyageLaunchSceneView: UIViewRepresentable {
             mutationLock.lock()
             phase = .stopped
             sailor.animate = false
+            marineController.requestReset(buoyancyNode: boatBob)
+            HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
+            spraySystems.reset()
             gulls.removeAll()
             view = nil
             scene = nil
@@ -208,10 +217,9 @@ struct PrologueVoyageLaunchSceneView: UIViewRepresentable {
             guard let root = scene?.rootNode else { return }
             travel = root.childNode(withName: "travel", recursively: false)
             boatBob = root.childNode(withName: "boatBob", recursively: true)
-            wake = root.childNode(
-                withName: PrologueVoyageLaunchSceneFactory.wakeName,
-                recursively: true
-            )
+            seaMaterial = root
+                .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
+                .geometry?.firstMaterial
             camera = root.childNode(
                 withName: PrologueVoyageLaunchSceneFactory.cameraName,
                 recursively: false
@@ -222,6 +230,10 @@ struct PrologueVoyageLaunchSceneView: UIViewRepresentable {
             )
             gullRoot = root.childNode(withName: "gulls", recursively: false)
             gulls = gullRoot?.childNodes ?? []
+            sailMaterials = VoyageSailFlutter.materials(in: root)
+            spraySystems = VoyageBowSpray.systems(in: root)
+            marineController.requestReset(buoyancyNode: boatBob)
+            HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
             approachingIsland = root.childNode(
                 withName: "approachingIsland",
                 recursively: false
@@ -356,16 +368,30 @@ struct PrologueVoyageLaunchSceneView: UIViewRepresentable {
             scene: SCNScene,
             sailorPose: PhoenixPose? = nil
         ) {
-            if let boatBob {
-                boatBob.position.y = sin(time * 0.8) * 0.06
-                boatBob.eulerAngles.z = sin(time * 0.6) * 0.03
-                boatBob.eulerAngles.x = sin(time * 0.5 + 1.2) * 0.015
-                boatBob.childNode(withName: "boatFlag", recursively: true)?
-                    .eulerAngles.y = sin(time * 5.2) * 0.22
-            }
-
+            let oceanTime = HomeIslandOceanEffects.currentTime
+            seaMaterial?.setValue(NSNumber(value: oceanTime), forKey: "uTime")
             let wakeReveal = smoothstep(clamp((progress - 0.16) / 0.54))
-            wake?.opacity = CGFloat((0.34 + sin(time * 1.4) * 0.07) * wakeReveal)
+            if let travel, let boatBob {
+                let frame = marineController.update(
+                    boatRoot: travel,
+                    buoyancyNode: boatBob,
+                    oceanTime: oceanTime,
+                    deltaTime: delta,
+                    reduceMotion: false,
+                    propulsionSpeed: 1.25 * wakeReveal
+                )
+                frame.wake.apply(to: seaMaterial)
+                boatBob.childNode(withName: "boatFlag", recursively: true)?
+                    .eulerAngles.y = sin(time * 5.2) * 0.22 * wakeReveal
+            } else {
+                HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
+            }
+            let wind = VoyageWind.sailingStrength
+                * smoothstep(clamp(progress / 0.58))
+            sailMaterials.forEach {
+                $0.setValue(NSNumber(value: wind), forKey: "uWind")
+            }
+            spraySystems.apply(.sailing(wind: wind, at: time))
 
             for (index, bird) in gulls.enumerated() {
                 guard flock.indices.contains(index) else { continue }
@@ -497,7 +523,6 @@ struct PrologueVoyageLaunchSceneView: UIViewRepresentable {
 private enum PrologueVoyageLaunchSceneFactory {
     static let cameraName = "camera"
     static let starsName = "prologueVoyageStars"
-    static let wakeName = "wake"
 
     static func makeScene(showIsland: Bool, date: Date) -> SCNScene {
         // 終端をタイマーと同一にするため、航海中の共通Sceneをそのまま土台にする。
@@ -516,9 +541,6 @@ private enum PrologueVoyageLaunchSceneFactory {
         }) {
             stars.name = starsName
         }
-
-        // 共通makeWake自体が頂点alphaのprocedural geometryなので、通常画面への
-        // handoff後もnode名・形状・opacityがそのまま一致する。
         return scene
     }
 }

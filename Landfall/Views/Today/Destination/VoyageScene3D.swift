@@ -2334,16 +2334,9 @@ final class VoyagingHomeAnimator: NSObject {
     private var gulls: [SCNNode] = []
     private let sailor = PhoenixAnimator()
 
-    private static let timerMarineTuning: HomeIslandMarineDynamics.BoatTuning = {
-        var tuning = HomeIslandMarineDynamics.BoatTuning.homeIsland
-        let sceneScale: Float = 0.55 / 0.92
-        tuning.hullLength *= sceneScale
-        tuning.beam *= sceneScale
-        return tuning
-    }()
     private let marineController = HomeIslandMarineDynamics.BoatController(
         field: .init(layout: .timerVoyage),
-        tuning: timerMarineTuning
+        tuning: HomeIslandMarineDynamics.boatTuning(forSceneScale: 0.55)
     )
 
     /// 同行の航海の同乗者。船のノードの下にぶら下げるので、甲板の揺れも

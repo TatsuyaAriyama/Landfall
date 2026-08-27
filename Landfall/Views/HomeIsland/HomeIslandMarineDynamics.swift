@@ -128,6 +128,17 @@ enum HomeIslandMarineDynamics {
         static let homeIsland = BoatTuning()
     }
 
+    /// Scales the home-island hull sampling footprint to a scene's boat root.
+    /// The authored home boat is displayed at 0.92, while voyage compositions
+    /// deliberately pull the same model farther back.
+    static func boatTuning(forSceneScale sceneScale: Float) -> BoatTuning {
+        var tuning = BoatTuning.homeIsland
+        let scale = max(sceneScale, 0.001) / 0.92
+        tuning.hullLength *= scale
+        tuning.beam *= scale
+        return tuning
+    }
+
     struct WakeState {
         /// Shader coordinates: (world X, -world Z).
         let boatPosition: SIMD2<Float>
