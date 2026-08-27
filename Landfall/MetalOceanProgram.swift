@@ -17,6 +17,8 @@ enum MetalOceanProgram {
 
     private static let rolloutDefaultsKey = "LandfallNativeMetalOcean"
     private static let diagnostics = Diagnostics()
+    private static let programLock = NSLock()
+    private static var programs: [String: SCNProgram] = [:]
 
     private static func isRolloutEnabled(for scene: RolloutScene) -> Bool {
 #if DEBUG
@@ -39,12 +41,7 @@ enum MetalOceanProgram {
 #endif
     }
 
-    static func make(
-        layout: HomeIslandOceanEffects.Layout,
-        appearance: HomeIslandOceanEffects.Appearance,
-        islandScale: Float,
-        rolloutScene: RolloutScene
-    ) -> SCNProgram? {
+    static func make(rolloutScene: RolloutScene) -> SCNProgram? {
         guard isRolloutEnabled(for: rolloutScene),
               MetalRenderingProfile.current.supportsNativeOceanProgram,
               let device = MTLCreateSystemDefaultDevice(),
@@ -53,63 +50,29 @@ enum MetalOceanProgram {
             return nil
         }
 
-        let baseUniforms = Uniforms(
-            time: 0,
-            shallowColor: linearColor(appearance.shallow),
-            seaColor: linearColor(appearance.sea),
-            deepColor: linearColor(appearance.deep),
-            skyColor: linearColor(appearance.sky),
-            horizonColor: linearColor(appearance.horizon),
-            sunColor: linearColor(appearance.sun),
-            sunDirection: SIMD3(
-                appearance.sunDirection.x,
-                appearance.sunDirection.y,
-                appearance.sunDirection.z
-            ),
-            sunStrength: appearance.sunStrength,
-            surfaceSize: SIMD2(Float(layout.width), Float(layout.depth)),
-            coordinateOffset: SIMD2(layout.centerX, 0),
-            microNormalScale: MetalRenderingProfile.current.oceanMicroNormalScale,
-            lightColor: linearColor(appearance.light),
-            fogColor: linearColor(appearance.fog),
-            shoreline: layout.includesShoreline ? 1 : 0,
-            islandScale: islandScale,
-            boatPosition: .zero,
-            boatHeading: SIMD2(0, 1),
-            boatSpeed: 0,
-            boatSize: .zero,
-            boatPresence: 0
+        let fragmentFunctionName = MetalOceanShaderLibrary.fragmentFunctionName(
+            for: MetalRenderingProfile.current.tier
         )
+        programLock.lock()
+        defer { programLock.unlock() }
+        if let program = programs[fragmentFunctionName] {
+            return program
+        }
+
         let program = SCNProgram()
         program.library = library
         program.vertexFunctionName = MetalOceanShaderLibrary.vertexFunctionName
-        program.fragmentFunctionName = MetalOceanShaderLibrary.fragmentFunctionName(
-            for: MetalRenderingProfile.current.tier
-        )
+        program.fragmentFunctionName = fragmentFunctionName
         program.isOpaque = true
         program.delegate = diagnostics
-        program.handleBinding(ofBufferNamed: "ocean", frequency: .perNode) {
-            stream, _, shadable, _ in
-            var uniforms = baseUniforms
-            uniforms.time = HomeIslandOceanEffects.currentTime
-            if let material = shadable as? SCNMaterial {
-                uniforms.boatPosition = vector2(named: "uBoatPosition", from: material)
-                    ?? uniforms.boatPosition
-                uniforms.boatHeading = vector2(named: "uBoatHeading", from: material)
-                    ?? uniforms.boatHeading
-                uniforms.boatSpeed = (material.value(forKey: "uBoatSpeed") as? NSNumber)?.floatValue
-                    ?? uniforms.boatSpeed
-                uniforms.boatSize = vector2(named: "uBoatSize", from: material)
-                    ?? uniforms.boatSize
-                uniforms.boatPresence = (
-                    material.value(forKey: "uBoatPresence") as? NSNumber
-                )?.floatValue ?? uniforms.boatPresence
-            }
-            withUnsafeBytes(of: &uniforms) { bytes in
-                guard let address = bytes.baseAddress else { return }
-                stream.writeBytes(address, count: bytes.count)
-            }
+        for bufferName in ["vertexOcean", "fragmentOcean"] {
+            program.handleBinding(
+                ofBufferNamed: bufferName,
+                frequency: .perNode,
+                handler: oceanBufferBinding
+            )
         }
+        programs[fragmentFunctionName] = program
         return program
     }
 
@@ -130,14 +93,62 @@ enum MetalOceanProgram {
 #endif
     }
 
-    private static func linearColor(_ rgb: UInt) -> SIMD3<Float> {
-        let color = HomeIslandOceanEffects.linearColorVector(rgb)
-        return SIMD3(color.x, color.y, color.z)
-    }
-
     private static func vector2(named key: String, from material: SCNMaterial) -> SIMD2<Float>? {
         guard let value = material.value(forKey: key) as? SCNVector3 else { return nil }
         return SIMD2(value.x, value.y)
+    }
+
+    private static func vector3(named key: String, from material: SCNMaterial) -> SIMD3<Float>? {
+        guard let value = material.value(forKey: key) as? SCNVector3 else { return nil }
+        return SIMD3(value.x, value.y, value.z)
+    }
+
+    /// The vertex and fragment stages use separate buffer names because SceneKit
+    /// registers each reflected stage attachment independently. Both names share
+    /// this encoder and the material remains the source of scene-specific data.
+    private static let oceanBufferBinding: SCNBufferBindingBlock = {
+        stream, _, shadable, _ in
+        guard let material = shadable as? SCNMaterial else { return }
+        var uniforms = Uniforms(
+            time: HomeIslandOceanEffects.currentTime,
+            shallowColor: vector3(named: "uShallow", from: material) ?? .zero,
+            seaColor: vector3(named: "uSea", from: material) ?? .zero,
+            deepColor: vector3(named: "uDeep", from: material) ?? .zero,
+            skyColor: vector3(named: "uSky", from: material) ?? .zero,
+            horizonColor: vector3(named: "uHorizon", from: material) ?? .zero,
+            sunColor: vector3(named: "uSun", from: material) ?? .zero,
+            sunDirection: vector3(named: "uSunDirection", from: material)
+                ?? SIMD3(0, 1, 0),
+            sunStrength: number(named: "uSunStrength", from: material, default: 1),
+            surfaceSize: vector2(named: "uSurfaceSize", from: material) ?? .zero,
+            coordinateOffset: vector2(named: "uCoordinateOffset", from: material) ?? .zero,
+            microNormalScale: number(
+                named: "uMicroNormalScale",
+                from: material,
+                default: 1
+            ),
+            lightColor: vector3(named: "uLight", from: material) ?? .zero,
+            fogColor: vector3(named: "uFog", from: material) ?? .zero,
+            shoreline: number(named: "uShoreline", from: material),
+            islandScale: number(named: "uIslandScale", from: material, default: 1),
+            boatPosition: vector2(named: "uBoatPosition", from: material) ?? .zero,
+            boatHeading: vector2(named: "uBoatHeading", from: material) ?? SIMD2(0, 1),
+            boatSpeed: number(named: "uBoatSpeed", from: material),
+            boatSize: vector2(named: "uBoatSize", from: material) ?? .zero,
+            boatPresence: number(named: "uBoatPresence", from: material)
+        )
+        withUnsafeBytes(of: &uniforms) { bytes in
+            guard let address = bytes.baseAddress else { return }
+            stream.writeBytes(address, count: bytes.count)
+        }
+    }
+
+    private static func number(
+        named key: String,
+        from material: SCNMaterial,
+        default defaultValue: Float = 0
+    ) -> Float {
+        (material.value(forKey: key) as? NSNumber)?.floatValue ?? defaultValue
     }
 
     private struct Uniforms {
@@ -183,7 +194,7 @@ enum MetalOceanProgram {
             category: "MetalOcean"
         )
         private let lock = NSLock()
-        private var fallbacks: [ObjectIdentifier: Fallback] = [:]
+        private var fallbacks: [ObjectIdentifier: [Fallback]] = [:]
 
         func register(
             program: SCNProgram,
@@ -191,11 +202,19 @@ enum MetalOceanProgram {
             shaderModifiers: [SCNShaderModifierEntryPoint: String]
         ) {
             lock.lock()
-            fallbacks = fallbacks.filter { $0.value.material != nil }
-            fallbacks[ObjectIdentifier(program)] = Fallback(
-                material: material,
-                shaderModifiers: shaderModifiers
-            )
+            fallbacks = fallbacks.compactMapValues { entries in
+                let liveEntries = entries.filter { $0.material != nil }
+                return liveEntries.isEmpty ? nil : liveEntries
+            }
+            let key = ObjectIdentifier(program)
+            var entries = fallbacks[key] ?? []
+            if !entries.contains(where: { $0.material === material }) {
+                entries.append(Fallback(
+                    material: material,
+                    shaderModifiers: shaderModifiers
+                ))
+            }
+            fallbacks[key] = entries
             lock.unlock()
         }
 
@@ -209,14 +228,15 @@ enum MetalOceanProgram {
                 logger.debug("Simulating a native ocean program failure")
             }
             lock.lock()
-            let fallback = fallbacks.removeValue(forKey: ObjectIdentifier(program))
+            let registeredFallbacks = fallbacks.removeValue(forKey: ObjectIdentifier(program)) ?? []
             lock.unlock()
-            guard let material = fallback?.material,
-                  let shaderModifiers = fallback?.shaderModifiers else { return }
-            DispatchQueue.main.async { [weak material] in
-                guard let material else { return }
-                material.program = nil
-                material.shaderModifiers = shaderModifiers
+            guard !registeredFallbacks.isEmpty else { return }
+            DispatchQueue.main.async {
+                for fallback in registeredFallbacks {
+                    guard let material = fallback.material else { continue }
+                    material.program = nil
+                    material.shaderModifiers = fallback.shaderModifiers
+                }
                 self.logger.notice("Restored shader-modifier ocean after Metal program failure")
 #if DEBUG
                 if simulated {

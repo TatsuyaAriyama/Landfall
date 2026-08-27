@@ -494,12 +494,7 @@ enum HomeIslandOceanEffects {
             .geometry: geometryShader,
             .surface: surfaceShader,
         ]
-        if let nativeProgram = MetalOceanProgram.make(
-            layout: layout,
-            appearance: appearance,
-            islandScale: islandScale,
-            rolloutScene: nativeMetalRollout
-        ) {
+        if let nativeProgram = MetalOceanProgram.make(rolloutScene: nativeMetalRollout) {
             material.program = nativeProgram
             MetalOceanProgram.installRuntimeFallback(
                 for: nativeProgram,

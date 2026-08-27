@@ -115,20 +115,20 @@ vertex LandfallOceanVertexOut landfallOceanVertex(
     LandfallOceanVertexIn in [[stage_in]],
     constant SCNSceneBuffer& scn_frame [[buffer(0)]],
     constant LandfallOceanNodeBuffer& scn_node [[buffer(1)]],
-    constant LandfallOceanUniforms& ocean [[buffer(2)]])
+    constant LandfallOceanUniforms& vertexOcean [[buffer(2)]])
 {
     float2 localPosition = in.position.xy;
-    float2 oceanPosition = localPosition + ocean.coordinateOffset;
-    LandfallWaveSample waves = landfallSampleWaves(oceanPosition, ocean.time);
+    float2 oceanPosition = localPosition + vertexOcean.coordinateOffset;
+    LandfallWaveSample waves = landfallSampleWaves(oceanPosition, vertexOcean.time);
 
     float edgeX = 1.0 - smoothstep(
-        ocean.surfaceSize.x * 0.43,
-        ocean.surfaceSize.x * 0.50,
+        vertexOcean.surfaceSize.x * 0.43,
+        vertexOcean.surfaceSize.x * 0.50,
         abs(localPosition.x)
     );
     float edgeY = 1.0 - smoothstep(
-        ocean.surfaceSize.y * 0.43,
-        ocean.surfaceSize.y * 0.50,
+        vertexOcean.surfaceSize.y * 0.43,
+        vertexOcean.surfaceSize.y * 0.50,
         abs(localPosition.y)
     );
     float edge = edgeX * edgeY;
@@ -370,21 +370,21 @@ static inline half4 landfallShadeOcean(
 
 fragment half4 landfallOceanFragmentCompatible(
     LandfallOceanVertexOut in [[stage_in]],
-    constant LandfallOceanUniforms& ocean [[buffer(2)]])
+    constant LandfallOceanUniforms& fragmentOcean [[buffer(2)]])
 {
-    return landfallShadeOcean(in, ocean, 0.62);
+    return landfallShadeOcean(in, fragmentOcean, 0.62);
 }
 
 fragment half4 landfallOceanFragmentEnhanced(
     LandfallOceanVertexOut in [[stage_in]],
-    constant LandfallOceanUniforms& ocean [[buffer(2)]])
+    constant LandfallOceanUniforms& fragmentOcean [[buffer(2)]])
 {
-    return landfallShadeOcean(in, ocean, 0.86);
+    return landfallShadeOcean(in, fragmentOcean, 0.86);
 }
 
 fragment half4 landfallOceanFragmentUltra(
     LandfallOceanVertexOut in [[stage_in]],
-    constant LandfallOceanUniforms& ocean [[buffer(2)]])
+    constant LandfallOceanUniforms& fragmentOcean [[buffer(2)]])
 {
-    return landfallShadeOcean(in, ocean, 1.0);
+    return landfallShadeOcean(in, fragmentOcean, 1.0);
 }
