@@ -1404,6 +1404,8 @@ enum VoyageSceneKit {
     float uBoatColorVariation;
     float uBoatWettable;
     float uBoatWaterline;
+    float3 uBoatWaterlineNormal;
+    float4x4 uBoatLocalToModel;
     float3 uBoatGrainAxis;
     float3 uBoatSeaBounce;
     float3 uBoatSunDirection;
@@ -1411,6 +1413,10 @@ enum VoyageSceneKit {
     #pragma body
     float3 localP = (scn_node.inverseModelViewTransform
         * float4(_surface.position, 1.0)).xyz;
+    // USDZ submeshes do not share an origin (the cockpit and fittings are
+    // translated children). Bring every fragment into one hull coordinate
+    // space before evaluating the common water plane.
+    float3 boatP = (uBoatLocalToModel * float4(localP, 1.0)).xyz;
     float3 p = localP * uBoatDetailScale;
     float height = 0.0;
 
@@ -1491,21 +1497,25 @@ enum VoyageSceneKit {
 
     // 水没部、水面の細い鏡面リム、上に残る飛沫跡を分ける。
     // 広いグラデーションにすると船体全体が灰色に見えるため、境界は海面付近へ絞る。
-    float lineBreakup = sin(localP.x * 7.1 + sin(localP.z * 10.9) * 0.82) * 0.014
-        + sin(localP.z * 18.7 - localP.x * 3.4) * 0.006;
+    float lineBreakup = sin(boatP.x * 7.1 + sin(boatP.z * 10.9) * 0.82) * 0.014
+        + sin(boatP.z * 18.7 - boatP.x * 3.4) * 0.006;
     float brokenLine = uBoatWaterline + lineBreakup;
+    float waterlineDistance = dot(
+        boatP,
+        normalize(uBoatWaterlineNormal)
+    ) - brokenLine;
     float belowSurface = uBoatWettable
-        * (1.0 - smoothstep(brokenLine - 0.025, brokenLine + 0.055, localP.y));
+        * (1.0 - smoothstep(-0.025, 0.055, waterlineDistance));
     float waterlineRim = uBoatWettable
-        * (1.0 - smoothstep(0.012, 0.060, abs(localP.y - brokenLine)));
+        * (1.0 - smoothstep(0.012, 0.060, abs(waterlineDistance)));
 
     // 飛沫跡は水面直上にまばらに残し、横一文字の塗装に見せない。
-    float splashNoise = sin(localP.x * 15.1 + localP.z * 8.7)
-        * sin(localP.z * 13.3 - localP.x * 5.9);
-    float splashTop = brokenLine + 0.055 + (splashNoise * 0.5 + 0.5) * 0.075;
+    float splashNoise = sin(boatP.x * 15.1 + boatP.z * 8.7)
+        * sin(boatP.z * 13.3 - boatP.x * 5.9);
+    float splashTop = 0.055 + (splashNoise * 0.5 + 0.5) * 0.075;
     float splashDamp = uBoatWettable
-        * smoothstep(brokenLine - 0.010, brokenLine + 0.018, localP.y)
-        * (1.0 - smoothstep(splashTop - 0.020, splashTop + 0.025, localP.y))
+        * smoothstep(-0.010, 0.018, waterlineDistance)
+        * (1.0 - smoothstep(splashTop - 0.020, splashTop + 0.025, waterlineDistance))
         * smoothstep(-0.30, 0.28, splashNoise);
     float wetColorWeight = clamp(belowSurface * 0.42 + splashDamp * 0.13, 0.0, 0.46);
     float3 wetColor = _surface.diffuse.rgb * float3(0.52, 0.68, 0.66)
@@ -1570,6 +1580,7 @@ enum VoyageSceneKit {
         _ material: SCNMaterial,
         on node: SCNNode,
         identity: String,
+        localToModel: simd_float4x4,
         seaBounce: UInt,
         sunDirection: SCNVector3,
         sunColor: UInt
@@ -1620,6 +1631,11 @@ enum VoyageSceneKit {
             forKey: "uBoatWettable"
         )
         material.setValue(NSNumber(value: authoredBoatWaterline), forKey: "uBoatWaterline")
+        material.setValue(SCNVector3(0, 1, 0), forKey: "uBoatWaterlineNormal")
+        material.setValue(
+            NSValue(scnMatrix4: SCNMatrix4(localToModel)),
+            forKey: "uBoatLocalToModel"
+        )
         material.setValue(longestLocalAxis(of: node), forKey: "uBoatGrainAxis")
         material.setValue(
             HomeIslandOceanEffects.linearColorVector(seaBounce),
@@ -1646,15 +1662,34 @@ enum VoyageSceneKit {
         return materials
     }
 
-    /// 船が波頭へ上がれば船体上の水面は下がり、谷へ沈めば上がる。
-    /// 浮力と同じ変位を使うことで、濡れ境界が海から剥がれない。
+    /// CPU側の波面を船モデル座標へ変換し、船体の濡れ境界へ渡す。
+    /// 波の高さだけでなく法線も共有するため、ロール・ピッチ中も接触線が傾く。
     static func updateBoatWaterline(
-        localHeave: Float,
+        surface: HomeIslandMarineDynamics.WaveSample,
+        buoyancyNode: SCNNode,
         materials: [SCNMaterial]
     ) {
-        let waterline = authoredBoatWaterline - localHeave
+        let worldOrigin = buoyancyNode.simdWorldPosition
+        let worldContact = SIMD3<Float>(
+            worldOrigin.x,
+            surface.worldHeight,
+            worldOrigin.z
+        )
+        let localContact = buoyancyNode.simdConvertPosition(
+            worldContact,
+            from: nil
+        )
+        let localNormal = simd_normalize(
+            buoyancyNode.simdConvertVector(surface.normal, from: nil)
+        )
+        let waterline = simd_dot(localContact, localNormal)
+            + authoredBoatWaterline
         for material in materials {
             material.setValue(NSNumber(value: waterline), forKey: "uBoatWaterline")
+            material.setValue(
+                SCNVector3(localNormal.x, localNormal.y, localNormal.z),
+                forKey: "uBoatWaterlineNormal"
+            )
         }
     }
 
@@ -1733,6 +1768,10 @@ enum VoyageSceneKit {
                     material,
                     on: node,
                     identity: "\(materialName) \(node.name ?? "")",
+                    localToModel: node.simdConvertTransform(
+                        matrix_identity_float4x4,
+                        to: model
+                    ),
                     seaBounce: seaBounce,
                     sunDirection: sunDirection,
                     sunColor: sunColor
@@ -3073,12 +3112,9 @@ final class VoyagingHomeAnimator: NSObject {
                 reduceMotion: reduceMotion,
                 propulsionSpeed: resting || reduceMotion ? 0 : windStrength * 1.6
             )
-            let parentYAxis = travel.presentation.simdWorldTransform.columns.1
-            let parentYScale = simd_length(
-                SIMD3(parentYAxis.x, parentYAxis.y, parentYAxis.z)
-            )
             VoyageSceneKit.updateBoatWaterline(
-                localHeave: frame.motion.heave / max(parentYScale, 0.001),
+                surface: frame.waterSurface,
+                buoyancyNode: bob,
                 materials: boatSurfaceMaterials
             )
             frame.wake.apply(to: seaMaterial)

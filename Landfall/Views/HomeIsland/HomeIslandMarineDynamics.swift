@@ -210,6 +210,9 @@ enum HomeIslandMarineDynamics {
     struct Frame {
         let motion: BoatMotion
         let wake: WakeState
+        /// The same analytical surface sample that drives the visible ocean.
+        /// Consumers use it to keep the hull's wet boundary on the wave plane.
+        let waterSurface: WaveSample
     }
 
     static func boatMotion(
@@ -282,6 +285,10 @@ enum HomeIslandMarineDynamics {
             configureIfNeeded(buoyancyNode)
             consumePendingReset(fallback: buoyancyNode)
             let worldPosition = boatRoot.presentation.simdWorldPosition
+            let waterSurface = field.sample(
+                atWorldXZ: SIMD2(worldPosition.x, worldPosition.z),
+                time: oceanTime
+            )
             let elapsedTime = min(max(rawDeltaTime, 0), 0.25)
             let responseDeltaTime = min(elapsedTime, 0.1)
 
@@ -305,7 +312,11 @@ enum HomeIslandMarineDynamics {
                 smoothedSpeed = 0
                 apply(.zero, to: buoyancyNode)
                 previousPosition = worldPosition
-                return Frame(motion: .zero, wake: inactiveWake(at: worldPosition))
+                return Frame(
+                    motion: .zero,
+                    wake: inactiveWake(at: worldPosition),
+                    waterSurface: waterSurface
+                )
             }
 
             let blend = responseDeltaTime > 0
@@ -367,7 +378,8 @@ enum HomeIslandMarineDynamics {
                     speed: smoothedSpeed,
                     hullSize: SIMD2(tuning.hullLength, tuning.beam),
                     isPresent: true
-                )
+                ),
+                waterSurface: waterSurface
             )
         }
 
