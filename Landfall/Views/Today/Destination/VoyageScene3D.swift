@@ -2067,7 +2067,7 @@ enum VoyageSceneKit {
 
     // MARK: - シーン(航海ホーム / Web VoyagingWorld)
 
-    /// Web Gulls と同じ10羽の低ポリの群れ。各ノードの軌道値はKVCでアニメータへ渡す。
+    /// 10羽の海鳥の群れ。各ノードの軌道値はKVCでアニメータへ渡す。
     static func makeVoyagingGulls() -> SCNNode {
         let root = SCNNode()
         root.name = "gulls"
@@ -2078,31 +2078,126 @@ enum VoyageSceneKit {
             (5.2, 3.5, -0.05, 0.14, 1.5, 4.8), (4.4, 3.0, 0.095, 0.16, 2.2, 5.6),
             (6.6, 2.5, -0.045, 0.12, 1.8, 6.1), (3.6, 3.3, 0.125, 0.18, 2.6, 2.0)
         ]
-        let vertices = [
-            SCNVector3(0, 0, 0), SCNVector3(1, 0.06, -0.12), SCNVector3(0.34, 0, 0.24)
-        ]
-        let source = SCNGeometrySource(vertices: vertices)
-        var indices: [UInt32] = [0, 1, 2]
-        let data = Data(bytes: &indices, count: indices.count * MemoryLayout<UInt32>.size)
-        let element = SCNGeometryElement(data: data, primitiveType: .triangles, primitiveCount: 1, bytesPerIndex: 4)
         for (index, gull) in flock.enumerated() {
-            let bird = SCNNode()
+            let bird = makeVoyagingGullModel()
             bird.name = "gull_\(index)"
             bird.scale = SCNVector3(gull.scale, gull.scale, gull.scale)
-            for wingIndex in 0..<2 {
-                let geometry = SCNGeometry(sources: [source], elements: [element])
-                let material = unlitMaterial(sand)
-                material.diffuse.contents = sand.withAlphaComponent(0.5)
-                geometry.firstMaterial = material
-                let wing = SCNNode(geometry: geometry)
-                wing.name = wingIndex == 0 ? "leftWing" : "rightWing"
-                wing.scale.x = wingIndex == 0 ? -1 : 1
-                wing.eulerAngles.z = wingIndex == 0 ? -0.22 : 0.22
-                bird.addChildNode(wing)
-            }
             root.addChildNode(bird)
         }
         return root
+    }
+
+    /// 遠景でも「三角の紙片」に見えない最小構成。翼は直接の子にし、
+    /// 航海・プロローグ・サインインの各アニメータが同じ名前で羽ばたかせる。
+    private static func makeVoyagingGullModel() -> SCNNode {
+        let bird = SCNNode()
+        let feather = UIColor(rgb: 0xE8E4D4)
+        let underside = UIColor(rgb: 0xF8F5E9)
+        let wingTip = UIColor(rgb: 0x52636A)
+
+        let bodyGeometry = SCNCapsule(capRadius: 0.13, height: 0.62)
+        bodyGeometry.radialSegmentCount = 8
+        bodyGeometry.capSegmentCount = 3
+        bodyGeometry.firstMaterial = litMaterial(feather, roughness: 0.92)
+        let body = SCNNode(geometry: bodyGeometry)
+        body.name = "body"
+        body.eulerAngles.x = .pi / 2
+        body.scale = SCNVector3(0.90, 1, 0.82)
+        bird.addChildNode(body)
+
+        let headGeometry = SCNSphere(radius: 0.155)
+        headGeometry.segmentCount = 8
+        headGeometry.firstMaterial = litMaterial(underside, roughness: 0.90)
+        let head = SCNNode(geometry: headGeometry)
+        head.name = "head"
+        head.position = SCNVector3(0, 0.035, -0.35)
+        head.scale.y = 0.82
+        bird.addChildNode(head)
+
+        let beakGeometry = SCNCone(topRadius: 0, bottomRadius: 0.065, height: 0.20)
+        beakGeometry.radialSegmentCount = 6
+        beakGeometry.firstMaterial = litMaterial(UIColor(rgb: 0xD8A24B), roughness: 0.82)
+        let beak = SCNNode(geometry: beakGeometry)
+        beak.name = "beak"
+        beak.position = SCNVector3(0, 0.02, -0.51)
+        beak.eulerAngles.x = -.pi / 2
+        bird.addChildNode(beak)
+
+        for wingIndex in 0..<2 {
+            let wing = SCNNode(geometry: makeVoyagingGullWing(
+                feather: feather,
+                tip: wingTip
+            ))
+            wing.name = wingIndex == 0 ? "leftWing" : "rightWing"
+            wing.position.y = 0.055
+            wing.scale.x = wingIndex == 0 ? -1 : 1
+            wing.eulerAngles.z = wingIndex == 0 ? -0.22 : 0.22
+            bird.addChildNode(wing)
+        }
+
+        let tailVertices = [
+            SCNVector3(-0.10, 0, 0.24), SCNVector3(-0.22, 0.01, 0.55),
+            SCNVector3(0, 0, 0.43), SCNVector3(0.22, 0.01, 0.55),
+            SCNVector3(0.10, 0, 0.24),
+        ]
+        var tailIndices: [UInt32] = [0, 1, 2, 0, 2, 4, 4, 2, 3]
+        let tailData = Data(
+            bytes: &tailIndices,
+            count: tailIndices.count * MemoryLayout<UInt32>.size
+        )
+        let tailElement = SCNGeometryElement(
+            data: tailData,
+            primitiveType: .triangles,
+            primitiveCount: tailIndices.count / 3,
+            bytesPerIndex: MemoryLayout<UInt32>.size
+        )
+        let tailGeometry = SCNGeometry(
+            sources: [SCNGeometrySource(vertices: tailVertices)],
+            elements: [tailElement]
+        )
+        tailGeometry.firstMaterial = litMaterial(underside, roughness: 0.94, doubleSided: true)
+        let tail = SCNNode(geometry: tailGeometry)
+        tail.name = "tail"
+        tail.position.y = 0.015
+        bird.addChildNode(tail)
+        return bird
+    }
+
+    private static func makeVoyagingGullWing(
+        feather: UIColor,
+        tip: UIColor
+    ) -> SCNGeometry {
+        let vertices = [
+            SCNVector3(0, 0, 0.02), SCNVector3(0.28, 0.035, -0.17),
+            SCNVector3(0.72, 0.075, -0.09), SCNVector3(1.14, 0.02, 0.16),
+            SCNVector3(0.73, -0.01, 0.32), SCNVector3(0.26, 0, 0.23),
+        ]
+        let source = SCNGeometrySource(vertices: vertices)
+        func element(_ rawIndices: [UInt32]) -> SCNGeometryElement {
+            var indices = rawIndices
+            let data = Data(
+                bytes: &indices,
+                count: indices.count * MemoryLayout<UInt32>.size
+            )
+            return SCNGeometryElement(
+                data: data,
+                primitiveType: .triangles,
+                primitiveCount: indices.count / 3,
+                bytesPerIndex: MemoryLayout<UInt32>.size
+            )
+        }
+        let geometry = SCNGeometry(
+            sources: [source],
+            elements: [
+                element([0, 1, 2, 0, 2, 4, 0, 4, 5]),
+                element([2, 3, 4]),
+            ]
+        )
+        geometry.materials = [
+            litMaterial(feather, roughness: 0.94, doubleSided: true),
+            litMaterial(tip, roughness: 0.90, doubleSided: true),
+        ]
+        return geometry
     }
 
     /// Web VoyagingWorld の定数をそのまま使うログイン後の航海ホーム。
