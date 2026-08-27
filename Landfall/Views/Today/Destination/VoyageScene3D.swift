@@ -1326,7 +1326,7 @@ enum VoyageSceneKit {
                 BoatSurfaceProfile(
                     roughness: 0.94,
                     ambientOcclusion: 0.90,
-                    detail: (26, 0.012, 0.030, 0.018)
+                    detail: (58, 0.004, 0.010, 0.002)
                 )
             case .rope:
                 BoatSurfaceProfile(
@@ -1429,9 +1429,11 @@ enum VoyageSceneKit {
             + sin(along * 4.7 + across * 0.38) * 0.21;
     } else if (uBoatSurfaceKind > 3.5 && uBoatSurfaceKind < 4.5) {
         // 帆布の縦糸と横糸。大きなシワは別の頂点シェーダが担う。
-        float warp = sin((p.x + p.y * 0.17) * 2.2);
-        float weft = sin((p.y + p.z * 0.19) * 2.35);
-        height = warp * weft * 0.58 + sin((p.x - p.y + p.z) * 0.61) * 0.12;
+        // 縦横の正弦波をそのまま表示すると縞や市松に見える。
+        // 周期が合わない三方向を重ね、布の粗さだけを残す。
+        height = sin(dot(p, float3(0.73, 1.19, 0.41))) * 0.36
+            + sin(dot(p, float3(1.37, -0.52, 0.91))) * 0.23
+            + sin(dot(p, float3(-0.61, 0.83, 1.43))) * 0.17;
     } else if (uBoatSurfaceKind > 4.5 && uBoatSurfaceKind < 5.5) {
         float twist = dot(p, uBoatGrainAxis);
         height = sin(twist * 1.45 + length(p - uBoatGrainAxis * twist) * 2.6) * 0.72;
