@@ -4,8 +4,8 @@ import SceneKit
 import simd
 
 /// Owns the native Metal program and its packed per-frame inputs. The program
-/// rolls out first on Ultra-tier timer voyages, while Debug builds can opt in
-/// on every scene for visual comparison and regression testing.
+/// rolls out first on Enhanced/Ultra timer voyages, while Debug builds can opt
+/// in on every scene for visual comparison and regression testing.
 enum MetalOceanProgram {
     enum RolloutScene {
         case standard
@@ -24,7 +24,7 @@ enum MetalOceanProgram {
         return true
 #else
         return scene == .timerVoyage
-            && MetalRenderingProfile.current.tier == .ultra
+            && MetalRenderingProfile.current.tier != .compatible
 #endif
     }
 
