@@ -153,7 +153,11 @@ private struct LandfallArrivalSceneView: UIViewRepresentable {
     final class Coordinator: NSObject, SCNSceneRendererDelegate {
         private weak var view: SCNView?
         private weak var seaMaterial: SCNMaterial?
+        private weak var travel: SCNNode?
+        private weak var boatBob: SCNNode?
+        private let marineController = HomeIslandMarineDynamics.BoatController()
         private var framePacing = MetalOceanFramePacingMonitor()
+        private var lastUpdateTime: TimeInterval?
         private var hasReducedRenderingQuality = false
         private let performanceLogger = Logger(
             subsystem: Bundle.main.bundleIdentifier ?? "Landfall",
@@ -176,10 +180,17 @@ private struct LandfallArrivalSceneView: UIViewRepresentable {
                 recursively: true
             )
             let boatBob = travel.childNode(withName: "landfallBoatBob", recursively: false)
+            self.travel = travel
+            self.boatBob = boatBob
             let finalTravelPosition = travel.position
             let finalCameraPosition = camera.position
 
             if reduceMotion {
+                seaMaterial?.setValue(
+                    NSNumber(value: HomeIslandOceanEffects.currentTime),
+                    forKey: "uTime"
+                )
+                HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
                 boatNavigator?.opacity = 0
                 shoreNavigator?.opacity = 1
                 view.rendersContinuously = false
@@ -194,16 +205,11 @@ private struct LandfallArrivalSceneView: UIViewRepresentable {
             shoreNavigator?.opacity = 0
             view.rendersContinuously = true
             view.isPlaying = true
-
-            let rise = SCNAction.moveBy(x: 0, y: 0.045, z: 0, duration: 0.38)
-            rise.timingMode = .easeInEaseOut
-            boatBob?.runAction(.repeatForever(.sequence([rise, rise.reversed()])), forKey: "approachBob")
+            marineController.requestReset(buoyancyNode: boatBob)
 
             let approach = SCNAction.move(to: finalTravelPosition, duration: 1.65)
             approach.timingMode = .easeInEaseOut
             let settle = SCNAction.run { _ in
-                boatBob?.removeAction(forKey: "approachBob")
-                boatBob?.runAction(.move(to: SCNVector3Zero, duration: 0.28))
                 SCNTransaction.begin()
                 SCNTransaction.animationDuration = 0.52
                 SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -219,8 +225,29 @@ private struct LandfallArrivalSceneView: UIViewRepresentable {
         }
 
         func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+            updateOceanAndBoat(at: time)
             guard seaMaterial?.program != nil, framePacing.observe(at: time) else { return }
             reduceRenderingQualityIfNeeded()
+        }
+
+        private func updateOceanAndBoat(at time: TimeInterval) {
+            let oceanTime = HomeIslandOceanEffects.currentTime
+            seaMaterial?.setValue(NSNumber(value: oceanTime), forKey: "uTime")
+            let deltaTime = Float(min(max(time - (lastUpdateTime ?? time), 0), 0.1))
+            lastUpdateTime = time
+
+            guard let travel, let boatBob else {
+                HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
+                return
+            }
+            let frame = marineController.update(
+                boatRoot: travel,
+                buoyancyNode: boatBob,
+                oceanTime: oceanTime,
+                deltaTime: deltaTime,
+                reduceMotion: false
+            )
+            frame.wake.apply(to: seaMaterial)
         }
 
         private func reduceRenderingQualityIfNeeded() {

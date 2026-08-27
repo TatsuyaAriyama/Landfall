@@ -2169,7 +2169,6 @@ enum VoyageSceneKit {
         travel.position = SCNVector3(-2.15, 0.025, 0.66)
         travel.eulerAngles.y = 0.10
         travel.scale = SCNVector3(0.54, 0.54, 0.54)
-        travel.addChildNode(makeRipples())
         let bob = SCNNode()
         bob.name = "landfallBoatBob"
         let boat = makeBoatModel(
