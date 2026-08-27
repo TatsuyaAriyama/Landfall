@@ -1,3 +1,4 @@
+import OSLog
 import SceneKit
 import SwiftUI
 import UIKit
@@ -368,7 +369,6 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
         private weak var stepIslets: SCNNode?
         private weak var vessel: SCNNode?
         private weak var timerBoatBob: SCNNode?
-        private weak var timerWake: SCNNode?
         private weak var navigator: SCNNode?
         private weak var homeHarbor: SCNNode?
         private weak var seaMaterial: SCNMaterial?
@@ -400,6 +400,13 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
         private var voyageElapsedSeconds: Float = 0
         private var showsVoyageIsland = false
         private let navigatorAnimator = PhoenixAnimator()
+        private let marineController = HomeIslandMarineDynamics.BoatController()
+        private var framePacing = MetalOceanFramePacingMonitor()
+        private var hasReducedRenderingQuality = false
+        private let performanceLogger = Logger(
+            subsystem: Bundle.main.bundleIdentifier ?? "Landfall",
+            category: "MetalOceanPerformance"
+        )
         private var orbitRadius: Float = 20
         private var orbitAzimuth: Float = 0
         private var orbitPolar: Float = .pi * 0.36
@@ -526,7 +533,6 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
             )
             vessel = view.scene?.rootNode.childNode(withName: "homeVessel", recursively: false)
             timerBoatBob = vessel?.childNode(withName: "homeBoatBob", recursively: false)
-            timerWake = vessel?.childNode(withName: "homeTimerWake", recursively: false)
             navigator = view.scene?.rootNode.childNode(
                 withName: "homeNavigator",
                 recursively: true
@@ -552,12 +558,15 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
             }
             startTime = nil
             lastTime = nil
+            marineController.requestReset(buoyancyNode: timerBoatBob)
+            framePacing.reset()
+            hasReducedRenderingQuality = false
             cameraPhase = .home
             editingRequested = false
             voyagingRequested = false
             doubleTapRecognizer?.isEnabled = false
             navigator?.isHidden = false
-            timerWake?.opacity = 0
+            HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
             configureHomeAccessibility()
             updateCamera(time: 0)
             view.setNeedsDisplay()
@@ -620,6 +629,8 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
             view.rendersContinuously = shouldAnimate
             view.isPlaying = shouldAnimate
             if !shouldAnimate {
+                marineController.requestReset(buoyancyNode: timerBoatBob)
+                HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
                 seaMaterial?.setValue(
                     NSNumber(value: reduceMotion ? frozenOceanTime : HomeIslandOceanEffects.currentTime),
                     forKey: "uTime"
@@ -639,6 +650,8 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
             if value {
                 frozenOceanTime = HomeIslandOceanEffects.currentTime
                 seaMaterial?.setValue(NSNumber(value: frozenOceanTime), forKey: "uTime")
+                marineController.requestReset(buoyancyNode: timerBoatBob)
+                HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
                 if cameraPhase == .departing || cameraPhase == .returning {
                     setVoyaging(voyagingRequested, animated: false, force: true)
                 }
@@ -757,6 +770,7 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
             camera.removeAllActions()
             cameraTarget.removeAllActions()
             vessel.removeAllActions()
+            marineController.requestReset(buoyancyNode: timerBoatBob)
             let duration = reduceMotion || !animated ? 0 : 1.55
             cameraPhase = value ? .departing : .returning
             view.isUserInteractionEnabled = false
@@ -804,7 +818,6 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
             vessel.eulerAngles.z = 0
             timerBoatBob?.position = SCNVector3Zero
             timerBoatBob?.eulerAngles = SCNVector3Zero
-            timerWake?.opacity = value ? 0.34 : 0
             island?.opacity = value ? 0 : 1
             stepIslets?.opacity = value ? 0 : 1
             homeHarbor?.opacity = value ? 0 : 1
@@ -855,6 +868,8 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
             view.preferredFramesPerSecond = 60
             view.contentScaleFactor = UIScreen.main.scale
             view.antialiasingMode = .multisampling4X
+            framePacing.reset()
+            hasReducedRenderingQuality = false
         }
 
         private func restoreHomeRenderingSettings(on view: SCNView) {
@@ -922,17 +937,10 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
                 voyageElapsedSeconds += delta
                 placeTimerApproachingIsland()
             }
-            let bobRate: Float = voyageResting ? 0.34 : 0.8
             let bob = timerBoatBob ?? vessel
-            bob.position.y = sin(time * bobRate) * (voyageResting ? 0.025 : 0.06)
-            bob.eulerAngles.z = sin(time * (voyageResting ? 0.28 : 0.6))
-                * (voyageResting ? 0.012 : 0.03)
-            bob.eulerAngles.x = sin(time * (voyageResting ? 0.25 : 0.5) + 1.2)
-                * (voyageResting ? 0.007 : 0.015)
             bob.childNode(withName: "boatFlag", recursively: true)?
                 .eulerAngles.y = sin(time * (voyageResting ? 1.2 : 5.2))
                     * (voyageResting ? 0.07 : 0.22)
-            timerWake?.opacity = CGFloat(0.34 + sin(time * 1.4) * 0.07)
             if let scene {
                 navigatorAnimator.bindIfNeeded(scene)
             }
@@ -959,6 +967,7 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
                 NSNumber(value: HomeIslandOceanEffects.currentTime),
                 forKey: "uTime"
             )
+            updateMarineMotion(delta: delta)
             if cameraPhase == .home {
                 updateCamera(time: elapsed)
                 if let scene {
@@ -975,6 +984,41 @@ struct AboardDestinationHomeSceneView: UIViewRepresentable {
                 updateTimerMotion(time: elapsed, delta: delta)
             }
             updateGulls(time: elapsed)
+            if seaMaterial?.program != nil, framePacing.observe(at: time) {
+                reduceRenderingQualityIfNeeded()
+            }
+        }
+
+        private func updateMarineMotion(delta: Float) {
+            guard let vessel else {
+                HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
+                return
+            }
+            let frame = marineController.update(
+                boatRoot: vessel,
+                buoyancyNode: timerBoatBob ?? vessel,
+                oceanTime: HomeIslandOceanEffects.currentTime,
+                deltaTime: delta,
+                reduceMotion: false,
+                propulsionSpeed: isVoyageWorldActive && !voyageResting ? 1.3 : 0
+            )
+            frame.wake.apply(to: seaMaterial)
+        }
+
+        private func reduceRenderingQualityIfNeeded() {
+            guard !hasReducedRenderingQuality else { return }
+            hasReducedRenderingQuality = true
+#if DEBUG
+            print("[MetalOceanPerformance] Aboard home overload detected")
+#endif
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let view = self.view else { return }
+                view.contentScaleFactor = min(view.contentScaleFactor, 2)
+                view.antialiasingMode = .multisampling2X
+                self.performanceLogger.notice(
+                    "Reduced aboard home ocean quality after frame pacing pressure"
+                )
+            }
         }
 
         private func updateCamera(time: Float) {
@@ -1424,12 +1468,14 @@ enum AftideHomeSceneFactory {
         scene.fogEndDistance = 220
         scene.fogDensityExponent = 1
 
+        let oceanVisual = oceanAppearance(timeOfDay: timeOfDay, palette: palette)
         let ocean = HomeIslandOceanEffects.makeScene(
             layout: .voyageHome,
-            appearance: oceanAppearance(timeOfDay: timeOfDay, palette: palette)
+            appearance: oceanVisual,
+            nativeMetalRollout: .homeIsland
         )
         scene.rootNode.addChildNode(ocean.root)
-        let vessel = makeNavigatorPOVBoat()
+        let vessel = makeNavigatorPOVBoat(seaBounce: oceanVisual.sea)
         markHotspot(vessel, as: .work)
         scene.rootNode.addChildNode(vessel)
         scene.rootNode.addChildNode(makeHomeHarbor(palette: palette))
@@ -1619,14 +1665,17 @@ enum AftideHomeSceneFactory {
         }
     }
 
-    private static func makeNavigatorPOVBoat() -> SCNNode {
+    private static func makeNavigatorPOVBoat(seaBounce: UInt) -> SCNNode {
         let vessel = SCNNode()
         vessel.name = "homeVessel"
 
         // 港・航海中・Web版と同じ landfall_boat モデルとカスタムカラーを使う。
         // ホームから本人を見せる。航海士のすぐ後ろにカメラを置き、
         // 目的地編集へ引いても同じ甲板上の同じキャラクターを保つ。
-        let boat = VoyageSceneKit.makeBoatModel(BoatCustomization.currentParts)
+        let boat = VoyageSceneKit.makeBoatModel(
+            BoatCustomization.currentParts,
+            seaBounce: seaBounce
+        )
         boat.name = "homeWebBoat"
         let sailor = PhoenixNavigator.makeNavigatorNode()
         sailor.name = "homeNavigator"
@@ -1648,15 +1697,6 @@ enum AftideHomeSceneFactory {
         bob.addChildNode(boat)
         vessel.addChildNode(bob)
 
-        // Keep the existing timer wake in this world as well. The wrapper
-        // compensates for the 2.2x home boat so the departure endpoint is the
-        // original timer's exact effective 0.55 scale.
-        let wakeWrapper = SCNNode()
-        wakeWrapper.name = "homeTimerWake"
-        wakeWrapper.scale = SCNVector3(2.2, 2.2, 2.2)
-        wakeWrapper.opacity = 0
-        wakeWrapper.addChildNode(VoyageSceneKit.makeWake())
-        vessel.addChildNode(wakeWrapper)
         return vessel
     }
 

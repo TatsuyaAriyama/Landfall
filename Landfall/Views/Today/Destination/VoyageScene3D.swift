@@ -1604,39 +1604,6 @@ enum VoyageSceneKit {
         }
     }
 
-    /// Shared-ocean scenes use the analytical wake. Legacy scenes keep only a
-    /// short, softly tapered disturbance so no rectangular white strip appears.
-    static func makeWake() -> SCNNode {
-        let plane = SCNPlane(width: 2.3, height: 0.56)
-        let material = SCNMaterial()
-        material.lightingModel = .constant
-        material.diffuse.contents = UIColor(rgb: 0x9CCBC6)
-        material.blendMode = .alpha
-        material.writesToDepthBuffer = false
-        material.readsFromDepthBuffer = true
-        material.isDoubleSided = true
-        material.shaderModifiers = [
-            .surface: """
-            float2 uv = _surface.diffuseTexcoord;
-            float along = clamp(uv.x, 0.0, 1.0);
-            float lateral = abs(uv.y * 2.0 - 1.0);
-            float halfWidth = mix(0.44, 0.15, along);
-            float softEdge = 1.0 - smoothstep(halfWidth * 0.48, halfWidth, lateral);
-            float tailFade = smoothstep(0.0, 0.20, along);
-            float flow = 0.86 + 0.14 * sin(along * 5.2 + lateral * 3.4 - scn_frame.time * 0.65);
-            _surface.diffuse.a *= softEdge * tailFade * flow * 0.34;
-            """
-        ]
-        plane.firstMaterial = material
-
-        let node = SCNNode(geometry: plane)
-        node.name = "legacyWake"
-        node.eulerAngles.x = -.pi / 2
-        node.position = SCNVector3(-2.15, 0.025, 0)
-        node.opacity = 0.30
-        return node
-    }
-
     // MARK: - ステップの小島(航路に浮かぶ低ポリの島。巡っていく)
 
     static let verdant = UIColor(rgb: 0x5DCAA5)   // 達成した島の緑
