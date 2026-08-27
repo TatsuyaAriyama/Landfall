@@ -235,11 +235,39 @@ static inline LandfallWakeSample landfallSampleWake(
     float aeration = disturbance
         * mix(0.06, 0.70, bubbleBreakup)
         * mix(0.72, 1.0, turbulence);
+
+    // The foamy core dissipates quickly, but its energy continues outward as
+    // low Kelvin shoulders. They alter reflected light instead of painting
+    // more white onto the water, so the wake keeps volume at viewing distance
+    // without returning to a decorative V-shaped stripe.
+    float shoulderCenter = boat.halfBeam * 1.28 + aft * 0.29;
+    float shoulderDistance = abs(abs(boat.lateral) - shoulderCenter);
+    float shoulderWidth = mix(
+        max(boat.halfBeam * 0.15, 0.060),
+        max(boat.halfBeam * 0.30, 0.140),
+        age
+    );
+    float shoulderEnvelope = 1.0 - smoothstep(
+        shoulderWidth,
+        shoulderWidth + max(boat.halfBeam * 0.42, 0.180),
+        shoulderDistance
+    );
+    float shoulderPhase = aft * 3.9
+        - abs(boat.lateral) * 5.7 - ocean.time * 0.78;
+    float shoulderBreak = 0.68 + 0.32 * sin(
+        aft * 1.31 + abs(boat.lateral) * 2.2 - ocean.time * 0.29
+    );
+    shoulderEnvelope *= smoothstep(0.14, 0.46, aft)
+        * remaining * remaining * boat.speed * shoulderBreak;
     float lateralSign = boat.lateral < 0.0 ? -1.0 : 1.0;
     float2 slope = (
         boat.across * lateralSign * cos(armPhase) * 0.100
         + boat.heading * sin(turbulencePhase) * 0.055
     ) * disturbance;
+    slope += (
+        boat.across * lateralSign * cos(shoulderPhase) * 0.050
+        - boat.heading * sin(shoulderPhase) * 0.029
+    ) * shoulderEnvelope;
     return {disturbance, aeration, slope};
 }
 
