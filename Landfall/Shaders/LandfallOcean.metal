@@ -131,13 +131,22 @@ fragment half4 landfallOceanFragment(
     constant LandfallOceanUniforms& ocean [[buffer(2)]])
 {
     float2 p = in.oceanPosition;
-    float rippleA = dot(p, float2(0.829, 0.559)) * 1.82 - ocean.time * 1.18;
-    float rippleB = dot(p, float2(-0.616, 0.788)) * 2.66 - ocean.time * 1.47;
-    float rippleC = dot(p, float2(0.225, 0.974)) * 4.85 - ocean.time * 2.05;
+    float rippleWarp = sin(dot(p, float2(0.173, -0.241)) - ocean.time * 0.31);
+    float rippleA = dot(p, float2(0.829, 0.559)) * 1.82
+        - ocean.time * 1.18 + rippleWarp * 0.28;
+    float rippleB = dot(p, float2(-0.616, 0.788)) * 2.66
+        - ocean.time * 1.47 - rippleWarp * 0.36;
+    float rippleC = dot(p, float2(0.225, 0.974)) * 4.85
+        - ocean.time * 2.05 + rippleWarp * 0.52;
+    float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
+    float capillaryVisibility = 1.0 - smoothstep(0.14, 0.48, pixelFootprint * 8.4);
+    float rippleD = dot(p, float2(-0.952, 0.306)) * 8.4
+        - ocean.time * 2.72 - rippleWarp * 0.81;
     float2 detailSlope = (
         float2(0.829, 0.559) * (cos(rippleA) * 0.032)
         + float2(-0.616, 0.788) * (cos(rippleB) * 0.023)
         + float2(0.225, 0.974) * (cos(rippleC) * 0.010)
+        + float2(-0.952, 0.306) * (cos(rippleD) * 0.005 * capillaryVisibility)
     ) * ocean.microNormalScale;
     float3 normal = normalize(in.worldNormal + float3(-detailSlope.x, 0.0, detailSlope.y));
 
@@ -168,6 +177,8 @@ fragment half4 landfallOceanFragment(
     float3 body = mix(ocean.shallowColor, ocean.seaColor, smoothstep(0.35, 4.6, waterDepth));
     body = mix(body, ocean.deepColor, smoothstep(4.0, 20.0, waterDepth) * 0.82);
     float3 color = mix(body, filteredWater, 0.46);
+    float underwaterScatter = exp(-waterDepth * 0.16);
+    color += ocean.shallowColor * underwaterScatter * 0.12;
 
     float2 shadedSlope = in.slope + detailSlope * 2.2;
     float directionalShade = saturate(0.50 + dot(shadedSlope, float2(-5.2, 6.4)));
@@ -183,8 +194,11 @@ fragment half4 landfallOceanFragment(
     float fresnel = 0.025 + 0.975 * pow(1.0 - saturate(dot(normal, viewDirection)), 5.0);
     float3 reflectionDirection = reflect(-viewDirection, normal);
     float skyHeight = saturate(reflectionDirection.y * 0.72 + 0.36);
-    float3 reflectedSky = mix(ocean.horizonColor, ocean.skyColor, smoothstep(0.08, 0.88, skyHeight));
-    color = mix(color, reflectedSky, 0.085 + fresnel * 0.60);
+    float skyBlend = smoothstep(0.06, 0.90, skyHeight);
+    float3 reflectedSky = mix(ocean.horizonColor, ocean.skyColor * 1.08, skyBlend);
+    float horizonHaze = 1.0 - smoothstep(0.02, 0.34, abs(reflectionDirection.y));
+    reflectedSky = mix(reflectedSky, ocean.horizonColor * 1.06, horizonHaze * 0.28);
+    color = mix(color, reflectedSky, 0.12 + fresnel * 0.64);
 
     float3 halfVector = normalize(viewDirection + normalize(ocean.sunDirection));
     float sunFacing = max(dot(normal, halfVector), 0.0);
@@ -199,6 +213,11 @@ fragment half4 landfallOceanFragment(
     float glintBreakup = 0.02 + 0.98 * smoothstep(0.38, 0.92, glintA * glintB);
     color += ocean.sunColor * ocean.sunStrength
         * (sunBroad * 0.015 + sunCore * glintBreakup * 0.32);
+    float forwardScatter = pow(
+        saturate(dot(viewDirection, -normalize(ocean.sunDirection))),
+        4.0
+    );
+    color += ocean.sunColor * underwaterScatter * forwardScatter * 0.035;
 
     float crestSteepness = smoothstep(0.028, 0.058, length(in.slope));
     float crestBreakup = 0.5 + 0.5 * sin(
@@ -260,6 +279,8 @@ fragment half4 landfallOceanFragment(
     }
 
     float horizon = smoothstep(58.0, 90.0, distanceFromIsland);
-    color = mix(color, ocean.fogColor, horizon * 0.18);
+    color = mix(color, ocean.fogColor, horizon * 0.24);
+    color = 1.0 - exp(-max(color, 0.0) * 1.16);
+    color = mix(color, sqrt(max(color, 0.0)), 0.07);
     return half4(half3(saturate(color)), 1.0h);
 }
