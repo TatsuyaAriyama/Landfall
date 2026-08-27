@@ -158,6 +158,9 @@ static inline half4 landfallShadeOcean(
     float detailQuality)
 {
     float2 p = in.oceanPosition;
+    float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
+    float macroVisibility = 1.0 - smoothstep(0.85, 4.20, pixelFootprint);
+    float rippleVisibility = 1.0 - smoothstep(0.08, 0.52, pixelFootprint);
     float rippleWarp = sin(dot(p, float2(0.173, -0.241)) - ocean.time * 0.31);
     float rippleA = dot(p, float2(0.829, 0.559)) * 1.82
         - ocean.time * 1.18 + rippleWarp * 0.28;
@@ -167,7 +170,6 @@ static inline half4 landfallShadeOcean(
         - ocean.time * 2.05 + rippleWarp * 0.52;
     float2 capillarySlope = float2(0.0);
     if (detailQuality > 0.75) {
-        float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
         float visibility = 1.0 - smoothstep(0.14, 0.48, pixelFootprint * 8.4);
         float rippleD = dot(p, float2(-0.952, 0.306)) * 8.4
             - ocean.time * 2.72 - rippleWarp * 0.81;
@@ -180,8 +182,15 @@ static inline half4 landfallShadeOcean(
         + float2(-0.616, 0.788) * (cos(rippleB) * 0.023)
         + float2(0.225, 0.974) * (cos(rippleC) * 0.010)
         + capillarySlope
-    ) * ocean.microNormalScale;
-    float3 normal = normalize(in.worldNormal + float3(-detailSlope.x, 0.0, detailSlope.y));
+    ) * ocean.microNormalScale * rippleVisibility;
+    float3 detailedNormal = normalize(
+        in.worldNormal + float3(-detailSlope.x, 0.0, detailSlope.y)
+    );
+    float3 normal = normalize(mix(
+        float3(0.0, 1.0, 0.0),
+        detailedNormal,
+        mix(0.38, 1.0, macroVisibility)
+    ));
 
     float distanceFromIsland = length(float2(p.x * 0.72, p.y));
     float waterDepth = 5.0 + smoothstep(0.0, 90.0, distanceFromIsland) * 13.0;
@@ -217,14 +226,16 @@ static inline half4 landfallShadeOcean(
     float underwaterScatter = exp(-waterDepth * 0.16);
     color += ocean.shallowColor * underwaterScatter * 0.12;
 
-    float2 shadedSlope = in.slope + detailSlope * 2.2;
+    float2 shadedSlope = in.slope * mix(0.30, 1.0, macroVisibility)
+        + detailSlope * 2.2;
     float directionalShade = saturate(0.50 + dot(shadedSlope, float2(-5.2, 6.4)));
     color *= 0.82 + directionalShade * 0.32;
 
     float trough = 1.0 - smoothstep(-0.15, 0.005, in.height);
     float crest = smoothstep(0.045, 0.180, in.height);
-    color = mix(color, ocean.deepColor, trough * 0.16);
-    color = mix(color, ocean.shallowColor, crest * 0.14);
+    float elevationVisibility = mix(0.24, 1.0, macroVisibility);
+    color = mix(color, ocean.deepColor, trough * 0.16 * elevationVisibility);
+    color = mix(color, ocean.shallowColor, crest * 0.14 * elevationVisibility);
 
     float3 viewDirection = normalize(in.cameraPosition - in.worldPosition);
     float fresnel = 0.025 + 0.975 * pow(1.0 - saturate(dot(normal, viewDirection)), 5.0);
@@ -261,7 +272,8 @@ static inline half4 landfallShadeOcean(
             + sin(dot(p, float2(-0.21, 0.34))) * 1.8
             - ocean.time * 0.61
     );
-    float crestFoam = crest * crestSteepness * smoothstep(0.42, 0.80, crestBreakup);
+    float crestFoam = crest * crestSteepness
+        * smoothstep(0.42, 0.80, crestBreakup) * macroVisibility;
     color = mix(color, ocean.lightColor, crestFoam * 0.46);
 
     if (ocean.shoreline > 0.5) {
@@ -362,7 +374,8 @@ static inline half4 landfallShadeOcean(
     }
 
     float horizon = smoothstep(58.0, 90.0, distanceFromIsland);
-    color = mix(color, ocean.fogColor, horizon * 0.24);
+    float samplingHaze = (1.0 - macroVisibility) * 0.08;
+    color = mix(color, ocean.fogColor, min(horizon * 0.24 + samplingHaze, 0.30));
     color = 1.0 - exp(-max(color, 0.0) * 1.16);
     color = mix(color, sqrt(max(color, 0.0)), 0.07);
     return half4(half3(saturate(color)), 1.0h);

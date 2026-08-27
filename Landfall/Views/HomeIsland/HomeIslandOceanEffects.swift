@@ -226,6 +226,9 @@ enum HomeIslandOceanEffects {
     float surfaceEdge = edgeX * edgeY;
     height *= surfaceEdge;
     slope *= surfaceEdge;
+    float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
+    float macroVisibility = 1.0 - smoothstep(0.85, 4.20, pixelFootprint);
+    float rippleVisibility = 1.0 - smoothstep(0.08, 0.52, pixelFootprint);
 
     // Mid and fine ripples alter only the fragment normal. Three crossed
     // directions retain close-range detail without multiplying vertex cost.
@@ -241,12 +244,20 @@ enum HomeIslandOceanEffects {
         float2(0.829, 0.559) * (cos(rippleA) * 0.032)
         + float2(-0.616, 0.788) * (cos(rippleB) * 0.023)
         + float2(0.225, 0.974) * (cos(rippleC) * 0.010)
-    ) * detailCalm * surfaceEdge * uMicroNormalScale;
-    float3 waterNormal = normalize(
+    ) * detailCalm * surfaceEdge * uMicroNormalScale * rippleVisibility;
+    float3 worldUp = normalize(
+        (scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz
+    );
+    float3 detailedNormal = normalize(
         _surface.normal
         - _surface.tangent * detailSlope.x
         - _surface.bitangent * detailSlope.y
     );
+    float3 waterNormal = normalize(mix(
+        worldUp,
+        detailedNormal,
+        mix(0.38, 1.0, macroVisibility)
+    ));
     _surface.normal = waterNormal;
 
     // The shoreline shape doubles as a light-weight bathymetry map. In scenes
@@ -292,7 +303,8 @@ enum HomeIslandOceanEffects {
         col = mix(col, uShallow, coastalLift * 0.22);
     }
 
-    float2 shadedSlope = slope + detailSlope * 2.2;
+    float2 shadedSlope = slope * mix(0.30, 1.0, macroVisibility)
+        + detailSlope * 2.2;
     float directionalShade = clamp(
         0.50 + dot(shadedSlope, float2(-5.2, 6.4)),
         0.0,
@@ -302,8 +314,9 @@ enum HomeIslandOceanEffects {
 
     float trough = 1.0 - smoothstep(-0.15, 0.005, height);
     float crest = smoothstep(0.045, 0.180, height);
-    col = mix(col, uDeep, trough * 0.16);
-    col = mix(col, uShallow, crest * 0.14);
+    float elevationVisibility = mix(0.24, 1.0, macroVisibility);
+    col = mix(col, uDeep, trough * 0.16 * elevationVisibility);
+    col = mix(col, uShallow, crest * 0.14 * elevationVisibility);
 
     // Fresnel reflection is a sky gradient rather than a single cyan wash.
     // A warm, narrow sun lobe shares the same normal and therefore travels
@@ -312,9 +325,6 @@ enum HomeIslandOceanEffects {
     float viewFacing = clamp(dot(waterNormal, viewDirection), 0.0, 1.0);
     float fresnel = 0.025 + 0.975 * pow(1.0 - viewFacing, 5.0);
     float3 reflectionDirection = reflect(-viewDirection, waterNormal);
-    float3 worldUp = normalize(
-        (scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz
-    );
     float skyHeight = clamp(
         dot(reflectionDirection, worldUp) * 0.72 + 0.36,
         0.0,
@@ -351,7 +361,8 @@ enum HomeIslandOceanEffects {
             + sin(dot(p, float2(-0.21, 0.34))) * 1.8
             - uTime * 0.61
     );
-    float crestFoam = crest * crestSteepness * smoothstep(0.42, 0.80, crestBreakup);
+    float crestFoam = crest * crestSteepness
+        * smoothstep(0.42, 0.80, crestBreakup) * macroVisibility;
     col = mix(col, uLight, crestFoam * 0.46);
 
     if (uShoreline > 0.5) {
@@ -469,7 +480,8 @@ enum HomeIslandOceanEffects {
     }
 
     float horizon = smoothstep(58.0, 90.0, distanceFromIsland);
-    col = mix(col, uFog, horizon * 0.18);
+    float samplingHaze = (1.0 - macroVisibility) * 0.08;
+    col = mix(col, uFog, min(horizon * 0.18 + samplingHaze, 0.24));
     _surface.diffuse = float4(clamp(col, 0.0, 1.0), 1.0);
     """
 
