@@ -2517,16 +2517,27 @@ enum VoyageSceneKit {
 
     /// 装い専用の夜の海。Web版の Canvas と同じく、船と航海士のどちらを
     /// 表示しても背景・照明・カメラはこの一つの世界を使い続ける。
-    static func makeDressStudioWorld() -> SCNScene {
+    static func makeDressStudioWorld(
+        nativeMetalRollout: MetalOceanProgram.RolloutScene = .standard
+    ) -> SCNScene {
+        let oceanAppearance = makeVoyagingOceanAppearance(
+            timeOfDay: .night,
+            palette: .voyagingNight
+        )
         let scene = SCNScene()
         scene.background.contents = nightBG
         scene.fogColor = nightBG
         scene.fogStartDistance = 11
         scene.fogEndDistance = 30
-        scene.rootNode.addChildNode(makeSea(moonX: -8.5))
+        scene.rootNode.addChildNode(
+            HomeIslandOceanEffects.makeScene(
+                layout: .timerVoyage,
+                appearance: oceanAppearance,
+                nativeMetalRollout: nativeMetalRollout
+            ).root
+        )
         scene.rootNode.addChildNode(makeStars(count: 900))
         scene.rootNode.addChildNode(makeMoon(position: SCNVector3(-8.5, 5.6, -14)))
-        scene.rootNode.addChildNode(makeRipples())
 
         // NightSea と SailorStage の中間値。背景世界の光は切替時にも変えず、
         // 船と航海士が同じ月明かりの中にいるようにする。
@@ -2557,9 +2568,17 @@ enum VoyageSceneKit {
         travel.scale = SCNVector3(0.55, 0.55, 0.55)
         let bob = SCNNode()
         bob.name = "boatBob"
-        bob.addChildNode(makeBoatModel(parts))
+        bob.addChildNode(makeBoatStudioModel(parts))
         travel.addChildNode(bob)
         return travel
+    }
+
+    static func makeBoatStudioModel(_ parts: BoatParts) -> SCNNode {
+        let oceanAppearance = makeVoyagingOceanAppearance(
+            timeOfDay: .night,
+            palette: .voyagingNight
+        )
+        return makeBoatModel(parts, seaBounce: oceanAppearance.sea)
     }
 
     /// 夜の海に浮かぶ自分の船(Web BoatStudio NightSea)。

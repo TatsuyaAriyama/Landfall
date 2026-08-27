@@ -1,3 +1,4 @@
+import OSLog
 import SceneKit
 import SwiftUI
 import UIKit
@@ -760,7 +761,7 @@ enum PhoenixNavigator {
     }
 
     static func makeScene() -> SCNScene {
-        let scene = VoyageSceneKit.makeDressStudioWorld()
+        let scene = VoyageSceneKit.makeDressStudioWorld(nativeMetalRollout: .boatStudio)
         scene.rootNode.addChildNode(makeNavigatorStage())
         return scene
     }
@@ -1219,8 +1220,11 @@ final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestur
     private weak var boat: SCNNode?
     private weak var navigator: SCNNode?
     private weak var bob: SCNNode?
+    private weak var seaMaterial: SCNMaterial?
 
     private let phoenixAnimator = PhoenixAnimator()
+    private let marineController = HomeIslandMarineDynamics.BoatController()
+    private var framePacing = MetalOceanFramePacingMonitor()
     private var orbit = DressOrbit()
     private var showsNavigator: Bool?
     private var partsKey = ""
@@ -1230,6 +1234,11 @@ final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestur
     private var lastResetToken = 0
     private var startTime: TimeInterval?
     private var lastTime: TimeInterval = 0
+    private var hasReducedRenderingQuality = false
+    private let performanceLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "Landfall",
+        category: "MetalOceanPerformance"
+    )
 
     func install(
         on view: SCNView,
@@ -1249,6 +1258,16 @@ final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestur
         boat = root?.childNode(withName: "travel", recursively: false)
         navigator = root?.childNode(withName: "navigatorStage", recursively: false)
         bob = root?.childNode(withName: "boatBob", recursively: true)
+        seaMaterial = root?
+            .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
+            .geometry?.firstMaterial
+        seaMaterial?.setValue(
+            NSNumber(value: HomeIslandOceanEffects.currentTime),
+            forKey: "uTime"
+        )
+        HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
+        marineController.requestReset(buoyancyNode: bob)
+        framePacing.reset()
         partsKey = key(for: parts)
         lastResetToken = resetToken
 
@@ -1301,7 +1320,7 @@ final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestur
         guard nextKey != partsKey else { return }
         partsKey = nextKey
         bob?.childNode(withName: "boatModel", recursively: false)?.removeFromParentNode()
-        bob?.addChildNode(VoyageSceneKit.makeBoatModel(parts))
+        bob?.addChildNode(VoyageSceneKit.makeBoatStudioModel(parts))
     }
 
     private func key(for parts: BoatParts) -> String {
@@ -1378,15 +1397,28 @@ final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestur
         let t = Float(time - (startTime ?? time))
         let dt = Float(min(max(time - lastTime, 0), 0.1))
         lastTime = time
+        let oceanTime = HomeIslandOceanEffects.currentTime
+        seaMaterial?.setValue(NSNumber(value: oceanTime), forKey: "uTime")
 
         phoenixAnimator.renderer(renderer, updateAtTime: time)
 
-        if let bob {
-            bob.position.y = sin(t * 0.8) * 0.06
-            bob.eulerAngles.z = sin(t * 0.6) * 0.03
-            bob.eulerAngles.x = sin(t * 0.5 + 1.2) * 0.015
+        if let boat, let bob, showsNavigator != true {
+            let frame = marineController.update(
+                boatRoot: boat,
+                buoyancyNode: bob,
+                oceanTime: oceanTime,
+                deltaTime: dt,
+                reduceMotion: false
+            )
+            frame.wake.apply(to: seaMaterial)
             bob.childNode(withName: "boatFlag", recursively: true)?
                 .eulerAngles.y = sin(t * 5.2) * 0.22
+        } else {
+            HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
+        }
+
+        if seaMaterial?.program != nil, framePacing.observe(at: time) {
+            reduceRenderingQualityIfNeeded()
         }
 
         // Web OrbitControls autoRotateSpeed=0.6 ≒ 100秒で一周。
@@ -1403,5 +1435,20 @@ final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestur
         }
         orbit.clamp()
         orbit.apply(to: camera)
+    }
+
+    private func reduceRenderingQualityIfNeeded() {
+        guard !hasReducedRenderingQuality else { return }
+        hasReducedRenderingQuality = true
+#if DEBUG
+        print("[MetalOceanPerformance] Boat studio overload detected")
+#endif
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let view = self.view else { return }
+            view.antialiasingMode = .multisampling2X
+            self.performanceLogger.notice(
+                "Reduced boat studio ocean antialiasing after frame pacing pressure"
+            )
+        }
     }
 }
