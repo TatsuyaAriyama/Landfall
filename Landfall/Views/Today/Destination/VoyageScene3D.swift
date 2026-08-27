@@ -218,16 +218,7 @@ enum VoyageSceneKit {
         shadow.scale.z = 0.74
         group.addChildNode(shadow)
 
-        let foamGeo = SCNTorus(ringRadius: 3.34, pipeRadius: 0.09)
-        foamGeo.ringSegmentCount = 72
-        foamGeo.pipeSegmentCount = 7
-        let foamMaterial = unlitMaterial(UIColor(rgb: 0xD8EBDD).withAlphaComponent(0.58))
-        foamMaterial.writesToDepthBuffer = false
-        foamGeo.firstMaterial = foamMaterial
-        let foam = SCNNode(geometry: foamGeo)
-        foam.position = SCNVector3(0, 0.055, 0.08)
-        foam.scale = SCNVector3(1.02, 1, 0.74)
-        group.addChildNode(foam)
+        group.addChildNode(makeShoreBreakers())
 
         let beachGeo = SCNCone(topRadius: 3.18, bottomRadius: 3.48, height: 0.15)
         beachGeo.radialSegmentCount = 28
@@ -365,6 +356,121 @@ enum VoyageSceneKit {
         }
 
         return group
+    }
+
+    /// 海岸線を均一なチューブで囲まず、海面上で途切れながら進む二筋の砕波にする。
+    /// 外周形状は島の地形と同じ複数周期で揺らし、細い外波を少し遅らせることで
+    /// 静止画でも輪郭が自然に崩れ、動画では寄せては消える奥行きが生まれる。
+    private static func makeShoreBreakers() -> SCNNode {
+        let geometry = makeShoreBreakerRibbon()
+        let material = shoreBreakerMaterial()
+        geometry.firstMaterial = material
+        let node = SCNNode(geometry: geometry)
+        node.name = "island-shore-breakers"
+        node.position = SCNVector3(0, 0.056, 0.08)
+        node.castsShadow = false
+        node.renderingOrder = 24
+        material.setValue(NSNumber(value: HomeIslandOceanEffects.currentTime), forKey: "uTime")
+        node.runAction(.repeatForever(.customAction(duration: 86_400) { node, _ in
+            node.geometry?.firstMaterial?.setValue(
+                NSNumber(value: HomeIslandOceanEffects.currentTime),
+                forKey: "uTime"
+            )
+        }))
+        return node
+    }
+
+    private static func makeShoreBreakerRibbon() -> SCNGeometry {
+        let segments = 144
+        var vertices: [SCNVector3] = []
+        var normals: [SCNVector3] = []
+        var texcoords: [CGPoint] = []
+        var indices: [UInt32] = []
+        vertices.reserveCapacity((segments + 1) * 2)
+        normals.reserveCapacity((segments + 1) * 2)
+        texcoords.reserveCapacity((segments + 1) * 2)
+        indices.reserveCapacity(segments * 6)
+
+        for segment in 0...segments {
+            let progress = Float(segment) / Float(segments)
+            let angle = progress * Float.pi * 2
+            let coast = sin(angle * 3 + 0.45) * 0.045
+                + sin(angle * 7 - 0.82) * 0.026
+                + sin(angle * 11 + 1.30) * 0.012
+            let fineDrift = sin(angle * 17 + 0.25) * 0.018
+            let centerRadius = 3.46 * (1 + coast) + fineDrift
+            let localWidth = 0.72 * (0.90 + 0.10 * (0.5 + 0.5 * sin(angle * 9 - 0.25)))
+            let radii = [centerRadius - localWidth * 0.5, centerRadius + localWidth * 0.5]
+            for (edge, radius) in radii.enumerated() {
+                vertices.append(
+                    SCNVector3(
+                        cos(angle) * radius * 1.02,
+                        sin(angle * 5 + 0.25) * 0.006,
+                        sin(angle) * radius * 0.74
+                    )
+                )
+                normals.append(SCNVector3(0, 1, 0))
+                texcoords.append(CGPoint(x: CGFloat(progress), y: CGFloat(edge)))
+            }
+        }
+
+        for segment in 0..<segments {
+            let start = UInt32(segment * 2)
+            indices += [start, start + 2, start + 1, start + 1, start + 2, start + 3]
+        }
+        let element = indices.withUnsafeBufferPointer {
+            SCNGeometryElement(
+                data: Data(buffer: $0),
+                primitiveType: .triangles,
+                primitiveCount: indices.count / 3,
+                bytesPerIndex: MemoryLayout<UInt32>.size
+            )
+        }
+        return SCNGeometry(
+            sources: [
+                SCNGeometrySource(vertices: vertices),
+                SCNGeometrySource(normals: normals),
+                SCNGeometrySource(textureCoordinates: texcoords),
+            ],
+            elements: [element]
+        )
+    }
+
+    private static func shoreBreakerMaterial() -> SCNMaterial {
+        let material = unlitMaterial(UIColor(rgb: 0xEAF8F0).withAlphaComponent(0.68))
+        material.blendMode = .alpha
+        material.writesToDepthBuffer = false
+        material.readsFromDepthBuffer = true
+        material.shaderModifiers = [.fragment: """
+        #pragma arguments
+        float uTime;
+        #pragma body
+        float u = _surface.diffuseTexcoord.x;
+        float v = _surface.diffuseTexcoord.y;
+        float primaryCenter = 0.34 + sin(u * 31.42 - uTime * 0.58) * 0.035;
+        float outerCenter = 0.78 + sin(u * 81.68 + uTime * 0.37) * 0.025;
+        float primary = 1.0 - smoothstep(0.055, 0.145, abs(v - primaryCenter));
+        float outer = 1.0 - smoothstep(0.035, 0.100, abs(v - outerCenter));
+        float primaryBreak = 0.5 + 0.5 * sin(
+            u * 144.51 + sin(u * 56.55 + 0.25) * 1.45 - uTime * 0.82
+        );
+        float outerBreak = 0.5 + 0.5 * sin(
+            u * 257.61 - sin(u * 106.81) * 1.10 + uTime * 0.57 + 2.10
+        );
+        float primaryFragments = max(
+            smoothstep(0.40, 0.76, primaryBreak),
+            smoothstep(0.72, 0.94, outerBreak) * 0.42
+        );
+        float outerFragments = smoothstep(0.48, 0.84, outerBreak);
+        float foam = min(
+            primary * primaryFragments + outer * outerFragments * 0.44,
+            1.0
+        );
+        float surge = 0.82 + 0.18 * sin(uTime * 0.66 + u * 31.42 + 0.25);
+        _output.color.rgb *= 0.94 + foam * 0.10;
+        _output.color.a *= foam * surge;
+        """]
+        return material
     }
 
     /// 海岸から複数の丘が連続して立ち上がる、低ポリの一枚地形。
