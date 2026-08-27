@@ -1514,7 +1514,8 @@ enum VoyageSceneKit {
     private static func styleBoatMaterial(
         _ material: SCNMaterial,
         on node: SCNNode,
-        identity: String
+        identity: String,
+        seaBounce: UInt
     ) {
         let surface = BoatSurfaceKind.resolve(identity.lowercased())
         let profile = surface.profile
@@ -1554,7 +1555,7 @@ enum VoyageSceneKit {
         material.setValue(NSNumber(value: Float(0.07)), forKey: "uBoatWaterline")
         material.setValue(longestLocalAxis(of: node), forKey: "uBoatGrainAxis")
         material.setValue(
-            HomeIslandOceanEffects.linearColorVector(0x2E7063),
+            HomeIslandOceanEffects.linearColorVector(seaBounce),
             forKey: "uBoatSeaBounce"
         )
     }
@@ -1579,7 +1580,10 @@ enum VoyageSceneKit {
     /// どの船を読むかは `parts.shipID` が決める。どのUSDZも帆の材質名と
     /// `Navigator_Anchor` の位置を共有しているので、色替えも甲板の航海士も
     /// 船ごとの分岐なしに動く。
-    static func makeBoatModel(_ parts: BoatParts) -> SCNNode {
+    static func makeBoatModel(
+        _ parts: BoatParts,
+        seaBounce: UInt = 0x2E7063
+    ) -> SCNNode {
         let ship = parts.ship
         guard let url = Bundle.main.url(forResource: ship.resourceName, withExtension: "usdz"),
               let importedScene = try? SCNScene(url: url, options: nil) else {
@@ -1628,7 +1632,8 @@ enum VoyageSceneKit {
                 styleBoatMaterial(
                     material,
                     on: node,
-                    identity: "\(materialName) \(node.name ?? "")"
+                    identity: "\(materialName) \(node.name ?? "")",
+                    seaBounce: seaBounce
                 )
                 return material
             }
@@ -2229,6 +2234,10 @@ enum VoyageSceneKit {
         nativeMetalRollout: MetalOceanProgram.RolloutScene = .standard
     ) -> SCNScene {
         let palette = timeOfDay == .night ? AftideHomePalette.voyagingNight : timeOfDay.palette
+        let oceanAppearance = makeVoyagingOceanAppearance(
+            timeOfDay: timeOfDay,
+            palette: palette
+        )
         let scene = SCNScene()
         scene.background.contents = UIColor(rgb: palette.sky)
         scene.fogColor = UIColor(rgb: palette.fog)
@@ -2242,10 +2251,7 @@ enum VoyageSceneKit {
         scene.rootNode.addChildNode(
             HomeIslandOceanEffects.makeScene(
                 layout: .timerVoyage,
-                appearance: makeVoyagingOceanAppearance(
-                    timeOfDay: timeOfDay,
-                    palette: palette
-                ),
+                appearance: oceanAppearance,
                 nativeMetalRollout: nativeMetalRollout
             ).root
         )
@@ -2270,7 +2276,7 @@ enum VoyageSceneKit {
         travel.scale = SCNVector3(0.55, 0.55, 0.55)
         let bob = SCNNode()
         bob.name = "boatBob"
-        let boat = makeBoatModel(boatParts)
+        let boat = makeBoatModel(boatParts, seaBounce: oceanAppearance.sea)
         attachNavigator(to: boat)
         bob.addChildNode(boat)
         // しぶきは船体と一緒に上下し、その時間帯の海色と反射色を受け継ぐ。
