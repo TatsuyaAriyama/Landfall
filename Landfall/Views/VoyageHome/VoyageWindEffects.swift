@@ -131,7 +131,6 @@ enum VoyageSailFlutter {
 /// 舳先が波を切る瞬間を、飛沫・霧・海面の細片に分けて描く。
 enum VoyageBowSpray {
     static let nodeName = "voyageBowSpray"
-    private static let bowWaveNodeName = "voyageBowWave"
 
     struct Palette {
         let sea: UIColor
@@ -139,9 +138,8 @@ enum VoyageBowSpray {
     }
 
     struct Rates {
-        static let zero = Rates(bowWave: 0, streaks: 0, mist: 0, flecks: 0)
+        static let zero = Rates(streaks: 0, mist: 0, flecks: 0)
 
-        let bowWave: CGFloat
         let streaks: CGFloat
         let mist: CGFloat
         let flecks: CGFloat
@@ -154,11 +152,8 @@ enum VoyageBowSpray {
             let impact = min(primaryImpact + secondaryImpact, 1)
             let surfaceWave = max(0, sin(time * 1.9 - 0.72))
             return Rates(
-                // The pressure seam should flash as the bow meets a crest, not
-                // remain as a permanently bright ribbon attached to the hull.
-                bowWave: strength * CGFloat(0.22 + impact * 0.78),
-                streaks: 24 * strength * CGFloat(0.16 + impact * 0.84),
-                mist: 9 * strength * CGFloat(impact),
+                streaks: 32 * strength * CGFloat(0.34 + impact * 0.66),
+                mist: 12 * strength * CGFloat(impact),
                 flecks: 44 * strength
                     * CGFloat(0.22 + powf(surfaceWave, 1.45) * 0.78)
             )
@@ -167,17 +162,13 @@ enum VoyageBowSpray {
 
     /// レイヤーを配列の順序で識別しない、アニメータ向けの型付きハンドル。
     struct Systems {
-        static let empty = Systems(bowWave: [], streaks: [], mist: [], flecks: [])
+        static let empty = Systems(streaks: [], mist: [], flecks: [])
 
-        let bowWave: [SCNMaterial]
         let streaks: [SCNParticleSystem]
         let mist: [SCNParticleSystem]
         let flecks: [SCNParticleSystem]
 
         func apply(_ rates: Rates) {
-            for material in bowWave {
-                material.setValue(NSNumber(value: rates.bowWave), forKey: "uSprayStrength")
-            }
             set(streaks, rate: rates.streaks)
             set(mist, rate: rates.mist)
             set(flecks, rate: rates.flecks)
@@ -208,7 +199,6 @@ enum VoyageBowSpray {
     static func makeNode(palette: Palette) -> SCNNode {
         let root = SCNNode()
         root.name = nodeName
-        root.addChildNode(makeBowWave(palette: palette))
         for layer in Layer.allCases {
             let layerNode = SCNNode()
             layerNode.name = layer.nodeName
@@ -234,99 +224,9 @@ enum VoyageBowSpray {
                 .childNodes.flatMap { $0.particleSystems ?? [] } ?? []
         }
         return Systems(
-            bowWave: container.childNode(withName: bowWaveNodeName, recursively: false)?
-                .geometry?.materials ?? [],
             streaks: systems(for: .streaks),
             mist: systems(for: .mist),
             flecks: systems(for: .flecks)
-        )
-    }
-
-    /// 粒子の発生源を海面につなぐ、左右一枚ずつの薄い船首波。
-    /// 船首から後方へ広がる帯を一つのジオメトリにまとめ、追加描画を最小限にする。
-    private static func makeBowWave(palette: Palette) -> SCNNode {
-        let node = SCNNode(geometry: makeBowWaveGeometry())
-        node.name = bowWaveNodeName
-
-        let material = SCNMaterial()
-        material.name = "LF_BowWave"
-        material.lightingModel = .constant
-        material.diffuse.contents = palette.highlight.withAlphaComponent(0.42)
-        material.emission.contents = palette.sea.withAlphaComponent(0.10)
-        material.blendMode = .alpha
-        material.isDoubleSided = true
-        material.writesToDepthBuffer = false
-        material.readsFromDepthBuffer = true
-        material.shaderModifiers = [.fragment: """
-        #pragma arguments
-        float uSprayStrength;
-        #pragma body
-        float u = _surface.diffuseTexcoord.x;
-        float v = _surface.diffuseTexcoord.y;
-        float edge = smoothstep(0.10, 0.27, v)
-            * (1.0 - smoothstep(0.54, 0.84, v));
-        float bow = smoothstep(0.0, 0.08, u);
-        float trail = 1.0 - smoothstep(0.38, 0.88, u);
-        float crestA = 0.5 + 0.5 * sin(u * 27.0 + v * 8.0 - scn_frame.time * 4.2);
-        float crestB = 0.5 + 0.5 * sin(u * 53.0 - v * 11.0 - scn_frame.time * 2.7);
-        float crossBreak = 0.5 + 0.5 * sin(
-            u * 17.0 - v * 29.0 + scn_frame.time * 1.6
-        );
-        float breakup = smoothstep(
-            0.56,
-            0.84,
-            crestA * 0.58 + crestB * 0.25 + crossBreak * 0.17
-        );
-        float foam = bow * trail * edge * (0.10 + breakup * 0.90);
-        _output.color.rgb *= 0.92 + breakup * 0.14;
-        _output.color.a *= foam * uSprayStrength;
-        """]
-        material.setValue(NSNumber(value: CGFloat.zero), forKey: "uSprayStrength")
-        node.geometry?.materials = [material]
-        return node
-    }
-
-    private static func makeBowWaveGeometry() -> SCNGeometry {
-        let longitudinal: [Float] = [1.25, 0.98, 0.64, 0.22, -0.28, -0.82]
-        let inner: [Float] = [0.10, 0.16, 0.22, 0.29, 0.36, 0.43]
-        let outer: [Float] = [0.18, 0.31, 0.47, 0.65, 0.84, 1.02]
-        var vertices: [SCNVector3] = []
-        var normals: [SCNVector3] = []
-        var texcoords: [CGPoint] = []
-        var indices: [UInt32] = []
-
-        for side: Float in [1, -1] {
-            let start = UInt32(vertices.count)
-            for index in longitudinal.indices {
-                let progress = CGFloat(index) / CGFloat(longitudinal.count - 1)
-                let y = -0.012 - Float(progress) * 0.018
-                vertices.append(SCNVector3(longitudinal[index], y, inner[index] * side))
-                vertices.append(SCNVector3(longitudinal[index], y, outer[index] * side))
-                normals.append(contentsOf: [SCNVector3(0, 1, 0), SCNVector3(0, 1, 0)])
-                texcoords.append(CGPoint(x: progress, y: 0))
-                texcoords.append(CGPoint(x: progress, y: 1))
-            }
-            for segment in 0..<(longitudinal.count - 1) {
-                let offset = start + UInt32(segment * 2)
-                indices += [offset, offset + 2, offset + 1, offset + 1, offset + 2, offset + 3]
-            }
-        }
-
-        let element = indices.withUnsafeBufferPointer {
-            SCNGeometryElement(
-                data: Data(buffer: $0),
-                primitiveType: .triangles,
-                primitiveCount: indices.count / 3,
-                bytesPerIndex: MemoryLayout<UInt32>.size
-            )
-        }
-        return SCNGeometry(
-            sources: [
-                SCNGeometrySource(vertices: vertices),
-                SCNGeometrySource(normals: normals),
-                SCNGeometrySource(textureCoordinates: texcoords),
-            ],
-            elements: [element]
         )
     }
 
@@ -359,29 +259,29 @@ enum VoyageBowSpray {
         switch layer {
         case .streaks:
             system.particleImage = streakImage
-            system.particleLifeSpan = 0.28
-            system.particleLifeSpanVariation = 0.08
-            system.particleVelocity = 1.15
-            system.particleVelocityVariation = 0.32
+            system.particleLifeSpan = 0.22
+            system.particleLifeSpanVariation = 0.05
+            system.particleVelocity = 1.05
+            system.particleVelocityVariation = 0.24
             system.emittingDirection = SCNVector3(0.32, 0.68, 0.58 * side)
-            system.spreadingAngle = 20
+            system.spreadingAngle = 17
             system.acceleration = SCNVector3(0, -5.8, 0)
-            system.particleSize = 0.038
-            system.particleSizeVariation = 0.018
-            system.particleColor = palette.highlight.withAlphaComponent(0.48)
-            system.particleColorVariation = SCNVector4(0.04, 0.12, 0.12, 0.24)
+            system.particleSize = 0.026
+            system.particleSizeVariation = 0.009
+            system.particleColor = palette.highlight.withAlphaComponent(0.32)
+            system.particleColorVariation = SCNVector4(0.04, 0.10, 0.10, 0.16)
             system.particleAngle = radians(side > 0 ? -24 : 24)
             system.particleAngleVariation = radians(14)
             system.particleAngularVelocityVariation = radians(60)
             system.emitterShape = SCNBox(
-                width: 0.06,
-                height: 0.02,
-                length: 0.18,
+                width: 0.045,
+                height: 0.015,
+                length: 0.16,
                 chamferRadius: 0
             )
             system.propertyControllers = controllers(
-                size: [0.20, 1.0, 0.24],
-                opacity: [0, 1.0, 0.50, 0]
+                size: [0.18, 1.0, 0.20],
+                opacity: [0, 0.72, 0.32, 0]
             )
 
         case .mist:
@@ -393,10 +293,10 @@ enum VoyageBowSpray {
             system.emittingDirection = SCNVector3(0.18, 0.34, 0.44 * side)
             system.spreadingAngle = 32
             system.acceleration = SCNVector3(0, -1.8, 0)
-            system.particleSize = 0.105
-            system.particleSizeVariation = 0.040
-            system.particleColor = palette.highlight.withAlphaComponent(0.12)
-            system.particleColorVariation = SCNVector4(0.06, 0.12, 0.12, 0.08)
+            system.particleSize = 0.082
+            system.particleSizeVariation = 0.025
+            system.particleColor = palette.highlight.withAlphaComponent(0.09)
+            system.particleColorVariation = SCNVector4(0.05, 0.10, 0.10, 0.05)
             system.particleAngleVariation = radians(180)
             system.particleAngularVelocityVariation = radians(20)
             system.emitterShape = SCNBox(
@@ -406,8 +306,8 @@ enum VoyageBowSpray {
                 chamferRadius: 0
             )
             system.propertyControllers = controllers(
-                size: [0.35, 1.20, 1.65],
-                opacity: [0, 1.0, 0.40, 0]
+                size: [0.30, 1.10, 1.48],
+                opacity: [0, 0.76, 0.30, 0]
             )
 
         case .flecks:
@@ -419,8 +319,8 @@ enum VoyageBowSpray {
             system.emittingDirection = SCNVector3(-0.10, 0.22, 0.82 * side)
             system.spreadingAngle = 16
             system.acceleration = SCNVector3(0, -6.0, 0)
-            system.particleSize = 0.024
-            system.particleSizeVariation = 0.011
+            system.particleSize = 0.019
+            system.particleSizeVariation = 0.008
             system.particleColor = palette.sea.withAlphaComponent(0.38)
             system.particleColorVariation = SCNVector4(0.08, 0.16, 0.14, 0.24)
             system.particleAngle = radians(side > 0 ? -68 : 68)
