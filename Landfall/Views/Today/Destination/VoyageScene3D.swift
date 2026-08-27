@@ -44,7 +44,6 @@ enum VoyageSceneKit {
     static let wood = UIColor(rgb: 0x5A2A15)      // WOOD(マスト・ブーム)
     static let ember = UIColor(rgb: 0xF3C065)     // 点灯ブイ
     static let buoyDim = UIColor(rgb: 0x4A3A2A)   // 未達ブイ
-    static let ripple = UIColor(rgb: 0x7FB8A6)    // 波紋
     static let returnOrange = UIColor(rgb: 0xF5822A) // 帰帆色(制覇の旗・達成日)
 
     // 航路(Web VoyageScene と同値)。ステップの島は「そう簡単には届かない目標」なので、
@@ -52,17 +51,7 @@ enum VoyageSceneKit {
     static let xStart: Float = -56.0
     static let xEnd: Float = -2.0
 
-    // カード(ホームの主役)の establishing 構図。航海の全景を、引き+俯瞰の斜め(3/4)で
-    // 綺麗に一望する(真横を避ける)。没入エディタの入場もここから寄っていく(Web と同値)。
-    static let cardCamPos = SCNVector3(-26.0, 20.0, 52)
-    static let cardCamTarget = SCNVector3(-26.25, 1.2, -0.15)
-    static let cardCamFov: CGFloat = 42
     static let routeApproachPower: Float = 2.15
-
-    static func boatX(_ ratio: Double) -> Float {
-        let progress = Float(min(max(ratio, 0), 1))
-        return xStart + pow(progress, routeApproachPower) * (xEnd - xStart)
-    }
 
     // MARK: - 素材
     //
@@ -125,142 +114,6 @@ enum VoyageSceneKit {
         m.isDoubleSided = true
         if fogged { m.shaderModifiers = [.fragment: fogFragment] }
         return m
-    }
-
-    // MARK: - 海(Webのシェーダを Metal に移植)
-
-    /// Webと同じ四層の海面変形。外周だけ振幅を落とし、夜空との境界を隠す。
-    private static let seaGeometryShader = """
-    #pragma body
-    float2 p = _geometry.position.xy;
-    float t = scn_frame.time;
-    float warpPhase = p.x * 0.055 + p.y * 0.083 - t * 0.18;
-    float warp = sin(warpPhase) * 1.35;
-    float2 q = p + float2(warp, -warp * 0.55);
-    float phaseA = q.y * 0.135 + q.x * 0.095 - t * 0.34;
-    float phaseB = q.y * 0.115 - q.x * 0.105 + t * 0.27;
-    float phaseC = q.y * 0.410 + q.x * 0.330 - t * 0.58;
-    float phaseD = q.y * 0.880 - q.x * 0.630 + t * 0.92;
-    float height =
-        sin(phaseA) * 0.150
-        + sin(phaseB) * 0.090
-        + sin(phaseC) * 0.026
-        + sin(phaseD) * 0.006;
-    float edge = 1.0 - smoothstep(66.0, 88.0, length(p));
-    float dhdx =
-        cos(phaseA) * 0.150 * 0.095
-        + cos(phaseB) * 0.090 * -0.105
-        + cos(phaseC) * 0.026 * 0.330
-        + cos(phaseD) * 0.006 * -0.630;
-    float dhdy =
-        cos(phaseA) * 0.150 * 0.135
-        + cos(phaseB) * 0.090 * 0.115
-        + cos(phaseC) * 0.026 * 0.410
-        + cos(phaseD) * 0.006 * 0.880;
-    _geometry.position.z += height * edge;
-    _geometry.normal = normalize(float3(-dhdx * edge, -dhdy * edge, 1.0));
-    """
-
-    /// 深色の谷・空の反射・割れた月光を重ね、平面の色模様ではなく海面として見せる。
-    private static let seaSurfaceShader = """
-    #pragma arguments
-    float moonX;
-    #pragma body
-    float2 uv = _surface.diffuseTexcoord;
-    // Web Sea は半径90のXY円盤で、local +Y = world -Z。
-    // SceneKitのPlaneも同じ向きへ倒しているため、uv.yを反転してはいけない。
-    // 濃淡の基準半径は従来の30を維持し、外側は夜色へ自然に溶かす。
-    float2 p = float2((uv.x - 0.5) * 180.0, (uv.y - 0.5) * 180.0);
-    float distanceFromBoat = length(p);
-    float3 seaC = float3(0.1176, 0.3255, 0.2824);   // #1E5348
-    float3 deepC = float3(0.0706, 0.2196, 0.1882);  // #123830
-    float3 moonC = float3(0.7490, 0.8392, 0.7765);  // #BFD6C6
-    float t = scn_frame.time;
-    float warp = sin(p.x * 0.055 + p.y * 0.083 - t * 0.18) * 1.35;
-    float2 q = p + float2(warp, -warp * 0.55);
-    float phaseA = q.y * 0.135 + q.x * 0.095 - t * 0.34;
-    float phaseB = q.y * 0.115 - q.x * 0.105 + t * 0.27;
-    float phaseC = q.y * 0.410 + q.x * 0.330 - t * 0.58;
-    float phaseD = q.y * 0.880 - q.x * 0.630 + t * 0.92;
-    float height =
-        sin(phaseA) * 0.150
-        + sin(phaseB) * 0.090
-        + sin(phaseC) * 0.026
-        + sin(phaseD) * 0.006;
-    float2 slope = float2(
-        cos(phaseA) * 0.150 * 0.095
-            + cos(phaseB) * 0.090 * -0.105
-            + cos(phaseC) * 0.026 * 0.330
-            + cos(phaseD) * 0.006 * -0.630,
-        cos(phaseA) * 0.150 * 0.135
-            + cos(phaseB) * 0.090 * 0.115
-            + cos(phaseC) * 0.026 * 0.410
-            + cos(phaseD) * 0.006 * 0.880
-    );
-    float depth = smoothstep(7.0, 72.0, distanceFromBoat);
-    float3 col = mix(seaC, deepC, 0.12 + depth * 0.68);
-    float directionalShade = clamp(0.5 + slope.x * 3.4 + slope.y * 3.0, 0.0, 1.0);
-    col *= 0.93 + directionalShade * 0.10;
-    float trough = 1.0 - smoothstep(-0.14, 0.015, height);
-    float crest = smoothstep(0.040, 0.185, height);
-    col = mix(col, deepC, trough * 0.26);
-    col = mix(col, moonC, crest * 0.070);
-    col = mix(col, mix(deepC, moonC, 0.24), smoothstep(40.0, 88.0, distanceFromBoat) * 0.14);
-
-    float grainA = sin(
-        p.y * 0.72 + sin(p.x * 0.31) * 1.7
-        + sin(p.y * 0.13 + p.x * 0.27) * 2.2 - t * 0.92
-    );
-    float grainB = sin(
-        p.x * 0.81 + sin(p.y * 0.36) * 1.3
-        - sin(p.x * 0.11 - p.y * 0.23) * 1.8 + t * 0.61
-    );
-    col *= 0.985 + grainA * grainB * 0.025
-        * (1.0 - smoothstep(34.0, 82.0, distanceFromBoat));
-    float broken = 0.5 + 0.5 * sin(
-        p.y * 1.42 - p.x * 1.91 + sin(p.x * 0.17) * 2.1 - t * 1.16
-    );
-    float capGlint = smoothstep(0.80, 0.98, broken)
-        * smoothstep(0.035, 0.18, height)
-        * (1.0 - smoothstep(25.0, 76.0, distanceFromBoat));
-    col = mix(col, moonC, capGlint * 0.095);
-
-    float laneWarp = sin(p.y * 0.22 - t * 0.38) * 0.55
-        + sin(p.y * 0.57 + t * 0.24) * 0.22;
-    float dx = p.x - moonX + laneWarp;
-    float along = smoothstep(-5.0, 13.0, p.y);
-    float w = mix(2.8, 0.7, along);
-    float band = exp(-(dx * dx) / (w * w));
-    float shimmer = 0.5 + 0.5
-        * sin(p.y * 1.17 - t * 1.28)
-        * sin(p.x * 1.63 + t * 0.61);
-    float streak = band * along * smoothstep(0.24, 0.84, shimmer)
-        * (0.44 + crest * 0.56) * 0.5;
-    col = mix(col, moonC, streak);
-    col = mix(col, deepC, smoothstep(68.0, 90.0, distanceFromBoat) * 0.82);
-    // SceneKitはリニア色空間で描くため、sRGBで計算した色をリニアへ変換して渡す
-    // (これをしないと全体が白っぽく浮く)。
-    _surface.diffuse = float4(pow(clamp(col, 0.0, 1.0), float3(2.2)), 1.0);
-    """
-
-    static func makeSea(moonX: Float) -> SCNNode {
-        // Web: 180角の細分化平面。最遠航路(-56)でも海面の外へ出ない。
-        let plane = SCNPlane(width: 180, height: 180)
-        plane.widthSegmentCount = 140
-        plane.heightSegmentCount = 140
-        let m = SCNMaterial()
-        m.lightingModel = .constant
-        m.diffuse.contents = seaBase
-        m.isDoubleSided = true
-        m.shaderModifiers = [
-            .geometry: seaGeometryShader,
-            .surface: seaSurfaceShader
-        ]
-        m.setValue(NSNumber(value: moonX), forKey: "moonX")
-        plane.firstMaterial = m
-        let node = SCNNode(geometry: plane)
-        node.eulerAngles.x = -.pi / 2
-        return node
     }
 
     // MARK: - 空(月・星・水平線)
@@ -1751,38 +1604,6 @@ enum VoyageSceneKit {
         }
     }
 
-    // MARK: - 波紋・航跡(Web Ripples / Wake)
-
-    /// 平たいリング(RingGeometry 0.9..1.0 相当)。
-    private static func makeRingNode(index: Int) -> SCNNode {
-        let path = UIBezierPath(ovalIn: CGRect(x: -1, y: -1, width: 2, height: 2))
-        path.append(UIBezierPath(ovalIn: CGRect(x: -0.9, y: -0.9, width: 1.8, height: 1.8)).reversing())
-        path.usesEvenOddFillRule = true
-        path.flatness = 0.02
-        let shape = SCNShape(path: path, extrusionDepth: 0)
-        let m = SCNMaterial()
-        m.lightingModel = .constant
-        m.diffuse.contents = ripple
-        m.writesToDepthBuffer = false
-        m.isDoubleSided = true
-        shape.firstMaterial = m
-        let node = SCNNode(geometry: shape)
-        node.name = "ripple\(index)"
-        node.eulerAngles.x = -.pi / 2
-        node.position = SCNVector3(0, 0.02 + Float(index) * 0.004, 0)
-        let s = 1.5 + Float(index) * 1.6
-        node.scale = SCNVector3(s, s, 1)
-        node.opacity = CGFloat(0.12 - Double(index) * 0.03)
-        return node
-    }
-
-    static func makeRipples() -> SCNNode {
-        let group = SCNNode()
-        group.name = "ripples"
-        for i in 0..<3 { group.addChildNode(makeRingNode(index: i)) }
-        return group
-    }
-
     /// Shared-ocean scenes use the analytical wake. Legacy scenes keep only a
     /// short, softly tapered disturbance so no rectangular white strip appears.
     static func makeWake() -> SCNNode {
@@ -2051,69 +1872,6 @@ enum VoyageSceneKit {
         node.position = position
         node.look(at: target)
         return node
-    }
-
-    // MARK: - シーン(目的地)
-
-    /// 目的地の航海シーン。Web VoyageScene と同じ構図:
-    /// 夜の海・星・月(カード=x1.8の月の出 / 没入=左上奥)・水平線・右奥の島・ブイ・船。
-    static func makeScene(ratio: Double, steps: [VoyageStep], immersive: Bool = false) -> SCNScene {
-        let scene = SCNScene()
-        scene.background.contents = nightBG
-        let moonX: Float = immersive ? -8 : 1.8
-        scene.rootNode.addChildNode(makeSea(moonX: moonX))
-        scene.rootNode.addChildNode(makeStars(count: immersive ? 620 : 380))
-        scene.rootNode.addChildNode(makeMoon(
-            position: immersive ? SCNVector3(-8, 3.2, -16) : SCNVector3(1.8, 1.25, -14)
-        ))
-        scene.rootNode.addChildNode(makeHorizon())
-        scene.rootNode.addChildNode(makeIsland())
-        for (i, step) in steps.enumerated() {
-            scene.rootNode.addChildNode(
-                makeStepIslet(index: i, total: steps.count, done: step.done, doneAt: step.doneAt)
-            )
-        }
-
-        // 航路上の船。波紋ごと進む(Web: group scale 0.55, rot y 0.1)。
-        let travel = SCNNode()
-        travel.name = "travel"
-        travel.position = SCNVector3(boatX(ratio), 0, 0)
-        travel.eulerAngles.y = 0.1
-        travel.scale = SCNVector3(0.35, 0.35, 0.35)
-        travel.addChildNode(makeRipples())
-        travel.addChildNode(makeWake())
-        let bob = SCNNode()
-        bob.name = "boatBob"
-        let boat = makeBoatModel(BoatCustomization.currentParts)
-        attachNavigator(to: boat)
-        bob.addChildNode(boat)
-        // 自分の航海士を船首寄りの甲板に立たせる(舳先を見て進む姿)。
-        // 船体は x=-1.02(船尾)〜1.32(舳先の先端)で、舷縁は y≈0.5〜0.58。
-        // 原点が足元なので舷縁の上(y=0.57)に置く。マスト(x=0.1)とメインセイルを
-        // 避けつつ、舳先の反りに脚が入らない x=0.88 に。帆に隠れないよう
-        // 手前の舷側(z=+0.22)へ寄せる。
-        travel.addChildNode(bob)
-        if immersive {
-            // 船タップの当たり判定(船体+帆を覆う。Web BOAT_HIT_GEO)+ タップ波紋リング。
-            travel.addChildNode(makeTapRing())
-            let hit = SCNNode(geometry: SCNBox(width: 3.0, height: 2.6, length: 1.6, chamferRadius: 0))
-            hit.name = "boatHit"
-            hit.position = SCNVector3(0.1, 1.0, 0)
-            hit.opacity = 0
-            travel.addChildNode(hit)
-        }
-        scene.rootNode.addChildNode(travel)
-
-        if immersive {
-            scene.rootNode.addChildNode(makeShootingStar())
-            scene.rootNode.addChildNode(makeIslandLabel())
-        }
-
-        makeLights().forEach { scene.rootNode.addChildNode($0) }
-        scene.rootNode.addChildNode(
-            makeCamera(position: cardCamPos, target: cardCamTarget, fov: cardCamFov)
-        )
-        return scene
     }
 
     // MARK: - シーン(上陸)
@@ -2433,86 +2191,6 @@ enum VoyageSceneKit {
         return [ambient, key, fill]
     }
 
-    // MARK: - 没入エディタ専用の部品(Web VoyageWorld)
-
-    /// タップ波紋リング(船タップで一周広がる)。既定は非表示。
-    private static func makeTapRing() -> SCNNode {
-        let path = UIBezierPath(ovalIn: CGRect(x: -1, y: -1, width: 2, height: 2))
-        path.append(UIBezierPath(ovalIn: CGRect(x: -0.9, y: -0.9, width: 1.8, height: 1.8)).reversing())
-        path.usesEvenOddFillRule = true
-        path.flatness = 0.02
-        let shape = SCNShape(path: path, extrusionDepth: 0)
-        let m = SCNMaterial()
-        m.lightingModel = .constant
-        m.diffuse.contents = ripple
-        m.writesToDepthBuffer = false
-        m.isDoubleSided = true
-        shape.firstMaterial = m
-        let node = SCNNode(geometry: shape)
-        node.name = "tapRing"
-        node.eulerAngles.x = -.pi / 2
-        node.position = SCNVector3(0, 0.03, 0)
-        node.isHidden = true
-        return node
-    }
-
-    /// 流れ星。細長い淡いプレーン。既定は非表示。動きはコーディネータが与える。
-    private static func makeShootingStar() -> SCNNode {
-        let plane = SCNPlane(width: 1.8, height: 0.035)
-        let m = SCNMaterial()
-        m.lightingModel = .constant
-        m.diffuse.contents = sand
-        m.isDoubleSided = true
-        m.writesToDepthBuffer = false
-        plane.firstMaterial = m
-        let node = SCNNode(geometry: plane)
-        node.name = "shootingStar"
-        node.isHidden = true
-        node.opacity = 0
-        return node
-    }
-
-    /// 島の上に浮かぶ、入力中の島名ラベル(ビルボード)。テキストはコーディネータが更新する。
-    static func makeIslandLabel() -> SCNNode {
-        let plane = SCNPlane(width: 0.01, height: 0.01)
-        let m = SCNMaterial()
-        m.lightingModel = .constant
-        m.isDoubleSided = true
-        m.writesToDepthBuffer = false
-        plane.firstMaterial = m
-        let node = SCNNode(geometry: plane)
-        node.name = "islandLabel"
-        node.position = SCNVector3(3.5, 1.9, -0.9)
-        node.constraints = [SCNBillboardConstraint()]
-        node.isHidden = true
-        return node
-    }
-
-    /// 島名ラベルのテクスチャ(と縦横)を更新する。空なら隠す。
-    static func updateIslandLabel(_ node: SCNNode, text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { node.isHidden = true; return }
-        let font = UIFont.systemFont(ofSize: 48, weight: .regular)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: sand]
-        let textSize = (trimmed as NSString).size(withAttributes: attrs)
-        let pad: CGFloat = 28
-        let w = textSize.width + pad * 2
-        let h = textSize.height + pad
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: w, height: h))
-        let image = renderer.image { _ in
-            (trimmed as NSString).draw(
-                at: CGPoint(x: pad, y: pad / 2), withAttributes: attrs
-            )
-        }
-        node.geometry?.firstMaterial?.diffuse.contents = image
-        // 世界の高さ ~0.62 に合わせて横幅を決める。
-        let worldH: CGFloat = 0.62
-        let worldW = worldH * (w / h)
-        (node.geometry as? SCNPlane)?.width = worldW
-        (node.geometry as? SCNPlane)?.height = worldH
-        node.isHidden = false
-    }
-
     // MARK: - シーン(装い: 船スタジオ)
 
     /// 装い専用の夜の海。Web版の Canvas と同じく、船と航海士のどちらを
@@ -2581,13 +2259,6 @@ enum VoyageSceneKit {
         return makeBoatModel(parts, seaBounce: oceanAppearance.sea)
     }
 
-    /// 夜の海に浮かぶ自分の船(Web BoatStudio NightSea)。
-    static func makeBoatStudioScene(parts: BoatParts) -> SCNScene {
-        let scene = makeDressStudioWorld()
-        scene.rootNode.addChildNode(makeBoatStudioSubject(parts: parts))
-        return scene
-    }
-
     // MARK: - 航海士(プレイヤー)
 
     /// 低ポリの航海士。フードのローブ+暗い顔+背の二又マント+手のランタン。
@@ -2647,21 +2318,6 @@ enum VoyageSceneKit {
         return group
     }
 
-    static func makeNavigatorScene() -> SCNScene {
-        let scene = SCNScene()
-        scene.background.contents = nightBG
-        scene.rootNode.addChildNode(makeSea(moonX: -8))
-        scene.rootNode.addChildNode(makeStars(count: 320))
-        scene.rootNode.addChildNode(makeMoon(position: SCNVector3(-8, 4.2, -14)))
-        let nav = makeNavigator()
-        nav.scale = SCNVector3(1.7, 1.7, 1.7)
-        scene.rootNode.addChildNode(nav)
-        makeLights().forEach { scene.rootNode.addChildNode($0) }
-        scene.rootNode.addChildNode(
-            makeCamera(position: SCNVector3(0, 1.6, 4.2), target: SCNVector3(0, 1.05, 0), fov: 40)
-        )
-        return scene
-    }
 }
 
 // MARK: - アニメータ(Web useFrame 相当)

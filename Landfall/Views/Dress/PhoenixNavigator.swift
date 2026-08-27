@@ -760,11 +760,6 @@ enum PhoenixNavigator {
         return stage
     }
 
-    static func makeScene() -> SCNScene {
-        let scene = VoyageSceneKit.makeDressStudioWorld(nativeMetalRollout: .boatStudio)
-        scene.rootNode.addChildNode(makeNavigatorStage())
-        return scene
-    }
 }
 
 // MARK: - アニメータ(Web PhoenixModel useFrame の移植)
@@ -814,7 +809,6 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private weak var chart: SCNNode?
     private weak var cape: SCNNode?
     private weak var glowMat: SCNMaterial?
-    private var rippleNodes: [SCNNode] = []
 
     // ポーズ基本角の現在値(POSE_BASE へ減衰補間)
     private var armRx: Float = 0, armRz: Float = 0.14
@@ -828,8 +822,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
 
     private func bindComponents(
         to navigator: SCNNode,
-        scene: SCNScene?,
-        includesSceneRipples: Bool
+        scene: SCNScene?
     ) {
         boundScene = scene
         boundNavigator = navigator
@@ -850,13 +843,6 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
             withName: "lanternGlow",
             recursively: true
         )?.geometry?.firstMaterial
-        if includesSceneRipples, let scene {
-            rippleNodes = (0..<3).compactMap {
-                scene.rootNode.childNode(withName: "ripple\($0)", recursively: true)
-            }
-        } else {
-            rippleNodes = []
-        }
     }
 
     private func bind(_ scene: SCNScene) {
@@ -865,7 +851,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
             withName: "navigator",
             recursively: true
         ) else { return }
-        bindComponents(to: navigator, scene: scene, includesSceneRipples: true)
+        bindComponents(to: navigator, scene: scene)
     }
 
     /// Binds this animator to one navigator instance instead of the first node
@@ -873,22 +859,14 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     /// of the model, so every visitor must own a separately bound animator.
     func bind(to navigator: SCNNode, in scene: SCNScene? = nil) {
         usesExplicitNavigatorBinding = true
-        bindComponents(
-            to: navigator,
-            scene: scene,
-            includesSceneRipples: false
-        )
+        bindComponents(to: navigator, scene: scene)
     }
 
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
         guard animate, let scene = renderer.scene else { return }
         if usesExplicitNavigatorBinding {
             if core == nil, let boundNavigator {
-                bindComponents(
-                    to: boundNavigator,
-                    scene: boundScene,
-                    includesSceneRipples: false
-                )
+                bindComponents(to: boundNavigator, scene: boundScene)
             }
         } else if boundScene !== scene || core == nil {
             bind(scene)
@@ -900,13 +878,6 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
 
         step(t: t, dt: dt)
 
-        // 足元の波紋(Web Ripples: 周期7秒・位相ずらし3枚)。海の演出。
-        for (i, node) in rippleNodes.enumerated() {
-            let phase = (t / 7 + Float(i) / 3).truncatingRemainder(dividingBy: 1)
-            let s = 0.8 + phase * 5.5
-            node.scale = SCNVector3(s, s, 1)
-            node.opacity = CGFloat(sin(min(phase * 3, 1) * .pi / 2) * (1 - phase) * 0.2)
-        }
     }
 
     /// 航海士の1フレーム分の動き。目的地の船上など、別のシーンからも呼べるように
