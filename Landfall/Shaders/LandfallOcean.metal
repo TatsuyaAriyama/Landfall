@@ -679,10 +679,32 @@ static inline half4 landfallShadeOcean(
 
     if (ocean.boatPresence > 0.5) {
         color = mix(color, ocean.deepColor, hull.submergedShadow * 0.13);
+        float2 viewAcrossWater = float2(viewDirection.x, -viewDirection.z);
+        viewAcrossWater /= max(length(viewAcrossWater), 0.001);
+        float2 fromBoat = boat.heading * boat.longitudinal
+            + boat.across * boat.lateral;
+        float reflectionFacing = smoothstep(
+            -0.20,
+            0.72,
+            dot(fromBoat / max(length(fromBoat), 0.001), viewAcrossWater)
+        );
+        // A hull reflection falls onto the camera-facing water instead of
+        // surrounding the boat as an even halo. Water absorption and the
+        // current light level tint that lobe before wave breakup is applied.
+        float reflectionLobe = mix(0.08, 1.0, reflectionFacing);
+        float reflectionIllumination = saturate(
+            0.24 + ocean.sunStrength * 0.48
+        );
+        float3 reflectedHullColor = mix(
+            ocean.deepColor,
+            ocean.boatReflectionColor,
+            reflectionIllumination
+        );
         color = mix(
             color,
-            ocean.boatReflectionColor,
-            hull.reflectedHull * (0.035 + hull.reflectionBreakup * 0.070)
+            reflectedHullColor,
+            hull.reflectedHull * reflectionLobe
+                * (0.025 + hull.reflectionBreakup * 0.095)
         );
         color = mix(color, foamColor, hull.meniscusLight * 0.10);
         color = mix(color, ocean.shallowColor, hull.bowDisturbance * 0.022);

@@ -521,10 +521,37 @@ enum HomeIslandOceanEffects {
             )
         );
         col = mix(col, uDeep, submergedShadow * 0.13 * surfaceEdge);
+        float3 worldViewDirection = normalize(
+            (scn_frame.inverseViewTransform * float4(viewDirection, 0.0)).xyz
+        );
+        float2 viewAcrossWater = float2(
+            worldViewDirection.x,
+            -worldViewDirection.z
+        );
+        viewAcrossWater /= max(length(viewAcrossWater), 0.001);
+        float reflectionFacing = smoothstep(
+            -0.20,
+            0.72,
+            dot(fromBoat / max(length(fromBoat), 0.001), viewAcrossWater)
+        );
+        // Keep reflected hull color on the camera-facing water rather than an
+        // even ring. The shared time-of-day light then controls its radiance.
+        float reflectionLobe = mix(0.08, 1.0, reflectionFacing);
+        float reflectionIllumination = clamp(
+            0.24 + uSunStrength * 0.48,
+            0.0,
+            1.0
+        );
+        float3 reflectedHullColor = mix(
+            uDeep,
+            uBoatReflectionColor,
+            reflectionIllumination
+        );
         col = mix(
             col,
-            uBoatReflectionColor,
-            reflectedHull * (0.035 + reflectionBreak * 0.070) * surfaceEdge
+            reflectedHullColor,
+            reflectedHull * reflectionLobe
+                * (0.025 + reflectionBreak * 0.095) * surfaceEdge
         );
         col = mix(col, foamColor, meniscus * meniscusBreak * 0.10 * surfaceEdge);
     }
