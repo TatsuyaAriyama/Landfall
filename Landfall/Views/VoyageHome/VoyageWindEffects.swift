@@ -331,9 +331,12 @@ enum VoyageBowSpray {
             // the number of identical particles emitted on that frame.
             let impulse = min(strength * 0.44 + impact * 0.72, 1)
             return Rates(
-                streaks: 14 * strength * (0.14 + impact * 0.86),
-                mist: 12 * strength * (0.16 + impact * 0.84),
-                flecks: 10 * strength * pow(impact, 1.72),
+                // A bow continuously peels two thin sheets from the water.
+                // Crests thicken those sheets and add mist and heavy flecks;
+                // they do not switch the entire contact effect on from zero.
+                streaks: 22 * strength * (0.30 + impact * 0.70),
+                mist: 10 * strength * (0.18 + impact * 0.82),
+                flecks: 12 * strength * pow(impact, 1.80),
                 impulse: impulse
             )
         }
@@ -361,21 +364,21 @@ enum VoyageBowSpray {
                 rate: rates.streaks,
                 impulse: rates.impulse,
                 velocity: 0.90...1.32,
-                size: 0.022...0.033
+                size: 0.060...0.095
             )
             set(
                 mist,
                 rate: rates.mist,
                 impulse: rates.impulse,
                 velocity: 0.42...0.68,
-                size: 0.082...0.130
+                size: 0.090...0.150
             )
             set(
                 flecks,
                 rate: rates.flecks,
                 impulse: rates.impulse,
                 velocity: 0.58...1.00,
-                size: 0.013...0.023
+                size: 0.018...0.030
             )
         }
 
@@ -531,7 +534,7 @@ enum VoyageBowSpray {
         switch layer {
         case .streaks:
             system.particleImage = streakImage
-            system.particleLifeSpan = 0.20
+            system.particleLifeSpan = 0.22
             system.particleLifeSpanVariation = 0.05
             system.particleVelocity = 1.12
             system.particleVelocityVariation = 0.24
@@ -540,7 +543,7 @@ enum VoyageBowSpray {
             system.acceleration = SCNVector3(0, -5.8, 0)
             system.particleSize = 0.027
             system.particleSizeVariation = 0.006
-            system.particleColor = palette.highlight.withAlphaComponent(0.19)
+            system.particleColor = palette.highlight.withAlphaComponent(0.28)
             system.particleColorVariation = SCNVector4(0.04, 0.10, 0.10, 0.10)
             system.particleAngle = radians(side > 0 ? -28 : 28)
             system.particleAngleVariation = radians(9)
@@ -567,7 +570,7 @@ enum VoyageBowSpray {
             system.acceleration = SCNVector3(0, -1.6, 0)
             system.particleSize = 0.11
             system.particleSizeVariation = 0.022
-            system.particleColor = palette.highlight.withAlphaComponent(0.075)
+            system.particleColor = palette.highlight.withAlphaComponent(0.11)
             system.particleColorVariation = SCNVector4(0.05, 0.10, 0.10, 0.035)
             system.particleAngle = radians(side > 0 ? -11 : 11)
             system.particleAngleVariation = radians(9)
@@ -649,16 +652,16 @@ enum VoyageBowSpray {
             let cgContext = context.cgContext
             cgContext.saveGState()
             let ribbon = UIBezierPath()
-            ribbon.move(to: CGPoint(x: 30, y: 5))
+            ribbon.move(to: CGPoint(x: 24, y: 5))
             ribbon.addCurve(
-                to: CGPoint(x: 35, y: 58),
-                controlPoint1: CGPoint(x: 29, y: 18),
-                controlPoint2: CGPoint(x: 38, y: 41)
+                to: CGPoint(x: 41, y: 58),
+                controlPoint1: CGPoint(x: 20, y: 18),
+                controlPoint2: CGPoint(x: 45, y: 41)
             )
             ribbon.addCurve(
-                to: CGPoint(x: 30, y: 5),
-                controlPoint1: CGPoint(x: 33, y: 40),
-                controlPoint2: CGPoint(x: 26, y: 19)
+                to: CGPoint(x: 24, y: 5),
+                controlPoint1: CGPoint(x: 35, y: 40),
+                controlPoint2: CGPoint(x: 29, y: 19)
             )
             ribbon.addClip()
             let colors = [

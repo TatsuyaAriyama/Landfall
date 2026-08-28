@@ -1028,7 +1028,7 @@ static inline half4 landfallShadeOcean(
     }
 
     if (ocean.boatPresence > 0.5) {
-        color = mix(color, ocean.deepColor, hull.submergedShadow * 0.13);
+        color = mix(color, ocean.deepColor, hull.submergedShadow * 0.18);
         float2 viewAcrossWater = float2(viewDirection.x, -viewDirection.z);
         viewAcrossWater /= max(length(viewAcrossWater), 0.001);
         float2 fromBoat = boat.heading * boat.longitudinal
@@ -1060,10 +1060,10 @@ static inline half4 landfallShadeOcean(
         color = mix(
             color,
             foamColor,
-            hull.meniscusLight * meniscusFacing * 0.12
+            hull.meniscusLight * meniscusFacing * 0.08
         );
-        color = mix(color, ocean.shallowColor, hull.bowDisturbance * 0.022);
-        color = mix(color, foamColor, hull.bowAeration * 0.13);
+        color = mix(color, ocean.shallowColor, hull.bowDisturbance * 0.045);
+        color = mix(color, foamColor, hull.bowAeration * 0.18);
 
         // The same dusk factor that raises the physical deck lantern also
         // creates a restrained pair of stern-quarter reflections. Two soft

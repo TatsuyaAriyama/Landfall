@@ -679,7 +679,7 @@ enum HomeIslandOceanEffects {
                     + height * 18.0 - uTime * 0.24
             )
         );
-        col = mix(col, uDeep, submergedShadow * 0.13 * surfaceEdge);
+        col = mix(col, uDeep, submergedShadow * 0.18 * surfaceEdge);
         float3 worldViewDirection = normalize(
             (scn_frame.inverseViewTransform * float4(viewDirection, 0.0)).xyz
         );
@@ -717,7 +717,7 @@ enum HomeIslandOceanEffects {
             col,
             foamColor,
             meniscus * mix(0.48, 1.0, contactLoad)
-                * meniscusBreak * meniscusFacing * 0.12 * surfaceEdge
+                * meniscusBreak * meniscusFacing * 0.08 * surfaceEdge
         );
 
         // Match the native Metal path: the night lantern belongs to the same
