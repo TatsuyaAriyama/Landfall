@@ -718,6 +718,20 @@ enum HomeIslandOceanEffects {
             float remainingWake = 1.0 - wakeAge;
             float lengthFade = smoothstep(0.04, 0.38, aft)
                 * remainingWake * remainingWake;
+            float advectionSpeed = mix(0.68, 1.24, wakeStrength);
+            float emissionClock = uTime - aft / advectionSpeed;
+            float parcelPulse = smoothstep(
+                0.18,
+                0.82,
+                0.5 + 0.5 * sin(
+                    emissionClock * 2.35 + abs(signedLateral) * 1.4
+                )
+            );
+            float parcelEnvelope = mix(
+                1.0,
+                0.58 + parcelPulse * 0.42,
+                smoothstep(0.18, 0.74, wakeAge)
+            );
             float slowFlow = 0.5 + 0.5 * sin(
                 aft * 1.35 + signedLateral * 1.9 - uTime * 0.62
             );
@@ -763,7 +777,7 @@ enum HomeIslandOceanEffects {
             float disturbance = max(
                 centerChurn * 0.58,
                 divergentArms * 0.84
-            ) * lengthFade * wakeStrength * surfaceEdge;
+            ) * lengthFade * wakeStrength * parcelEnvelope * surfaceEdge;
             float turbulencePhase = aft * 2.35 + signedLateral * 4.7
                 + sin(aft * 0.83) * 1.15 - uTime * 0.91;
             float turbulence = 0.5 + 0.5 * sin(turbulencePhase);

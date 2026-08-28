@@ -231,6 +231,21 @@ static inline LandfallWakeSample landfallSampleWake(
     float age = saturate(aft / wakeLength);
     float remaining = 1.0 - age;
     float lengthFade = smoothstep(0.04, 0.38, aft) * remaining * remaining;
+    // Follow the emission time of each parcel instead of only oscillating the
+    // finished footprint in place. Fresh wash stays connected at the stern;
+    // older parcels travel aft and open into short, dissolving pockets.
+    float advectionSpeed = mix(0.68, 1.24, boat.speed);
+    float emissionClock = ocean.time - aft / advectionSpeed;
+    float parcelPulse = smoothstep(
+        0.18,
+        0.82,
+        0.5 + 0.5 * sin(emissionClock * 2.35 + abs(boat.lateral) * 1.4)
+    );
+    float parcelEnvelope = mix(
+        1.0,
+        0.58 + parcelPulse * 0.42,
+        smoothstep(0.18, 0.74, age)
+    );
     float flowPhase = aft * 1.35 + boat.lateral * 1.9 - ocean.time * 0.62;
     float centerDrift = sin(flowPhase) * 0.5 * mix(0.04, 0.10, age);
     float wakeWidth = mix(
@@ -271,7 +286,7 @@ static inline LandfallWakeSample landfallSampleWake(
         * (0.32 + smoothstep(0.30, 0.84, armBreak) * 0.68);
 
     float disturbance = max(centerChurn * 0.58, divergentArms * 0.84)
-        * lengthFade * boat.speed;
+        * lengthFade * boat.speed * parcelEnvelope;
     float turbulencePhase = aft * 2.35 + boat.lateral * 4.7
         + sin(aft * 0.83) * 1.15 - ocean.time * 0.91;
     float turbulence = 0.5 + 0.5 * sin(turbulencePhase);
