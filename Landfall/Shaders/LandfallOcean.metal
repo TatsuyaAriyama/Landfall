@@ -33,6 +33,7 @@ struct LandfallOceanUniforms {
     float2 boatPosition;
     float2 boatHeading;
     float boatSpeed;
+    float boatHeave;
     float2 boatSize;
     float boatPresence;
     float3 boatReflectionColor;
@@ -316,7 +317,17 @@ static inline LandfallHullSample landfallSampleHullContact(
             + pow(abs(lateralUnit), hullExponent),
         1.0 / hullExponent
     );
-    hullDistance = max(hullDistance, 0.001);
+    // Compare this fragment's displaced surface with the boat's actual heave.
+    // A crest climbing the flared hull widens its contact footprint; a trough
+    // narrows it. Shadow, meniscus, reflection and pressure all consume this
+    // same adjusted distance so the contact cannot split into separate rings.
+    float relativeSurfaceHeight = clamp(
+        waveHeight - ocean.boatHeave,
+        -0.12,
+        0.16
+    );
+    float contactScale = 1.0 + relativeSurfaceHeight * 1.10;
+    hullDistance = max(hullDistance / contactScale, 0.001);
     float submergedShadow = 1.0 - smoothstep(0.62, 1.20, hullDistance);
     float meniscus = 1.0 - smoothstep(0.035, 0.18, abs(hullDistance - 1.0));
     float contactPhase = boat.longitudinal * 8.1

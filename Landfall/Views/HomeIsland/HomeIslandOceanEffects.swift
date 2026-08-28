@@ -221,6 +221,7 @@ enum HomeIslandOceanEffects {
     float3 uBoatPosition;
     float3 uBoatHeading;
     float uBoatSpeed;
+    float uBoatHeave;
     float3 uBoatSize;
     float uBoatPresence;
     float3 uBoatReflectionColor;
@@ -511,10 +512,21 @@ enum HomeIslandOceanEffects {
     float halfHullLength = max(uBoatSize.x * 0.5, 0.001);
     float halfHullBeam = max(uBoatSize.y * 0.5, 0.001);
     if (uBoatPresence > 0.5) {
-        float hullDistance = length(float2(
-            boatLongitudinal / halfHullLength,
-            boatLateral / halfHullBeam
-        ));
+        float longitudinalUnit = boatLongitudinal / halfHullLength;
+        float lateralUnit = boatLateral / halfHullBeam;
+        float hullExponent = mix(
+            2.45,
+            1.48,
+            smoothstep(-0.24, 0.58, longitudinalUnit)
+        );
+        float hullDistance = pow(
+            pow(abs(longitudinalUnit), hullExponent)
+                + pow(abs(lateralUnit), hullExponent),
+            1.0 / hullExponent
+        );
+        float relativeSurfaceHeight = clamp(height - uBoatHeave, -0.12, 0.16);
+        float contactScale = 1.0 + relativeSurfaceHeight * 1.10;
+        hullDistance = max(hullDistance / contactScale, 0.001);
         float submergedShadow = 1.0 - smoothstep(0.62, 1.20, hullDistance);
         float meniscus = 1.0 - smoothstep(0.035, 0.18, abs(hullDistance - 1.0));
         float meniscusBreak = 0.72 + 0.28 * sin(
@@ -698,6 +710,7 @@ enum HomeIslandOceanEffects {
         material.setValue(SCNVector3Zero, forKey: "uBoatPosition")
         material.setValue(SCNVector3(0, 1, 0), forKey: "uBoatHeading")
         material.setValue(NSNumber(value: Float(0)), forKey: "uBoatSpeed")
+        material.setValue(NSNumber(value: Float(0)), forKey: "uBoatHeave")
         material.setValue(SCNVector3Zero, forKey: "uBoatSize")
         material.setValue(NSNumber(value: Float(0)), forKey: "uBoatPresence")
         material.setValue(

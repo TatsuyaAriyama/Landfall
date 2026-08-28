@@ -108,6 +108,7 @@ enum MetalOceanProgram {
             boatPosition: .zero,
             boatHeading: SIMD2(0, 1),
             boatSpeed: 0,
+            boatHeave: 0,
             boatSize: .zero,
             boatPresence: 0,
             boatReflectionColor: linearColor(0xA6B7AF)
@@ -169,6 +170,7 @@ enum MetalOceanProgram {
         uniforms.boatHeading = vector2(named: "uBoatHeading", from: material)
             ?? uniforms.boatHeading
         uniforms.boatSpeed = number(named: "uBoatSpeed", from: material)
+        uniforms.boatHeave = number(named: "uBoatHeave", from: material)
         uniforms.boatSize = vector2(named: "uBoatSize", from: material)
             ?? uniforms.boatSize
         uniforms.boatPresence = number(named: "uBoatPresence", from: material)
@@ -210,6 +212,7 @@ enum MetalOceanProgram {
         var boatPosition: SIMD2<Float>
         var boatHeading: SIMD2<Float>
         var boatSpeed: Float
+        var boatHeave: Float
         var boatSize: SIMD2<Float>
         var boatPresence: Float
         var boatReflectionColor: SIMD3<Float>

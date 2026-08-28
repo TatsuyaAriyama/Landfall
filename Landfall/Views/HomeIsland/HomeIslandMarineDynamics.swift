@@ -184,6 +184,8 @@ enum HomeIslandMarineDynamics {
         /// Normalized travel direction in the same shader coordinate space.
         let heading: SIMD2<Float>
         let speed: Float
+        /// Vertical hull offset from the undisturbed water plane.
+        let heave: Float
         /// Water-contact footprint in world metres: (length, beam).
         let hullSize: SIMD2<Float>
         let isPresent: Bool
@@ -192,6 +194,7 @@ enum HomeIslandMarineDynamics {
             boatPosition: .zero,
             heading: SIMD2(1, 0),
             speed: 0,
+            heave: 0,
             hullSize: .zero,
             isPresent: false
         )
@@ -206,6 +209,7 @@ enum HomeIslandMarineDynamics {
                 forKey: "uBoatHeading"
             )
             material?.setValue(NSNumber(value: speed), forKey: "uBoatSpeed")
+            material?.setValue(NSNumber(value: heave), forKey: "uBoatHeave")
             material?.setValue(
                 SCNVector3(hullSize.x, hullSize.y, 0),
                 forKey: "uBoatSize"
@@ -386,6 +390,7 @@ enum HomeIslandMarineDynamics {
                     boatPosition: SIMD2(worldPosition.x, -worldPosition.z),
                     heading: SIMD2(wakeHeading.x, -wakeHeading.y),
                     speed: smoothedSpeed,
+                    heave: smoothedMotion.heave,
                     hullSize: SIMD2(tuning.hullLength, tuning.beam),
                     isPresent: true
                 ),
@@ -450,6 +455,7 @@ enum HomeIslandMarineDynamics {
                 boatPosition: SIMD2(position.x, -position.z),
                 heading: SIMD2(wakeHeading.x, -wakeHeading.y),
                 speed: 0,
+                heave: 0,
                 hullSize: SIMD2(tuning.hullLength, tuning.beam),
                 isPresent: true
             )
