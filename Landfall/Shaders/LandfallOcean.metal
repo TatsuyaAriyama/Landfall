@@ -656,6 +656,7 @@ static inline half4 landfallShadeOcean(
 
     float fresnel = 0.025 + 0.975 * pow(1.0 - saturate(dot(normal, viewDirection)), 5.0);
     float3 reflectionDirection = reflect(-viewDirection, normal);
+    float3 celestialDirection = normalize(ocean.sunDirection);
     float skyHeight = saturate(reflectionDirection.y * 0.72 + 0.36);
     float skyBlend = smoothstep(0.06, 0.90, skyHeight);
     // The zenith is optically deeper than the bright, humid horizon. Feeding
@@ -675,6 +676,15 @@ static inline half4 landfallShadeOcean(
     );
     float horizonHaze = 1.0 - smoothstep(0.02, 0.34, abs(reflectionDirection.y));
     reflectedSky = mix(reflectedSky, ocean.horizonColor * 1.06, horizonHaze * 0.28);
+    // The sun also brightens the air around it. Reflect that finite sky lobe
+    // before the fine facet glints below: this creates a continuous light path
+    // across broad waves, while the existing specular terms retain its broken
+    // high-frequency core.
+    float celestialAlignment = saturate(dot(reflectionDirection, celestialDirection));
+    float celestialAureole = pow(celestialAlignment, 10.0) * 0.16
+        + pow(celestialAlignment, 64.0) * 0.34;
+    reflectedSky += ocean.sunColor
+        * (ocean.sunStrength * celestialAureole);
     color = mix(color, reflectedSky, 0.04 + fresnel * 0.34);
 
     // A real water surface catches the bright horizon in narrow, broken facets.
@@ -699,7 +709,7 @@ static inline half4 landfallShadeOcean(
     // Broad facets borrow sky color when they turn toward the light and expose
     // deeper water on the opposing face. The variation follows displaced waves,
     // so it cannot detach into a decorative surface pattern.
-    float2 sunAcrossWater = float2(-ocean.sunDirection.x, ocean.sunDirection.z);
+    float2 sunAcrossWater = float2(-celestialDirection.x, celestialDirection.z);
     sunAcrossWater /= max(length(sunAcrossWater), 0.001);
     float sunwardFacet = saturate(0.5 + dot(in.slope, sunAcrossWater) * 9.4);
     float facetLift = smoothstep(0.53, 0.74, sunwardFacet);
@@ -735,7 +745,7 @@ static inline half4 landfallShadeOcean(
     );
     color *= 1.0 + microFacetRadiance * microFacetVisibility * 0.16;
 
-    float3 halfVector = normalize(viewDirection + normalize(ocean.sunDirection));
+    float3 halfVector = normalize(viewDirection + celestialDirection);
     float sunFacing = max(dot(normal, halfVector), 0.0);
     float sunShoulder = pow(sunFacing, 18.0);
     float sunBroad = pow(sunFacing, 54.0);
@@ -783,7 +793,7 @@ static inline half4 landfallShadeOcean(
             + sunBroad * 0.018
             + sunCore * glintBreakup * mix(0.28, 0.36, lowLightAdaptation));
     float forwardScatter = pow(
-        saturate(dot(viewDirection, -normalize(ocean.sunDirection))),
+        saturate(dot(viewDirection, -celestialDirection)),
         4.0
     );
     color += ocean.sunColor * underwaterScatter * forwardScatter * 0.035;
