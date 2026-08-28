@@ -149,8 +149,8 @@ enum HomeIslandOceanEffects {
     float height = (
         sinA * 0.171 * energyA
         + sinB * 0.104 * energyB
-        + sinC * 0.041
-        + sinD * 0.016
+        + sinC * 0.052
+        + sinD * 0.020
         + sinE * 0.006
     ) * calm;
     float2 gradientA = (
@@ -170,8 +170,8 @@ enum HomeIslandOceanEffects {
         + energyGradientA * (sinA * 0.171)
         + gradientB * (cosB * 0.104 * energyB)
         + energyGradientB * (sinB * 0.104)
-        + dirC * (cosC * 0.041 * 0.340)
-        + dirD * (cosD * 0.016 * 0.720)
+        + dirC * (cosC * 0.052 * 0.340)
+        + dirD * (cosD * 0.020 * 0.720)
         + dirE * (cosE * 0.006 * 1.250)
     ) * calm;
     // Generate white water from the compressed forward face of the same wave
@@ -202,7 +202,7 @@ enum HomeIslandOceanEffects {
     float2 horizontal = (
         dirA * (cosA * 0.171 * 0.72 * energyA)
         + dirB * (cosB * 0.104 * 0.64 * energyB)
-        + dirC * (cosC * 0.041 * 0.44)
+        + dirC * (cosC * 0.052 * 0.44)
     ) * calm;
     float edgeX = 1.0 - smoothstep(
         uSurfaceSize.x * 0.43,

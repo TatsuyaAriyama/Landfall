@@ -138,8 +138,8 @@ static inline LandfallWaveSample landfallSampleWaves(
     float height = (
         sin(phaseA) * 0.171 * energyA
         + sin(phaseB) * 0.104 * energyB
-        + sinC * 0.041
-        + sinD * 0.016
+        + sinC * 0.052
+        + sinD * 0.020
         + sinE * 0.006
     ) * calm;
     float2 gradientA = (
@@ -159,14 +159,14 @@ static inline LandfallWaveSample landfallSampleWaves(
         + energyGradientA * (sin(phaseA) * 0.171)
         + gradientB * (cosB * 0.104 * energyB)
         + energyGradientB * (sin(phaseB) * 0.104)
-        + dirC * (cosC * 0.041 * 0.340)
-        + dirD * (cosD * 0.016 * 0.720)
+        + dirC * (cosC * 0.052 * 0.340)
+        + dirD * (cosD * 0.020 * 0.720)
         + dirE * (cosE * 0.006 * 1.250)
     ) * calm;
     float2 horizontal = (
         dirA * (cosA * 0.171 * 0.72 * energyA)
         + dirB * (cosB * 0.104 * 0.64 * energyB)
-        + dirC * (cosC * 0.041 * 0.44)
+        + dirC * (cosC * 0.052 * 0.44)
     ) * calm;
     // White water is born on the compressed, forward face of energetic wave
     // groups. Keeping this signal in the spectrum makes it travel with the
