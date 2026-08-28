@@ -193,8 +193,12 @@ enum PhoenixNavigator {
 
     // MARK: 汎用メッシュ(スムース法線)
 
-    private static func mesh(_ verts: [SCNVector3], _ indices: [UInt32],
-                             material: SCNMaterial) -> SCNGeometry {
+    private static func mesh(
+        _ verts: [SCNVector3],
+        _ indices: [UInt32],
+        material: SCNMaterial,
+        textureCoordinates: [CGPoint]? = nil
+    ) -> SCNGeometry {
         var normals = [SCNVector3](repeating: SCNVector3(0, 0, 0), count: verts.count)
         var i = 0
         while i + 2 < indices.count {
@@ -206,13 +210,20 @@ enum PhoenixNavigator {
             i += 3
         }
         let nrm = normals.map { v3norm($0) }
-        let vsrc = SCNGeometrySource(vertices: verts)
-        let nsrc = SCNGeometrySource(normals: nrm)
+        var sources = [
+            SCNGeometrySource(vertices: verts),
+            SCNGeometrySource(normals: nrm),
+        ]
+        if let textureCoordinates {
+            sources.append(
+                SCNGeometrySource(textureCoordinates: textureCoordinates)
+            )
+        }
         var idx = indices
         let data = Data(bytes: &idx, count: idx.count * MemoryLayout<UInt32>.size)
         let elem = SCNGeometryElement(data: data, primitiveType: .triangles,
                                       primitiveCount: indices.count / 3, bytesPerIndex: 4)
-        let geo = SCNGeometry(sources: [vsrc, nsrc], elements: [elem])
+        let geo = SCNGeometry(sources: sources, elements: [elem])
         geo.firstMaterial = material
         return geo
     }
@@ -284,8 +295,97 @@ enum PhoenixNavigator {
         return verts
     }
 
+    private static let capeTextureCoordinates: [CGPoint] = {
+        var coordinates: [CGPoint] = []
+        coordinates.reserveCapacity(capeRows * capeCols)
+        for row in 0..<capeRows {
+            let v = CGFloat(row) / CGFloat(capeRows - 1)
+            for column in 0..<capeCols {
+                let u = CGFloat(column) / CGFloat(capeCols - 1) * 2 - 1
+                coordinates.append(CGPoint(x: u, y: v))
+            }
+        }
+        return coordinates
+    }()
+
+    /// Evaluates the same `capePoint` field in the vertex stage. The previous
+    /// CPU path rebuilt vertices, normals, index data and the complete SceneKit
+    /// geometry for every navigator on every frame.
+    private static let capeGeometryShader = """
+    #pragma arguments
+    float3 uCapeMotion;
+    #pragma body
+    float u = _geometry.texcoords[0].x;
+    float v = clamp(_geometry.texcoords[0].y, 0.0, 1.0);
+    float time = uCapeMotion.x;
+    float wind = uCapeMotion.y;
+    float safeV = max(v, 0.0001);
+    float vPow11 = pow(v, 1.1);
+    float vPow15 = pow(v, 1.5);
+    float width = 0.17 + 0.25 * vPow11;
+    float absU = abs(u);
+    float length = 0.40 + 0.10 * pow(absU, 2.4);
+    float flutter = vPow15 * wind;
+    float phaseTime = time * (0.7 + 0.3 * wind);
+    float phaseX = phaseTime * 1.3 + v * 2.0;
+    float phaseY = u * 2.4 + phaseTime * 1.9;
+    float phaseZV = v * 5.2 - phaseTime * 2.1;
+    float phaseZU = u * 2.6 + phaseTime * 1.5;
+    float depth = 0.24 + (wind - 1.0) * 0.09;
+    _geometry.position.xyz = float3(
+        u * width + flutter * sin(phaseX) * 0.02,
+        -v * length + flutter * sin(phaseY) * 0.012,
+        -0.02 - depth * vPow11
+            + flutter * (sin(phaseZV) * 0.05 + sin(phaseZU) * 0.04)
+    );
+
+    // Analytical tangents preserve the smooth cloth lighting without asking
+    // the CPU to regenerate 208 accumulated vertex normals every frame.
+    float dV11 = 1.1 * pow(safeV, 0.1);
+    float dV15 = 1.5 * pow(safeV, 0.5);
+    float dWidthDV = 0.25 * dV11;
+    float dLengthDU = u == 0.0
+        ? 0.0
+        : 0.24 * pow(absU, 1.4) * sign(u);
+    float dFlutterDV = dV15 * wind;
+    float3 tangentU = float3(
+        width,
+        -v * dLengthDU + flutter * cos(phaseY) * 2.4 * 0.012,
+        flutter * cos(phaseZU) * 2.6 * 0.04
+    );
+    float zFlutter = sin(phaseZV) * 0.05 + sin(phaseZU) * 0.04;
+    float3 tangentV = float3(
+        u * dWidthDV
+            + dFlutterDV * sin(phaseX) * 0.02
+            + flutter * cos(phaseX) * 2.0 * 0.02,
+        -length + dFlutterDV * sin(phaseY) * 0.012,
+        -depth * dV11
+            + dFlutterDV * zFlutter
+            + flutter * cos(phaseZV) * 5.2 * 0.05
+    );
+    _geometry.normal = normalize(cross(tangentV, tangentU));
+    """
+
     static func makeCapeGeometry(time: Float, wind: Float) -> SCNGeometry {
-        mesh(capeVerts(time: time, wind: wind), capeIndices, material: capeMat)
+        let material = capeMat
+        material.shaderModifiers = [.geometry: capeGeometryShader]
+        material.setValue(
+            SCNVector3(time, wind, 0),
+            forKey: "uCapeMotion"
+        )
+        let geometry = mesh(
+            capeVerts(time: time, wind: wind),
+            capeIndices,
+            material: material,
+            textureCoordinates: capeTextureCoordinates
+        )
+        // GPU deformation can move beyond the authored frame used to create
+        // the immutable mesh. A fixed conservative box prevents false culling.
+        geometry.boundingBox = (
+            SCNVector3(-0.50, -0.55, -0.62),
+            SCNVector3(0.50, 0.05, 0.10)
+        )
+        return geometry
     }
 
     // MARK: 航海士の組み立て(名前付きピボット)
@@ -808,6 +908,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     private weak var lantern: SCNNode?
     private weak var chart: SCNNode?
     private weak var cape: SCNNode?
+    private weak var capeMaterial: SCNMaterial?
     private weak var glowMat: SCNMaterial?
 
     // ポーズ基本角の現在値(POSE_BASE へ減衰補間)
@@ -839,6 +940,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         lantern = navigator.childNode(withName: "lantern", recursively: true)
         chart = navigator.childNode(withName: "navigatorChart", recursively: true)
         cape = navigator.childNode(withName: "cape", recursively: true)
+        capeMaterial = cape?.geometry?.firstMaterial
         glowMat = navigator.childNode(
             withName: "lanternGlow",
             recursively: true
@@ -904,8 +1006,11 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         breathPhase += dt * breathSpeed
         scanPhase += dt * scanSpeed
 
-        // マント: 布の波(頂点を書き直す)
-        if let cape { cape.geometry = PhoenixNavigator.makeCapeGeometry(time: t, wind: wind) }
+        // マントは不変の格子を保ち、頂点変形だけをGPUへ渡す。
+        capeMaterial?.setValue(
+            SCNVector3(t, wind, 0),
+            forKey: "uCapeMotion"
+        )
 
         let walking = pose == .walk
         let locomotion = locomotionState
