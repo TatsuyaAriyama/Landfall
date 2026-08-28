@@ -664,9 +664,10 @@ enum HomeIslandOceanEffects {
     // surface even at rest; both scale with the actual boat used by the scene.
     float2 boatHeading = uBoatHeading.xy;
     boatHeading /= max(length(boatHeading), 0.001);
+    float2 boatAcross = float2(-boatHeading.y, boatHeading.x);
     float2 fromBoat = p - uBoatPosition.xy;
     float boatLongitudinal = dot(fromBoat, boatHeading);
-    float boatLateral = dot(fromBoat, float2(-boatHeading.y, boatHeading.x));
+    float boatLateral = dot(fromBoat, boatAcross);
     float halfHullLength = max(uBoatSize.x * 0.5, 0.001);
     float halfHullBeam = max(uBoatSize.y * 0.5, 0.001);
     if (uBoatPresence > 0.5) {
@@ -711,6 +712,55 @@ enum HomeIslandOceanEffects {
             -worldViewDirection.z
         );
         viewAcrossWater /= max(length(viewAcrossWater), 0.001);
+        // Match Metal's projected waterplane reflection so an emergency
+        // fallback does not return to a flat halo around the hull.
+        float2 reflectionAcrossAxis = float2(
+            -viewAcrossWater.y,
+            viewAcrossWater.x
+        );
+        float projectedHalfDepth =
+            abs(dot(boatHeading, viewAcrossWater)) * halfHullLength
+            + abs(dot(boatAcross, viewAcrossWater)) * halfHullBeam;
+        float projectedHalfSpan =
+            abs(dot(boatHeading, reflectionAcrossAxis)) * halfHullLength
+            + abs(dot(boatAcross, reflectionAcrossAxis)) * halfHullBeam;
+        float reflectionDistance = dot(fromBoat, viewAcrossWater)
+            - projectedHalfDepth;
+        float reflectionLength = max(halfHullLength * 0.92, 0.72)
+            * mix(0.80, 1.65, 1.0 - viewElevation);
+        float waveShift = dot(detailSlope, viewAcrossWater) * 1.8;
+        float reflectionAge = clamp(
+            (reflectionDistance + waveShift) / reflectionLength,
+            0.0,
+            1.0
+        );
+        float reflectionSpan = projectedHalfSpan
+            * mix(0.96, 0.44, reflectionAge);
+        float acrossDistance = abs(
+            dot(fromBoat, reflectionAcrossAxis)
+                + dot(detailSlope, reflectionAcrossAxis) * 2.6
+        );
+        float projectedReflection = smoothstep(
+            -0.045,
+            0.080,
+            reflectionDistance + waveShift
+        ) * (1.0 - smoothstep(0.68, 1.0, reflectionAge))
+            * (1.0 - smoothstep(
+                reflectionSpan * 0.66,
+                reflectionSpan,
+                acrossDistance
+            ));
+        float projectedBreakup = smoothstep(
+            0.24,
+            0.82,
+            0.5 + 0.5 * sin(
+                reflectionDistance * 8.3
+                    + dot(p, reflectionAcrossAxis) * 5.1
+                    + height * 17.0 - uTime * 0.46
+            )
+        );
+        projectedReflection *= mix(0.42, 1.0, projectedBreakup)
+            * macroVisibility;
         float reflectionFacing = smoothstep(
             -0.20,
             0.72,
@@ -729,11 +779,15 @@ enum HomeIslandOceanEffects {
             uBoatReflectionColor,
             reflectionIllumination
         );
+        float reflectionWeight = reflectedHull * reflectionLobe
+                * (0.025 + reflectionBreak * 0.095)
+            + projectedReflection
+                * (0.028 + projectedBreakup * 0.080)
+                * mix(0.76, 1.12, fresnel);
         col = mix(
             col,
             reflectedHullColor,
-            reflectedHull * reflectionLobe
-                * (0.025 + reflectionBreak * 0.095) * surfaceEdge
+            clamp(reflectionWeight * surfaceEdge, 0.0, 1.0)
         );
         float meniscusFacing = mix(0.22, 1.0, reflectionFacing);
         col = mix(

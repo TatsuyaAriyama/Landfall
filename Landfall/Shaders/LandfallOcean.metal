@@ -1051,6 +1051,54 @@ static inline half4 landfallShadeOcean(
         viewAcrossWater /= max(length(viewAcrossWater), 0.001);
         float2 fromBoat = boat.heading * boat.longitudinal
             + boat.across * boat.lateral;
+        // Project the real waterplane onto the camera-facing surface, then let
+        // the same wave normal bend and break the reflected silhouette. This
+        // keeps the reflection attached without drawing a mirrored boat decal.
+        float2 reflectionAcrossAxis = float2(
+            -viewAcrossWater.y,
+            viewAcrossWater.x
+        );
+        float projectedHalfDepth =
+            abs(dot(boat.heading, viewAcrossWater)) * boat.halfLength
+            + abs(dot(boat.across, viewAcrossWater)) * boat.halfBeam;
+        float projectedHalfSpan =
+            abs(dot(boat.heading, reflectionAcrossAxis)) * boat.halfLength
+            + abs(dot(boat.across, reflectionAcrossAxis)) * boat.halfBeam;
+        float reflectionDistance = dot(fromBoat, viewAcrossWater)
+            - projectedHalfDepth;
+        float reflectionLength = max(boat.halfLength * 0.92, 0.72)
+            * mix(0.80, 1.65, 1.0 - viewElevation);
+        float waveShift = dot(detailSlope, viewAcrossWater) * 1.8;
+        float reflectionAge = saturate(
+            (reflectionDistance + waveShift) / reflectionLength
+        );
+        float reflectionSpan = projectedHalfSpan
+            * mix(0.96, 0.44, reflectionAge);
+        float acrossDistance = abs(
+            dot(fromBoat, reflectionAcrossAxis)
+                + dot(detailSlope, reflectionAcrossAxis) * 2.6
+        );
+        float projectedReflection = smoothstep(
+            -0.045,
+            0.080,
+            reflectionDistance + waveShift
+        ) * (1.0 - smoothstep(0.68, 1.0, reflectionAge))
+            * (1.0 - smoothstep(
+                reflectionSpan * 0.66,
+                reflectionSpan,
+                acrossDistance
+            ));
+        float projectedBreakup = smoothstep(
+            0.24,
+            0.82,
+            0.5 + 0.5 * sin(
+                reflectionDistance * 8.3
+                    + dot(p, reflectionAcrossAxis) * 5.1
+                    + in.height * 17.0 - ocean.time * 0.46
+            )
+        );
+        projectedReflection *= mix(0.42, 1.0, projectedBreakup)
+            * macroVisibility;
         float reflectionFacing = smoothstep(
             -0.20,
             0.72,
@@ -1068,11 +1116,15 @@ static inline half4 landfallShadeOcean(
             ocean.boatReflectionColor,
             reflectionIllumination
         );
+        float reflectionWeight = hull.reflectedHull * reflectionLobe
+                * (0.025 + hull.reflectionBreakup * 0.095)
+            + projectedReflection
+                * (0.028 + projectedBreakup * 0.080)
+                * mix(0.76, 1.12, fresnel);
         color = mix(
             color,
             reflectedHullColor,
-            hull.reflectedHull * reflectionLobe
-                * (0.025 + hull.reflectionBreakup * 0.095)
+            saturate(reflectionWeight)
         );
         float meniscusFacing = mix(0.22, 1.0, reflectionFacing);
         color = mix(
