@@ -1754,8 +1754,10 @@ enum VoyageSceneKit {
         let localNormal = simd_normalize(
             buoyancyNode.simdConvertVector(surface.normal, from: nil)
         )
+        // The voyage bob is physically lowered to the authored waterline.
+        // `localContact` therefore already contains that offset; adding it a
+        // second time would put the wet boundary above the depth intersection.
         let waterline = simd_dot(localContact, localNormal)
-            + authoredBoatWaterline
         for material in materials {
             material.setValue(NSNumber(value: waterline), forKey: "uBoatWaterline")
             material.setValue(
@@ -2474,6 +2476,10 @@ enum VoyageSceneKit {
         travel.scale = SCNVector3(0.55, 0.55, 0.55)
         let bob = SCNNode()
         bob.name = "boatBob"
+        // The imported hull's designed water plane is local Y = 0.07. Align
+        // that plane with the ocean geometry so depth occlusion, wet material,
+        // analytical contact shadow and wake all begin at one physical line.
+        bob.position.y = -authoredBoatWaterline
         let boat = makeBoatModel(
             boatParts,
             seaBounce: oceanAppearance.sea,
