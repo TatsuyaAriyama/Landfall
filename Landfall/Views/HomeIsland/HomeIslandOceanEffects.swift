@@ -703,7 +703,10 @@ enum HomeIslandOceanEffects {
     // Keep the wake below foam contrast: it is a short veil of aerated water
     // with two broken divergent arms, never a row of detached particles.
     if (uBoatSpeed > 0.08) {
-        float wakeOriginOffset = max(halfHullLength * 0.72, 0.18);
+        // Match the native Metal footprint: overlap the stern slightly, then
+        // grow both churn and divergent shoulders from the measured hull beam.
+        float sternOverlap = min(halfHullLength * 0.14, 0.18);
+        float wakeOriginOffset = halfHullLength - sternOverlap;
         float2 wakeOrigin = uBoatPosition.xy - boatHeading * wakeOriginOffset;
         float2 fromWake = p - wakeOrigin;
         float aft = -dot(fromWake, boatHeading);
@@ -719,7 +722,11 @@ enum HomeIslandOceanEffects {
                 aft * 1.35 + signedLateral * 1.9 - uTime * 0.62
             );
             float centerDrift = (slowFlow - 0.5) * mix(0.04, 0.10, wakeAge);
-            float wakeWidth = mix(0.10, 0.16, wakeStrength) + aft * 0.018;
+            float wakeWidth = mix(
+                max(halfHullBeam * 0.20, 0.08),
+                max(halfHullBeam * 0.32, 0.14),
+                wakeStrength
+            ) + aft * 0.018;
             float centerChurn = 1.0 - smoothstep(
                 wakeWidth,
                 wakeWidth + 0.14,
@@ -736,12 +743,16 @@ enum HomeIslandOceanEffects {
                 )
             );
             centerChurn *= centerTail * (0.30 + centerBreak * 0.70);
-            float armCenter = 0.07 + aft * 0.22;
+            float armCenter = halfHullBeam * 1.10 + aft * 0.21;
             float armDistance = abs(abs(signedLateral) - armCenter);
-            float armWidth = mix(0.035, 0.080, wakeAge);
+            float armWidth = mix(
+                max(halfHullBeam * 0.08, 0.035),
+                max(halfHullBeam * 0.17, 0.080),
+                wakeAge
+            );
             float divergentArms = 1.0 - smoothstep(
                 armWidth,
-                armWidth + 0.105,
+                armWidth + max(halfHullBeam * 0.23, 0.085),
                 armDistance
             );
             float armPhase = aft * 5.1
