@@ -45,14 +45,29 @@ enum VoyageSailFlutter {
     float amount = (billow + ripple * 0.55) * belly * uWind * uSailThrow;
     _geometry.position.xyz += uSailNormal * amount;
 
-    // 面の傾きも同じ式の微分で追う。これがないと、動いているのに陰影だけが
-    // 止まって見え、板が滑っているようになる。
+    // 面の傾きも同じ式の縦横微分で追う。弦方向だけを更新すると、高さ方向へ
+    // 走る皺の陰影が止まり、大きな帆ほど規則的な光帯に見える。
     float chordSpan = max(dot(uSailSpan, uChordAxis), 0.0001);
-    float dRipple = (cos(phase) * 0.62 + cos(phase * 1.73 + 1.1) * 0.26 * 1.73) * 7.4;
-    float dBelly = 3.14159265 * cos(3.14159265 * u) * sin(3.14159265 * v);
-    float dAmount = (dRipple * 0.55 * belly + (billow + ripple * 0.55) * dBelly)
+    float riseSpan = max(dot(uSailSpan, uRiseAxis), 0.0001);
+    float dRipplePhase = cos(phase) * 0.62
+        + cos(phase * 1.73 + 1.1) * 0.26 * 1.73;
+    float dBellyU = 3.14159265 * cos(3.14159265 * u)
+        * sin(3.14159265 * v);
+    float dBellyV = 3.14159265 * sin(3.14159265 * u)
+        * cos(3.14159265 * v);
+    float shape = billow + ripple * 0.55;
+    float dShapeU = dRipplePhase * 7.4 * 0.55;
+    float dShapeV = cos(t * 1.35 + v * 0.8) * 0.45 * 0.8
+        + dRipplePhase * 2.6 * 0.55;
+    float dAmountU = (dShapeU * belly + shape * dBellyU)
         * uWind * uSailThrow;
-    _geometry.normal = normalize(_geometry.normal - uChordAxis * (dAmount / chordSpan));
+    float dAmountV = (dShapeV * belly + shape * dBellyV)
+        * uWind * uSailThrow;
+    _geometry.normal = normalize(
+        _geometry.normal
+            - uChordAxis * (dAmountU / chordSpan)
+            - uRiseAxis * (dAmountV / riseSpan)
+    );
     """
 
     /// 帆の素材へシェーダを差し、帆の寸法から動く向きと量を決める。
