@@ -132,6 +132,13 @@ enum VoyageSailFlutter {
 enum VoyageBowSpray {
     static let nodeName = "voyageBowSpray"
 
+    struct HullProfile {
+        let bowContactX: Float
+        let halfBeam: Float
+
+        static let standard = HullProfile(bowContactX: 1.34, halfBeam: 0.57)
+    }
+
     struct Palette {
         let sea: UIColor
         let highlight: UIColor
@@ -260,7 +267,53 @@ enum VoyageBowSpray {
         var nodeName: String { "\(VoyageBowSpray.nodeName)-\(rawValue)" }
     }
 
-    static func makeNode(palette: Palette) -> SCNNode {
+    /// Measures only low geometry crossing the authored waterline. Tall merged
+    /// rigging and bowsprits cannot pull the emitter ahead of the physical hull.
+    static func hullProfile(in root: SCNNode, waterline: Float) -> HullProfile {
+        var minimumX = Float.greatestFiniteMagnitude
+        var maximumX = -Float.greatestFiniteMagnitude
+        var minimumZ = Float.greatestFiniteMagnitude
+        var maximumZ = -Float.greatestFiniteMagnitude
+
+        root.enumerateChildNodes { node, _ in
+            guard node.geometry != nil else { return }
+            let bounds = node.boundingBox
+            let corners = [
+                SCNVector3(bounds.min.x, bounds.min.y, bounds.min.z),
+                SCNVector3(bounds.min.x, bounds.min.y, bounds.max.z),
+                SCNVector3(bounds.min.x, bounds.max.y, bounds.min.z),
+                SCNVector3(bounds.min.x, bounds.max.y, bounds.max.z),
+                SCNVector3(bounds.max.x, bounds.min.y, bounds.min.z),
+                SCNVector3(bounds.max.x, bounds.min.y, bounds.max.z),
+                SCNVector3(bounds.max.x, bounds.max.y, bounds.min.z),
+                SCNVector3(bounds.max.x, bounds.max.y, bounds.max.z),
+            ].map { node.convertPosition($0, to: root) }
+            let xValues = corners.map(\.x)
+            let yValues = corners.map(\.y)
+            let zValues = corners.map(\.z)
+            guard let lowest = yValues.min(),
+                  let highest = yValues.max(),
+                  lowest <= waterline + 0.02,
+                  highest <= waterline + 1.15
+            else { return }
+
+            minimumX = min(minimumX, xValues.min() ?? minimumX)
+            maximumX = max(maximumX, xValues.max() ?? maximumX)
+            minimumZ = min(minimumZ, zValues.min() ?? minimumZ)
+            maximumZ = max(maximumZ, zValues.max() ?? maximumZ)
+        }
+
+        guard minimumX.isFinite, maximumX.isFinite,
+              minimumZ.isFinite, maximumZ.isFinite
+        else { return .standard }
+        let hullLength = max(maximumX - minimumX, 0.1)
+        return HullProfile(
+            bowContactX: maximumX - max(hullLength * 0.018, 0.035),
+            halfBeam: max(max(abs(minimumZ), abs(maximumZ)), 0.1)
+        )
+    }
+
+    static func makeNode(palette: Palette, hull: HullProfile) -> SCNNode {
         let root = SCNNode()
         root.name = nodeName
         for layer in Layer.allCases {
@@ -268,7 +321,7 @@ enum VoyageBowSpray {
             layerNode.name = layer.nodeName
             for side in [Float(1), Float(-1)] {
                 let emitter = SCNNode()
-                emitter.position = position(for: layer, side: side)
+                emitter.position = position(for: layer, side: side, hull: hull)
                 emitter.addParticleSystem(
                     makeSystem(layer: layer, side: side, palette: palette)
                 )
@@ -294,11 +347,18 @@ enum VoyageBowSpray {
         )
     }
 
-    private static func position(for layer: Layer, side: Float) -> SCNVector3 {
+    private static func position(
+        for layer: Layer,
+        side: Float,
+        hull: HullProfile
+    ) -> SCNVector3 {
         switch layer {
-        case .streaks: SCNVector3(1.24, 0.08, 0.19 * side)
-        case .mist: SCNVector3(1.18, 0.03, 0.23 * side)
-        case .flecks: SCNVector3(1.20, 0.01, 0.24 * side)
+        case .streaks:
+            SCNVector3(hull.bowContactX, 0.08, hull.halfBeam * 0.33 * side)
+        case .mist:
+            SCNVector3(hull.bowContactX - 0.06, 0.03, hull.halfBeam * 0.40 * side)
+        case .flecks:
+            SCNVector3(hull.bowContactX - 0.04, 0.01, hull.halfBeam * 0.42 * side)
         }
     }
 

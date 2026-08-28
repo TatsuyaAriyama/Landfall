@@ -2568,6 +2568,10 @@ enum VoyageSceneKit {
             sunColor: oceanAppearance.sun,
             sunStrength: oceanAppearance.sunStrength
         )
+        let sprayHull = VoyageBowSpray.hullProfile(
+            in: boat,
+            waterline: authoredBoatWaterline
+        )
         attachNavigator(to: boat)
         bob.addChildNode(boat)
         // しぶきは船体と一緒に上下し、その時間帯の海色と反射色を受け継ぐ。
@@ -2576,7 +2580,8 @@ enum VoyageSceneKit {
                 palette: .init(
                     sea: UIColor(rgb: palette.sea),
                     highlight: UIColor(rgb: palette.reflection)
-                )
+                ),
+                hull: sprayHull
             )
         )
         travel.addChildNode(bob)
