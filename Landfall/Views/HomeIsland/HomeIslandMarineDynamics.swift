@@ -166,23 +166,15 @@ enum HomeIslandMarineDynamics {
         )
 
         func apply(to material: SCNMaterial?) {
+            let packet = simd_float4x4(columns: (
+                SIMD4(boatPosition.x, boatPosition.y, heading.x, heading.y),
+                SIMD4(speed, heave, hullSize.x, hullSize.y),
+                SIMD4(isPresent ? Float(1) : Float(0), 0, 0, 0),
+                SIMD4(0, 0, 0, 1)
+            ))
             material?.setValue(
-                SCNVector3(boatPosition.x, boatPosition.y, 0),
-                forKey: "uBoatPosition"
-            )
-            material?.setValue(
-                SCNVector3(heading.x, heading.y, 0),
-                forKey: "uBoatHeading"
-            )
-            material?.setValue(NSNumber(value: speed), forKey: "uBoatSpeed")
-            material?.setValue(NSNumber(value: heave), forKey: "uBoatHeave")
-            material?.setValue(
-                SCNVector3(hullSize.x, hullSize.y, 0),
-                forKey: "uBoatSize"
-            )
-            material?.setValue(
-                NSNumber(value: isPresent ? Float(1) : Float(0)),
-                forKey: "uBoatPresence"
+                NSValue(scnMatrix4: SCNMatrix4(packet)),
+                forKey: "uBoatWake"
             )
         }
     }

@@ -131,9 +131,14 @@ enum MetalOceanProgram {
 #endif
     }
 
-    private static func vector2(named key: String, from material: SCNMaterial) -> SIMD2<Float>? {
-        guard let value = material.value(forKey: key) as? SCNVector3 else { return nil }
-        return SIMD2(value.x, value.y)
+    private static func matrix(
+        named key: String,
+        from material: SCNMaterial
+    ) -> simd_float4x4? {
+        guard let value = material.value(forKey: key) as? NSValue else {
+            return nil
+        }
+        return simd_float4x4(value.scnMatrix4Value)
     }
 
     private static func vector3(named key: String, from material: SCNMaterial) -> SIMD3<Float>? {
@@ -166,15 +171,14 @@ enum MetalOceanProgram {
             from: material,
             default: HomeIslandOceanEffects.currentTime
         )
-        uniforms.boatPosition = vector2(named: "uBoatPosition", from: material)
-            ?? uniforms.boatPosition
-        uniforms.boatHeading = vector2(named: "uBoatHeading", from: material)
-            ?? uniforms.boatHeading
-        uniforms.boatSpeed = number(named: "uBoatSpeed", from: material)
-        uniforms.boatHeave = number(named: "uBoatHeave", from: material)
-        uniforms.boatSize = vector2(named: "uBoatSize", from: material)
-            ?? uniforms.boatSize
-        uniforms.boatPresence = number(named: "uBoatPresence", from: material)
+        if let wake = matrix(named: "uBoatWake", from: material) {
+            uniforms.boatPosition = SIMD2(wake.columns.0.x, wake.columns.0.y)
+            uniforms.boatHeading = SIMD2(wake.columns.0.z, wake.columns.0.w)
+            uniforms.boatSpeed = wake.columns.1.x
+            uniforms.boatHeave = wake.columns.1.y
+            uniforms.boatSize = SIMD2(wake.columns.1.z, wake.columns.1.w)
+            uniforms.boatPresence = wake.columns.2.x
+        }
         uniforms.boatReflectionColor = vector3(
             named: "uBoatReflectionColor",
             from: material

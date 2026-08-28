@@ -222,11 +222,12 @@ enum HomeIslandOceanEffects {
     float3 uSurfaceSize;
     float3 uCoordinateOffset;
     float uShoreline;
-    float3 uBoatPosition;
-    float uBoatPresence;
+    float4x4 uBoatWake;
     #pragma body
     float2 localP = _geometry.position.xy;
     float2 p = localP + uCoordinateOffset.xy;
+    float2 boatPosition = uBoatWake[0].xy;
+    float boatPresence = uBoatWake[2].x;
     float distanceFromIsland = length(float2(p.x * 0.72, p.y));
     \(waveSpectrumShader)
     // Five directional components make a compact Gerstner-style field. The
@@ -257,9 +258,9 @@ enum HomeIslandOceanEffects {
         float2(localP.x * 0.72, localP.y)
     ) / surfaceRadius;
     float rangeResolved = 1.0 - smoothstep(0.40, 0.90, normalizedRange);
-    float subjectDistance = length(p - uBoatPosition.xy);
+    float subjectDistance = length(p - boatPosition);
     float subjectResolved = 1.0 - smoothstep(5.0, 14.0, subjectDistance);
-    float subjectLOD = uBoatPresence * (1.0 - uShoreline);
+    float subjectLOD = boatPresence * (1.0 - uShoreline);
     float geometryVisibility = mix(
         rangeResolved,
         subjectResolved,
@@ -291,17 +292,18 @@ enum HomeIslandOceanEffects {
     float3 uCoordinateOffset;
     float uShoreline;
     float uIslandScale;
-    float3 uBoatPosition;
-    float3 uBoatHeading;
-    float uBoatSpeed;
-    float uBoatHeave;
-    float3 uBoatSize;
-    float uBoatPresence;
+    float4x4 uBoatWake;
     float3 uBoatReflectionColor;
     float uMicroNormalScale;
     #pragma body
     float2 localP = (_surface.diffuseTexcoord - 0.5) * uSurfaceSize.xy;
     float2 p = localP + uCoordinateOffset.xy;
+    float2 boatPosition = uBoatWake[0].xy;
+    float2 boatHeading = uBoatWake[0].zw;
+    float boatSpeed = uBoatWake[1].x;
+    float boatHeave = uBoatWake[1].y;
+    float2 boatSize = uBoatWake[1].zw;
+    float boatPresence = uBoatWake[2].x;
     float distanceFromIsland = length(float2(p.x * 0.72, p.y));
     \(waveSpectrumShader)
     float edgeX = 1.0 - smoothstep(
@@ -320,9 +322,9 @@ enum HomeIslandOceanEffects {
         float2(localP.x * 0.72, localP.y)
     ) / surfaceRadius;
     float rangeResolved = 1.0 - smoothstep(0.40, 0.90, normalizedViewRange);
-    float subjectDistance = length(p - uBoatPosition.xy);
+    float subjectDistance = length(p - boatPosition);
     float subjectResolved = 1.0 - smoothstep(5.0, 14.0, subjectDistance);
-    float subjectLOD = uBoatPresence * (1.0 - uShoreline);
+    float subjectLOD = boatPresence * (1.0 - uShoreline);
     float geometryVisibility = mix(
         rangeResolved,
         subjectResolved,
@@ -374,12 +376,12 @@ enum HomeIslandOceanEffects {
         0.62,
         pixelFootprint
     );
-    float detailFadeStart = uBoatPresence > 0.5 ? 2.5 : surfaceRadius * 0.48;
-    float detailFadeEnd = uBoatPresence > 0.5 ? 10.0 : surfaceRadius * 0.92;
+    float detailFadeStart = boatPresence > 0.5 ? 2.5 : surfaceRadius * 0.48;
+    float detailFadeEnd = boatPresence > 0.5 ? 10.0 : surfaceRadius * 0.92;
     float distanceVisibility = 1.0 - smoothstep(
         detailFadeStart,
         detailFadeEnd,
-        uBoatPresence > 0.5
+        boatPresence > 0.5
             ? subjectDistance
             : normalizedViewRange * surfaceRadius
     );
@@ -749,15 +751,14 @@ enum HomeIslandOceanEffects {
     // Boat uniforms use ocean-plane coordinates: (world X, -world Z). A soft
     // underwater footprint and narrow meniscus keep the hull attached to the
     // surface even at rest; both scale with the actual boat used by the scene.
-    float2 boatHeading = uBoatHeading.xy;
     boatHeading /= max(length(boatHeading), 0.001);
     float2 boatAcross = float2(-boatHeading.y, boatHeading.x);
-    float2 fromBoat = p - uBoatPosition.xy;
+    float2 fromBoat = p - boatPosition;
     float boatLongitudinal = dot(fromBoat, boatHeading);
     float boatLateral = dot(fromBoat, boatAcross);
-    float halfHullLength = max(uBoatSize.x * 0.5, 0.001);
-    float halfHullBeam = max(uBoatSize.y * 0.5, 0.001);
-    if (uBoatPresence > 0.5) {
+    float halfHullLength = max(boatSize.x * 0.5, 0.001);
+    float halfHullBeam = max(boatSize.y * 0.5, 0.001);
+    if (boatPresence > 0.5) {
         float longitudinalUnit = boatLongitudinal / halfHullLength;
         float lateralUnit = boatLateral / halfHullBeam;
         float hullExponent = mix(
@@ -770,7 +771,7 @@ enum HomeIslandOceanEffects {
                 + pow(abs(lateralUnit), hullExponent),
             1.0 / hullExponent
         );
-        float relativeSurfaceHeight = clamp(height - uBoatHeave, -0.12, 0.16);
+        float relativeSurfaceHeight = clamp(height - boatHeave, -0.12, 0.16);
         float contactScale = 1.0 + relativeSurfaceHeight * 1.10;
         hullDistance = max(hullDistance / contactScale, 0.001);
         float contactLoad = smoothstep(-0.07, 0.11, relativeSurfaceHeight);
@@ -907,16 +908,16 @@ enum HomeIslandOceanEffects {
 
     // Keep the wake below foam contrast: it is a short veil of aerated water
     // with two broken divergent arms, never a row of detached particles.
-    if (uBoatSpeed > 0.08) {
+    if (boatSpeed > 0.08) {
         // Match the native Metal footprint: overlap the stern slightly, then
         // grow both churn and divergent shoulders from the measured hull beam.
         float sternOverlap = min(halfHullLength * 0.14, 0.18);
         float wakeOriginOffset = halfHullLength - sternOverlap;
-        float2 wakeOrigin = uBoatPosition.xy - boatHeading * wakeOriginOffset;
+        float2 wakeOrigin = boatPosition - boatHeading * wakeOriginOffset;
         float2 fromWake = p - wakeOrigin;
         float aft = -dot(fromWake, boatHeading);
         float signedLateral = dot(fromWake, float2(-boatHeading.y, boatHeading.x));
-        float wakeStrength = smoothstep(0.08, 1.60, uBoatSpeed);
+        float wakeStrength = smoothstep(0.08, 1.60, boatSpeed);
         float wakeLength = mix(1.6, 3.6, wakeStrength);
         if (aft > 0.0 && aft < wakeLength) {
             float wakeAge = clamp(aft / wakeLength, 0.0, 1.0);
@@ -1092,12 +1093,7 @@ enum HomeIslandOceanEffects {
             forKey: "uShoreline"
         )
         material.setValue(NSNumber(value: islandScale), forKey: "uIslandScale")
-        material.setValue(SCNVector3Zero, forKey: "uBoatPosition")
-        material.setValue(SCNVector3(0, 1, 0), forKey: "uBoatHeading")
-        material.setValue(NSNumber(value: Float(0)), forKey: "uBoatSpeed")
-        material.setValue(NSNumber(value: Float(0)), forKey: "uBoatHeave")
-        material.setValue(SCNVector3Zero, forKey: "uBoatSize")
-        material.setValue(NSNumber(value: Float(0)), forKey: "uBoatPresence")
+        HomeIslandMarineDynamics.WakeState.inactive.apply(to: material)
         material.setValue(
             linearColorVector(0xA6B7AF),
             forKey: "uBoatReflectionColor"
