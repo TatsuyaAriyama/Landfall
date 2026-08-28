@@ -1588,6 +1588,27 @@ enum VoyageSceneKit {
         (scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz
     );
     float upFacing = dot(normal, worldUp);
+    // SceneKit's broad ambient light keeps small boat parts readable, but can
+    // flatten the hull, sail and mast into one value. Reintroduce a restrained
+    // wrapped form term from the exact celestial direction used by the ocean.
+    // It costs no shadow pass and still leaves the opposite side lit by sky.
+    float celestialForm = smoothstep(
+        -0.42,
+        0.72,
+        dot(normal, sunDirection)
+    );
+    float skyForm = smoothstep(-0.68, 0.76, upFacing);
+    float formLight = mix(skyForm, celestialForm, 0.62);
+    float formContrast = mix(
+        0.055,
+        0.135,
+        sqrt(clamp(uBoatSunStrength, 0.0, 1.0))
+    );
+    _surface.diffuse.rgb *= mix(
+        1.0 - formContrast,
+        1.0 + formContrast * 0.46,
+        formLight
+    );
     // A material reflects the direction opposite the incoming view ray. Using
     // the surface normal here made every broad hull panel choose one flat
     // palette, even while the camera moved around it.
