@@ -136,10 +136,19 @@ static inline LandfallWaveSample landfallSampleWaves(
     float energyB = 1.0 + sin(energyPhaseB) * 0.14;
     float2 energyGradientA = dirF * (cos(energyPhaseA) * 0.052 * 0.18);
     float2 energyGradientB = dirG * (cos(energyPhaseB) * 0.073 * 0.14);
+    // A restrained Stokes-like second harmonic tightens each dominant crest
+    // and broadens its trough. Height, slope and horizontal motion share the
+    // same phase, so the mesh, boat response and whitewater stay coherent.
+    float harmonicPhaseA = phaseA * 2.0 + 0.35;
+    float harmonicPhaseB = phaseB * 2.0 - 0.62;
+    float shapedA = sin(phaseA) + sin(harmonicPhaseA) * 0.18;
+    float shapedB = sin(phaseB) + sin(harmonicPhaseB) * 0.13;
+    float shapedDerivativeA = cosA + cos(harmonicPhaseA) * 0.36;
+    float shapedDerivativeB = cosB + cos(harmonicPhaseB) * 0.26;
 
     float height = (
-        sin(phaseA) * 0.171 * energyA
-        + sin(phaseB) * 0.104 * energyB
+        shapedA * 0.171 * energyA
+        + shapedB * 0.104 * energyB
         + sinC * 0.052
         + sinD * 0.020
         + sinE * 0.006
@@ -157,17 +166,17 @@ static inline LandfallWaveSample landfallSampleWaves(
         - dirG * (cosG * 0.073 * 0.42)
     );
     float2 slope = (
-        gradientA * (cosA * 0.171 * energyA)
-        + energyGradientA * (sin(phaseA) * 0.171)
-        + gradientB * (cosB * 0.104 * energyB)
-        + energyGradientB * (sin(phaseB) * 0.104)
+        gradientA * (shapedDerivativeA * 0.171 * energyA)
+        + energyGradientA * (shapedA * 0.171)
+        + gradientB * (shapedDerivativeB * 0.104 * energyB)
+        + energyGradientB * (shapedB * 0.104)
         + dirC * (cosC * 0.052 * 0.340)
         + dirD * (cosD * 0.020 * 0.720)
         + dirE * (cosE * 0.006 * 1.250)
     ) * calm;
     float2 horizontal = (
-        dirA * (cosA * 0.171 * 0.72 * energyA)
-        + dirB * (cosB * 0.104 * 0.64 * energyB)
+        dirA * ((cosA + cos(harmonicPhaseA) * 0.18) * 0.171 * 0.72 * energyA)
+        + dirB * ((cosB + cos(harmonicPhaseB) * 0.13) * 0.104 * 0.64 * energyB)
         + dirC * (cosC * 0.052 * 0.44)
     ) * calm;
     // White water is born on the compressed, forward face of energetic wave

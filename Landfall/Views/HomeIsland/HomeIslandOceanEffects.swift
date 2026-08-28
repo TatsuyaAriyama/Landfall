@@ -146,9 +146,17 @@ enum HomeIslandOceanEffects {
     float energyB = 1.0 + sin(energyPhaseB) * 0.14;
     float2 energyGradientA = dirF * (cos(energyPhaseA) * 0.052 * 0.18);
     float2 energyGradientB = dirG * (cos(energyPhaseB) * 0.073 * 0.14);
+    // Match the native Stokes-like profile: sharper crests, broader troughs,
+    // and one coherent phase for geometry, boat motion and whitewater.
+    float harmonicPhaseA = phaseA * 2.0 + 0.35;
+    float harmonicPhaseB = phaseB * 2.0 - 0.62;
+    float shapedA = sinA + sin(harmonicPhaseA) * 0.18;
+    float shapedB = sinB + sin(harmonicPhaseB) * 0.13;
+    float shapedDerivativeA = cosA + cos(harmonicPhaseA) * 0.36;
+    float shapedDerivativeB = cosB + cos(harmonicPhaseB) * 0.26;
     float height = (
-        sinA * 0.171 * energyA
-        + sinB * 0.104 * energyB
+        shapedA * 0.171 * energyA
+        + shapedB * 0.104 * energyB
         + sinC * 0.052
         + sinD * 0.020
         + sinE * 0.006
@@ -166,10 +174,10 @@ enum HomeIslandOceanEffects {
         - dirG * (cosG * 0.073 * 0.42)
     );
     float2 slope = (
-        gradientA * (cosA * 0.171 * energyA)
-        + energyGradientA * (sinA * 0.171)
-        + gradientB * (cosB * 0.104 * energyB)
-        + energyGradientB * (sinB * 0.104)
+        gradientA * (shapedDerivativeA * 0.171 * energyA)
+        + energyGradientA * (shapedA * 0.171)
+        + gradientB * (shapedDerivativeB * 0.104 * energyB)
+        + energyGradientB * (shapedB * 0.104)
         + dirC * (cosC * 0.052 * 0.340)
         + dirD * (cosD * 0.020 * 0.720)
         + dirE * (cosE * 0.006 * 1.250)
