@@ -324,9 +324,11 @@ private enum ShareVoyageBackdropRenderer {
         let key = "\(theme.rawValue)-\(BoatCustomization.appearanceKey)"
         if let cached = cachedImages[key] { return cached }
 
+        let renderTime: TimeInterval = 3.4
         let scene = VoyageSceneKit.makeVoyagingScene(
             showIsland: true,
             timeOfDay: theme.timeOfDay,
+            oceanTime: Float(renderTime),
             nativeMetalRollout: .stillImage
         )
 
@@ -350,7 +352,7 @@ private enum ShareVoyageBackdropRenderer {
         renderer.pointOfView = camera
         renderer.autoenablesDefaultLighting = false
         let image = renderer.snapshot(
-            atTime: 3.4,
+            atTime: renderTime,
             with: renderSize,
             antialiasingMode: .multisampling4X
         )

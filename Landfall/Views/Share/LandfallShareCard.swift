@@ -231,18 +231,22 @@ enum LandfallShareRenderer {
 
     private static func renderWorld() -> UIImage {
         let scale: CGFloat = 3
+        let renderTime: TimeInterval = 2.4
         let size = CGSize(
             width: LFMetrics.cardSize.width * scale,
             height: LFMetrics.cardSize.height * scale
         )
         let view = SCNView(frame: CGRect(origin: .zero, size: size))
         view.contentScaleFactor = 1
-        view.scene = VoyageSceneKit.makeLandfallScene(nativeMetalRollout: .stillImage)
+        view.scene = VoyageSceneKit.makeLandfallScene(
+            oceanTime: Float(renderTime),
+            nativeMetalRollout: .stillImage
+        )
         view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
         view.backgroundColor = VoyageSceneKit.nightBG
         view.antialiasingMode = .multisampling4X
         view.autoenablesDefaultLighting = false
-        view.sceneTime = 2.4
+        view.sceneTime = renderTime
         if let scene = view.scene {
             view.prepare(scene, shouldAbortBlock: nil)
         }

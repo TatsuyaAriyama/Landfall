@@ -18,23 +18,25 @@ enum WidgetVoyageStillRenderer {
             return
         }
 
+        let renderTime: TimeInterval = 3.5
         let scene = VoyageSceneKit.makeVoyagingScene(
             showIsland: true,
             timeOfDay: .night,
+            oceanTime: Float(renderTime),
             nativeMetalRollout: .stillImage
         )
         let navigator = PhoenixAnimator()
         navigator.pose = PhoenixPose.selected
         navigator.animate = false
         navigator.bindIfNeeded(scene)
-        navigator.step(t: 3.5, dt: 1)
+        navigator.step(t: Float(renderTime), dt: 1)
 
         let renderer = SCNRenderer(device: nil, options: nil)
         renderer.scene = scene
         renderer.pointOfView = scene.rootNode.childNode(withName: "camera", recursively: false)
         renderer.autoenablesDefaultLighting = false
         let image = renderer.snapshot(
-            atTime: 3.5,
+            atTime: renderTime,
             with: CGSize(width: 900, height: 520),
             antialiasingMode: .multisampling4X
         )

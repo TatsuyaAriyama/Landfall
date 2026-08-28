@@ -896,6 +896,7 @@ enum HomeIslandOceanEffects {
         layout: Layout = .homeIsland,
         appearance: Appearance = .daylight,
         islandScale: Float = HomeIslandExpansionPolicy.baseScale,
+        oceanTime: Float = HomeIslandOceanEffects.currentTime,
         nativeMetalRollout: MetalOceanProgram.RolloutScene
     ) -> HomeIslandOceanScene {
         let root = SCNNode()
@@ -929,7 +930,7 @@ enum HomeIslandOceanEffects {
         } else {
             material.shaderModifiers = fallbackShaderModifiers
         }
-        material.setValue(NSNumber(value: currentTime), forKey: "uTime")
+        material.setValue(NSNumber(value: oceanTime), forKey: "uTime")
         material.setValue(linearColorVector(appearance.shallow), forKey: "uShallow")
         material.setValue(linearColorVector(appearance.sea), forKey: "uSea")
         material.setValue(linearColorVector(appearance.deep), forKey: "uDeep")

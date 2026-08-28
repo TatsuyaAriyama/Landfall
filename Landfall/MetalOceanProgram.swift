@@ -164,7 +164,15 @@ enum MetalOceanProgram {
                 &uniformStorageKey
               ) as? UniformStorage else { return }
         var uniforms = storage.uniforms
-        uniforms.time = HomeIslandOceanEffects.currentTime
+        // The material owns the scene clock. Interactive coordinators advance
+        // it every frame, Reduce Motion freezes it, and offscreen renderers set
+        // a deterministic phase. Reading one source keeps native Metal aligned
+        // with the shader-modifier fallback in all three modes.
+        uniforms.time = number(
+            named: "uTime",
+            from: material,
+            default: HomeIslandOceanEffects.currentTime
+        )
         uniforms.boatPosition = vector2(named: "uBoatPosition", from: material)
             ?? uniforms.boatPosition
         uniforms.boatHeading = vector2(named: "uBoatHeading", from: material)
