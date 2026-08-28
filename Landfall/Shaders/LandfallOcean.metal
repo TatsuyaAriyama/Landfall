@@ -286,8 +286,21 @@ static inline LandfallWakeSample landfallSampleWake(
     // retain a sparse primary pocket while the secondary field breaks its edge.
     float bubbleCells = bubblePrimary * mix(0.28, 1.0, bubbleSecondary);
     float bubbleBreakup = smoothstep(0.32, 0.74, bubbleCells);
+    // Fresh prop wash reads as one aerated mass. As it travels aft, the same
+    // advected cells become gaps, leaving separated pockets before the tail dies.
+    float foamAge = smoothstep(0.10, 0.72, age);
+    float pocketIntegrity = mix(
+        0.66 + bubbleBreakup * 0.34,
+        0.08 + bubbleBreakup * 0.92,
+        foamAge
+    );
+    float tailDissolve = mix(
+        1.0,
+        smoothstep(0.40, 0.86, bubbleSecondary),
+        smoothstep(0.48, 0.92, age)
+    );
     float aeration = disturbance
-        * mix(0.07, 0.78, bubbleBreakup)
+        * pocketIntegrity * tailDissolve
         * mix(0.72, 1.0, turbulence);
 
     // The foamy core dissipates quickly, but its energy continues outward as

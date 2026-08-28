@@ -687,20 +687,42 @@ enum HomeIslandOceanEffects {
                 armWidth + 0.105,
                 armDistance
             );
-            float armBreak = 0.5 + 0.5 * sin(
-                aft * 5.1 - abs(signedLateral) * 7.3 - uTime * 1.18
-            );
+            float armPhase = aft * 5.1
+                - abs(signedLateral) * 7.3 - uTime * 1.18;
+            float armBreak = 0.5 + 0.5 * sin(armPhase);
             divergentArms *= smoothstep(0.04, 0.18, aft)
                 * (0.32 + smoothstep(0.30, 0.84, armBreak) * 0.68);
             float disturbance = max(
                 centerChurn * 0.58,
                 divergentArms * 0.84
             ) * lengthFade * wakeStrength * surfaceEdge;
-            float turbulence = 0.5 + 0.5 * sin(
-                aft * 2.35 + signedLateral * 4.7
-                    + sin(aft * 0.83) * 1.15 - uTime * 0.91
+            float turbulencePhase = aft * 2.35 + signedLateral * 4.7
+                + sin(aft * 0.83) * 1.15 - uTime * 0.91;
+            float turbulence = 0.5 + 0.5 * sin(turbulencePhase);
+            float bubblePrimary = 0.5 + 0.5 * sin(
+                turbulencePhase * 1.83 + signedLateral * 5.1
             );
-            float aeration = disturbance * mix(0.34, 0.72, turbulence);
+            float bubbleSecondary = 0.5 + 0.5 * cos(
+                armPhase * 1.37 - aft * 3.2
+            );
+            float bubbleCells = bubblePrimary
+                * mix(0.28, 1.0, bubbleSecondary);
+            float bubbleBreakup = smoothstep(0.32, 0.74, bubbleCells);
+            // Preserve a connected stern wash, then dissolve it into advected
+            // pockets so the tail cannot read as a uniformly painted stripe.
+            float foamAge = smoothstep(0.10, 0.72, wakeAge);
+            float pocketIntegrity = mix(
+                0.66 + bubbleBreakup * 0.34,
+                0.08 + bubbleBreakup * 0.92,
+                foamAge
+            );
+            float tailDissolve = mix(
+                1.0,
+                smoothstep(0.40, 0.86, bubbleSecondary),
+                smoothstep(0.48, 0.92, wakeAge)
+            );
+            float aeration = disturbance * pocketIntegrity * tailDissolve
+                * mix(0.72, 1.0, turbulence);
             col = mix(col, foamColor, aeration * 0.15);
         }
     }
