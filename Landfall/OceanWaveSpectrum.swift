@@ -43,10 +43,10 @@ enum OceanWaveSpectrum {
         let sinI = sin(phaseI)
         let cosH = cos(phaseH)
         let cosI = cos(phaseI)
-        phases[0] += sinC * 0.34 + sinD * 0.10
-            + sin(phaseF) * 0.55 + sinH * 0.46 + sinI * 0.18
-        phases[1] += -sinD * 0.26 + sinE * 0.08
-            - sin(phaseG) * 0.42 - sinH * 0.24 + sinI * 0.36
+        phases[0] += sinC * 0.20 + sinD * 0.05
+            + sin(phaseF) * 0.45 + sinH * 0.08 + sinI * 0.04
+        phases[1] += -sinD * 0.12 + sinE * 0.04
+            - sin(phaseG) * 0.36 - sinH * 0.05 + sinI * 0.06
 
         let cosA = cos(phases[0])
         let cosB = cos(phases[1])
@@ -65,17 +65,17 @@ enum OceanWaveSpectrum {
         let energyGradientB = warpDirectionG
             * (cos(energyPhaseB) * 0.073 * 0.14)
         var phaseGradientA = waves[0].direction * waves[0].waveNumber
-        phaseGradientA += waves[2].direction * (cosC * 0.340 * 0.34)
-        phaseGradientA += waves[3].direction * (cosD * 0.720 * 0.10)
-        phaseGradientA += warpDirectionF * (cosF * 0.052 * 0.55)
-        phaseGradientA += warpDirectionH * (cosH * 0.310 * 0.46)
-        phaseGradientA += warpDirectionI * (cosI * 0.470 * 0.18)
+        phaseGradientA += waves[2].direction * (cosC * 0.340 * 0.20)
+        phaseGradientA += waves[3].direction * (cosD * 0.720 * 0.05)
+        phaseGradientA += warpDirectionF * (cosF * 0.052 * 0.45)
+        phaseGradientA += warpDirectionH * (cosH * 0.310 * 0.08)
+        phaseGradientA += warpDirectionI * (cosI * 0.470 * 0.04)
         var phaseGradientB = waves[1].direction * waves[1].waveNumber
-        phaseGradientB -= waves[3].direction * (cosD * 0.720 * 0.26)
-        phaseGradientB += waves[4].direction * (cosE * 1.250 * 0.08)
-        phaseGradientB -= warpDirectionG * (cosG * 0.073 * 0.42)
-        phaseGradientB -= warpDirectionH * (cosH * 0.310 * 0.24)
-        phaseGradientB += warpDirectionI * (cosI * 0.470 * 0.36)
+        phaseGradientB -= waves[3].direction * (cosD * 0.720 * 0.12)
+        phaseGradientB += waves[4].direction * (cosE * 1.250 * 0.04)
+        phaseGradientB -= warpDirectionG * (cosG * 0.073 * 0.36)
+        phaseGradientB -= warpDirectionH * (cosH * 0.310 * 0.05)
+        phaseGradientB += warpDirectionI * (cosI * 0.470 * 0.06)
         let phaseGradients = [
             phaseGradientA,
             phaseGradientB,

@@ -41,7 +41,7 @@ enum HomeIslandMarineDynamics {
                 1,
                 HomeIslandMarineDynamics.smoothstep(10, 34, distance)
             )
-            let calm: Float = includesShoreline ? coastalCalm : 0.72
+            let calm: Float = includesShoreline ? coastalCalm : 0.24
 
             let spectrum = OceanWaveSpectrum.sample(
                 at: p,

@@ -7,19 +7,19 @@ enum OceanWaveSpectrumProbe {
         let fixtures: [Fixture] = [
             Fixture(
                 position: SIMD2(0, 0), time: 0, amplitudeScale: 0.72,
-                height: 0.24883008, slope: SIMD2(0.026959412, 0.016132101)
+                height: 0.19088425, slope: SIMD2(0.02711326, 0.02110169)
             ),
             Fixture(
                 position: SIMD2(3.25, -1.75), time: 4.2, amplitudeScale: 0.72,
-                height: -0.22312282, slope: SIMD2(-0.008904569, -0.009035387)
+                height: -0.18642691, slope: SIMD2(-0.011568914, -0.008069211)
             ),
             Fixture(
                 position: SIMD2(-8.5, 12.25), time: 11.8, amplitudeScale: 0.91,
-                height: 0.0657505, slope: SIMD2(-0.0055370783, -0.0038195795)
+                height: 0.10149609, slope: SIMD2(-0.015772676, -0.013976369)
             ),
             Fixture(
                 position: SIMD2(18, -22), time: 29.4, amplitudeScale: 1,
-                height: -0.2848109, slope: SIMD2(0.013507379, 0.015734665)
+                height: -0.36181536, slope: SIMD2(0.009689759, 0.0030359384)
             ),
         ]
         for fixture in fixtures {
@@ -80,11 +80,11 @@ enum OceanWaveSpectrumProbe {
         let acrossCurvature = (portResidual + starboardResidual) * 0.5
 
         require(
-            abs(forwardCurvature - -0.003_363_087_8) < 0.000_002,
+            abs(forwardCurvature - -0.002_201_584) < 0.000_002,
             "forward hull curvature fixture"
         )
         require(
-            abs(acrossCurvature - -0.000_788_922_77) < 0.000_002,
+            abs(acrossCurvature - -0.000_615_655_44) < 0.000_002,
             "across hull curvature fixture"
         )
     }

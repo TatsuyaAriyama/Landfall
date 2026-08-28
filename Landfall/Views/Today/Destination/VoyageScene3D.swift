@@ -2640,11 +2640,11 @@ enum VoyageSceneKit {
         let oceanAppearance = customOceanAppearance
             ?? makeVoyagingOceanAppearance(timeOfDay: timeOfDay, palette: palette)
         let scene = SCNScene()
-        scene.background.contents = makeVoyagingSkyBackground(
+        let atmosphere = makeVoyagingAtmosphereProfile(
             timeOfDay: timeOfDay,
-            palette: palette,
-            horizon: oceanAppearance.fog
+            palette: palette
         )
+        scene.background.contents = UIColor(rgb: atmosphere.zenith)
         scene.fogColor = UIColor(rgb: oceanAppearance.fog)
         scene.fogStartDistance = 12
         scene.fogEndDistance = 34
@@ -2714,8 +2714,8 @@ enum VoyageSceneKit {
             scene.rootNode.addChildNode($0)
         }
         let camera = makeCamera(
-            position: SCNVector3(-5.6, 2.4, 8.6),
-            target: SCNVector3(0.8, 1.15, 0),
+            position: SCNVector3(-5.6, 3.4, 8.6),
+            target: SCNVector3(0.8, 1.25, 0),
             fov: 38
         )
         // 海面の発光感は残しつつ、帆・木・金属のハイライトを白飛びさせない。
@@ -2728,113 +2728,165 @@ enum VoyageSceneKit {
         camera.camera?.screenSpaceAmbientOcclusionRadius = 1.25
         camera.camera?.screenSpaceAmbientOcclusionBias = 0.025
         camera.camera?.screenSpaceAmbientOcclusionDepthThreshold = 2.0
+        camera.addChildNode(
+            makeVoyagingSkyDome(
+                atmosphere: atmosphere,
+                oceanAppearance: oceanAppearance
+            )
+        )
         scene.rootNode.addChildNode(camera)
         return scene
     }
 
-    /// 単色の背景では海面が平面に見えるため、天頂から水平線までの
-    /// 大気の厚みを小さな手続きテクスチャにする。海の反射と同じ時間帯パレットを使う。
-    private static func makeVoyagingSkyBackground(
-        timeOfDay: AftideHomeTimeOfDay,
-        palette: AftideHomePalette,
-        horizon: UInt
-    ) -> UIImage {
-        let sky = UIColor(rgb: palette.sky)
-        let fog = UIColor(rgb: horizon)
-        let reflection = UIColor(rgb: palette.reflection)
-        let zenithScale: CGFloat
-        let sunX: CGFloat
-        switch timeOfDay {
-        case .morning:
-            zenithScale = 0.82
-            sunX = 0.24
-        case .day:
-            zenithScale = 0.88
-            sunX = 0.50
-        case .evening:
-            zenithScale = 0.72
-            sunX = 0.76
-        case .night:
-            zenithScale = 0.54
-            sunX = 0.72
-        }
-        let upperHaze = mixColor(sky, fog, amount: 0.55)
-        let format = UIGraphicsImageRendererFormat()
-        format.opaque = true
-        format.scale = 1
-        return UIGraphicsImageRenderer(
-            size: CGSize(width: 192, height: 512),
-            format: format
-        ).image { renderer in
-            let context = renderer.cgContext
-            let colorSpace = CGColorSpaceCreateDeviceRGB()
-            let colors = [
-                sky.scaled(zenithScale).cgColor,
-                sky.cgColor,
-                upperHaze.cgColor,
-                fog.cgColor,
-                fog.cgColor,
-                fog.cgColor,
-            ] as CFArray
-            if let gradient = CGGradient(
-                colorsSpace: colorSpace,
-                colors: colors,
-                // The default voyage camera places the geometric horizon at
-                // roughly 30% of the portrait viewport. Center the dense haze
-                // there so the sky and the far rows of water share one color.
-                locations: [0, 0.18, 0.245, 0.285, 0.36, 1]
-            ) {
-                context.drawLinearGradient(
-                    gradient,
-                    start: CGPoint(x: 96, y: 0),
-                    end: CGPoint(x: 96, y: 512),
-                    options: []
-                )
-            }
-
-            guard timeOfDay != .night else { return }
-            let haloColors = [
-                reflection.withAlphaComponent(0.18).cgColor,
-                reflection.withAlphaComponent(0.055).cgColor,
-                reflection.withAlphaComponent(0).cgColor,
-            ] as CFArray
-            guard let halo = CGGradient(
-                colorsSpace: colorSpace,
-                colors: haloColors,
-                locations: [0, 0.34, 1]
-            ) else { return }
-            context.setBlendMode(.screen)
-            // Keep the solar bloom in the upper atmosphere. Letting this
-            // background-only light cross the geometric horizon brightens the
-            // sky without brightening the water and reveals a ruler-straight
-            // seam, even when the ocean itself has converged to the fog color.
-            context.drawRadialGradient(
-                halo,
-                startCenter: CGPoint(x: 192 * sunX, y: 92),
-                startRadius: 0,
-                endCenter: CGPoint(x: 192 * sunX, y: 92),
-                endRadius: 78,
-                options: []
-            )
-        }
+    private struct VoyagingAtmosphereProfile {
+        let zenith: UInt
+        let upperHaze: UInt
+        let horizonGlow: UInt
+        let edgeFog: UInt
     }
 
-    private static func mixColor(
-        _ lhs: UIColor,
-        _ rhs: UIColor,
-        amount: CGFloat
-    ) -> UIColor {
-        var lr: CGFloat = 0, lg: CGFloat = 0, lb: CGFloat = 0, la: CGFloat = 0
-        var rr: CGFloat = 0, rg: CGFloat = 0, rb: CGFloat = 0, ra: CGFloat = 0
-        lhs.getRed(&lr, green: &lg, blue: &lb, alpha: &la)
-        rhs.getRed(&rr, green: &rg, blue: &rb, alpha: &ra)
-        let t = min(max(amount, 0), 1)
-        return UIColor(
-            red: lr + (rr - lr) * t,
-            green: lg + (rg - lg) * t,
-            blue: lb + (rb - lb) * t,
-            alpha: la + (ra - la) * t
+    private static func makeVoyagingAtmosphereProfile(
+        timeOfDay: AftideHomeTimeOfDay,
+        palette: AftideHomePalette
+    ) -> VoyagingAtmosphereProfile {
+        let zenithDepth: Float
+        let horizonWarmth: Float
+        switch timeOfDay {
+        case .morning:
+            zenithDepth = 0.18
+            horizonWarmth = 0.12
+        case .day:
+            zenithDepth = 0.14
+            horizonWarmth = 0.10
+        case .evening:
+            zenithDepth = 0.22
+            horizonWarmth = 0.14
+        case .night:
+            zenithDepth = 0.30
+            horizonWarmth = 0.07
+        }
+        let edgeFog = voyagingAtmosphereColor(
+            timeOfDay: timeOfDay,
+            palette: palette
         )
+        let zenith = mixedRGB(
+            palette.sky,
+            palette.seaDeep,
+            weight: zenithDepth
+        )
+        return VoyagingAtmosphereProfile(
+            zenith: zenith,
+            upperHaze: mixedRGB(zenith, edgeFog, weight: 0.58),
+            horizonGlow: mixedRGB(
+                edgeFog,
+                palette.reflection,
+                weight: horizonWarmth
+            ),
+            edgeFog: edgeFog
+        )
+    }
+
+    static func voyagingBackdropColor(
+        for timeOfDay: AftideHomeTimeOfDay
+    ) -> UIColor {
+        let palette = timeOfDay == .night
+            ? AftideHomePalette.voyagingNight
+            : timeOfDay.palette
+        return UIColor(
+            rgb: makeVoyagingAtmosphereProfile(
+                timeOfDay: timeOfDay,
+                palette: palette
+            ).zenith
+        )
+    }
+
+    private static let voyagingSkySurfaceShader = """
+    #pragma arguments
+    float3 uZenith;
+    float3 uUpperHaze;
+    float3 uHorizonGlow;
+    float3 uEdgeFog;
+    float3 uCelestialColor;
+    float3 uCelestialDirection;
+    float uCelestialStrength;
+    #pragma body
+    float3 viewRay = normalize(_surface.position);
+    float3 worldRay = normalize(
+        (scn_frame.inverseViewTransform * float4(viewRay, 0.0)).xyz
+    );
+    float altitude = worldRay.y;
+    float upperBlend = smoothstep(0.04, 0.74, altitude);
+    float3 skyColor = mix(uUpperHaze, uZenith, upperBlend);
+    float belowHorizon = 1.0 - smoothstep(-0.10, 0.035, altitude);
+    skyColor = mix(skyColor, uEdgeFog, belowHorizon);
+    float horizonBand = 1.0 - smoothstep(0.012, 0.18, abs(altitude));
+    skyColor = mix(skyColor, uHorizonGlow, horizonBand * 0.72);
+    float celestialAlignment = clamp(
+        dot(worldRay, normalize(uCelestialDirection)),
+        0.0,
+        1.0
+    );
+    float adaptedStrength = mix(
+        0.22,
+        1.0,
+        smoothstep(0.08, 0.62, uCelestialStrength)
+    );
+    float aureole = pow(celestialAlignment, 9.0) * 0.10
+        + pow(celestialAlignment, 48.0) * 0.16;
+    skyColor += uCelestialColor * aureole * adaptedStrength;
+    _surface.diffuse = float4(max(skyColor, 0.0), 1.0);
+    """
+
+    private static func makeVoyagingSkyDome(
+        atmosphere: VoyagingAtmosphereProfile,
+        oceanAppearance: HomeIslandOceanEffects.Appearance
+    ) -> SCNNode {
+        let sphere = SCNSphere(radius: 150)
+        sphere.segmentCount = 48
+        let material = SCNMaterial()
+        material.name = "voyaging-world-space-atmosphere"
+        material.lightingModel = .constant
+        material.diffuse.contents = UIColor(rgb: atmosphere.zenith)
+        material.isDoubleSided = true
+        // Draw the dome after opaque scene content so early depth testing
+        // shades only the visible sky instead of over-drawing the full screen.
+        material.readsFromDepthBuffer = true
+        material.writesToDepthBuffer = false
+        material.shaderModifiers = [.surface: voyagingSkySurfaceShader]
+        material.setValue(
+            linearRGB(UIColor(rgb: atmosphere.zenith)),
+            forKey: "uZenith"
+        )
+        material.setValue(
+            linearRGB(UIColor(rgb: atmosphere.upperHaze)),
+            forKey: "uUpperHaze"
+        )
+        material.setValue(
+            linearRGB(UIColor(rgb: atmosphere.horizonGlow)),
+            forKey: "uHorizonGlow"
+        )
+        material.setValue(
+            linearRGB(UIColor(rgb: atmosphere.edgeFog)),
+            forKey: "uEdgeFog"
+        )
+        material.setValue(
+            linearRGB(UIColor(rgb: oceanAppearance.sun)),
+            forKey: "uCelestialColor"
+        )
+        material.setValue(
+            oceanAppearance.sunDirection,
+            forKey: "uCelestialDirection"
+        )
+        material.setValue(
+            NSNumber(value: oceanAppearance.sunStrength),
+            forKey: "uCelestialStrength"
+        )
+        sphere.firstMaterial = material
+
+        let node = SCNNode(geometry: sphere)
+        node.name = "voyagingSkyDome"
+        node.renderingOrder = 1_000
+        return node
     }
 
     private static func linearRGB(_ color: UIColor) -> SCNVector3 {
@@ -2857,7 +2909,7 @@ enum VoyageSceneKit {
         if timeOfDay == .night {
             let moon = LandfallMoonEffects.makeNode(phase: .current(at: date))
             moon.position = SCNVector3(5.1, 3.3, -5.5)
-            moon.scale = SCNVector3(0.4, 0.4, 0.4)
+            moon.scale = SCNVector3(0.26, 0.26, 0.26)
             return moon
         }
         let sphere = SCNSphere(radius: 1.25)
@@ -2891,7 +2943,7 @@ enum VoyageSceneKit {
         return node
     }
 
-    private static let voyagingLightTarget = SCNVector3(0.8, 1.15, 0)
+    private static let voyagingLightTarget = SCNVector3(0.8, 1.25, 0)
 
     private static func voyagingCelestialStrength(
         for timeOfDay: AftideHomeTimeOfDay
@@ -2921,19 +2973,24 @@ enum VoyageSceneKit {
         let source = voyagingCelestialPosition(for: timeOfDay)
         let target = voyagingLightTarget
         let strength = voyagingCelestialStrength(for: timeOfDay)
-        let horizon = voyagingAtmosphereColor(
+        let atmosphere = makeVoyagingAtmosphereProfile(
             timeOfDay: timeOfDay,
             palette: palette
         )
+        let sea = mixedRGB(palette.sea, palette.seaDeep, weight: 0.18)
+        let deep = mixedRGB(palette.seaDeep, 0x123F4A, weight: 0.16)
+        let shallow = timeOfDay == .night
+            ? sea
+            : mixedRGB(sea, palette.fill, weight: 0.38)
         return HomeIslandOceanEffects.Appearance(
-            shallow: timeOfDay == .night ? palette.sea : palette.fill,
-            sea: palette.sea,
-            deep: palette.seaDeep,
+            shallow: shallow,
+            sea: sea,
+            deep: deep,
             light: palette.reflection,
             sky: palette.sky,
-            horizon: horizon,
+            horizon: atmosphere.horizonGlow,
             sun: palette.reflection,
-            fog: horizon,
+            fog: atmosphere.edgeFog,
             sunDirection: SCNVector3(
                 source.x - target.x,
                 source.y - target.y,
@@ -3712,7 +3769,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             nativeMetalRollout: .timerVoyage
         )
         view.scene = scene
-        view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
+        view.backgroundColor = VoyageSceneKit.voyagingBackdropColor(for: timeOfDay)
         view.antialiasingMode = guidedIntroduction
             ? .multisampling2X
             : metalProfile.antialiasingMode
@@ -3777,7 +3834,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
                 nativeMetalRollout: .timerVoyage
             )
             view.scene = scene
-            view.backgroundColor = UIColor(rgb: timeOfDay.palette.sky)
+            view.backgroundColor = VoyageSceneKit.voyagingBackdropColor(for: timeOfDay)
             view.pointOfView = view.scene?.rootNode.childNode(withName: "camera", recursively: false)
             context.coordinator.bindCamera()
         }
@@ -3826,15 +3883,14 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             category: "MetalOceanPerformance"
         )
 
-        // Web VoyagingWorld:
-        // camera [-5.6, 2.4, 8.6], target [0.8, 1.15, 0], fov 38
-        // min/max distance 4...16, polar 0.12π...0.49π, damping 0.05
-        private let target = SCNVector3(0.8, 1.15, 0)
-        private let initialPosition = SCNVector3(-5.6, 2.4, 8.6)
+        // The slightly raised default keeps the hull-water contact readable on
+        // portrait screens while preserving the established close orbit.
+        private let target = SCNVector3(0.8, 1.25, 0)
+        private let initialPosition = SCNVector3(-5.6, 3.4, 8.6)
         private let minimumDistance: Float = 4
         private let maximumDistance: Float = 16
         private let minimumPolar: Float = .pi * 0.12
-        private let maximumPolar: Float = .pi * 0.49
+        private let maximumPolar: Float = .pi * 0.45
         private let dampingFactor: Float = 0.05
         private lazy var initialDistance: Float = {
             let dx = initialPosition.x - target.x
@@ -4109,8 +4165,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         }
 
         func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
-            if seaMaterial?.program != nil,
-               framePacing.observe(
+            if framePacing.observe(
                    at: time,
                    targetFramesPerSecond: view?.preferredFramesPerSecond ?? 60
                ) {

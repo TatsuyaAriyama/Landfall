@@ -490,7 +490,9 @@ struct HomeVoyageTimerView: View {
             }
         }
         .background(
-            (rendersScene ? Color(hex: timeOfDay.palette.sky) : Color.clear)
+            (rendersScene
+                ? Color(uiColor: VoyageSceneKit.voyagingBackdropColor(for: timeOfDay))
+                : Color.clear)
                 .ignoresSafeArea()
         )
         // Preserve the current timer controls/material appearance even when the
