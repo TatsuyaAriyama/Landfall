@@ -57,6 +57,24 @@ struct MetalRenderingProfile {
         }
     }
 
+    /// Directional self-shadow quality for the boat, sail and deck. Lower tiers
+    /// keep the same lighting composition with a smaller raster target.
+    var celestialShadowMapSize: CGFloat {
+        switch tier {
+        case .compatible: return 512
+        case .enhanced: return 1_024
+        case .ultra: return 2_048
+        }
+    }
+
+    var celestialShadowRadius: CGFloat {
+        switch tier {
+        case .compatible: return 2.5
+        case .enhanced: return 4
+        case .ultra: return 5.5
+        }
+    }
+
     static func sceneViewOptions() -> [String: Any] {
         [SCNView.Option.preferredRenderingAPI.rawValue: SCNRenderingAPI.metal.rawValue]
     }

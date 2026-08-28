@@ -2250,6 +2250,23 @@ enum VoyageSceneKit {
 
     // MARK: - 光・カメラ
 
+    private static func configureCelestialShadow(
+        on light: SCNLight,
+        strength: Float
+    ) {
+        let profile = MetalRenderingProfile.current
+        let mapSize = profile.celestialShadowMapSize
+        light.castsShadow = true
+        light.shadowMode = .deferred
+        light.shadowColor = UIColor.black.withAlphaComponent(
+            CGFloat(0.25 + (1 - min(max(strength, 0), 1)) * 0.12)
+        )
+        light.shadowRadius = profile.celestialShadowRadius
+        light.shadowBias = 0.012
+        light.shadowMapSize = CGSize(width: mapSize, height: mapSize)
+        light.automaticallyAdjustsShadowProjection = true
+    }
+
     static func makeLights() -> [SCNNode] {
         // 月光: sand の directional+暖色の弱い ambient+海色の弱い fill(Web と同構成)。
         let ambient = SCNLight()
@@ -2263,6 +2280,7 @@ enum VoyageSceneKit {
         key.type = .directional
         key.color = sand
         key.intensity = 1050
+        configureCelestialShadow(on: key, strength: 0.10)
         let keyNode = SCNNode()
         keyNode.light = key
         keyNode.position = SCNVector3(-6, 8, -5)
@@ -2880,6 +2898,9 @@ enum VoyageSceneKit {
         key.light?.type = .directional
         key.light?.color = UIColor(rgb: palette.key)
         key.light?.intensity = CGFloat(220 + 880 * strength)
+        if let light = key.light {
+            configureCelestialShadow(on: light, strength: strength)
+        }
         key.position = voyagingCelestialPosition(for: timeOfDay)
         key.look(at: voyagingLightTarget)
 
