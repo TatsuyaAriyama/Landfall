@@ -174,6 +174,15 @@ enum HomeIslandOceanEffects {
         + dirD * (cosD * 0.016 * 0.720)
         + dirE * (cosE * 0.006 * 1.250)
     ) * calm;
+    // Generate white water from the compressed forward face of the same wave
+    // groups that displace the mesh, so foam remains attached to the crest.
+    float breakingA = smoothstep(0.58, 0.94, sinA)
+        * smoothstep(0.03, 0.52, -cosA)
+        * smoothstep(0.94, 1.13, energyA);
+    float breakingB = smoothstep(0.62, 0.95, sinB)
+        * smoothstep(0.04, 0.55, -cosB)
+        * smoothstep(0.95, 1.11, energyB) * 0.72;
+    float breaking = max(breakingA, breakingB) * calm;
     """
 
     private static let geometryShader = """
@@ -468,14 +477,19 @@ enum HomeIslandOceanEffects {
     // Only sufficiently high, steep and broken crests produce white water.
     // This removes the repeating bright lines that made the former surface
     // read as a patterned plane.
-    float crestSteepness = smoothstep(0.028, 0.058, length(slope));
-    float crestBreakup = 0.5 + 0.5 * sin(
+    float crestSteepness = smoothstep(0.022, 0.052, length(slope));
+    float foamTexture = 0.5 + 0.5 * sin(
         dot(p, float2(0.91, 0.67))
             + sin(dot(p, float2(-0.21, 0.34))) * 1.8
             - uTime * 0.61
     );
-    float crestFoam = crest * crestSteepness
-        * smoothstep(0.42, 0.80, crestBreakup) * macroVisibility;
+    float foamFragments = mix(
+        0.42,
+        1.0,
+        smoothstep(0.36, 0.82, foamTexture)
+    );
+    float crestFoam = breaking * mix(0.32, 1.0, crestSteepness) * foamFragments
+        * macroVisibility;
     // Aerated water reflects the current environment instead of acting as a
     // white emissive overlay. This keeps moonlit wake visible but attached to
     // the night sea, while daylight foam retains its brighter scattering.

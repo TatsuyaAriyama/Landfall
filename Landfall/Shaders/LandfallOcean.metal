@@ -47,6 +47,7 @@ struct LandfallOceanVertexOut {
     float2 oceanPosition;
     float2 slope;
     float height;
+    float breaking;
     float3 cameraPosition;
 };
 
@@ -54,6 +55,7 @@ struct LandfallWaveSample {
     float height;
     float2 slope;
     float2 horizontal;
+    float breaking;
 };
 
 struct LandfallWakeSample {
@@ -166,7 +168,17 @@ static inline LandfallWaveSample landfallSampleWaves(
         + dirB * (cosB * 0.104 * 0.64 * energyB)
         + dirC * (cosC * 0.041 * 0.44)
     ) * calm;
-    return {height, slope, horizontal};
+    // White water is born on the compressed, forward face of energetic wave
+    // groups. Keeping this signal in the spectrum makes it travel with the
+    // displaced crest instead of sliding across the surface as decorative noise.
+    float breakingA = smoothstep(0.58, 0.94, sin(phaseA))
+        * smoothstep(0.03, 0.52, -cosA)
+        * smoothstep(0.94, 1.13, energyA);
+    float breakingB = smoothstep(0.62, 0.95, sin(phaseB))
+        * smoothstep(0.04, 0.55, -cosB)
+        * smoothstep(0.95, 1.11, energyB) * 0.72;
+    float breaking = max(breakingA, breakingB) * calm;
+    return {height, slope, horizontal, breaking};
 }
 
 static inline LandfallBoatFrame landfallBoatFrame(
@@ -458,6 +470,7 @@ vertex LandfallOceanVertexOut landfallOceanVertex(
     out.oceanPosition = oceanPosition;
     out.slope = waves.slope * edge;
     out.height = waves.height * edge;
+    out.breaking = waves.breaking * edge;
     // SceneKit supplies SCNSceneBuffer to the vertex stage. Passing the camera
     // through avoids requesting an unbound custom `frame` attachment from each
     // fragment function, which otherwise leaves only the safety underlay visible.
@@ -817,14 +830,19 @@ static inline half4 landfallShadeOcean(
     );
     color += ocean.sunColor * underwaterScatter * forwardScatter * 0.035;
 
-    float crestSteepness = smoothstep(0.028, 0.058, length(in.slope));
-    float crestBreakup = 0.5 + 0.5 * sin(
+    float crestSteepness = smoothstep(0.022, 0.052, length(in.slope));
+    float foamTexture = 0.5 + 0.5 * sin(
         dot(p, float2(0.91, 0.67))
             + sin(dot(p, float2(-0.21, 0.34))) * 1.8
             - ocean.time * 0.61
     );
-    float crestFoam = crest * crestSteepness
-        * smoothstep(0.42, 0.80, crestBreakup) * macroVisibility;
+    float foamFragments = mix(
+        0.42,
+        1.0,
+        smoothstep(0.36, 0.82, foamTexture)
+    );
+    float crestFoam = in.breaking * mix(0.32, 1.0, crestSteepness) * foamFragments
+        * macroVisibility * (1.0 - horizonField * 0.76);
     // Foam scatters the light available in the scene; it does not glow with a
     // fixed white value after sunset. Keep the same material response at every
     // time of day while letting the shared lighting palette set its radiance.
