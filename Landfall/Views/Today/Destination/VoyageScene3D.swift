@@ -3130,6 +3130,18 @@ enum VoyageSceneKit {
 
 /// Web VoyagingWorld の船・航跡・カモメを毎フレーム駆動する。
 final class VoyagingHomeAnimator: NSObject {
+    private struct GullVisual {
+        let node: SCNNode
+        let leftWing: SCNNode?
+        let rightWing: SCNNode?
+
+        init(node: SCNNode) {
+            self.node = node
+            leftWing = node.childNode(withName: "leftWing", recursively: false)
+            rightWing = node.childNode(withName: "rightWing", recursively: false)
+        }
+    }
+
     private struct DesiredState {
         var revision: UInt64 = 0
         var resting = false
@@ -3168,9 +3180,10 @@ final class VoyagingHomeAnimator: NSObject {
     private weak var marineScene: SCNScene?
     private weak var travel: SCNNode?
     private weak var bob: SCNNode?
+    private weak var boatFlag: SCNNode?
     private weak var approachingIsland: SCNNode?
     private weak var seaMaterial: SCNMaterial?
-    private var gulls: [SCNNode] = []
+    private var gulls: [GullVisual] = []
     private let sailor = PhoenixAnimator()
 
     private var marineController = HomeIslandMarineDynamics.BoatController(
@@ -3282,6 +3295,7 @@ final class VoyagingHomeAnimator: NSObject {
         self.scene = scene
         travel = scene.rootNode.childNode(withName: "travel", recursively: false)
         bob = scene.rootNode.childNode(withName: "boatBob", recursively: true)
+        boatFlag = bob?.childNode(withName: "boatFlag", recursively: true)
         boat = scene.rootNode.childNode(withName: "boatModel", recursively: true)
         if let boat {
             let hull = VoyageSceneKit.measuredBoatHull(in: boat)
@@ -3303,7 +3317,10 @@ final class VoyagingHomeAnimator: NSObject {
         seaMaterial = scene.rootNode
             .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
             .geometry?.firstMaterial
-        gulls = scene.rootNode.childNode(withName: "gulls", recursively: false)?.childNodes ?? []
+        gulls = scene.rootNode
+            .childNode(withName: "gulls", recursively: false)?
+            .childNodes
+            .map(GullVisual.init(node:)) ?? []
         sailMaterials = VoyageSailFlutter.materials(in: scene.rootNode)
         boatSurfaceMaterials = boat.map(VoyageSceneKit.styledBoatMaterials(in:)) ?? []
         spraySystems = VoyageBowSpray.systems(in: scene.rootNode)
@@ -3492,14 +3509,11 @@ final class VoyagingHomeAnimator: NSObject {
             flagPhase += animationDelta * (resting ? 1.2 : 5.2 + windStrength * 3.4)
         }
 
-        if let bob {
-            bob.childNode(withName: "boatFlag", recursively: true)?
-                .eulerAngles.y = reduceMotion
-                    ? 0
-                    : sin(flagPhase) * (resting ? 0.07 : 0.22 + windStrength * 0.16)
-        }
+        boatFlag?.eulerAngles.y = reduceMotion
+            ? 0
+            : sin(flagPhase) * (resting ? 0.07 : 0.22 + windStrength * 0.16)
 
-        for (index, bird) in gulls.enumerated() {
+        for (index, gull) in gulls.enumerated() {
             guard flock.indices.contains(index) else { continue }
             let config = flock[index]
             let radius = config.radius
@@ -3508,18 +3522,18 @@ final class VoyagingHomeAnimator: NSObject {
             let flap = config.flap
             let phase = config.phase
             let angle = phase + animationTime * omega
-            bird.position = SCNVector3(
+            gull.node.position = SCNVector3(
                 cos(angle) * radius,
                 height + sin(animationTime * 0.4 + phase) * 0.22,
                 sin(angle) * radius
             )
             let vx = -sin(angle) * omega
             let vz = cos(angle) * omega
-            bird.eulerAngles.y = atan2(-vx, -vz)
-            bird.eulerAngles.z = omega > 0 ? -0.18 : 0.18
+            gull.node.eulerAngles.y = atan2(-vx, -vz)
+            gull.node.eulerAngles.z = omega > 0 ? -0.18 : 0.18
             let beat = -0.22 + sin(animationTime * flap + phase) * 0.34
-            bird.childNode(withName: "leftWing", recursively: false)?.eulerAngles.z = beat
-            bird.childNode(withName: "rightWing", recursively: false)?.eulerAngles.z = -beat
+            gull.leftWing?.eulerAngles.z = beat
+            gull.rightWing?.eulerAngles.z = -beat
         }
 
         sailor.bindIfNeeded(currentScene)

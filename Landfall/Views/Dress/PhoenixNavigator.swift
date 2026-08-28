@@ -1296,6 +1296,7 @@ final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestur
     private weak var boat: SCNNode?
     private weak var navigator: SCNNode?
     private weak var bob: SCNNode?
+    private weak var boatFlag: SCNNode?
     private weak var seaMaterial: SCNMaterial?
 
     private let phoenixAnimator = PhoenixAnimator()
@@ -1334,6 +1335,7 @@ final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestur
         boat = root?.childNode(withName: "travel", recursively: false)
         navigator = root?.childNode(withName: "navigatorStage", recursively: false)
         bob = root?.childNode(withName: "boatBob", recursively: true)
+        boatFlag = bob?.childNode(withName: "boatFlag", recursively: true)
         seaMaterial = root?
             .childNode(withName: HomeIslandOceanEffects.surfaceNodeName, recursively: true)?
             .geometry?.firstMaterial
@@ -1396,7 +1398,9 @@ final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestur
         guard nextKey != partsKey else { return }
         partsKey = nextKey
         bob?.childNode(withName: "boatModel", recursively: false)?.removeFromParentNode()
-        bob?.addChildNode(VoyageSceneKit.makeBoatStudioModel(parts))
+        let model = VoyageSceneKit.makeBoatStudioModel(parts)
+        bob?.addChildNode(model)
+        boatFlag = model.childNode(withName: "boatFlag", recursively: true)
     }
 
     private func key(for parts: BoatParts) -> String {
@@ -1487,8 +1491,7 @@ final class DressStudioCoordinator: NSObject, SCNSceneRendererDelegate, UIGestur
                 reduceMotion: false
             )
             frame.wake.apply(to: seaMaterial)
-            bob.childNode(withName: "boatFlag", recursively: true)?
-                .eulerAngles.y = sin(t * 5.2) * 0.22
+            boatFlag?.eulerAngles.y = sin(t * 5.2) * 0.22
         } else {
             HomeIslandMarineDynamics.WakeState.inactive.apply(to: seaMaterial)
         }
