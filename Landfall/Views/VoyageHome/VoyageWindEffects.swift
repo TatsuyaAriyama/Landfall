@@ -292,9 +292,9 @@ enum VoyageBowSpray {
     }
 
     struct Rates {
-        static let zero = Rates(streaks: 0, mist: 0, flecks: 0, impulse: 0)
+        static let zero = Rates(droplets: 0, mist: 0, flecks: 0, impulse: 0)
 
-        let streaks: CGFloat
+        let droplets: CGFloat
         let mist: CGFloat
         let flecks: CGFloat
         let impulse: CGFloat
@@ -334,9 +334,9 @@ enum VoyageBowSpray {
                 // A bow continuously peels two thin sheets from the water.
                 // Crests thicken those sheets and add mist and heavy flecks;
                 // they do not switch the entire contact effect on from zero.
-                streaks: 22 * strength * (0.30 + impact * 0.70),
-                mist: 10 * strength * (0.18 + impact * 0.82),
-                flecks: 12 * strength * pow(impact, 1.80),
+                droplets: 34 * strength * (0.24 + impact * 0.76),
+                mist: 14 * strength * (0.12 + impact * 0.88),
+                flecks: 18 * strength * pow(impact, 1.65),
                 impulse: impulse
             )
         }
@@ -352,33 +352,33 @@ enum VoyageBowSpray {
 
     /// レイヤーを配列の順序で識別しない、アニメータ向けの型付きハンドル。
     struct Systems {
-        static let empty = Systems(streaks: [], mist: [], flecks: [])
+        static let empty = Systems(droplets: [], mist: [], flecks: [])
 
-        let streaks: [SCNParticleSystem]
+        let droplets: [SCNParticleSystem]
         let mist: [SCNParticleSystem]
         let flecks: [SCNParticleSystem]
 
         func apply(_ rates: Rates) {
             set(
-                streaks,
-                rate: rates.streaks,
+                droplets,
+                rate: rates.droplets,
                 impulse: rates.impulse,
-                velocity: 0.90...1.32,
-                size: 0.060...0.095
+                velocity: 0.95...1.38,
+                size: 0.012...0.020
             )
             set(
                 mist,
                 rate: rates.mist,
                 impulse: rates.impulse,
                 velocity: 0.42...0.68,
-                size: 0.090...0.150
+                size: 0.060...0.095
             )
             set(
                 flecks,
                 rate: rates.flecks,
                 impulse: rates.impulse,
-                velocity: 0.58...1.00,
-                size: 0.018...0.030
+                velocity: 0.65...1.10,
+                size: 0.007...0.012
             )
         }
 
@@ -388,7 +388,7 @@ enum VoyageBowSpray {
         }
 
         private var all: [SCNParticleSystem] {
-            streaks + mist + flecks
+            droplets + mist + flecks
         }
 
         private func set(
@@ -410,7 +410,7 @@ enum VoyageBowSpray {
     }
 
     private enum Layer: String, CaseIterable {
-        case streaks
+        case droplets
         case mist
         case flecks
 
@@ -492,7 +492,7 @@ enum VoyageBowSpray {
                 .childNodes.flatMap { $0.particleSystems ?? [] } ?? []
         }
         return Systems(
-            streaks: systems(for: .streaks),
+            droplets: systems(for: .droplets),
             mist: systems(for: .mist),
             flecks: systems(for: .flecks)
         )
@@ -504,7 +504,7 @@ enum VoyageBowSpray {
         hull: HullProfile
     ) -> SCNVector3 {
         switch layer {
-        case .streaks:
+        case .droplets:
             SCNVector3(hull.bowContactX, 0.08, hull.halfBeam * 0.33 * side)
         case .mist:
             SCNVector3(hull.bowContactX - 0.06, 0.03, hull.halfBeam * 0.40 * side)
@@ -524,7 +524,7 @@ enum VoyageBowSpray {
         system.loops = true
         system.blendMode = .alpha
         system.isLightingEnabled = false
-        system.sortingMode = .none
+        system.sortingMode = .projectedDepth
         system.isAffectedByGravity = false
         system.isAffectedByPhysicsFields = false
         system.isLocal = false
@@ -532,22 +532,23 @@ enum VoyageBowSpray {
         system.birthDirection = .constant
 
         switch layer {
-        case .streaks:
-            system.particleImage = streakImage
-            system.particleLifeSpan = 0.22
-            system.particleLifeSpanVariation = 0.05
+        case .droplets:
+            // Stretch a real droplet along its velocity. A pre-painted white
+            // ribbon reads as a scratch whenever the emitter crosses the hull.
+            system.particleImage = dropletImage
+            system.stretchFactor = 0.035
+            system.dampingFactor = 0.05
+            system.particleLifeSpan = 0.20
+            system.particleLifeSpanVariation = 0.04
             system.particleVelocity = 1.12
             system.particleVelocityVariation = 0.24
             system.emittingDirection = SCNVector3(0.32, 0.68, 0.58 * side)
             system.spreadingAngle = 14
             system.acceleration = SCNVector3(0, -5.8, 0)
-            system.particleSize = 0.027
-            system.particleSizeVariation = 0.006
-            system.particleColor = palette.highlight.withAlphaComponent(0.28)
-            system.particleColorVariation = SCNVector4(0.04, 0.10, 0.10, 0.10)
-            system.particleAngle = radians(side > 0 ? -28 : 28)
-            system.particleAngleVariation = radians(9)
-            system.particleAngularVelocityVariation = radians(18)
+            system.particleSize = 0.016
+            system.particleSizeVariation = 0.004
+            system.particleColor = palette.highlight.withAlphaComponent(0.30)
+            system.particleColorVariation = SCNVector4(0.04, 0.08, 0.08, 0.08)
             system.emitterShape = SCNBox(
                 width: 0.045,
                 height: 0.015,
@@ -555,12 +556,13 @@ enum VoyageBowSpray {
                 chamferRadius: 0
             )
             system.propertyControllers = controllers(
-                size: [0.18, 1.0, 0.20],
-                opacity: [0, 0.72, 0.32, 0]
+                size: [0.28, 1.0, 0.32],
+                opacity: [0, 0.88, 0.38, 0]
             )
 
         case .mist:
             system.particleImage = mistImage
+            system.dampingFactor = 0.16
             system.particleLifeSpan = 0.36
             system.particleLifeSpanVariation = 0.08
             system.particleVelocity = 0.54
@@ -568,13 +570,10 @@ enum VoyageBowSpray {
             system.emittingDirection = SCNVector3(0.18, 0.28, 0.48 * side)
             system.spreadingAngle = 24
             system.acceleration = SCNVector3(0, -1.6, 0)
-            system.particleSize = 0.11
-            system.particleSizeVariation = 0.022
-            system.particleColor = palette.highlight.withAlphaComponent(0.11)
+            system.particleSize = 0.078
+            system.particleSizeVariation = 0.018
+            system.particleColor = palette.highlight.withAlphaComponent(0.085)
             system.particleColorVariation = SCNVector4(0.05, 0.10, 0.10, 0.035)
-            system.particleAngle = radians(side > 0 ? -11 : 11)
-            system.particleAngleVariation = radians(9)
-            system.particleAngularVelocityVariation = radians(7)
             system.emitterShape = SCNBox(
                 width: 0.10,
                 height: 0.03,
@@ -587,21 +586,20 @@ enum VoyageBowSpray {
             )
 
         case .flecks:
-            system.particleImage = fleckImage
-            system.particleLifeSpan = 0.14
+            system.particleImage = dropletImage
+            system.stretchFactor = 0.018
+            system.dampingFactor = 0.03
+            system.particleLifeSpan = 0.16
             system.particleLifeSpanVariation = 0.05
             system.particleVelocity = 0.78
             system.particleVelocityVariation = 0.22
             system.emittingDirection = SCNVector3(-0.10, 0.22, 0.82 * side)
             system.spreadingAngle = 13
             system.acceleration = SCNVector3(0, -6.0, 0)
-            system.particleSize = 0.018
-            system.particleSizeVariation = 0.005
-            system.particleColor = palette.sea.withAlphaComponent(0.22)
-            system.particleColorVariation = SCNVector4(0.08, 0.16, 0.14, 0.14)
-            system.particleAngle = radians(side > 0 ? -68 : 68)
-            system.particleAngleVariation = radians(34)
-            system.particleAngularVelocityVariation = radians(80)
+            system.particleSize = 0.009
+            system.particleSizeVariation = 0.003
+            system.particleColor = palette.sea.withAlphaComponent(0.28)
+            system.particleColorVariation = SCNVector4(0.07, 0.13, 0.12, 0.12)
             system.emitterShape = SCNBox(
                 width: 0.08,
                 height: 0.015,
@@ -609,8 +607,8 @@ enum VoyageBowSpray {
                 chamferRadius: 0
             )
             system.propertyControllers = controllers(
-                size: [0.45, 1.0, 0.26],
-                opacity: [0, 0.85, 0.42, 0]
+                size: [0.38, 1.0, 0.30],
+                opacity: [0, 0.90, 0.48, 0]
             )
         }
         return system
@@ -637,52 +635,37 @@ enum VoyageBowSpray {
         return (0..<count).map { NSNumber(value: Double($0) / Double(count - 1)) }
     }
 
-    private static func radians(_ degrees: CGFloat) -> CGFloat {
-        degrees * .pi / 180
-    }
-
-    private static let streakImage = makeStreakImage()
+    private static let dropletImage = makeDropletImage()
     private static let mistImage = makeMistImage()
-    private static let fleckImage = makeFleckImage()
 
-    private static func makeStreakImage() -> UIImage {
-        let side: CGFloat = 64
+    private static func makeDropletImage() -> UIImage {
+        let side: CGFloat = 32
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
         return renderer.image { context in
             let cgContext = context.cgContext
             cgContext.saveGState()
-            let ribbon = UIBezierPath()
-            ribbon.move(to: CGPoint(x: 24, y: 5))
-            ribbon.addCurve(
-                to: CGPoint(x: 41, y: 58),
-                controlPoint1: CGPoint(x: 20, y: 18),
-                controlPoint2: CGPoint(x: 45, y: 41)
-            )
-            ribbon.addCurve(
-                to: CGPoint(x: 24, y: 5),
-                controlPoint1: CGPoint(x: 35, y: 40),
-                controlPoint2: CGPoint(x: 29, y: 19)
-            )
-            ribbon.addClip()
+            UIBezierPath(
+                ovalIn: CGRect(x: 5, y: 5, width: 22, height: 22)
+            ).addClip()
             let colors = [
-                UIColor(white: 1, alpha: 0).cgColor,
-                UIColor(white: 1, alpha: 0.46).cgColor,
-                UIColor(white: 1, alpha: 0.72).cgColor,
-                UIColor(white: 1, alpha: 0.28).cgColor,
+                UIColor(white: 1, alpha: 0.82).cgColor,
+                UIColor(white: 1, alpha: 0.38).cgColor,
                 UIColor(white: 1, alpha: 0).cgColor,
             ] as CFArray
             guard let gradient = CGGradient(
                 colorsSpace: CGColorSpaceCreateDeviceRGB(),
                 colors: colors,
-                locations: [0, 0.18, 0.48, 0.80, 1]
+                locations: [0, 0.46, 1]
             ) else {
                 cgContext.restoreGState()
                 return
             }
-            cgContext.drawLinearGradient(
+            cgContext.drawRadialGradient(
                 gradient,
-                start: CGPoint(x: side / 2, y: 4),
-                end: CGPoint(x: side / 2, y: 60),
+                startCenter: CGPoint(x: 14, y: 12),
+                startRadius: 0,
+                endCenter: CGPoint(x: 16, y: 16),
+                endRadius: 12,
                 options: []
             )
             cgContext.restoreGState()
@@ -694,72 +677,27 @@ enum VoyageBowSpray {
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
         return renderer.image { context in
             let cgContext = context.cgContext
-            cgContext.saveGState()
-            let sheet = UIBezierPath()
-            sheet.move(to: CGPoint(x: 3, y: 34))
-            sheet.addCurve(
-                to: CGPoint(x: 61, y: 27),
-                controlPoint1: CGPoint(x: 18, y: 17),
-                controlPoint2: CGPoint(x: 45, y: 20)
-            )
-            sheet.addCurve(
-                to: CGPoint(x: 3, y: 34),
-                controlPoint1: CGPoint(x: 43, y: 39),
-                controlPoint2: CGPoint(x: 17, y: 47)
-            )
-            sheet.addClip()
             let colors = [
-                UIColor(white: 1, alpha: 0).cgColor,
-                UIColor(white: 1, alpha: 0.30).cgColor,
-                UIColor(white: 1, alpha: 0.18).cgColor,
+                UIColor(white: 1, alpha: 0.24).cgColor,
+                UIColor(white: 1, alpha: 0.09).cgColor,
                 UIColor(white: 1, alpha: 0).cgColor,
             ] as CFArray
             guard let gradient = CGGradient(
                 colorsSpace: CGColorSpaceCreateDeviceRGB(),
                 colors: colors,
-                locations: [0, 0.25, 0.62, 1]
+                locations: [0, 0.46, 1]
             ) else {
-                cgContext.restoreGState()
                 return
             }
-            cgContext.drawLinearGradient(
+            cgContext.drawRadialGradient(
                 gradient,
-                start: CGPoint(x: 2, y: side / 2),
-                end: CGPoint(x: 62, y: side / 2),
+                startCenter: CGPoint(x: side / 2, y: side / 2),
+                startRadius: 0,
+                endCenter: CGPoint(x: side / 2, y: side / 2),
+                endRadius: side / 2,
                 options: []
             )
-            cgContext.restoreGState()
         }
     }
 
-    private static func makeFleckImage() -> UIImage {
-        let side: CGFloat = 32
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side))
-        return renderer.image { context in
-            let cgContext = context.cgContext
-            cgContext.saveGState()
-            UIBezierPath(roundedRect: CGRect(x: 4, y: 15, width: 24, height: 2),
-                         cornerRadius: 1).addClip()
-            let colors = [
-                UIColor(white: 1, alpha: 0).cgColor,
-                UIColor(white: 1, alpha: 0.82).cgColor,
-                UIColor(white: 1, alpha: 0).cgColor,
-            ] as CFArray
-            guard let gradient = CGGradient(
-                colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                colors: colors,
-                locations: [0, 0.50, 1]
-            ) else {
-                cgContext.restoreGState()
-                return
-            }
-            cgContext.drawLinearGradient(
-                gradient,
-                start: CGPoint(x: 4, y: side / 2),
-                end: CGPoint(x: 28, y: side / 2),
-                options: []
-            )
-            cgContext.restoreGState()
-        }
-    }
 }
