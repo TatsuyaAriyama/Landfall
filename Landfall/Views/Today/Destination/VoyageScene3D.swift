@@ -1422,13 +1422,10 @@ enum VoyageSceneKit {
     float uBoatPatinaRoughness;
     float uBoatPatinaColor;
     float uBoatWettable;
-    float uBoatWaterline;
-    float3 uBoatWaterlineNormal;
-    float3 uBoatWaterlineOrigin;
-    float3 uBoatWaterlineForward;
-    float3 uBoatWaterlineAcross;
-    float3 uBoatWaterlineHalfSize;
-    float3 uBoatWaterlineCurvature;
+    // One packed value avoids invalidating every SceneKit material seven times
+    // per frame. Columns: normal/level, forward/half-length,
+    // across/half-beam, curvature/center projections.
+    float4x4 uBoatWaterlinePatch;
     float4x4 uBoatLocalToModel;
     float3 uBoatGrainAxis;
     float3 uBoatSeaBounce;
@@ -1542,28 +1539,30 @@ enum VoyageSceneKit {
     // 広いグラデーションにすると船体全体が灰色に見えるため、境界は海面付近へ絞る。
     float lineBreakup = sin(boatP.x * 7.1 + sin(boatP.z * 10.9) * 0.82) * 0.014
         + sin(boatP.z * 18.7 - boatP.x * 3.4) * 0.006;
-    float brokenLine = uBoatWaterline + lineBreakup;
-    float3 waterlineOffset = boatP - uBoatWaterlineOrigin;
+    float3 waterlineNormal = normalize(uBoatWaterlinePatch[0].xyz);
+    float waterline = uBoatWaterlinePatch[0].w;
+    float3 waterlineForward = normalize(uBoatWaterlinePatch[1].xyz);
+    float3 waterlineAcross = normalize(uBoatWaterlinePatch[2].xyz);
     float normalizedForward = clamp(
-        dot(waterlineOffset, normalize(uBoatWaterlineForward))
-            / max(uBoatWaterlineHalfSize.x, 0.001),
+        (dot(boatP, waterlineForward) - uBoatWaterlinePatch[3].z)
+            / max(uBoatWaterlinePatch[1].w, 0.001),
         -1.25,
         1.25
     );
     float normalizedAcross = clamp(
-        dot(waterlineOffset, normalize(uBoatWaterlineAcross))
-            / max(uBoatWaterlineHalfSize.y, 0.001),
+        (dot(boatP, waterlineAcross) - uBoatWaterlinePatch[3].w)
+            / max(uBoatWaterlinePatch[2].w, 0.001),
         -1.25,
         1.25
     );
-    float waveCurvature = uBoatWaterlineCurvature.x
+    float waveCurvature = uBoatWaterlinePatch[3].x
             * normalizedForward * normalizedForward
-        + uBoatWaterlineCurvature.y
+        + uBoatWaterlinePatch[3].y
             * normalizedAcross * normalizedAcross;
     float waterlineDistance = dot(
         boatP,
-        normalize(uBoatWaterlineNormal)
-    ) - brokenLine - waveCurvature;
+        waterlineNormal
+    ) - waterline - lineBreakup - waveCurvature;
     float belowSurface = uBoatWettable
         * (1.0 - smoothstep(-0.025, 0.055, waterlineDistance));
     float waterlineRim = uBoatWettable
@@ -1769,13 +1768,16 @@ enum VoyageSceneKit {
             NSNumber(value: profile.isWettable ? Float(1) : Float(0)),
             forKey: "uBoatWettable"
         )
-        material.setValue(NSNumber(value: authoredBoatWaterline), forKey: "uBoatWaterline")
-        material.setValue(SCNVector3(0, 1, 0), forKey: "uBoatWaterlineNormal")
-        material.setValue(SCNVector3Zero, forKey: "uBoatWaterlineOrigin")
-        material.setValue(SCNVector3(1, 0, 0), forKey: "uBoatWaterlineForward")
-        material.setValue(SCNVector3(0, 0, 1), forKey: "uBoatWaterlineAcross")
-        material.setValue(SCNVector3(1, 0.5, 0), forKey: "uBoatWaterlineHalfSize")
-        material.setValue(SCNVector3Zero, forKey: "uBoatWaterlineCurvature")
+        let authoredWaterlinePatch = simd_float4x4(columns: (
+            SIMD4(0, 1, 0, authoredBoatWaterline),
+            SIMD4(1, 0, 0, 1),
+            SIMD4(0, 0, 1, 0.5),
+            SIMD4.zero
+        ))
+        material.setValue(
+            NSValue(scnMatrix4: SCNMatrix4(authoredWaterlinePatch)),
+            forKey: "uBoatWaterlinePatch"
+        )
         material.setValue(
             NSValue(scnMatrix4: SCNMatrix4(localToModel)),
             forKey: "uBoatLocalToModel"
@@ -1842,7 +1844,7 @@ enum VoyageSceneKit {
         var materials: [SCNMaterial] = []
         root.enumerateHierarchy { node, _ in
             for material in node.geometry?.materials ?? [] {
-                guard material.shaderModifiers?[.surface]?.contains("uBoatWaterline") == true,
+                guard material.shaderModifiers?[.surface]?.contains("uBoatWaterlinePatch") == true,
                       !materials.contains(where: { $0 === material })
                 else { continue }
                 materials.append(material)
@@ -1914,32 +1916,20 @@ enum VoyageSceneKit {
             (planeResidual(port) + planeResidual(starboard)) * 0.5,
             -0.16
         ), 0.16)
+        let packedPatch = simd_float4x4(columns: (
+            SIMD4(localNormal, waterline),
+            SIMD4(forward, forwardLength * 0.5),
+            SIMD4(across, acrossLength * 0.5),
+            SIMD4(
+                forwardCurvature,
+                acrossCurvature,
+                simd_dot(center, forward),
+                simd_dot(center, across)
+            )
+        ))
+        let patchValue = NSValue(scnMatrix4: SCNMatrix4(packedPatch))
         for material in materials {
-            material.setValue(NSNumber(value: waterline), forKey: "uBoatWaterline")
-            material.setValue(
-                SCNVector3(localNormal.x, localNormal.y, localNormal.z),
-                forKey: "uBoatWaterlineNormal"
-            )
-            material.setValue(
-                SCNVector3(center.x, center.y, center.z),
-                forKey: "uBoatWaterlineOrigin"
-            )
-            material.setValue(
-                SCNVector3(forward.x, forward.y, forward.z),
-                forKey: "uBoatWaterlineForward"
-            )
-            material.setValue(
-                SCNVector3(across.x, across.y, across.z),
-                forKey: "uBoatWaterlineAcross"
-            )
-            material.setValue(
-                SCNVector3(forwardLength * 0.5, acrossLength * 0.5, 0),
-                forKey: "uBoatWaterlineHalfSize"
-            )
-            material.setValue(
-                SCNVector3(forwardCurvature, acrossCurvature, 0),
-                forKey: "uBoatWaterlineCurvature"
-            )
+            material.setValue(patchValue, forKey: "uBoatWaterlinePatch")
         }
     }
 
