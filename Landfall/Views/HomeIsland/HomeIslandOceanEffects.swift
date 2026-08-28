@@ -795,7 +795,8 @@ enum HomeIslandOceanEffects {
 
     // The final mesh rows converge on the exact sky-haze color. Otherwise the
     // finite plane advertises its edge as a perfectly straight horizon line.
-    float farAtmosphere = smoothstep(0.72, 0.97, normalizedViewRange);
+    // Start early enough that perspective leaves several rows for the blend.
+    float farAtmosphere = smoothstep(0.58, 0.82, normalizedViewRange);
     float samplingHaze = (1.0 - macroVisibility) * 0.08;
     float atmosphericHaze = clamp(farAtmosphere + samplingHaze, 0.0, 1.0);
     col = mix(col, uFog, atmosphericHaze);

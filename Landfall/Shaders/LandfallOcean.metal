@@ -1039,7 +1039,10 @@ static inline half4 landfallShadeOcean(
     // Aerial perspective must finish at the same radiance as the sky behind
     // the finite mesh. Leaving even a small amount of body color at the final
     // row exposes the plane as a straight horizontal cut.
-    float farAtmosphere = smoothstep(0.72, 0.97, normalizedViewRange);
+    // Begin before perspective compresses the last mesh rows into one pixel.
+    // The transition then spans several distant wave bands instead of becoming
+    // a single ruler-straight color step at the geometric edge.
+    float farAtmosphere = smoothstep(0.58, 0.82, normalizedViewRange);
     float samplingHaze = max(
         (1.0 - longWaveVisibility) * 0.10,
         max(
