@@ -467,19 +467,22 @@ enum VoyageSceneKit {
     }
 
     private static func mixedColor(_ primary: UInt, _ secondary: UInt, weight: Float) -> UIColor {
+        UIColor(rgb: mixedRGB(primary, secondary, weight: weight))
+    }
+
+    private static func mixedRGB(_ primary: UInt, _ secondary: UInt, weight: Float) -> UInt {
         func component(_ rgb: UInt, shift: UInt) -> Float {
             Float((rgb >> shift) & 0xFF) / 255
         }
         let amount = min(max(weight, 0), 1)
-        return UIColor(
-            red: CGFloat(component(primary, shift: 16) * (1 - amount)
-                + component(secondary, shift: 16) * amount),
-            green: CGFloat(component(primary, shift: 8) * (1 - amount)
-                + component(secondary, shift: 8) * amount),
-            blue: CGFloat(component(primary, shift: 0) * (1 - amount)
-                + component(secondary, shift: 0) * amount),
-            alpha: 1
-        )
+        func mixedComponent(_ shift: UInt) -> UInt {
+            let value = component(primary, shift: shift) * (1 - amount)
+                + component(secondary, shift: shift) * amount
+            return UInt((value * 255).rounded())
+        }
+        return mixedComponent(16) << 16
+            | mixedComponent(8) << 8
+            | mixedComponent(0)
     }
 
     /// 海岸から複数の丘が連続して立ち上がる、低ポリの一枚地形。
@@ -2438,9 +2441,10 @@ enum VoyageSceneKit {
         let scene = SCNScene()
         scene.background.contents = makeVoyagingSkyBackground(
             timeOfDay: timeOfDay,
-            palette: palette
+            palette: palette,
+            horizon: oceanAppearance.fog
         )
-        scene.fogColor = UIColor(rgb: palette.fog)
+        scene.fogColor = UIColor(rgb: oceanAppearance.fog)
         scene.fogStartDistance = 12
         scene.fogEndDistance = 34
         if palette.stars > 0 {
@@ -2527,10 +2531,11 @@ enum VoyageSceneKit {
     /// 大気の厚みを小さな手続きテクスチャにする。海の反射と同じ時間帯パレットを使う。
     private static func makeVoyagingSkyBackground(
         timeOfDay: AftideHomeTimeOfDay,
-        palette: AftideHomePalette
+        palette: AftideHomePalette,
+        horizon: UInt
     ) -> UIImage {
         let sky = UIColor(rgb: palette.sky)
-        let fog = UIColor(rgb: palette.fog)
+        let fog = UIColor(rgb: horizon)
         let reflection = UIColor(rgb: palette.reflection)
         let zenithScale: CGFloat
         let sunX: CGFloat
@@ -2706,15 +2711,19 @@ enum VoyageSceneKit {
         case .evening: strength = 0.55
         case .night: strength = 0.10
         }
+        let horizon = voyagingAtmosphereColor(
+            timeOfDay: timeOfDay,
+            palette: palette
+        )
         return HomeIslandOceanEffects.Appearance(
             shallow: timeOfDay == .night ? palette.sea : palette.fill,
             sea: palette.sea,
             deep: palette.seaDeep,
             light: palette.reflection,
             sky: palette.sky,
-            horizon: palette.fog,
+            horizon: horizon,
             sun: palette.reflection,
-            fog: palette.fog,
+            fog: horizon,
             sunDirection: SCNVector3(
                 source.x - target.x,
                 source.y - target.y,
@@ -2722,6 +2731,21 @@ enum VoyageSceneKit {
             ),
             sunStrength: strength
         )
+    }
+
+    private static func voyagingAtmosphereColor(
+        timeOfDay: AftideHomeTimeOfDay,
+        palette: AftideHomePalette
+    ) -> UInt {
+        let weights: (sky: Float, light: Float)
+        switch timeOfDay {
+        case .morning: weights = (0.22, 0.06)
+        case .day: weights = (0.12, 0.02)
+        case .evening: weights = (0.42, 0.08)
+        case .night: return palette.fog
+        }
+        let skyHaze = mixedRGB(palette.fog, palette.sky, weight: weights.sky)
+        return mixedRGB(skyHaze, palette.reflection, weight: weights.light)
     }
 
     private static func makeVoyagingLights(
