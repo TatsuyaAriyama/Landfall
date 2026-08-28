@@ -1423,6 +1423,7 @@ enum VoyageSceneKit {
     float3 uBoatSkyBounce;
     float3 uBoatSunDirection;
     float3 uBoatSunColor;
+    float uBoatSunStrength;
     #pragma body
     float3 localP = (scn_node.inverseModelViewTransform
         * float4(_surface.position, 1.0)).xyz;
@@ -1521,7 +1522,7 @@ enum VoyageSceneKit {
         float backlit = smoothstep(0.05, 0.62, -viewSide * lightSide);
         float threadOpenings = 0.72 + height * 0.32;
         _surface.emission.rgb += uBoatSunColor
-            * (backlit * threadOpenings * 0.075);
+            * (backlit * threadOpenings * 0.075 * uBoatSunStrength);
         _surface.roughness = mix(_surface.roughness, 0.82, backlit * 0.16);
     }
 
@@ -1634,7 +1635,7 @@ enum VoyageSceneKit {
     float sunGlint = pow(reflectedSun, mix(18.0, 104.0, gloss))
         * smoothstep(-0.04, 0.22, dot(normal, sunDirection));
     _surface.emission.rgb += uBoatSunColor
-        * (sunGlint * gloss * reflectionResponse * 0.075);
+        * (sunGlint * gloss * reflectionResponse * 0.075 * uBoatSunStrength);
     """
 
     private static func styleBoatMaterial(
@@ -1645,7 +1646,8 @@ enum VoyageSceneKit {
         seaBounce: UInt,
         skyBounce: UInt,
         sunDirection: SCNVector3,
-        sunColor: UInt
+        sunColor: UInt,
+        sunStrength: Float
     ) {
         let surface = BoatSurfaceKind.resolve(identity.lowercased())
         let profile = surface.profile
@@ -1721,6 +1723,7 @@ enum VoyageSceneKit {
             HomeIslandOceanEffects.linearColorVector(sunColor),
             forKey: "uBoatSunColor"
         )
+        material.setValue(NSNumber(value: sunStrength), forKey: "uBoatSunStrength")
     }
 
     /// 船のマテリアルを毎フレーム再探索せず、波と同期する喫水線の書き込み先を集める。
@@ -1795,7 +1798,8 @@ enum VoyageSceneKit {
         seaBounce: UInt = 0x2E7063,
         skyBounce: UInt = 0x9FD8E4,
         sunDirection: SCNVector3 = SCNVector3(-0.34, 0.72, 0.60),
-        sunColor: UInt = 0xFFF1C7
+        sunColor: UInt = 0xFFF1C7,
+        sunStrength: Float = 1
     ) -> SCNNode {
         let ship = parts.ship
         guard let url = Bundle.main.url(forResource: ship.resourceName, withExtension: "usdz"),
@@ -1853,7 +1857,8 @@ enum VoyageSceneKit {
                     seaBounce: seaBounce,
                     skyBounce: skyBounce,
                     sunDirection: sunDirection,
-                    sunColor: sunColor
+                    sunColor: sunColor,
+                    sunStrength: sunStrength
                 )
                 return material
             }
@@ -2255,7 +2260,10 @@ enum VoyageSceneKit {
         let boat = makeBoatModel(
             BoatCustomization.currentParts,
             seaBounce: oceanAppearance.sea,
-            skyBounce: oceanAppearance.sky
+            skyBounce: oceanAppearance.sky,
+            sunDirection: oceanAppearance.sunDirection,
+            sunColor: oceanAppearance.sun,
+            sunStrength: oceanAppearance.sunStrength
         )
         attachNavigator(to: boat)
         if let boatNavigator = boat.childNode(withName: "navigator", recursively: true) {
@@ -2489,7 +2497,8 @@ enum VoyageSceneKit {
             seaBounce: oceanAppearance.sea,
             skyBounce: oceanAppearance.sky,
             sunDirection: oceanAppearance.sunDirection,
-            sunColor: oceanAppearance.sun
+            sunColor: oceanAppearance.sun,
+            sunStrength: oceanAppearance.sunStrength
         )
         attachNavigator(to: boat)
         bob.addChildNode(boat)
@@ -2846,7 +2855,8 @@ enum VoyageSceneKit {
             seaBounce: oceanAppearance.sea,
             skyBounce: oceanAppearance.sky,
             sunDirection: oceanAppearance.sunDirection,
-            sunColor: oceanAppearance.sun
+            sunColor: oceanAppearance.sun,
+            sunStrength: oceanAppearance.sunStrength
         )
     }
 
