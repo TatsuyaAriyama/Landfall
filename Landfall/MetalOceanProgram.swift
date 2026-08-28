@@ -4,9 +4,9 @@ import OSLog
 import SceneKit
 import simd
 
-/// Owns the native Metal program and its packed per-frame inputs. The program
-/// rolls out by scene and GPU tier, while Debug builds can opt in on every
-/// scene for visual regression testing.
+/// Owns the native Metal program and its packed per-frame inputs. Debug builds
+/// keep an opt-in switch for visual regression testing; Release uses the
+/// tier-specific shader on every supported scene.
 enum MetalOceanProgram {
     enum RolloutScene {
         case stillImage
@@ -30,16 +30,9 @@ enum MetalOceanProgram {
         }
         return true
 #else
-        switch scene {
-        case .stillImage:
-            return true
-        case .timerVoyage:
-            return true
-        case .homeIsland, .boatStudio:
-            return MetalRenderingProfile.current.tier != .compatible
-        case .entryExperience:
-            return MetalRenderingProfile.current.tier != .compatible
-        }
+        // Each GPU tier has a specialized fragment function. Program failures
+        // still restore the SceneKit shader-modifier fallback at runtime.
+        return true
 #endif
     }
 
