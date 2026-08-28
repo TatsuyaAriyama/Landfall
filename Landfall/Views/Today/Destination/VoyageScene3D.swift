@@ -1217,6 +1217,13 @@ enum VoyageSceneKit {
     /// USDZ が静水面に浮くときの、船体ローカル座標での喫水線。
     private static let authoredBoatWaterline: Float = 0.07
 
+    static func measuredBoatHull(in root: SCNNode) -> VoyageBowSpray.HullProfile {
+        VoyageBowSpray.hullProfile(
+            in: root,
+            waterline: authoredBoatWaterline
+        )
+    }
+
     private struct BoatSurfaceProfile {
         let roughness: CGFloat?
         let metalness: CGFloat?
@@ -2568,10 +2575,7 @@ enum VoyageSceneKit {
             sunColor: oceanAppearance.sun,
             sunStrength: oceanAppearance.sunStrength
         )
-        let sprayHull = VoyageBowSpray.hullProfile(
-            in: boat,
-            waterline: authoredBoatWaterline
-        )
+        let sprayHull = measuredBoatHull(in: boat)
         attachNavigator(to: boat)
         bob.addChildNode(boat)
         // しぶきは船体と一緒に上下し、その時間帯の海色と反射色を受け継ぐ。
@@ -3047,7 +3051,7 @@ final class VoyagingHomeAnimator: NSObject {
     private var gulls: [SCNNode] = []
     private let sailor = PhoenixAnimator()
 
-    private let marineController = HomeIslandMarineDynamics.BoatController(
+    private var marineController = HomeIslandMarineDynamics.BoatController(
         field: .init(layout: .timerVoyage),
         tuning: HomeIslandMarineDynamics.boatTuning(forSceneScale: 0.55)
     )
@@ -3157,6 +3161,17 @@ final class VoyagingHomeAnimator: NSObject {
         travel = scene.rootNode.childNode(withName: "travel", recursively: false)
         bob = scene.rootNode.childNode(withName: "boatBob", recursively: true)
         boat = scene.rootNode.childNode(withName: "boatModel", recursively: true)
+        if let boat {
+            let hull = VoyageSceneKit.measuredBoatHull(in: boat)
+            marineController = HomeIslandMarineDynamics.BoatController(
+                field: .init(layout: .timerVoyage),
+                tuning: HomeIslandMarineDynamics.boatTuning(
+                    hullLength: hull.waterlineLength,
+                    beam: hull.halfBeam * 2,
+                    sceneScale: 0.55
+                )
+            )
+        }
         localSailor = boat?.childNode(withName: "navigator", recursively: true)
         applyLocalSailorRole()
         // 作り直したシーンでは、前の船に乗せた同乗者のノードごと席を空ける。

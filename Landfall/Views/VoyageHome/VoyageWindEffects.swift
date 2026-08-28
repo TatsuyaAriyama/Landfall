@@ -134,9 +134,14 @@ enum VoyageBowSpray {
 
     struct HullProfile {
         let bowContactX: Float
+        let waterlineLength: Float
         let halfBeam: Float
 
-        static let standard = HullProfile(bowContactX: 1.34, halfBeam: 0.57)
+        static let standard = HullProfile(
+            bowContactX: 1.34,
+            waterlineLength: 2.34,
+            halfBeam: 0.57
+        )
     }
 
     struct Palette {
@@ -309,6 +314,7 @@ enum VoyageBowSpray {
         let hullLength = max(maximumX - minimumX, 0.1)
         return HullProfile(
             bowContactX: maximumX - max(hullLength * 0.018, 0.035),
+            waterlineLength: hullLength,
             halfBeam: max(max(abs(minimumZ), abs(maximumZ)), 0.1)
         )
     }

@@ -195,6 +195,20 @@ enum HomeIslandMarineDynamics {
         return tuning
     }
 
+    /// Converts a measured model-space waterline into the world-space footprint
+    /// consumed by buoyancy, hull contact and wake rendering.
+    static func boatTuning(
+        hullLength: Float,
+        beam: Float,
+        sceneScale: Float
+    ) -> BoatTuning {
+        var tuning = BoatTuning.homeIsland
+        let scale = max(sceneScale, 0.001)
+        tuning.hullLength = max(hullLength, 0.1) * scale
+        tuning.beam = max(beam, 0.1) * scale
+        return tuning
+    }
+
     struct WakeState {
         /// Shader coordinates: (world X, -world Z).
         let boatPosition: SIMD2<Float>
