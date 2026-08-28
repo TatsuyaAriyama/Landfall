@@ -558,7 +558,9 @@ enum HomeIslandOceanEffects {
         float relativeSurfaceHeight = clamp(height - uBoatHeave, -0.12, 0.16);
         float contactScale = 1.0 + relativeSurfaceHeight * 1.10;
         hullDistance = max(hullDistance / contactScale, 0.001);
-        float submergedShadow = 1.0 - smoothstep(0.62, 1.20, hullDistance);
+        float contactLoad = smoothstep(-0.07, 0.11, relativeSurfaceHeight);
+        float submergedShadow = (1.0 - smoothstep(0.62, 1.20, hullDistance))
+            * mix(0.72, 1.0, contactLoad);
         float meniscus = 1.0 - smoothstep(0.035, 0.18, abs(hullDistance - 1.0));
         float meniscusBreak = 0.72 + 0.28 * sin(
             boatLongitudinal * 8.1 - boatLateral * 10.7 + uTime * 0.34
@@ -606,7 +608,13 @@ enum HomeIslandOceanEffects {
             reflectedHull * reflectionLobe
                 * (0.025 + reflectionBreak * 0.095) * surfaceEdge
         );
-        col = mix(col, foamColor, meniscus * meniscusBreak * 0.10 * surfaceEdge);
+        float meniscusFacing = mix(0.22, 1.0, reflectionFacing);
+        col = mix(
+            col,
+            foamColor,
+            meniscus * mix(0.48, 1.0, contactLoad)
+                * meniscusBreak * meniscusFacing * 0.12 * surfaceEdge
+        );
     }
 
     // Keep the wake below foam contrast: it is a short veil of aerated water
