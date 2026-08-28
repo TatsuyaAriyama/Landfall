@@ -320,10 +320,10 @@ struct VoyageHomeView: View {
             DayShareSheet(date: now)
         }
         .sheet(isPresented: $showingSettings, onDismiss: presentQueuedPrologue) {
-            SettingsView {
+            SettingsView(onReplayPrologue: {
                 replayPrologueAfterSettings = true
                 showingSettings = false
-            }
+            })
         }
         .sheet(isPresented: $showingHelp) {
             HelpView()

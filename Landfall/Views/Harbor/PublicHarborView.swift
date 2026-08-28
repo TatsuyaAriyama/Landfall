@@ -143,10 +143,10 @@ struct PublicHarborView: View {
             membersSubscription = nil
         }
         .sheet(isPresented: $editingProfile) {
-            ProfileEditorSheet {
+            ProfileEditorSheet(onSaved: {
                 needsProfile = false
                 Task { await reload() }
-            }
+            })
         }
     }
 

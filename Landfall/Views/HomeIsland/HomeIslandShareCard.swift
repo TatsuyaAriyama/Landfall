@@ -43,24 +43,27 @@ enum HomeIslandPhotoExport {
         .outputColorSpace: colorSpace,
         .cacheIntermediates: false,
     ])
-    private static let fallbackToneMapKernel = CIColorKernel(source: """
-        kernel vec4 landfallToneMap(__sample pixel) {
-            vec3 color = max(pixel.rgb, vec3(0.0));
-            // Approximate CIToneMapHeadroom without crushing SDR reference white.
-            // The lower segment preserves readable midtones; the upper segment
-            // rolls the four-stop SceneKit headroom smoothly into SDR white.
-            vec3 lower = color * (vec3(0.84) - vec3(0.064) * color);
-            vec3 highlight = clamp(
-                (color - vec3(1.0)) / vec3(3.0),
-                vec3(0.0),
-                vec3(1.0)
-            );
-            vec3 upper = vec3(0.776)
-                + vec3(0.224) * (vec3(2.0) * highlight - highlight * highlight);
-            color = mix(lower, upper, step(vec3(1.0), color));
-            return vec4(color, pixel.a);
-        }
-        """)
+
+    /// iOS 17 and earlier lack `CIToneMapHeadroom`. Normalize SceneKit's
+    /// four-times working range, then preserve the same reference-white and
+    /// highlight points with Core Image's supported spline filter.
+    private static func fallbackToneMap(_ image: CIImage) -> CIImage {
+        let normalize = CIFilter.colorMatrix()
+        normalize.inputImage = image
+        normalize.rVector = CIVector(x: 0.25, y: 0, z: 0, w: 0)
+        normalize.gVector = CIVector(x: 0, y: 0.25, z: 0, w: 0)
+        normalize.bVector = CIVector(x: 0, y: 0, z: 0.25, w: 0)
+        normalize.aVector = CIVector(x: 0, y: 0, z: 0, w: 1)
+
+        let curve = CIFilter.toneCurve()
+        curve.inputImage = normalize.outputImage
+        curve.point0 = CGPoint(x: 0, y: 0)
+        curve.point1 = CGPoint(x: 0.25, y: 0.776)
+        curve.point2 = CGPoint(x: 0.50, y: 0.900)
+        curve.point3 = CGPoint(x: 0.75, y: 0.975)
+        curve.point4 = CGPoint(x: 1, y: 1)
+        return curve.outputImage ?? image
+    }
 
     static func render(sceneImage: UIImage, capturedAt: Date) -> WrappedCardImage? {
         // SCNView.snapshot()はHDR値を持つ一方でHDR色空間として印付けされないため、
@@ -75,13 +78,8 @@ enum HomeIslandPhotoExport {
             filter.sourceHeadroom = 4
             filter.targetHeadroom = 1
             toneMapped = filter.outputImage ?? scene
-        } else if let fallback = fallbackToneMapKernel?.apply(
-            extent: scene.extent,
-            arguments: [scene]
-        ) {
-            toneMapped = fallback
         } else {
-            toneMapped = scene
+            toneMapped = fallbackToneMap(scene)
         }
 
         let background = CIImage(color: CIColor(color: skyColor))

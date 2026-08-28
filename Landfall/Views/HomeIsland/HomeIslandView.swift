@@ -3011,7 +3011,6 @@ struct HomeIslandView: View {
         _ asset: HomeIslandAsset,
         family: HomeIslandAssetFamily? = nil
     ) -> some View {
-        let familyIDs = family?.assetIDs ?? []
         let selected = placementAssetID == asset.id
         let expanded = expandedFamilyID == family?.id
         let unlocked = HomeIslandAssetCatalog.isUnlocked(
