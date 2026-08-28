@@ -113,6 +113,8 @@ enum HomeIslandOceanEffects {
     float2 dirE = float2(0.643, -0.766);
     float2 dirF = float2(-0.940, 0.342);
     float2 dirG = float2(0.515, 0.857);
+    float2 dirH = float2(0.118, -0.993);
+    float2 dirI = float2(0.982, 0.190);
     float basePhaseA = dot(p, dirA) * 0.105 - uTime * 0.42;
     float basePhaseB = dot(p, dirB) * 0.155 - uTime * 0.36 + 1.70;
     float phaseC = dot(p, dirC) * 0.340 - uTime * 0.78 + 0.45;
@@ -120,15 +122,19 @@ enum HomeIslandOceanEffects {
     float phaseE = dot(p, dirE) * 1.250 - uTime * 1.68 + 0.90;
     float phaseF = dot(p, dirF) * 0.052 - uTime * 0.14 + 0.30;
     float phaseG = dot(p, dirG) * 0.073 - uTime * 0.19 + 1.35;
+    float phaseH = dot(p, dirH) * 0.310 - uTime * 0.27 + 2.20;
+    float phaseI = dot(p, dirI) * 0.470 - uTime * 0.39 + 0.60;
     float sinC = sin(phaseC);
     float sinD = sin(phaseD);
     float sinE = sin(phaseE);
+    float sinH = sin(phaseH);
+    float sinI = sin(phaseI);
     // Cross seas bend the long swells without adding another wave component.
     // This avoids evenly spaced horizon bands while keeping motion coherent.
     float phaseA = basePhaseA + sinC * 0.34 + sinD * 0.10
-        + sin(phaseF) * 0.55;
+        + sin(phaseF) * 0.55 + sinH * 0.46 + sinI * 0.18;
     float phaseB = basePhaseB - sinD * 0.26 + sinE * 0.08
-        - sin(phaseG) * 0.42;
+        - sin(phaseG) * 0.42 - sinH * 0.24 + sinI * 0.36;
     float sinA = sin(phaseA);
     float sinB = sin(phaseB);
     float cosA = cos(phaseA);
@@ -138,6 +144,8 @@ enum HomeIslandOceanEffects {
     float cosE = cos(phaseE);
     float cosF = cos(phaseF);
     float cosG = cos(phaseG);
+    float cosH = cos(phaseH);
+    float cosI = cos(phaseI);
     // Energy arrives in broad groups across each crest. Modulating amplitude
     // perpendicular to travel breaks screen-wide bands without adding noise.
     float energyPhaseA = phaseF + 1.17;
@@ -166,12 +174,16 @@ enum HomeIslandOceanEffects {
         + dirC * (cosC * 0.340 * 0.34)
         + dirD * (cosD * 0.720 * 0.10)
         + dirF * (cosF * 0.052 * 0.55)
+        + dirH * (cosH * 0.310 * 0.46)
+        + dirI * (cosI * 0.470 * 0.18)
     );
     float2 gradientB = (
         dirB * 0.155
         - dirD * (cosD * 0.720 * 0.26)
         + dirE * (cosE * 1.250 * 0.08)
         - dirG * (cosG * 0.073 * 0.42)
+        - dirH * (cosH * 0.310 * 0.24)
+        + dirI * (cosI * 0.470 * 0.36)
     );
     float2 slope = (
         gradientA * (shapedDerivativeA * 0.171 * energyA)
@@ -210,6 +222,8 @@ enum HomeIslandOceanEffects {
     float3 uSurfaceSize;
     float3 uCoordinateOffset;
     float uShoreline;
+    float3 uBoatPosition;
+    float uBoatPresence;
     #pragma body
     float2 localP = _geometry.position.xy;
     float2 p = localP + uCoordinateOffset.xy;
@@ -238,9 +252,26 @@ enum HomeIslandOceanEffects {
         abs(localP.y)
     );
     float edge = edgeX * edgeY;
-    _geometry.position.xy += horizontal * edge;
-    _geometry.position.z += height * edge;
-    _geometry.normal = normalize(float3(-slope.x * edge, -slope.y * edge, 1.0));
+    float surfaceRadius = max(min(uSurfaceSize.x, uSurfaceSize.y) * 0.5, 1.0);
+    float normalizedRange = length(
+        float2(localP.x * 0.72, localP.y)
+    ) / surfaceRadius;
+    float rangeResolved = 1.0 - smoothstep(0.40, 0.90, normalizedRange);
+    float subjectDistance = length(p - uBoatPosition.xy);
+    float subjectResolved = 1.0 - smoothstep(5.0, 14.0, subjectDistance);
+    float subjectLOD = uBoatPresence * (1.0 - uShoreline);
+    float geometryVisibility = mix(
+        rangeResolved,
+        subjectResolved,
+        clamp(subjectLOD, 0.0, 1.0)
+    );
+    _geometry.position.xy += horizontal * edge * geometryVisibility;
+    _geometry.position.z += height * edge * geometryVisibility;
+    _geometry.normal = normalize(float3(
+        -slope.x * edge * geometryVisibility,
+        -slope.y * edge * geometryVisibility,
+        1.0
+    ));
     """
 
     private static let surfaceShader = """
@@ -284,15 +315,29 @@ enum HomeIslandOceanEffects {
         abs(localP.y)
     );
     float surfaceEdge = edgeX * edgeY;
-    height *= surfaceEdge;
-    slope *= surfaceEdge;
-    float pixelFootprint = max(length(dfdx(p)), length(dfdy(p)));
-    float macroVisibility = 1.0 - smoothstep(0.85, 4.20, pixelFootprint);
-    // Relative range gives every ocean layout the same near-to-horizon LOD.
     float surfaceRadius = max(min(uSurfaceSize.x, uSurfaceSize.y) * 0.5, 1.0);
     float normalizedViewRange = length(
         float2(localP.x * 0.72, localP.y)
     ) / surfaceRadius;
+    float rangeResolved = 1.0 - smoothstep(0.40, 0.90, normalizedViewRange);
+    float subjectDistance = length(p - uBoatPosition.xy);
+    float subjectResolved = 1.0 - smoothstep(5.0, 14.0, subjectDistance);
+    float subjectLOD = uBoatPresence * (1.0 - uShoreline);
+    float geometryVisibility = mix(
+        rangeResolved,
+        subjectResolved,
+        clamp(subjectLOD, 0.0, 1.0)
+    );
+    height *= surfaceEdge * geometryVisibility;
+    slope *= surfaceEdge * geometryVisibility;
+    float2 footprintX = dfdx(p);
+    float2 footprintY = dfdy(p);
+    float footprintMajor = max(length(footprintX), length(footprintY));
+    float footprintMinor = min(length(footprintX), length(footprintY));
+    float pixelFootprint = footprintMajor;
+    float projectionAnisotropy = footprintMajor / max(footprintMinor, 0.001);
+    float macroVisibility = 1.0 - smoothstep(0.85, 4.20, pixelFootprint);
+    // Relative range gives every ocean layout the same near-to-horizon LOD.
     float nearField = 1.0 - smoothstep(0.18, 0.72, normalizedViewRange);
     float midField = 1.0 - smoothstep(0.62, 0.96, normalizedViewRange);
     float horizonField = smoothstep(0.60, 0.98, normalizedViewRange);
@@ -314,6 +359,36 @@ enum HomeIslandOceanEffects {
         max(rippleVisibilityB, rippleVisibilityC)
     );
     macroVisibility *= mix(0.58, 1.0, midField);
+    float stripeRisk = smoothstep(2.4, 7.0, projectionAnisotropy)
+        * smoothstep(0.20, 0.76, normalizedViewRange);
+    float longWaveVisibility = macroVisibility
+        * mix(0.10, 1.0, midField)
+        * mix(1.0, 0.16, stripeRisk);
+    float sampledBroadVisibility = 1.0 - smoothstep(
+        0.35,
+        1.20,
+        pixelFootprint
+    );
+    float sampledDetailVisibility = 1.0 - smoothstep(
+        0.16,
+        0.62,
+        pixelFootprint
+    );
+    float detailFadeStart = uBoatPresence > 0.5 ? 2.5 : surfaceRadius * 0.48;
+    float detailFadeEnd = uBoatPresence > 0.5 ? 10.0 : surfaceRadius * 0.92;
+    float distanceVisibility = 1.0 - smoothstep(
+        detailFadeStart,
+        detailFadeEnd,
+        uBoatPresence > 0.5
+            ? subjectDistance
+            : normalizedViewRange * surfaceRadius
+    );
+    float reflectedNormalVisibility = longWaveVisibility
+        * distanceVisibility * sampledBroadVisibility;
+    float unresolvedWaveEnergy = clamp(max(
+        stripeRisk * (1.0 - midField * 0.42),
+        1.0 - sampledBroadVisibility
+    ) * smoothstep(0.18, 0.92, normalizedViewRange), 0.0, 1.0);
 
     // Mid and fine ripples alter only the fragment normal. Three crossed
     // directions retain close-range detail without multiplying vertex cost.
@@ -357,7 +432,7 @@ enum HomeIslandOceanEffects {
     float3 waterNormal = normalize(mix(
         worldUp,
         detailedNormal,
-        mix(0.38, 1.0, macroVisibility)
+        reflectedNormalVisibility
     ));
     _surface.normal = waterNormal;
 
@@ -412,8 +487,8 @@ enum HomeIslandOceanEffects {
         col = mix(col, uShallow, coastalLift * 0.22);
     }
 
-    float2 shadedSlope = slope * mix(0.30, 1.0, macroVisibility)
-        + detailSlope * 2.2;
+    float2 shadedSlope = slope * reflectedNormalVisibility
+        + detailSlope * 2.2 * distanceVisibility * sampledDetailVisibility;
     float directionalShade = clamp(
         0.50 + dot(shadedSlope, float2(-5.2, 6.4)),
         0.0,
@@ -423,7 +498,7 @@ enum HomeIslandOceanEffects {
 
     float trough = 1.0 - smoothstep(-0.15, 0.005, height);
     float crest = smoothstep(0.045, 0.180, height);
-    float elevationVisibility = mix(0.24, 1.0, macroVisibility);
+    float elevationVisibility = reflectedNormalVisibility;
     col = mix(col, uDeep, trough * 0.16 * elevationVisibility);
     col = mix(col, uShallow, crest * 0.14 * elevationVisibility);
 
@@ -461,6 +536,16 @@ enum HomeIslandOceanEffects {
         zenithReflection,
         smoothstep(0.08, 0.88, skyHeight)
     );
+    float3 integratedFarReflection = mix(
+        uHorizon * 1.025,
+        zenithReflection,
+        0.14 + viewElevation * 0.18
+    );
+    reflectedSky = mix(
+        reflectedSky,
+        integratedFarReflection,
+        unresolvedWaveEnergy * 0.78
+    );
     float celestialAlignment = clamp(
         dot(reflectionDirection, celestialDirection),
         0.0,
@@ -489,7 +574,7 @@ enum HomeIslandOceanEffects {
     );
     float facetLift = smoothstep(0.53, 0.74, sunwardFacet);
     float facetShade = 1.0 - smoothstep(0.27, 0.48, sunwardFacet);
-    float facetVisibility = mix(0.42, 1.0, macroVisibility)
+    float facetVisibility = reflectedNormalVisibility
         * (1.0 - horizonField * 0.72);
     float3 facetSky = mix(uHorizon, uSky, 0.32);
     col = mix(col, facetSky, facetLift * facetVisibility * 0.120);
@@ -509,6 +594,7 @@ enum HomeIslandOceanEffects {
     float microFacetVisibility = rippleVisibility
         * mix(0.34, 1.0, nearField)
         * (1.0 - horizonField * 0.96)
+        * distanceVisibility * sampledDetailVisibility
         * smoothstep(0.004, 0.035, microSlopeLength);
     float microFacetRadiance = (microSunwardFacet - 0.5) * 2.0;
     float microFacetContrast = mix(
@@ -558,7 +644,8 @@ enum HomeIslandOceanEffects {
     );
     float daylightTransmission = smoothstep(0.18, 0.58, uSunStrength);
     float thinCrest = crest * crestSteepness
-        * macroVisibility * (1.0 - horizonField * 0.78);
+        * macroVisibility * (1.0 - horizonField * 0.78)
+        * distanceVisibility;
     float crestOpticalPath = mix(0.46, 0.18, crest);
     float3 crestTransmittance = exp(
         -float3(0.78, 0.28, 0.12) * crestOpticalPath

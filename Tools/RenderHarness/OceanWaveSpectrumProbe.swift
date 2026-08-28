@@ -7,19 +7,19 @@ enum OceanWaveSpectrumProbe {
         let fixtures: [Fixture] = [
             Fixture(
                 position: SIMD2(0, 0), time: 0, amplitudeScale: 0.72,
-                height: 0.1947447, slope: SIMD2(0.028405763, 0.020552676)
+                height: 0.24883008, slope: SIMD2(0.026959412, 0.016132101)
             ),
             Fixture(
                 position: SIMD2(3.25, -1.75), time: 4.2, amplitudeScale: 0.72,
-                height: -0.16971906, slope: SIMD2(-0.0062125865, -0.009174956)
+                height: -0.22312282, slope: SIMD2(-0.008904569, -0.009035387)
             ),
             Fixture(
                 position: SIMD2(-8.5, 12.25), time: 11.8, amplitudeScale: 0.91,
-                height: 0.13555129, slope: SIMD2(-0.0126165245, -0.009528494)
+                height: 0.0657505, slope: SIMD2(-0.0055370783, -0.0038195795)
             ),
             Fixture(
                 position: SIMD2(18, -22), time: 29.4, amplitudeScale: 1,
-                height: -0.37379995, slope: SIMD2(0.007997838, -0.0016768733)
+                height: -0.2848109, slope: SIMD2(0.013507379, 0.015734665)
             ),
         ]
         for fixture in fixtures {

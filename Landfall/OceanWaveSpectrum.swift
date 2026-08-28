@@ -27,14 +27,26 @@ enum OceanWaveSpectrum {
         let cosE = cos(phases[4])
         let warpDirectionF = SIMD2<Float>(-0.940, 0.342)
         let warpDirectionG = SIMD2<Float>(0.515, 0.857)
+        let warpDirectionH = SIMD2<Float>(0.118, -0.993)
+        let warpDirectionI = SIMD2<Float>(0.982, 0.190)
         let phaseF = simd_dot(position, warpDirectionF) * 0.052
             - time * 0.14 + 0.30
         let phaseG = simd_dot(position, warpDirectionG) * 0.073
             - time * 0.19 + 1.35
+        let phaseH = simd_dot(position, warpDirectionH) * 0.310
+            - time * 0.27 + 2.20
+        let phaseI = simd_dot(position, warpDirectionI) * 0.470
+            - time * 0.39 + 0.60
         let cosF = cos(phaseF)
         let cosG = cos(phaseG)
-        phases[0] += sinC * 0.34 + sinD * 0.10 + sin(phaseF) * 0.55
-        phases[1] += -sinD * 0.26 + sinE * 0.08 - sin(phaseG) * 0.42
+        let sinH = sin(phaseH)
+        let sinI = sin(phaseI)
+        let cosH = cos(phaseH)
+        let cosI = cos(phaseI)
+        phases[0] += sinC * 0.34 + sinD * 0.10
+            + sin(phaseF) * 0.55 + sinH * 0.46 + sinI * 0.18
+        phases[1] += -sinD * 0.26 + sinE * 0.08
+            - sin(phaseG) * 0.42 - sinH * 0.24 + sinI * 0.36
 
         let cosA = cos(phases[0])
         let cosB = cos(phases[1])
@@ -52,15 +64,21 @@ enum OceanWaveSpectrum {
             * (cos(energyPhaseA) * 0.052 * 0.18)
         let energyGradientB = warpDirectionG
             * (cos(energyPhaseB) * 0.073 * 0.14)
+        var phaseGradientA = waves[0].direction * waves[0].waveNumber
+        phaseGradientA += waves[2].direction * (cosC * 0.340 * 0.34)
+        phaseGradientA += waves[3].direction * (cosD * 0.720 * 0.10)
+        phaseGradientA += warpDirectionF * (cosF * 0.052 * 0.55)
+        phaseGradientA += warpDirectionH * (cosH * 0.310 * 0.46)
+        phaseGradientA += warpDirectionI * (cosI * 0.470 * 0.18)
+        var phaseGradientB = waves[1].direction * waves[1].waveNumber
+        phaseGradientB -= waves[3].direction * (cosD * 0.720 * 0.26)
+        phaseGradientB += waves[4].direction * (cosE * 1.250 * 0.08)
+        phaseGradientB -= warpDirectionG * (cosG * 0.073 * 0.42)
+        phaseGradientB -= warpDirectionH * (cosH * 0.310 * 0.24)
+        phaseGradientB += warpDirectionI * (cosI * 0.470 * 0.36)
         let phaseGradients = [
-            waves[0].direction * waves[0].waveNumber
-                + waves[2].direction * (cosC * 0.340 * 0.34)
-                + waves[3].direction * (cosD * 0.720 * 0.10)
-                + warpDirectionF * (cosF * 0.052 * 0.55),
-            waves[1].direction * waves[1].waveNumber
-                - waves[3].direction * (cosD * 0.720 * 0.26)
-                + waves[4].direction * (cosE * 1.250 * 0.08)
-                - warpDirectionG * (cosG * 0.073 * 0.42),
+            phaseGradientA,
+            phaseGradientB,
             waves[2].direction * waves[2].waveNumber,
             waves[3].direction * waves[3].waveNumber,
             waves[4].direction * waves[4].waveNumber,
@@ -68,12 +86,13 @@ enum OceanWaveSpectrum {
 
         var height = shapedA * waves[0].amplitude * energyA
             + shapedB * waves[1].amplitude * energyB
-        var slope = phaseGradients[0]
+        let slopeA = phaseGradientA
                 * (shapedDerivativeA * waves[0].amplitude * energyA)
             + energyGradientA * (shapedA * waves[0].amplitude)
-            + phaseGradients[1]
+        let slopeB = phaseGradientB
                 * (shapedDerivativeB * waves[1].amplitude * energyB)
             + energyGradientB * (shapedB * waves[1].amplitude)
+        var slope = slopeA + slopeB
         let sines = [sinC, sinD, sinE]
         let cosines = [cosC, cosD, cosE]
         for index in 2..<waves.count {

@@ -106,6 +106,8 @@ static inline LandfallWaveSample landfallSampleWaves(
     constexpr float2 dirE = float2(0.643, -0.766);
     constexpr float2 dirF = float2(-0.940, 0.342);
     constexpr float2 dirG = float2(0.515, 0.857);
+    constexpr float2 dirH = float2(0.118, -0.993);
+    constexpr float2 dirI = float2(0.982, 0.190);
     float basePhaseA = dot(p, dirA) * 0.105 - time * 0.42;
     float basePhaseB = dot(p, dirB) * 0.155 - time * 0.36 + 1.70;
     float phaseC = dot(p, dirC) * 0.340 - time * 0.78 + 0.45;
@@ -116,13 +118,19 @@ static inline LandfallWaveSample landfallSampleWaves(
     // crests into parallel horizontal bands while keeping the surface coherent.
     float phaseF = dot(p, dirF) * 0.052 - time * 0.14 + 0.30;
     float phaseG = dot(p, dirG) * 0.073 - time * 0.19 + 1.35;
+    float phaseH = dot(p, dirH) * 0.310 - time * 0.27 + 2.20;
+    float phaseI = dot(p, dirI) * 0.470 - time * 0.39 + 0.60;
     float sinC = sin(phaseC);
     float sinD = sin(phaseD);
     float sinE = sin(phaseE);
     float sinF = sin(phaseF);
     float sinG = sin(phaseG);
-    float phaseA = basePhaseA + sinC * 0.34 + sinD * 0.10 + sinF * 0.55;
-    float phaseB = basePhaseB - sinD * 0.26 + sinE * 0.08 - sinG * 0.42;
+    float sinH = sin(phaseH);
+    float sinI = sin(phaseI);
+    float phaseA = basePhaseA + sinC * 0.34 + sinD * 0.10
+        + sinF * 0.55 + sinH * 0.46 + sinI * 0.18;
+    float phaseB = basePhaseB - sinD * 0.26 + sinE * 0.08
+        - sinG * 0.42 - sinH * 0.24 + sinI * 0.36;
     float cosA = cos(phaseA);
     float cosB = cos(phaseB);
     float cosC = cos(phaseC);
@@ -130,6 +138,8 @@ static inline LandfallWaveSample landfallSampleWaves(
     float cosE = cos(phaseE);
     float cosF = cos(phaseF);
     float cosG = cos(phaseG);
+    float cosH = cos(phaseH);
+    float cosI = cos(phaseI);
     float energyPhaseA = phaseF + 1.17;
     float energyPhaseB = phaseG - 0.83;
     float energyA = 1.0 + sin(energyPhaseA) * 0.18;
@@ -158,12 +168,16 @@ static inline LandfallWaveSample landfallSampleWaves(
         + dirC * (cosC * 0.340 * 0.34)
         + dirD * (cosD * 0.720 * 0.10)
         + dirF * (cosF * 0.052 * 0.55)
+        + dirH * (cosH * 0.310 * 0.46)
+        + dirI * (cosI * 0.470 * 0.18)
     );
     float2 gradientB = (
         dirB * 0.155
         - dirD * (cosD * 0.720 * 0.26)
         + dirE * (cosE * 1.250 * 0.08)
         - dirG * (cosG * 0.073 * 0.42)
+        - dirH * (cosH * 0.310 * 0.24)
+        + dirI * (cosI * 0.470 * 0.36)
     );
     float2 slope = (
         gradientA * (shapedDerivativeA * 0.171 * energyA)
@@ -521,10 +535,33 @@ vertex LandfallOceanVertexOut landfallOceanVertex(
         abs(localPosition.y)
     );
     float edge = edgeX * edgeY;
+    // Integrate sub-pixel swells into far-field roughness instead of retaining
+    // their full vertex height until the final mesh row. That projection turns
+    // coherent crests into ruler-straight horizontal bands on a phone display.
+    float surfaceRadius = max(
+        min(vertexOcean.surfaceSize.x, vertexOcean.surfaceSize.y) * 0.5,
+        1.0
+    );
+    float normalizedRange = length(
+        float2(localPosition.x * 0.72, localPosition.y)
+    ) / surfaceRadius;
+    float rangeResolved = 1.0 - smoothstep(0.40, 0.90, normalizedRange);
+    float subjectDistance = length(oceanPosition - vertexOcean.boatPosition);
+    float subjectResolved = 1.0 - smoothstep(5.0, 14.0, subjectDistance);
+    float subjectLOD = vertexOcean.boatPresence
+        * (1.0 - vertexOcean.shoreline);
+    float geometryVisibility = mix(
+        rangeResolved,
+        subjectResolved,
+        saturate(subjectLOD)
+    );
     float3 displaced = in.position;
-    displaced.xy += waves.horizontal * edge;
-    displaced.z += waves.height * edge;
-    float3 localNormal = normalize(float3(-waves.slope * edge, 1.0));
+    displaced.xy += waves.horizontal * edge * geometryVisibility;
+    displaced.z += waves.height * edge * geometryVisibility;
+    float3 localNormal = normalize(float3(
+        -waves.slope * edge * geometryVisibility,
+        1.0
+    ));
 
     LandfallOceanVertexOut out;
     out.position = scn_node.modelViewProjectionTransform * float4(displaced, 1.0);
@@ -532,10 +569,10 @@ vertex LandfallOceanVertexOut landfallOceanVertex(
     out.worldNormal = normalize((scn_node.modelTransform * float4(localNormal, 0.0)).xyz);
     out.localPosition = localPosition;
     out.oceanPosition = oceanPosition;
-    out.slope = waves.slope * edge;
-    out.height = waves.height * edge;
-    out.breaking = waves.breaking * edge;
-    out.foamRemnant = waves.foamRemnant * edge;
+    out.slope = waves.slope * edge * geometryVisibility;
+    out.height = waves.height * edge * geometryVisibility;
+    out.breaking = waves.breaking * edge * geometryVisibility;
+    out.foamRemnant = waves.foamRemnant * edge * geometryVisibility;
     // SceneKit supplies SCNSceneBuffer to the vertex stage. Passing the camera
     // through avoids requesting an unbound custom `frame` attachment from each
     // fragment function, which otherwise leaves only the safety underlay visible.
@@ -600,11 +637,11 @@ static inline half4 landfallShadeOcean(
     // Projected long swells collapse into coherent horizontal stripes before
     // their geometry is truly undersampled. Fade their lighting contribution
     // earlier than the surface itself while retaining filtered micro normals.
-    float stripeRisk = smoothstep(3.5, 10.0, projectionAnisotropy)
-        * smoothstep(0.28, 0.82, normalizedViewRange);
+    float stripeRisk = smoothstep(2.4, 7.0, projectionAnisotropy)
+        * smoothstep(0.20, 0.76, normalizedViewRange);
     float longWaveVisibility = macroVisibility
-        * mix(0.24, 1.0, midField)
-        * mix(1.0, 0.42, stripeRisk);
+        * mix(0.10, 1.0, midField)
+        * mix(1.0, 0.16, stripeRisk);
     float3 cameraVector = in.cameraPosition - in.worldPosition;
     float cameraDistance = length(cameraVector);
     float3 viewDirection = cameraVector / max(cameraDistance, 0.001);
@@ -617,7 +654,7 @@ static inline half4 landfallShadeOcean(
         ? 2.5
         : surfaceRadius * 0.48;
     float detailFadeEnd = ocean.boatPresence > 0.5
-        ? 14.0
+        ? 10.0
         : surfaceRadius * 0.92;
     float distanceVisibility = 1.0 - smoothstep(
         detailFadeStart,
@@ -629,6 +666,10 @@ static inline half4 landfallShadeOcean(
     float reflectedNormalVisibility = longWaveVisibility
         * distanceVisibility
         * sampledBroadVisibility;
+    float unresolvedWaveEnergy = saturate(max(
+        stripeRisk * (1.0 - midField * 0.42),
+        1.0 - sampledBroadVisibility
+    ) * smoothstep(0.18, 0.92, normalizedViewRange));
     LandfallBoatFrame boat = landfallBoatFrame(p, ocean);
     LandfallWakeSample wake = landfallSampleWake(ocean, boat);
     LandfallHullSample hull = landfallSampleHullContact(in.height, ocean, boat);
@@ -718,7 +759,7 @@ static inline half4 landfallShadeOcean(
     float3 normal = normalize(mix(
         float3(0.0, 1.0, 0.0),
         detailedNormal,
-        mix(0.04, 1.0, reflectedNormalVisibility)
+        reflectedNormalVisibility
     ));
 
     float distanceFromIsland = length(float2(p.x * 0.72, p.y));
@@ -763,18 +804,18 @@ static inline half4 landfallShadeOcean(
     color += ocean.shallowColor * underwaterScatter * 0.12;
 
     float detailColorGain = mix(
-        0.06,
+        0.0,
         0.85,
         nearField * distanceVisibility * sampledDetailVisibility
     );
-    float2 shadedSlope = in.slope * mix(0.05, 1.0, reflectedNormalVisibility)
+    float2 shadedSlope = in.slope * reflectedNormalVisibility
         + detailSlope * detailColorGain;
     float directionalShade = saturate(0.50 + dot(shadedSlope, float2(-5.2, 6.4)));
     color *= 0.82 + directionalShade * 0.32;
 
     float trough = 1.0 - smoothstep(-0.15, 0.005, in.height);
     float crest = smoothstep(0.045, 0.180, in.height);
-    float elevationVisibility = mix(0.04, 1.0, reflectedNormalVisibility);
+    float elevationVisibility = reflectedNormalVisibility;
     color = mix(color, ocean.deepColor, trough * 0.16 * elevationVisibility);
     color = mix(color, ocean.shallowColor, crest * 0.14 * elevationVisibility);
 
@@ -810,6 +851,19 @@ static inline half4 landfallShadeOcean(
         zenithReflection,
         skyBlend
     );
+    // Once individual slopes are smaller than a pixel, preserve their total
+    // reflected energy as a broad rough-surface response. This removes visible
+    // crest rows without flattening the far ocean into a uniform fog color.
+    float3 integratedFarReflection = mix(
+        ocean.horizonColor * 1.025,
+        zenithReflection,
+        0.14 + viewElevation * 0.18
+    );
+    reflectedSky = mix(
+        reflectedSky,
+        integratedFarReflection,
+        unresolvedWaveEnergy * 0.78
+    );
     float horizonHaze = 1.0 - smoothstep(0.02, 0.34, abs(reflectionDirection.y));
     reflectedSky = mix(reflectedSky, ocean.horizonColor * 1.06, horizonHaze * 0.28);
     // The sun also brightens the air around it. Reflect that finite sky lobe
@@ -841,7 +895,8 @@ static inline half4 landfallShadeOcean(
     float ribbonVisibility = rippleVisibility
         * mix(0.30, 1.0, nearField)
         * (1.0 - horizonField * 0.72)
-        * mix(0.06, 1.0, grazingVisibility);
+        * mix(0.06, 1.0, grazingVisibility)
+        * distanceVisibility * sampledDetailVisibility;
     color = mix(
         color,
         ocean.horizonColor * 1.055,
@@ -932,7 +987,8 @@ static inline half4 landfallShadeOcean(
     glintBreakup *= mix(1.0, 0.34 + capillarySparkle * 0.66, ultraGlintBlend);
     float glintVisibility = rippleVisibility
         * mix(0.34, 1.0, nearField)
-        * (1.0 - horizonField * 0.58);
+        * (1.0 - horizonField * 0.58)
+        * distanceVisibility * sampledDetailVisibility;
     color += ocean.sunColor * celestialReflectionStrength
         * (sunShoulder * glintBreakup * glintVisibility * 0.020
             + sunBroad * 0.018
@@ -948,7 +1004,8 @@ static inline half4 landfallShadeOcean(
     );
     float daylightTransmission = smoothstep(0.18, 0.58, ocean.sunStrength);
     float thinCrest = crest * crestSteepness
-        * macroVisibility * (1.0 - horizonField * 0.78);
+        * macroVisibility * (1.0 - horizonField * 0.78)
+        * distanceVisibility;
     float crestOpticalPath = mix(0.46, 0.18, crest);
     float3 crestTransmittance = exp(
         -float3(0.78, 0.28, 0.12) * crestOpticalPath
