@@ -183,6 +183,15 @@ enum HomeIslandOceanEffects {
         * smoothstep(0.04, 0.55, -cosB)
         * smoothstep(0.95, 1.11, energyB) * 0.72;
     float breaking = max(breakingA, breakingB) * calm;
+    // Leave a short, weaker residue on the rear face after each energetic
+    // crest. Shared phases keep this lifetime signal attached to the wave.
+    float remnantA = smoothstep(0.50, 0.84, sinA)
+        * smoothstep(0.02, 0.68, cosA)
+        * smoothstep(0.92, 1.11, energyA);
+    float remnantB = smoothstep(0.54, 0.86, sinB)
+        * smoothstep(0.03, 0.70, cosB)
+        * smoothstep(0.93, 1.10, energyB) * 0.62;
+    float foamRemnant = max(remnantA, remnantB) * calm;
     """
 
     private static let geometryShader = """
@@ -497,12 +506,29 @@ enum HomeIslandOceanEffects {
     );
     float crestFoam = breaking * mix(0.32, 1.0, crestSteepness) * foamFragments
         * macroVisibility;
+    float decayTexture = 0.5 + 0.5 * sin(
+        dot(p, float2(-0.47, 1.21))
+            + sin(dot(p, float2(0.38, 0.29))) * 1.4
+            - uTime * 0.37
+    );
+    float decayFragments = mix(
+        0.16,
+        0.78,
+        smoothstep(0.32, 0.84, decayTexture)
+    );
+    float remnantFoam = foamRemnant
+        * mix(0.18, 0.60, crestSteepness)
+        * decayFragments * macroVisibility * (1.0 - horizonField * 0.84);
     // Aerated water reflects the current environment instead of acting as a
     // white emissive overlay. This keeps moonlit wake visible but attached to
     // the night sea, while daylight foam retains its brighter scattering.
     float foamIllumination = clamp(0.34 + uSunStrength * 0.50, 0.0, 1.0);
     float3 foamColor = mix(uShallow, uLight, foamIllumination);
-    col = mix(col, foamColor, crestFoam * 0.46);
+    col = mix(
+        col,
+        foamColor,
+        clamp(crestFoam * 0.46 + remnantFoam * 0.20, 0.0, 1.0)
+    );
 
     if (uShoreline > 0.5) {
         // Two advancing shore bands and angular breakup form broad, irregular lace.

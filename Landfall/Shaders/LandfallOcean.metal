@@ -48,6 +48,7 @@ struct LandfallOceanVertexOut {
     float2 slope;
     float height;
     float breaking;
+    float foamRemnant;
     float3 cameraPosition;
 };
 
@@ -56,6 +57,7 @@ struct LandfallWaveSample {
     float2 slope;
     float2 horizontal;
     float breaking;
+    float foamRemnant;
 };
 
 struct LandfallWakeSample {
@@ -178,7 +180,17 @@ static inline LandfallWaveSample landfallSampleWaves(
         * smoothstep(0.04, 0.55, -cosB)
         * smoothstep(0.95, 1.11, energyB) * 0.72;
     float breaking = max(breakingA, breakingB) * calm;
-    return {height, slope, horizontal, breaking};
+    // After the crest passes, a weaker lobe remains on the rear face for a
+    // short phase interval. Because it uses the same phase and energy groups,
+    // the residue travels with the wave instead of becoming a static decal.
+    float remnantA = smoothstep(0.50, 0.84, sin(phaseA))
+        * smoothstep(0.02, 0.68, cosA)
+        * smoothstep(0.92, 1.11, energyA);
+    float remnantB = smoothstep(0.54, 0.86, sin(phaseB))
+        * smoothstep(0.03, 0.70, cosB)
+        * smoothstep(0.93, 1.10, energyB) * 0.62;
+    float foamRemnant = max(remnantA, remnantB) * calm;
+    return {height, slope, horizontal, breaking, foamRemnant};
 }
 
 static inline LandfallBoatFrame landfallBoatFrame(
@@ -475,6 +487,7 @@ vertex LandfallOceanVertexOut landfallOceanVertex(
     out.slope = waves.slope * edge;
     out.height = waves.height * edge;
     out.breaking = waves.breaking * edge;
+    out.foamRemnant = waves.foamRemnant * edge;
     // SceneKit supplies SCNSceneBuffer to the vertex stage. Passing the camera
     // through avoids requesting an unbound custom `frame` attachment from each
     // fragment function, which otherwise leaves only the safety underlay visible.
@@ -854,6 +867,19 @@ static inline half4 landfallShadeOcean(
     );
     float crestFoam = in.breaking * mix(0.32, 1.0, crestSteepness) * foamFragments
         * macroVisibility * (1.0 - horizonField * 0.76);
+    float decayTexture = 0.5 + 0.5 * sin(
+        dot(p, float2(-0.47, 1.21))
+            + sin(dot(p, float2(0.38, 0.29))) * 1.4
+            - ocean.time * 0.37
+    );
+    float decayFragments = mix(
+        0.16,
+        0.78,
+        smoothstep(0.32, 0.84, decayTexture)
+    );
+    float remnantFoam = in.foamRemnant
+        * mix(0.18, 0.60, crestSteepness)
+        * decayFragments * macroVisibility * (1.0 - horizonField * 0.84);
     // Foam scatters the light available in the scene; it does not glow with a
     // fixed white value after sunset. Keep the same material response at every
     // time of day while letting the shared lighting palette set its radiance.
@@ -863,7 +889,11 @@ static inline half4 landfallShadeOcean(
         ocean.lightColor,
         foamIllumination
     );
-    color = mix(color, foamColor, crestFoam * 0.46);
+    color = mix(
+        color,
+        foamColor,
+        saturate(crestFoam * 0.46 + remnantFoam * 0.20)
+    );
 
     if (ocean.shoreline > 0.5) {
         float wash = 0.18
