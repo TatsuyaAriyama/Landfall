@@ -21,17 +21,31 @@ enum VoyageWind {
 enum VoyageSailFlutter {
     static let sailMaterialNames: Set<String> = ["LF_BoatMainSail", "LF_BoatJib"]
 
+    private struct Frame {
+        let node: SCNNode
+        let minimum: SCNVector3
+        let span: SCNVector3
+        let normal: SCNVector3
+        let chordAxis: SCNVector3
+        let riseAxis: SCNVector3
+        let sailThrow: Float
+    }
+
     private static let geometryShader = """
     #pragma arguments
     float uWind;
     float3 uSailMin;
     float3 uSailSpan;
+    float4x4 uSailLocalToFrame;
     float3 uSailNormal;
     float3 uChordAxis;
     float3 uRiseAxis;
+    float3 uChordTangent;
+    float3 uRiseTangent;
     float uSailThrow;
     #pragma body
-    float3 rel = (_geometry.position.xyz - uSailMin) / max(uSailSpan, float3(0.0001));
+    float3 frameP = (uSailLocalToFrame * float4(_geometry.position.xyz, 1.0)).xyz;
+    float3 rel = (frameP - uSailMin) / max(uSailSpan, float3(0.0001));
     float u = clamp(dot(rel, uChordAxis), 0.0, 1.0);
     float v = clamp(dot(rel, uRiseAxis), 0.0, 1.0);
     // 縁で 0、腹で 1。帆が張られている辺からは決して離れない。
@@ -65,51 +79,125 @@ enum VoyageSailFlutter {
         * uWind * uSailThrow;
     _geometry.normal = normalize(
         _geometry.normal
-            - uChordAxis * (dAmountU / chordSpan)
-            - uRiseAxis * (dAmountV / riseSpan)
+            - uChordTangent * (dAmountU / chordSpan)
+            - uRiseTangent * (dAmountV / riseSpan)
     );
     """
 
-    /// 帆の素材へシェーダを差し、帆の寸法から動く向きと量を決める。
+    /// 主帆と前帆を変形フレームとして先に測り、同じ帆へ縫い付けられた
+    /// 補修布にも最寄りのフレームを渡す。別メッシュでも変形が剥がれない。
+    static func install(in root: SCNNode) {
+        var anchors: [(
+            node: SCNNode,
+            material: SCNMaterial,
+            frame: Frame,
+            center: SIMD3<Float>
+        )] = []
+        root.enumerateHierarchy { node, _ in
+            guard let geometry = node.geometry,
+                  let frame = makeFrame(for: node)
+            else { return }
+            for material in geometry.materials {
+                guard let name = material.name,
+                      sailMaterialNames.contains(name)
+                else { continue }
+                anchors.append((node, material, frame, center(of: node, in: root)))
+            }
+        }
+        guard !anchors.isEmpty else { return }
+        for anchor in anchors {
+            install(on: anchor.node, material: anchor.material, frame: anchor.frame)
+        }
+
+        root.enumerateHierarchy { node, _ in
+            guard let geometry = node.geometry else { return }
+            let attachmentCenter = center(of: node, in: root)
+            for material in geometry.materials where isSailAttachment(
+                node: node,
+                material: material
+            ) {
+                guard let anchor = anchors.min(by: {
+                    distanceSquared(attachmentCenter, $0.center)
+                        < distanceSquared(attachmentCenter, $1.center)
+                }) else { continue }
+                install(on: node, material: material, frame: anchor.frame)
+            }
+        }
+    }
+
+    /// 帆の素材へシェーダを差し、基準帆の寸法から動く向きと量を決める。
     ///
     /// 帆がどの軸に薄いかはジオメトリの外接箱から測る。縦(マストに沿う辺)は
     /// 長さではなくワールドの上方向で決める — 帆は幅より背が高いので、長い辺を
     /// 弦とみなすと皺が横ではなく縦に走ってしまう。モデルの向きを直しても、
     /// 帆はいつでも自分の面に垂直な、いま孕んでいる側へ膨らむ。
-    static func install(on node: SCNNode, material: SCNMaterial) {
-        guard let geometry = node.geometry else { return }
+    private static func makeFrame(for node: SCNNode) -> Frame? {
+        guard let geometry = node.geometry else { return nil }
         let box = geometry.boundingBox
         let lower = [box.min.x, box.min.y, box.min.z]
         let upper = [box.max.x, box.max.y, box.max.z]
         let extents = (0..<3).map { max(upper[$0] - lower[$0], Float(0.0001)) }
         guard let thinIndex = extents.indices.min(by: { extents[$0] < extents[$1] })
-        else { return }
+        else { return nil }
         let up = node.simdConvertVector(SIMD3<Float>(0, 1, 0), from: nil)
         let across = (0..<3).filter { $0 != thinIndex }
         guard let riseIndex = across.max(by: { abs(up[$0]) < abs(up[$1]) }),
               let chordIndex = across.first(where: { $0 != riseIndex })
-        else { return }
+        else { return nil }
         // 布は片側だけへ孕む。モデルが既に膨らんでいる側 — 外接箱が原点から
         // 離れている側 — へ押し出す。軸が反転して読み込まれても帆が凹まない。
         let bellySign: Float = abs(upper[thinIndex]) >= abs(lower[thinIndex]) ? 1 : -1
+
+        return Frame(
+            node: node,
+            minimum: box.min,
+            span: SCNVector3(extents[0], extents[1], extents[2]),
+            normal: basis(thinIndex, sign: bellySign),
+            chordAxis: basis(chordIndex),
+            riseAxis: basis(riseIndex),
+            sailThrow: max(extents[thinIndex], 0.05) * 1.15
+        )
+    }
+
+    private static func install(
+        on node: SCNNode,
+        material: SCNMaterial,
+        frame: Frame
+    ) {
+        let localToFrame = node.simdConvertTransform(
+            matrix_identity_float4x4,
+            to: frame.node
+        )
 
         var modifiers = material.shaderModifiers ?? [:]
         modifiers[.geometry] = geometryShader
         material.shaderModifiers = modifiers
 
-        material.setValue(box.min, forKey: "uSailMin")
+        material.setValue(frame.minimum, forKey: "uSailMin")
+        material.setValue(frame.span, forKey: "uSailSpan")
         material.setValue(
-            SCNVector3(extents[0], extents[1], extents[2]),
-            forKey: "uSailSpan"
+            NSValue(scnMatrix4: SCNMatrix4(localToFrame)),
+            forKey: "uSailLocalToFrame"
         )
-        material.setValue(basis(thinIndex, sign: bellySign), forKey: "uSailNormal")
-        material.setValue(basis(chordIndex), forKey: "uChordAxis")
-        material.setValue(basis(riseIndex), forKey: "uRiseAxis")
+        material.setValue(
+            converted(frame.normal, from: frame.node, to: node),
+            forKey: "uSailNormal"
+        )
+        material.setValue(frame.chordAxis, forKey: "uChordAxis")
+        material.setValue(frame.riseAxis, forKey: "uRiseAxis")
+        material.setValue(
+            converted(frame.chordAxis, from: frame.node, to: node),
+            forKey: "uChordTangent"
+        )
+        material.setValue(
+            converted(frame.riseAxis, from: frame.node, to: node),
+            forKey: "uRiseTangent"
+        )
         // 孕みの深さは帆自身の厚み(モデルの膨らみ)を基準にする。元の膨らみの
         // 倍ほど押し出すと、遠景でも布が風を受けているとわかり、近景でも
         // マストを突き抜けない。
         material.setValue(
-            NSNumber(value: max(extents[thinIndex], 0.05) * 1.15),
+            NSNumber(value: frame.sailThrow),
             forKey: "uSailThrow"
         )
         material.setValue(NSNumber(value: Float(0)), forKey: "uWind")
@@ -121,15 +209,54 @@ enum VoyageSailFlutter {
         root.enumerateHierarchy { node, _ in
             guard let geometry = node.geometry else { return }
             for material in geometry.materials {
-                guard let name = material.name,
-                      sailMaterialNames.contains(name),
-                      material.shaderModifiers?[.geometry] != nil,
+                guard material.shaderModifiers?[.geometry]?
+                    .contains("uSailLocalToFrame") == true,
                       !found.contains(where: { $0 === material })
                 else { continue }
                 found.append(material)
             }
         }
         return found
+    }
+
+    private static func isSailAttachment(
+        node: SCNNode,
+        material: SCNMaterial
+    ) -> Bool {
+        let identity = "\(node.name ?? "") \(material.name ?? "")".lowercased()
+        return identity.contains("sailpatch")
+            || identity.contains("sail_patch")
+            || identity.contains("sailrepair")
+            || identity.contains("sail_repair")
+    }
+
+    private static func center(of node: SCNNode, in root: SCNNode) -> SIMD3<Float> {
+        let box = node.boundingBox
+        let local = SIMD3<Float>(
+            (box.min.x + box.max.x) * 0.5,
+            (box.min.y + box.max.y) * 0.5,
+            (box.min.z + box.max.z) * 0.5
+        )
+        return root.simdConvertPosition(local, from: node)
+    }
+
+    private static func distanceSquared(
+        _ lhs: SIMD3<Float>,
+        _ rhs: SIMD3<Float>
+    ) -> Float {
+        simd_length_squared(lhs - rhs)
+    }
+
+    private static func converted(
+        _ vector: SCNVector3,
+        from source: SCNNode,
+        to target: SCNNode
+    ) -> SCNVector3 {
+        let sourceVector = SIMD3<Float>(vector.x, vector.y, vector.z)
+        let local = simd_normalize(
+            target.simdConvertVector(sourceVector, from: source)
+        )
+        return SCNVector3(local.x, local.y, local.z)
     }
 
     private static func basis(_ index: Int, sign: Float = 1) -> SCNVector3 {

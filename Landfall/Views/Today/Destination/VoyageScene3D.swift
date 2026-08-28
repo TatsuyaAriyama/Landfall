@@ -1900,11 +1900,8 @@ enum VoyageSceneKit {
                     material.diffuse.contents = parts.hull.scaled(0.72)
                 case "LF_BoatMainSail":
                     material.diffuse.contents = parts.sail
-                    // 風を受けたときだけ効く。凪の画面では素通り。
-                    VoyageSailFlutter.install(on: node, material: material)
                 case "LF_BoatJib":
                     material.diffuse.contents = parts.jib
-                    VoyageSailFlutter.install(on: node, material: material)
                 case "LF_BoatCockpit":
                     // 帆色の選択とは切り離し、船上のアクセントはブランドの
                     // コーラルへ固定する。元モデルのミッドナイト色もここで上書きする。
@@ -1935,6 +1932,9 @@ enum VoyageSceneKit {
                 return material
             }
         }
+        // 主帆を先に測ってから付属布へ同じ座標場を渡すため、素材の複製と
+        // スタイル適用がすべて終わったあとに一度だけ組み立てる。
+        VoyageSailFlutter.install(in: model)
         for glowNode in lanternGlowNodes {
             installBoatLanternLight(on: glowNode, sunStrength: sunStrength)
         }
