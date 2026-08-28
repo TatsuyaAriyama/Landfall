@@ -176,12 +176,14 @@ enum HomeIslandOceanEffects {
     ) * calm;
     // Generate white water from the compressed forward face of the same wave
     // groups that displace the mesh, so foam remains attached to the crest.
-    float breakingA = smoothstep(0.58, 0.94, sinA)
-        * smoothstep(0.03, 0.52, -cosA)
-        * smoothstep(0.94, 1.13, energyA);
-    float breakingB = smoothstep(0.62, 0.95, sinB)
-        * smoothstep(0.04, 0.55, -cosB)
-        * smoothstep(0.95, 1.11, energyB) * 0.72;
+    float compressedA = -cosA;
+    float compressedB = -cosB;
+    float breakingA = (1.0 - smoothstep(0.06, 0.16, abs(compressedA - 0.38)))
+        * smoothstep(0.76, 0.94, sinA)
+        * smoothstep(0.99, 1.14, energyA);
+    float breakingB = (1.0 - smoothstep(0.07, 0.17, abs(compressedB - 0.40)))
+        * smoothstep(0.78, 0.95, sinB)
+        * smoothstep(0.99, 1.11, energyB) * 0.78;
     float breaking = max(breakingA, breakingB) * calm;
     // Leave a short, weaker residue on the rear face after each energetic
     // crest. Shared phases keep this lifetime signal attached to the wave.
@@ -521,50 +523,60 @@ enum HomeIslandOceanEffects {
     // This removes the repeating bright lines that made the former surface
     // read as a patterned plane.
     float crestSteepness = smoothstep(0.022, 0.052, length(slope));
-    float foamTexture = 0.5 + 0.5 * sin(
-        dot(p, float2(0.91, 0.67))
-            + sin(dot(p, float2(-0.21, 0.34))) * 1.8
-            - uTime * 0.61
+    float foamWarp = sin(
+        dot(p, float2(-1.37, 2.11)) - uTime * 0.33
     );
-    float foamFilter = max(fwidth(foamTexture) * 0.55, 0.015);
-    float foamFragments = mix(
-        0.42,
-        1.0,
-        smoothstep(
-            0.36 - foamFilter,
-            0.82 + foamFilter,
-            foamTexture
-        )
+    float foamA = sin(
+        dot(p, float2(4.73, 3.11)) - uTime * 1.07 + foamWarp * 1.20
     );
-    float crestFoam = breaking * mix(0.32, 1.0, crestSteepness) * foamFragments
-        * macroVisibility;
+    float foamB = sin(
+        dot(p, float2(-6.29, 2.57)) + uTime * 0.79 - foamA * 0.55
+    );
+    float foamC = sin(
+        dot(p, float2(2.17, -8.41)) - uTime * 1.31 + foamB * 0.43
+    );
+    float foamTurbulence = clamp(
+        0.50 + foamA * 0.23 + foamB * 0.17 + foamC * 0.10,
+        0.0,
+        1.0
+    );
+    float foamFilter = max(fwidth(foamTurbulence) * 0.62, 0.015);
+    float foamFragments = smoothstep(
+        0.72 - foamFilter,
+        0.88 + foamFilter,
+        foamTurbulence
+    );
+    float crestRangeVisibility = 1.0 - smoothstep(
+        0.38,
+        0.68,
+        normalizedViewRange
+    );
+    float crestFoam = breaking * mix(0.46, 1.0, crestSteepness) * foamFragments
+        * macroVisibility * crestRangeVisibility;
     float decayTexture = 0.5 + 0.5 * sin(
-        dot(p, float2(-0.47, 1.21))
-            + sin(dot(p, float2(0.38, 0.29))) * 1.4
-            - uTime * 0.37
+        dot(p, float2(-2.17, 3.83)) - uTime * 0.41 + foamWarp * 1.10
     );
     float decayFilter = max(fwidth(decayTexture) * 0.55, 0.015);
-    float decayFragments = mix(
-        0.16,
-        0.78,
-        smoothstep(
-            0.32 - decayFilter,
-            0.84 + decayFilter,
-            decayTexture
-        )
+    float decayFragments = foamFragments * mix(
+        0.12,
+        0.48,
+        smoothstep(0.42 - decayFilter, 0.80 + decayFilter, decayTexture)
     );
     float remnantFoam = foamRemnant
-        * mix(0.18, 0.60, crestSteepness)
+        * mix(0.04, 0.16, crestSteepness)
         * decayFragments * macroVisibility * (1.0 - horizonField * 0.84);
     // Aerated water reflects the current environment instead of acting as a
     // white emissive overlay. This keeps moonlit wake visible but attached to
     // the night sea, while daylight foam retains its brighter scattering.
     float foamIllumination = clamp(0.34 + uSunStrength * 0.50, 0.0, 1.0);
     float3 foamColor = mix(uShallow, uLight, foamIllumination);
+    float foamCoverage = 1.0 - exp2(
+        -(crestFoam * 1.75 + remnantFoam * 0.08)
+    );
     col = mix(
         col,
         foamColor,
-        clamp(crestFoam * 0.46 + remnantFoam * 0.20, 0.0, 1.0)
+        clamp(foamCoverage, 0.0, 1.0)
     );
 
     if (uShoreline > 0.5) {

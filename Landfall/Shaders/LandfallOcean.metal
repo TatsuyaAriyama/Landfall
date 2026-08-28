@@ -173,12 +173,14 @@ static inline LandfallWaveSample landfallSampleWaves(
     // White water is born on the compressed, forward face of energetic wave
     // groups. Keeping this signal in the spectrum makes it travel with the
     // displaced crest instead of sliding across the surface as decorative noise.
-    float breakingA = smoothstep(0.58, 0.94, sin(phaseA))
-        * smoothstep(0.03, 0.52, -cosA)
-        * smoothstep(0.94, 1.13, energyA);
-    float breakingB = smoothstep(0.62, 0.95, sin(phaseB))
-        * smoothstep(0.04, 0.55, -cosB)
-        * smoothstep(0.95, 1.11, energyB) * 0.72;
+    float compressedA = -cosA;
+    float compressedB = -cosB;
+    float breakingA = (1.0 - smoothstep(0.06, 0.16, abs(compressedA - 0.38)))
+        * smoothstep(0.76, 0.94, sin(phaseA))
+        * smoothstep(0.99, 1.14, energyA);
+    float breakingB = (1.0 - smoothstep(0.07, 0.17, abs(compressedB - 0.40)))
+        * smoothstep(0.78, 0.95, sin(phaseB))
+        * smoothstep(0.99, 1.11, energyB) * 0.78;
     float breaking = max(breakingA, breakingB) * calm;
     // After the crest passes, a weaker lobe remains on the rear face for a
     // short phase interval. Because it uses the same phase and energy groups,
@@ -896,40 +898,45 @@ static inline half4 landfallShadeOcean(
     color += ocean.sunColor * underwaterScatter * forwardScatter * 0.035;
 
     float crestSteepness = smoothstep(0.022, 0.052, length(in.slope));
-    float foamTexture = 0.5 + 0.5 * sin(
-        dot(p, float2(0.91, 0.67))
-            + sin(dot(p, float2(-0.21, 0.34))) * 1.8
-            - ocean.time * 0.61
+    float foamWarp = sin(
+        dot(p, float2(-1.37, 2.11)) - ocean.time * 0.33
     );
-    float foamFilter = max(fwidth(foamTexture) * 0.55, 0.015);
-    float foamFragments = mix(
-        0.42,
-        1.0,
-        smoothstep(
-            0.36 - foamFilter,
-            0.82 + foamFilter,
-            foamTexture
-        )
+    float foamA = sin(
+        dot(p, float2(4.73, 3.11)) - ocean.time * 1.07 + foamWarp * 1.20
     );
-    float crestFoam = in.breaking * mix(0.32, 1.0, crestSteepness) * foamFragments
-        * macroVisibility * (1.0 - horizonField * 0.76);
+    float foamB = sin(
+        dot(p, float2(-6.29, 2.57)) + ocean.time * 0.79 - foamA * 0.55
+    );
+    float foamC = sin(
+        dot(p, float2(2.17, -8.41)) - ocean.time * 1.31 + foamB * 0.43
+    );
+    float foamTurbulence = saturate(
+        0.50 + foamA * 0.23 + foamB * 0.17 + foamC * 0.10
+    );
+    float foamFilter = max(fwidth(foamTurbulence) * 0.62, 0.015);
+    float foamFragments = smoothstep(
+        0.72 - foamFilter,
+        0.88 + foamFilter,
+        foamTurbulence
+    );
+    float crestRangeVisibility = 1.0 - smoothstep(
+        0.38,
+        0.68,
+        normalizedViewRange
+    );
+    float crestFoam = in.breaking * mix(0.46, 1.0, crestSteepness) * foamFragments
+        * macroVisibility * crestRangeVisibility;
     float decayTexture = 0.5 + 0.5 * sin(
-        dot(p, float2(-0.47, 1.21))
-            + sin(dot(p, float2(0.38, 0.29))) * 1.4
-            - ocean.time * 0.37
+        dot(p, float2(-2.17, 3.83)) - ocean.time * 0.41 + foamWarp * 1.10
     );
     float decayFilter = max(fwidth(decayTexture) * 0.55, 0.015);
-    float decayFragments = mix(
-        0.16,
-        0.78,
-        smoothstep(
-            0.32 - decayFilter,
-            0.84 + decayFilter,
-            decayTexture
-        )
+    float decayFragments = foamFragments * mix(
+        0.12,
+        0.48,
+        smoothstep(0.42 - decayFilter, 0.80 + decayFilter, decayTexture)
     );
     float remnantFoam = in.foamRemnant
-        * mix(0.18, 0.60, crestSteepness)
+        * mix(0.04, 0.16, crestSteepness)
         * decayFragments * macroVisibility * (1.0 - horizonField * 0.84);
     // Foam scatters the light available in the scene; it does not glow with a
     // fixed white value after sunset. Keep the same material response at every
@@ -940,10 +947,13 @@ static inline half4 landfallShadeOcean(
         ocean.lightColor,
         foamIllumination
     );
+    float foamCoverage = 1.0 - exp2(
+        -(crestFoam * 1.75 + remnantFoam * 0.08)
+    );
     color = mix(
         color,
         foamColor,
-        saturate(crestFoam * 0.46 + remnantFoam * 0.20)
+        saturate(foamCoverage)
     );
 
     if (ocean.shoreline > 0.5) {
