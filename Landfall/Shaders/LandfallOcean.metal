@@ -1042,7 +1042,7 @@ static inline half4 landfallShadeOcean(
     // Begin before perspective compresses the last mesh rows into one pixel.
     // The transition then spans several distant wave bands instead of becoming
     // a single ruler-straight color step at the geometric edge.
-    float farAtmosphere = smoothstep(0.58, 0.82, normalizedViewRange);
+    float farAtmosphere = smoothstep(0.42, 0.98, normalizedViewRange);
     float samplingHaze = max(
         (1.0 - longWaveVisibility) * 0.10,
         max(
