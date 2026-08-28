@@ -138,11 +138,12 @@ enum VoyageBowSpray {
     }
 
     struct Rates {
-        static let zero = Rates(streaks: 0, mist: 0, flecks: 0)
+        static let zero = Rates(streaks: 0, mist: 0, flecks: 0, impulse: 0)
 
         let streaks: CGFloat
         let mist: CGFloat
         let flecks: CGFloat
+        let impulse: CGFloat
 
         /// Derives each burst from the same wave field that lifts the hull.
         /// `oceanTime` must use `HomeIslandOceanEffects.currentTime` so spray,
@@ -172,10 +173,14 @@ enum VoyageBowSpray {
                 1
             )
             let impact = CGFloat(min(risingImpact * 0.78 + crestContact * 0.22, 1))
+            // A stronger collision changes the motion of the spray, not only
+            // the number of identical particles emitted on that frame.
+            let impulse = min(strength * 0.44 + impact * 0.72, 1)
             return Rates(
                 streaks: 14 * strength * (0.14 + impact * 0.86),
                 mist: 12 * strength * (0.16 + impact * 0.84),
-                flecks: 10 * strength * pow(impact, 1.72)
+                flecks: 10 * strength * pow(impact, 1.72),
+                impulse: impulse
             )
         }
 
@@ -197,9 +202,27 @@ enum VoyageBowSpray {
         let flecks: [SCNParticleSystem]
 
         func apply(_ rates: Rates) {
-            set(streaks, rate: rates.streaks)
-            set(mist, rate: rates.mist)
-            set(flecks, rate: rates.flecks)
+            set(
+                streaks,
+                rate: rates.streaks,
+                impulse: rates.impulse,
+                velocity: 0.90...1.32,
+                size: 0.022...0.033
+            )
+            set(
+                mist,
+                rate: rates.mist,
+                impulse: rates.impulse,
+                velocity: 0.42...0.68,
+                size: 0.082...0.130
+            )
+            set(
+                flecks,
+                rate: rates.flecks,
+                impulse: rates.impulse,
+                velocity: 0.58...1.00,
+                size: 0.013...0.023
+            )
         }
 
         func reset() {
@@ -211,8 +234,21 @@ enum VoyageBowSpray {
             streaks + mist + flecks
         }
 
-        private func set(_ systems: [SCNParticleSystem], rate: CGFloat) {
-            for system in systems { system.birthRate = rate }
+        private func set(
+            _ systems: [SCNParticleSystem],
+            rate: CGFloat,
+            impulse: CGFloat,
+            velocity: ClosedRange<CGFloat>,
+            size: ClosedRange<CGFloat>
+        ) {
+            let amount = min(max(impulse, 0), 1)
+            for system in systems {
+                system.birthRate = rate
+                system.particleVelocity = velocity.lowerBound
+                    + (velocity.upperBound - velocity.lowerBound) * amount
+                system.particleSize = size.lowerBound
+                    + (size.upperBound - size.lowerBound) * amount
+            }
         }
     }
 
