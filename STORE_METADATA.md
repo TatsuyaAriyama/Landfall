@@ -81,7 +81,7 @@ KeelMiraは、集中した時間を3Dの航海として残す作業・学習タ�
 
 ## What's New
 
-### v1.8
+### v1.9
 - EN:
 ```
 Sea and ship visuals have been significantly refreshed.
