@@ -658,7 +658,14 @@ static inline half4 landfallShadeOcean(
         waterDepth = max(0.12, shoreDistance * 0.72 + 0.12);
     }
 
-    float3 transmission = exp(-float3(0.155, 0.061, 0.027) * min(waterDepth, 24.0));
+    // A grazing view travels through more water than a vertical one. Use that
+    // optical path for absorption so oblique voyage views retain a deep body
+    // beneath the reflected sky instead of flattening into one pale cyan wash.
+    float opticalDepth = min(
+        waterDepth / max(viewElevation, 0.22),
+        24.0
+    );
+    float3 transmission = exp(-float3(0.155, 0.061, 0.027) * opticalDepth);
     float3 filteredWater = ocean.deepColor + (ocean.shallowColor - ocean.deepColor) * transmission;
     float3 body = mix(ocean.shallowColor, ocean.seaColor, smoothstep(0.35, 4.6, waterDepth));
     body = mix(body, ocean.deepColor, smoothstep(4.0, 20.0, waterDepth) * 0.82);
@@ -667,7 +674,7 @@ static inline half4 landfallShadeOcean(
         float coastalLift = 1.0 - smoothstep(0.0, 11.0, max(shoreDistance, 0.0));
         color = mix(color, ocean.shallowColor, coastalLift * 0.22);
     }
-    float underwaterScatter = exp(-waterDepth * 0.16);
+    float underwaterScatter = exp(-opticalDepth * 0.16);
     color += ocean.shallowColor * underwaterScatter * 0.12;
 
     float detailColorGain = mix(

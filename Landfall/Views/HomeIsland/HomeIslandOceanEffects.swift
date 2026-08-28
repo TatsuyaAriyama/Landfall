@@ -353,9 +353,17 @@ enum HomeIslandOceanEffects {
     }
 
     // Red and green wavelengths fall away first as the optical path grows;
-    // blue-green scatter remains, producing depth without a dark overlay.
+    // blue-green scatter remains, producing depth without a dark overlay. At
+    // grazing angles the ray crosses more water, so the reflected sky sits on
+    // a deeper body instead of a flat pale wash.
+    float3 viewDirection = normalize(_surface.view);
+    float viewElevation = clamp(dot(worldUp, viewDirection), 0.0, 1.0);
+    float opticalDepth = min(
+        waterDepth / max(viewElevation, 0.22),
+        24.0
+    );
     float3 transmission = exp(
-        -float3(0.155, 0.061, 0.027) * min(waterDepth, 24.0)
+        -float3(0.155, 0.061, 0.027) * opticalDepth
     );
     float3 filteredWater = uDeep + (uShallow - uDeep) * transmission;
     float3 waterBody = mix(
@@ -388,7 +396,6 @@ enum HomeIslandOceanEffects {
     // Fresnel reflection is a sky gradient rather than a single cyan wash.
     // A warm, narrow sun lobe shares the same normal and therefore travels
     // across both long swells and tiny ripples as one coherent highlight.
-    float3 viewDirection = normalize(_surface.view);
     float viewFacing = clamp(dot(waterNormal, viewDirection), 0.0, 1.0);
     float fresnel = 0.025 + 0.975 * pow(1.0 - viewFacing, 5.0);
     float3 reflectionDirection = reflect(-viewDirection, waterNormal);
