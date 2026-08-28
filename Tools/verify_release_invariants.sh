@@ -7,7 +7,8 @@ cd "$repo_root"
 
 probe_binary="$(mktemp /tmp/keelmira-first-voyage-probe.XXXXXX)"
 progression_probe_binary="$(mktemp /tmp/keelmira-progression-probe.XXXXXX)"
-trap 'rm -f "$probe_binary" "$progression_probe_binary"' EXIT
+ocean_probe_binary="$(mktemp /tmp/keelmira-ocean-wave-probe.XXXXXX)"
+trap 'rm -f "$probe_binary" "$progression_probe_binary" "$ocean_probe_binary"' EXIT
 
 xcrun swiftc \
   Landfall/Models/FirstVoyageRoutingPolicy.swift \
@@ -21,6 +22,12 @@ xcrun swiftc \
   Tools/RenderHarness/ProgressionUnlockProbe.swift \
   -o "$progression_probe_binary"
 "$progression_probe_binary"
+
+xcrun swiftc \
+  Landfall/OceanWaveSpectrum.swift \
+  Tools/RenderHarness/OceanWaveSpectrumProbe.swift \
+  -o "$ocean_probe_binary"
+"$ocean_probe_binary"
 
 search_swift() {
   /usr/bin/grep -R -n -E --include='*.swift' "$1" Landfall Shared LandfallWidget

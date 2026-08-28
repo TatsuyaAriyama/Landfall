@@ -12,7 +12,7 @@ enum HomeIslandMarineDynamics {
         let normal: SIMD3<Float>
     }
 
-    /// CPU mirror of the five geometry waves in `HomeIslandOceanEffects`.
+    /// CPU mirror of the native Metal ocean's five geometry-wave spectrum.
     struct WaveField {
         let surfaceY: Float
         let width: Float
@@ -43,73 +43,14 @@ enum HomeIslandMarineDynamics {
             )
             let calm: Float = includesShoreline ? coastalCalm : 0.72
 
-            var phases = Self.spectrum.map { wave in
-                simd_dot(p, wave.direction) * wave.waveNumber
-                    - time * wave.angularSpeed
-                    + wave.phaseOffset
-            }
-            let sinC = sin(phases[2])
-            let sinD = sin(phases[3])
-            let sinE = sin(phases[4])
-            let cosC = cos(phases[2])
-            let cosD = cos(phases[3])
-            let cosE = cos(phases[4])
-            let warpDirectionF = SIMD2<Float>(-0.940, 0.342)
-            let warpDirectionG = SIMD2<Float>(0.515, 0.857)
-            let phaseF = simd_dot(p, warpDirectionF) * 0.052
-                - time * 0.14 + 0.30
-            let phaseG = simd_dot(p, warpDirectionG) * 0.073
-                - time * 0.19 + 1.35
-            let cosF = cos(phaseF)
-            let cosG = cos(phaseG)
-            phases[0] += sinC * 0.34 + sinD * 0.10 + sin(phaseF) * 0.55
-            phases[1] += -sinD * 0.26 + sinE * 0.08 - sin(phaseG) * 0.42
-
-            let cosA = cos(phases[0])
-            let cosB = cos(phases[1])
-            let energyPhaseA = phaseF + 1.17
-            let energyPhaseB = phaseG - 0.83
-            let energyA = 1 + sin(energyPhaseA) * 0.18
-            let energyB = 1 + sin(energyPhaseB) * 0.14
-            let energyGradientA = warpDirectionF
-                * (cos(energyPhaseA) * 0.052 * 0.18)
-            let energyGradientB = warpDirectionG
-                * (cos(energyPhaseB) * 0.073 * 0.14)
-            let phaseGradients = [
-                Self.spectrum[0].direction * Self.spectrum[0].waveNumber
-                    + Self.spectrum[2].direction * (cosC * 0.340 * 0.34)
-                    + Self.spectrum[3].direction * (cosD * 0.720 * 0.10)
-                    + warpDirectionF * (cosF * 0.052 * 0.55),
-                Self.spectrum[1].direction * Self.spectrum[1].waveNumber
-                    - Self.spectrum[3].direction * (cosD * 0.720 * 0.26)
-                    + Self.spectrum[4].direction * (cosE * 1.250 * 0.08)
-                    - warpDirectionG * (cosG * 0.073 * 0.42),
-                Self.spectrum[2].direction * Self.spectrum[2].waveNumber,
-                Self.spectrum[3].direction * Self.spectrum[3].waveNumber,
-                Self.spectrum[4].direction * Self.spectrum[4].waveNumber,
-            ]
-            let sinA = sin(phases[0])
-            let sinB = sin(phases[1])
-            var height = sinA * Self.spectrum[0].amplitude * energyA
-                + sinB * Self.spectrum[1].amplitude * energyB
-            var shaderSlope = phaseGradients[0]
-                    * (cosA * Self.spectrum[0].amplitude * energyA)
-                + energyGradientA * (sinA * Self.spectrum[0].amplitude)
-                + phaseGradients[1]
-                    * (cosB * Self.spectrum[1].amplitude * energyB)
-                + energyGradientB * (sinB * Self.spectrum[1].amplitude)
-            let sines = [sinC, sinD, sinE]
-            let cosines = [cosC, cosD, cosE]
-            for index in 2..<Self.spectrum.count {
-                let localIndex = index - 2
-                height += sines[localIndex] * Self.spectrum[index].amplitude
-                shaderSlope += phaseGradients[index]
-                    * (cosines[localIndex] * Self.spectrum[index].amplitude)
-            }
-
+            let spectrum = OceanWaveSpectrum.sample(
+                at: p,
+                time: time,
+                amplitudeScale: calm
+            )
             let edge = edgeFade(for: localP)
-            let displacement = height * calm * edge
-            shaderSlope *= calm * edge
+            let displacement = spectrum.height * edge
+            let shaderSlope = spectrum.slope * edge
             let worldSlope = SIMD2(shaderSlope.x, -shaderSlope.y)
             let normal = simd_normalize(
                 SIMD3(-worldSlope.x, 1, -worldSlope.y)
@@ -136,28 +77,6 @@ enum HomeIslandMarineDynamics {
             return x * z
         }
 
-        private struct Wave {
-            let direction: SIMD2<Float>
-            let waveNumber: Float
-            let angularSpeed: Float
-            let phaseOffset: Float
-            let amplitude: Float
-        }
-
-        // Keep these values identical to both shader modifiers. Horizontal
-        // Gerstner displacement does not change the height/slope sample point.
-        private static let spectrum = [
-            Wave(direction: SIMD2(0.342, 0.940), waveNumber: 0.105,
-                 angularSpeed: 0.42, phaseOffset: 0, amplitude: 0.171),
-            Wave(direction: SIMD2(-0.766, 0.643), waveNumber: 0.155,
-                 angularSpeed: 0.36, phaseOffset: 1.70, amplitude: 0.104),
-            Wave(direction: SIMD2(0.906, 0.423), waveNumber: 0.340,
-                 angularSpeed: 0.78, phaseOffset: 0.45, amplitude: 0.052),
-            Wave(direction: SIMD2(-0.259, 0.966), waveNumber: 0.720,
-                 angularSpeed: 1.22, phaseOffset: 2.10, amplitude: 0.020),
-            Wave(direction: SIMD2(0.643, -0.766), waveNumber: 1.250,
-                 angularSpeed: 1.68, phaseOffset: 0.90, amplitude: 0.006),
-        ]
     }
 
     struct BoatMotion {
