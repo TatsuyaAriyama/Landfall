@@ -1659,7 +1659,8 @@ enum VoyageSceneKit {
         sunColor: UInt,
         sunStrength: Float
     ) {
-        let surface = BoatSurfaceKind.resolve(identity.lowercased())
+        let normalizedIdentity = identity.lowercased()
+        let surface = BoatSurfaceKind.resolve(normalizedIdentity)
         let profile = surface.profile
         material.lightingModel = .physicallyBased
         if let roughness = profile.roughness {
@@ -1677,8 +1678,13 @@ enum VoyageSceneKit {
         } else if surface == .glow {
             if material.emission.contents == nil {
                 material.emission.contents = material.diffuse.contents
-                material.emission.intensity = 1.7
             }
+            let lanternVisibility = boatLanternVisibility(sunStrength: sunStrength)
+            material.emission.intensity = CGFloat(
+                isBoatLanternGlow(normalizedIdentity)
+                    ? 0.42 + lanternVisibility * 1.48
+                    : 1.25
+            )
         }
 
         let detail = profile.detail
@@ -1734,6 +1740,46 @@ enum VoyageSceneKit {
             forKey: "uBoatSunColor"
         )
         material.setValue(NSNumber(value: sunStrength), forKey: "uBoatSunStrength")
+    }
+
+    /// 船ごとの形ではなく、USDZ に共通する意味名から実際の船灯だけを拾う。
+    /// Corsair の発光窓などは `.glow` のまま扱い、点光源を増殖させない。
+    private static func isBoatLanternGlow(_ identity: String) -> Bool {
+        identity.contains("glow")
+            && (identity.contains("lantern") || identity.contains("lamp"))
+    }
+
+    private static func boatLanternVisibility(sunStrength: Float) -> Float {
+        let night = min(max((0.72 - sunStrength) / 0.62, 0), 1)
+        return night * night * (3 - 2 * night)
+    }
+
+    private static func installBoatLanternLight(
+        on glowNode: SCNNode,
+        sunStrength: Float
+    ) {
+        let visibility = boatLanternVisibility(sunStrength: sunStrength)
+        guard visibility > 0.001,
+              glowNode.childNode(
+                withName: "landfall-runtime-lantern-light",
+                recursively: false
+              ) == nil
+        else { return }
+
+        let light = SCNLight()
+        light.type = .omni
+        light.color = UIColor(rgb: 0xFF9A3C)
+        // SceneKit's inverse-square response is very strong at deck scale.
+        // Keep this below the celestial fill so wood and sail detail survive.
+        light.intensity = CGFloat(3 * visibility)
+        light.attenuationStartDistance = 0.06
+        light.attenuationEndDistance = 1.3
+        light.castsShadow = false
+
+        let lightNode = SCNNode()
+        lightNode.name = "landfall-runtime-lantern-light"
+        lightNode.light = light
+        glowNode.addChildNode(lightNode)
     }
 
     /// 船のマテリアルを毎フレーム再探索せず、波と同期する喫水線の書き込み先を集める。
@@ -1824,8 +1870,17 @@ enum VoyageSceneKit {
             model.addChildNode(child.clone())
         }
 
+        var lanternGlowNodes: [SCNNode] = []
         model.enumerateChildNodes { node, _ in
             guard let geometry = node.geometry else { return }
+            let nodeIdentity = ([node.name] + geometry.materials.map(\.name))
+                .compactMap { $0 }
+                .joined(separator: " ")
+                .lowercased()
+            if isBoatLanternGlow(nodeIdentity),
+               !lanternGlowNodes.contains(where: { $0 === node }) {
+                lanternGlowNodes.append(node)
+            }
             geometry.materials = geometry.materials.map { source in
                 guard let material = source.copy() as? SCNMaterial else {
                     return source
@@ -1872,6 +1927,9 @@ enum VoyageSceneKit {
                 )
                 return material
             }
+        }
+        for glowNode in lanternGlowNodes {
+            installBoatLanternLight(on: glowNode, sunStrength: sunStrength)
         }
         return model
     }

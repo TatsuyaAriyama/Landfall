@@ -989,6 +989,32 @@ static inline half4 landfallShadeOcean(
         );
         color = mix(color, ocean.shallowColor, hull.bowDisturbance * 0.022);
         color = mix(color, foamColor, hull.bowAeration * 0.13);
+
+        // The same dusk factor that raises the physical deck lantern also
+        // creates a restrained pair of stern-quarter reflections. Two soft
+        // lobes cover both single-lantern and twin-lamp ships without encoding
+        // model-specific positions in the ocean renderer.
+        float lanternVisibility = 1.0 - smoothstep(0.10, 0.72, ocean.sunStrength);
+        float lanternLongitudinal = boat.longitudinal + boat.halfLength * 0.82;
+        float lanternQuarter = boat.halfBeam * 0.58;
+        float portLanternDistance = length(float2(
+            lanternLongitudinal,
+            boat.lateral - lanternQuarter
+        ));
+        float starboardLanternDistance = length(float2(
+            lanternLongitudinal,
+            boat.lateral + lanternQuarter
+        ));
+        float lanternDistance = min(portLanternDistance, starboardLanternDistance);
+        float lanternRadius = max(boat.halfBeam * 1.8, 0.34);
+        float lanternPool = exp(-pow(lanternDistance / lanternRadius, 2.0))
+            * lanternVisibility * macroVisibility;
+        float3 lanternColor = mix(
+            ocean.lightColor,
+            float3(1.0, 0.24, 0.04),
+            0.55
+        );
+        color += lanternColor * lanternPool * (0.012 + fresnel * 0.024);
     }
 
     if (wake.disturbance > 0.0) {

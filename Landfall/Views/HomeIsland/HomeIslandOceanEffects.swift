@@ -651,6 +651,26 @@ enum HomeIslandOceanEffects {
             meniscus * mix(0.48, 1.0, contactLoad)
                 * meniscusBreak * meniscusFacing * 0.12 * surfaceEdge
         );
+
+        // Match the native Metal path: the night lantern belongs to the same
+        // water and lighting system, not a screen-space glow beneath the boat.
+        float lanternVisibility = 1.0 - smoothstep(0.10, 0.72, uSunStrength);
+        float lanternLongitudinal = boatLongitudinal + halfHullLength * 0.82;
+        float lanternQuarter = halfHullBeam * 0.58;
+        float portLanternDistance = length(float2(
+            lanternLongitudinal,
+            boatLateral - lanternQuarter
+        ));
+        float starboardLanternDistance = length(float2(
+            lanternLongitudinal,
+            boatLateral + lanternQuarter
+        ));
+        float lanternDistance = min(portLanternDistance, starboardLanternDistance);
+        float lanternRadius = max(halfHullBeam * 1.8, 0.34);
+        float lanternPool = exp(-pow(lanternDistance / lanternRadius, 2.0))
+            * lanternVisibility * macroVisibility * surfaceEdge;
+        float3 lanternColor = mix(uLight, float3(1.0, 0.24, 0.04), 0.55);
+        col += lanternColor * lanternPool * (0.012 + fresnel * 0.024);
     }
 
     // Keep the wake below foam contrast: it is a short veil of aerated water
