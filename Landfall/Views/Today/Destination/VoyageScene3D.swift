@@ -1220,6 +1220,7 @@ enum VoyageSceneKit {
         let clearCoat: (amount: CGFloat, roughness: CGFloat)
         let ambientOcclusion: CGFloat
         let detail: (scale: Float, strength: Float, roughness: Float, color: Float)
+        let patina: (scale: Float, roughness: Float, color: Float)
         let isWettable: Bool
 
         init(
@@ -1229,6 +1230,7 @@ enum VoyageSceneKit {
             ambientOcclusion: CGFloat = 0.96,
             detail: (scale: Float, strength: Float, roughness: Float, color: Float)
                 = (1, 0, 0, 0),
+            patina: (scale: Float, roughness: Float, color: Float) = (1, 0, 0),
             isWettable: Bool = false
         ) {
             self.roughness = roughness
@@ -1236,6 +1238,7 @@ enum VoyageSceneKit {
             self.clearCoat = clearCoat
             self.ambientOcclusion = ambientOcclusion
             self.detail = detail
+            self.patina = patina
             self.isWettable = isWettable
         }
     }
@@ -1306,6 +1309,7 @@ enum VoyageSceneKit {
                     roughness: 0.42,
                     clearCoat: (0.52, 0.20),
                     detail: (19, 0.010, 0.035, 0.018),
+                    patina: (2.2, 0.032, 0.022),
                     isWettable: true
                 )
             case .varnishedWood:
@@ -1313,6 +1317,7 @@ enum VoyageSceneKit {
                     roughness: 0.68,
                     clearCoat: (0.22, 0.32),
                     detail: (7.5, 0.032, 0.085, 0.060),
+                    patina: (3.0, 0.050, 0.035),
                     isWettable: true
                 )
             case .weatheredWood:
@@ -1320,6 +1325,7 @@ enum VoyageSceneKit {
                     roughness: 0.88,
                     ambientOcclusion: 0.82,
                     detail: (6.2, 0.052, 0.080, 0.090),
+                    patina: (2.6, 0.065, 0.055),
                     isWettable: true
                 )
             case .sailcloth:
@@ -1402,6 +1408,9 @@ enum VoyageSceneKit {
     float uBoatDetailStrength;
     float uBoatRoughnessVariation;
     float uBoatColorVariation;
+    float uBoatPatinaScale;
+    float uBoatPatinaRoughness;
+    float uBoatPatinaColor;
     float uBoatWettable;
     float uBoatWaterline;
     float3 uBoatWaterlineNormal;
@@ -1481,6 +1490,21 @@ enum VoyageSceneKit {
         );
         _surface.diffuse.rgb *= 1.0 + height * uBoatColorVariation;
     }
+
+    // Micro detail fades before it aliases, so it cannot give a mid-distance
+    // hull any material breakup. A low-frequency, non-repeating field remains
+    // readable as broad polish and weather exposure without becoming a decal.
+    float3 patinaP = boatP * uBoatPatinaScale;
+    float patina = sin(
+        dot(patinaP, float3(0.73, 0.31, 1.17))
+            + sin(dot(patinaP, float3(-0.41, 0.89, 0.52))) * 1.23
+    ) * 0.62 + sin(dot(patinaP, float3(1.37, -0.26, 0.67))) * 0.38;
+    _surface.roughness = clamp(
+        _surface.roughness + patina * uBoatPatinaRoughness,
+        0.06,
+        1.0
+    );
+    _surface.diffuse.rgb *= 1.0 + patina * uBoatPatinaColor;
 
     float3 viewDirection = normalize(_surface.view);
     float3 sunDirection = normalize(
@@ -1660,6 +1684,15 @@ enum VoyageSceneKit {
         material.setValue(
             NSNumber(value: detail.color * min(detailMultiplier, 1.05)),
             forKey: "uBoatColorVariation"
+        )
+        material.setValue(NSNumber(value: profile.patina.scale), forKey: "uBoatPatinaScale")
+        material.setValue(
+            NSNumber(value: profile.patina.roughness),
+            forKey: "uBoatPatinaRoughness"
+        )
+        material.setValue(
+            NSNumber(value: profile.patina.color),
+            forKey: "uBoatPatinaColor"
         )
         material.setValue(
             NSNumber(value: profile.isWettable ? Float(1) : Float(0)),
