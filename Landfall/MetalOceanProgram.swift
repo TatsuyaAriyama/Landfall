@@ -32,7 +32,7 @@ enum MetalOceanProgram {
 #else
         switch scene {
         case .stillImage:
-            return false
+            return true
         case .timerVoyage:
             return true
         case .homeIsland, .boatStudio:

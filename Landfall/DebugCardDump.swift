@@ -6,6 +6,7 @@ import SwiftUI
 /// - LANDFALL_PASS_DUMP=1 で入港証(LANDFALL_SITE を併せて渡すとQR入り)。
 /// - LANDFALL_REST_DUMP=1 で休んだ日のカード(通常の導線からは開けないため)。
 /// - LANDFALL_DAY_DUMP=1 で記録のある日のSNS共有カード3配色。
+/// - LANDFALL_LANDFALL_DUMP=1 で着岸時だけの3D記念カード。
 enum DebugCardDump {
     @MainActor
     static func runIfRequested() {
@@ -63,6 +64,22 @@ enum DebugCardDump {
                 if let image = WrappedShare.render(card: card, fileName: "share.png") {
                     try? image.data.write(to: dir.appendingPathComponent("share-\(theme.rawValue).png"))
                 }
+            }
+        }
+
+        if ProcessInfo.processInfo.environment["LANDFALL_LANDFALL_DUMP"] == "1" {
+            let destination = Destination(name: isJapanese ? "凪光島" : "Stilllight Isle")
+            destination.achievedAt = Date()
+            if let artifact = LandfallShareRenderer.render(
+                destination: destination,
+                minutes: 160
+            ) {
+                try? artifact.worldImage.pngData()?.write(
+                    to: dir.appendingPathComponent("landfall-world.png")
+                )
+                try? artifact.shareImage.data.write(
+                    to: dir.appendingPathComponent("landfall-card.png")
+                )
             }
         }
     }
