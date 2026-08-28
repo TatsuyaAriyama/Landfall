@@ -285,7 +285,12 @@ static inline LandfallWakeSample landfallSampleWake(
     // fields outright made almost every fragment vanish on a phone display;
     // retain a sparse primary pocket while the secondary field breaks its edge.
     float bubbleCells = bubblePrimary * mix(0.28, 1.0, bubbleSecondary);
-    float bubbleBreakup = smoothstep(0.32, 0.74, bubbleCells);
+    float bubbleFilter = max(fwidth(bubbleCells) * 0.55, 0.015);
+    float bubbleBreakup = smoothstep(
+        0.32 - bubbleFilter,
+        0.74 + bubbleFilter,
+        bubbleCells
+    );
     // Fresh prop wash reads as one aerated mass. As it travels aft, the same
     // advected cells become gaps, leaving separated pockets before the tail dies.
     float foamAge = smoothstep(0.10, 0.72, age);
@@ -296,7 +301,11 @@ static inline LandfallWakeSample landfallSampleWake(
     );
     float tailDissolve = mix(
         1.0,
-        smoothstep(0.40, 0.86, bubbleSecondary),
+        smoothstep(
+            0.40 - bubbleFilter,
+            0.86 + bubbleFilter,
+            bubbleSecondary
+        ),
         smoothstep(0.48, 0.92, age)
     );
     float aeration = disturbance
@@ -873,10 +882,15 @@ static inline half4 landfallShadeOcean(
             + sin(dot(p, float2(-0.21, 0.34))) * 1.8
             - ocean.time * 0.61
     );
+    float foamFilter = max(fwidth(foamTexture) * 0.55, 0.015);
     float foamFragments = mix(
         0.42,
         1.0,
-        smoothstep(0.36, 0.82, foamTexture)
+        smoothstep(
+            0.36 - foamFilter,
+            0.82 + foamFilter,
+            foamTexture
+        )
     );
     float crestFoam = in.breaking * mix(0.32, 1.0, crestSteepness) * foamFragments
         * macroVisibility * (1.0 - horizonField * 0.76);
@@ -885,10 +899,15 @@ static inline half4 landfallShadeOcean(
             + sin(dot(p, float2(0.38, 0.29))) * 1.4
             - ocean.time * 0.37
     );
+    float decayFilter = max(fwidth(decayTexture) * 0.55, 0.015);
     float decayFragments = mix(
         0.16,
         0.78,
-        smoothstep(0.32, 0.84, decayTexture)
+        smoothstep(
+            0.32 - decayFilter,
+            0.84 + decayFilter,
+            decayTexture
+        )
     );
     float remnantFoam = in.foamRemnant
         * mix(0.18, 0.60, crestSteepness)

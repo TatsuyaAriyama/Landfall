@@ -499,10 +499,15 @@ enum HomeIslandOceanEffects {
             + sin(dot(p, float2(-0.21, 0.34))) * 1.8
             - uTime * 0.61
     );
+    float foamFilter = max(fwidth(foamTexture) * 0.55, 0.015);
     float foamFragments = mix(
         0.42,
         1.0,
-        smoothstep(0.36, 0.82, foamTexture)
+        smoothstep(
+            0.36 - foamFilter,
+            0.82 + foamFilter,
+            foamTexture
+        )
     );
     float crestFoam = breaking * mix(0.32, 1.0, crestSteepness) * foamFragments
         * macroVisibility;
@@ -511,10 +516,15 @@ enum HomeIslandOceanEffects {
             + sin(dot(p, float2(0.38, 0.29))) * 1.4
             - uTime * 0.37
     );
+    float decayFilter = max(fwidth(decayTexture) * 0.55, 0.015);
     float decayFragments = mix(
         0.16,
         0.78,
-        smoothstep(0.32, 0.84, decayTexture)
+        smoothstep(
+            0.32 - decayFilter,
+            0.84 + decayFilter,
+            decayTexture
+        )
     );
     float remnantFoam = foamRemnant
         * mix(0.18, 0.60, crestSteepness)
@@ -707,7 +717,12 @@ enum HomeIslandOceanEffects {
             );
             float bubbleCells = bubblePrimary
                 * mix(0.28, 1.0, bubbleSecondary);
-            float bubbleBreakup = smoothstep(0.32, 0.74, bubbleCells);
+            float bubbleFilter = max(fwidth(bubbleCells) * 0.55, 0.015);
+            float bubbleBreakup = smoothstep(
+                0.32 - bubbleFilter,
+                0.74 + bubbleFilter,
+                bubbleCells
+            );
             // Preserve a connected stern wash, then dissolve it into advected
             // pockets so the tail cannot read as a uniformly painted stripe.
             float foamAge = smoothstep(0.10, 0.72, wakeAge);
@@ -718,7 +733,11 @@ enum HomeIslandOceanEffects {
             );
             float tailDissolve = mix(
                 1.0,
-                smoothstep(0.40, 0.86, bubbleSecondary),
+                smoothstep(
+                    0.40 - bubbleFilter,
+                    0.86 + bubbleFilter,
+                    bubbleSecondary
+                ),
                 smoothstep(0.48, 0.92, wakeAge)
             );
             float aeration = disturbance * pocketIntegrity * tailDissolve
