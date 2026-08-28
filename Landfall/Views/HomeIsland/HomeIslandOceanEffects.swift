@@ -408,6 +408,19 @@ enum HomeIslandOceanEffects {
     float viewFacing = clamp(dot(waterNormal, viewDirection), 0.0, 1.0);
     float fresnel = 0.025 + 0.975 * pow(1.0 - viewFacing, 5.0);
     float3 reflectionDirection = reflect(-viewDirection, waterNormal);
+    float3 celestialDirection = normalize(
+        (scn_frame.viewTransform * float4(uSunDirection, 0.0)).xyz
+    );
+    float lowLightAdaptation = 1.0 - smoothstep(
+        0.18,
+        0.48,
+        uSunStrength
+    );
+    float celestialReflectionStrength = mix(
+        uSunStrength,
+        max(uSunStrength, 0.34),
+        lowLightAdaptation
+    );
     float skyHeight = clamp(
         dot(reflectionDirection, worldUp) * 0.72 + 0.36,
         0.0,
@@ -423,6 +436,20 @@ enum HomeIslandOceanEffects {
         zenithReflection,
         smoothstep(0.08, 0.88, skyHeight)
     );
+    float celestialAlignment = clamp(
+        dot(reflectionDirection, celestialDirection),
+        0.0,
+        1.0
+    );
+    float celestialAureole = pow(
+        celestialAlignment,
+        mix(10.0, 3.2, lowLightAdaptation)
+    ) * mix(0.16, 0.34, lowLightAdaptation)
+        + pow(
+            celestialAlignment,
+            mix(64.0, 24.0, lowLightAdaptation)
+        ) * mix(0.34, 0.48, lowLightAdaptation);
+    reflectedSky += uSun * celestialReflectionStrength * celestialAureole;
     col = mix(col, reflectedSky, 0.085 + fresnel * 0.60);
 
     // Broad facets borrow sky color when they turn toward the light and expose
@@ -471,14 +498,12 @@ enum HomeIslandOceanEffects {
         microFacetShade * microFacetVisibility * 0.022
     );
 
-    float3 sunDirection = normalize(
-        (scn_frame.viewTransform * float4(uSunDirection, 0.0)).xyz
-    );
     float sunFacing = max(
-        dot(waterNormal, normalize(viewDirection + sunDirection)),
+        dot(waterNormal, normalize(viewDirection + celestialDirection)),
         0.0
     );
-    float sunBroad = pow(sunFacing, 48.0);
+    float sunShoulder = pow(sunFacing, 18.0);
+    float sunBroad = pow(sunFacing, 54.0);
     float sunCore = pow(sunFacing, 192.0);
     float glintA = 0.5 + 0.5 * sin(
         dot(p, float2(1.47, -1.91)) + sin(p.y * 0.19) * 1.7 - uTime * 1.46
@@ -487,8 +512,10 @@ enum HomeIslandOceanEffects {
         dot(p, float2(0.73, 2.31)) + sin(p.x * 0.23) * 1.3 + uTime * 1.13
     );
     float glintBreakup = 0.02 + 0.98 * smoothstep(0.38, 0.92, glintA * glintB);
-    col += uSun * uSunStrength
-        * (sunBroad * 0.015 + sunCore * glintBreakup * 0.32);
+    col += uSun * celestialReflectionStrength
+        * (sunShoulder * glintBreakup * 0.020
+            + sunBroad * 0.018
+            + sunCore * glintBreakup * mix(0.28, 0.36, lowLightAdaptation));
 
     // Only sufficiently high, steep and broken crests produce white water.
     // This removes the repeating bright lines that made the former surface

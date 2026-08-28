@@ -735,6 +735,18 @@ static inline half4 landfallShadeOcean(
     float fresnel = 0.025 + 0.975 * pow(1.0 - saturate(dot(normal, viewDirection)), 5.0);
     float3 reflectionDirection = reflect(-viewDirection, normal);
     float3 celestialDirection = normalize(ocean.sunDirection);
+    // At night the directional source is the moon. Preserve a small adapted
+    // reflection response without lifting the diffuse water or whitewater.
+    float lowLightAdaptation = 1.0 - smoothstep(
+        0.18,
+        0.48,
+        ocean.sunStrength
+    );
+    float celestialReflectionStrength = mix(
+        ocean.sunStrength,
+        max(ocean.sunStrength, 0.34),
+        lowLightAdaptation
+    );
     float skyHeight = saturate(reflectionDirection.y * 0.72 + 0.36);
     float skyBlend = smoothstep(0.06, 0.90, skyHeight);
     // The zenith is optically deeper than the bright, humid horizon. Feeding
@@ -759,10 +771,16 @@ static inline half4 landfallShadeOcean(
     // across broad waves, while the existing specular terms retain its broken
     // high-frequency core.
     float celestialAlignment = saturate(dot(reflectionDirection, celestialDirection));
-    float celestialAureole = pow(celestialAlignment, 10.0) * 0.16
-        + pow(celestialAlignment, 64.0) * 0.34;
+    float celestialAureole = pow(
+        celestialAlignment,
+        mix(10.0, 3.2, lowLightAdaptation)
+    ) * mix(0.16, 0.34, lowLightAdaptation)
+        + pow(
+            celestialAlignment,
+            mix(64.0, 24.0, lowLightAdaptation)
+        ) * mix(0.34, 0.48, lowLightAdaptation);
     reflectedSky += ocean.sunColor
-        * (ocean.sunStrength * celestialAureole);
+        * (celestialReflectionStrength * celestialAureole);
     color = mix(color, reflectedSky, 0.04 + fresnel * 0.34);
 
     // A real water surface catches the bright horizon in narrow, broken facets.
@@ -828,20 +846,6 @@ static inline half4 landfallShadeOcean(
     float sunShoulder = pow(sunFacing, 18.0);
     float sunBroad = pow(sunFacing, 54.0);
     float sunCore = pow(sunFacing, 192.0);
-    // The night palette uses the moon as this directional source. Its physical
-    // intensity is low, but an eye adapted to the dark still reads a narrow
-    // reflection path on the water. Lift only that low-light specular response;
-    // diffuse water and foam continue to use the scene's actual sun strength.
-    float lowLightAdaptation = 1.0 - smoothstep(
-        0.18,
-        0.48,
-        ocean.sunStrength
-    );
-    float celestialReflectionStrength = mix(
-        ocean.sunStrength,
-        max(ocean.sunStrength, 0.24),
-        lowLightAdaptation
-    );
     float glintA = 0.5 + 0.5 * sin(
         dot(p, float2(1.47, -1.91)) + sin(p.y * 0.19) * 1.7 - ocean.time * 1.46
     );
