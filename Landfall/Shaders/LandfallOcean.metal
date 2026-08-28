@@ -639,8 +639,21 @@ static inline half4 landfallShadeOcean(
         - ocean.time * 1.47 - rippleWarp * 0.36;
     float rippleC = dot(p, rippleDirectionC) * 4.85
         - ocean.time * 2.05 + rippleWarp * 0.52;
+    // Wind arrives in short, uneven packets. Modulate the crossed ripple
+    // slopes together so fine reflection breaks into calm and active patches
+    // instead of exposing three uniform sinusoidal bands.
+    float rippleGroup = smoothstep(
+        0.18,
+        0.86,
+        0.5 + 0.5 * sin(
+            dot(p, float2(-0.306, 0.952)) * 0.47
+                - ocean.time * 0.24 + sin(rippleA - rippleB) * 0.32
+        )
+    );
+    float rippleEnergy = mix(0.72, 1.16, rippleGroup);
     float2 capillarySlope = float2(0.0);
     float capillaryFacetRadiance = 0.0;
+    float capillaryVisibility = 0.0;
     if (detailQuality > 0.75) {
         constexpr float2 capillaryDirectionA = float2(-0.952, 0.306);
         constexpr float2 capillaryDirectionB = float2(0.391, 0.920);
@@ -654,7 +667,11 @@ static inline half4 landfallShadeOcean(
                 abs(dot(footprintY, capillaryDirectionB)) * 10.7
             )
         );
-        float visibility = 1.0 - smoothstep(0.14, 0.48, capillaryFootprint);
+        capillaryVisibility = 1.0 - smoothstep(
+            0.14,
+            0.48,
+            capillaryFootprint
+        );
         float rippleD = dot(p, capillaryDirectionA) * 8.4
             - ocean.time * 2.72 - rippleWarp * 0.81;
         float rippleE = dot(p, capillaryDirectionB) * 10.7
@@ -668,7 +685,8 @@ static inline half4 landfallShadeOcean(
         capillarySlope = (
             capillaryDirectionA * (cos(rippleD) * 0.0044)
             + capillaryDirectionB * (cos(rippleE) * 0.0032)
-        ) * visibility * tierBlend * interference * nearRippleVisibility;
+        ) * capillaryVisibility * tierBlend
+            * interference * nearRippleVisibility;
         float capillaryGroup = 0.5 + 0.5 * sin(
             dot(p, float2(0.673, -0.740)) * 1.17
                 - ocean.time * 0.38 + sin(rippleD * 0.21) * 1.35
@@ -679,12 +697,14 @@ static inline half4 landfallShadeOcean(
             smoothstep(0.30, 0.78, capillaryGroup)
         );
         capillaryFacetRadiance = sin(rippleD) * sin(rippleE)
-            * groupEnvelope * visibility * tierBlend;
+            * groupEnvelope * capillaryVisibility * tierBlend;
     }
     float2 detailSlope = (
-        rippleDirectionA * (cos(rippleA) * 0.032 * rippleVisibilityA)
-        + rippleDirectionB * (cos(rippleB) * 0.023 * rippleVisibilityB)
-        + rippleDirectionC * (cos(rippleC) * 0.010 * rippleVisibilityC)
+        (
+            rippleDirectionA * (cos(rippleA) * 0.040 * rippleVisibilityA)
+            + rippleDirectionB * (cos(rippleB) * 0.029 * rippleVisibilityB)
+            + rippleDirectionC * (cos(rippleC) * 0.013 * rippleVisibilityC)
+        ) * rippleEnergy
         + capillarySlope
     ) * ocean.microNormalScale * mix(0.72, 1.14, nearField);
     detailSlope += wake.slope * macroVisibility * mix(0.76, 1.0, detailQuality);
@@ -863,9 +883,26 @@ static inline half4 landfallShadeOcean(
     float microFacetRadiance = mix(
         broadFacetRadiance,
         capillaryFacetRadiance,
-        smoothstep(0.78, 1.0, detailQuality) * nearField * 0.92
+        smoothstep(0.78, 1.0, detailQuality)
+            * nearField * capillaryVisibility * 0.92
     );
-    color *= 1.0 + microFacetRadiance * microFacetVisibility * 0.16;
+    float microFacetContrast = mix(
+        0.10,
+        0.34,
+        saturate(ocean.sunStrength)
+    );
+    color *= 1.0
+        + microFacetRadiance * microFacetVisibility * microFacetContrast;
+    float microFacetLift = saturate(microFacetRadiance)
+        * microFacetVisibility;
+    float microFacetShade = saturate(-microFacetRadiance)
+        * microFacetVisibility;
+    color = mix(
+        color,
+        facetSky,
+        microFacetLift * mix(0.012, 0.034, saturate(ocean.sunStrength))
+    );
+    color = mix(color, ocean.deepColor, microFacetShade * 0.026);
 
     float3 halfVector = normalize(viewDirection + celestialDirection);
     float sunFacing = max(dot(normal, halfVector), 0.0);

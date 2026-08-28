@@ -219,8 +219,12 @@ enum HomeIslandOceanEffects {
     // first three also move vertices laterally, giving crests a real profile
     // instead of simply lifting a flat grid.
     float2 horizontal = (
-        dirA * (cosA * 0.171 * 0.72 * energyA)
-        + dirB * (cosB * 0.104 * 0.64 * energyB)
+        dirA * (
+            (cosA + cos(harmonicPhaseA) * 0.18) * 0.171 * 0.72 * energyA
+        )
+        + dirB * (
+            (cosB + cos(harmonicPhaseB) * 0.13) * 0.104 * 0.64 * energyB
+        )
         + dirC * (cosC * 0.052 * 0.44)
     ) * calm;
     float edgeX = 1.0 - smoothstep(
@@ -320,16 +324,27 @@ enum HomeIslandOceanEffects {
         - uTime * 1.47 - rippleWarp * 0.36;
     float rippleC = dot(p, float2(0.225, 0.974)) * 4.85
         - uTime * 2.05 + rippleWarp * 0.52;
+    // Keep the fallback material in the same wind packets as native Metal so
+    // its extra normal energy becomes irregular facets, not repeating bands.
+    float rippleGroup = smoothstep(
+        0.18,
+        0.86,
+        0.5 + 0.5 * sin(
+            dot(p, float2(-0.306, 0.952)) * 0.47
+                - uTime * 0.24 + sin(rippleA - rippleB) * 0.32
+        )
+    );
+    float rippleEnergy = mix(0.72, 1.16, rippleGroup);
     float detailCalm = mix(
         0.68,
         1.0,
         smoothstep(10.0, 34.0, distanceFromIsland)
     );
     float2 detailSlope = (
-        float2(0.829, 0.559) * (cos(rippleA) * 0.032 * rippleVisibilityA)
-        + float2(-0.616, 0.788) * (cos(rippleB) * 0.023 * rippleVisibilityB)
-        + float2(0.225, 0.974) * (cos(rippleC) * 0.010 * rippleVisibilityC)
-    ) * detailCalm * surfaceEdge * uMicroNormalScale
+        float2(0.829, 0.559) * (cos(rippleA) * 0.040 * rippleVisibilityA)
+        + float2(-0.616, 0.788) * (cos(rippleB) * 0.029 * rippleVisibilityB)
+        + float2(0.225, 0.974) * (cos(rippleC) * 0.013 * rippleVisibilityC)
+    ) * rippleEnergy * detailCalm * surfaceEdge * uMicroNormalScale
         * mix(0.72, 1.14, nearField);
     float3 worldUp = normalize(
         (scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz
@@ -496,7 +511,13 @@ enum HomeIslandOceanEffects {
         * (1.0 - horizonField * 0.96)
         * smoothstep(0.004, 0.035, microSlopeLength);
     float microFacetRadiance = (microSunwardFacet - 0.5) * 2.0;
-    col *= 1.0 + microFacetRadiance * microFacetVisibility * 0.21;
+    float microFacetContrast = mix(
+        0.10,
+        0.34,
+        clamp(uSunStrength, 0.0, 1.0)
+    );
+    col *= 1.0
+        + microFacetRadiance * microFacetVisibility * microFacetContrast;
     col = mix(
         col,
         facetSky,
