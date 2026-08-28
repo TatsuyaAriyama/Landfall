@@ -1609,11 +1609,21 @@ enum VoyageSceneKit {
     float reflectedHorizon = 1.0
         - smoothstep(0.04, 0.50, abs(reflectedUp));
     float horizonLobe = 1.0 - smoothstep(0.08, 0.72, abs(upFacing));
+    float celestialReflection = mix(
+        0.58,
+        1.0,
+        sqrt(clamp(uBoatSunStrength, 0.0, 1.0))
+    );
     float environmentStrength = reflectionResponse
-        * (0.010 + gloss * 0.030 + fresnel * 0.032);
+        * (0.010 + gloss * 0.030 + fresnel * 0.032)
+        * celestialReflection;
     float skyWeight = reflectedSky / max(reflectedSky + reflectedSea, 0.0001);
     float3 environmentColor = mix(uBoatSeaBounce, uBoatSkyBounce, skyWeight);
-    float3 horizonColor = mix(uBoatSkyBounce, uBoatSunColor, 0.18);
+    float3 horizonColor = mix(
+        uBoatSkyBounce,
+        uBoatSunColor,
+        mix(0.05, 0.18, clamp(uBoatSunStrength, 0.0, 1.0))
+    );
     environmentColor = mix(
         environmentColor,
         horizonColor,
@@ -2697,6 +2707,17 @@ enum VoyageSceneKit {
 
     private static let voyagingLightTarget = SCNVector3(0.8, 1.15, 0)
 
+    private static func voyagingCelestialStrength(
+        for timeOfDay: AftideHomeTimeOfDay
+    ) -> Float {
+        switch timeOfDay {
+        case .morning: 0.65
+        case .day: 1
+        case .evening: 0.55
+        case .night: 0.10
+        }
+    }
+
     private static func voyagingCelestialPosition(
         for timeOfDay: AftideHomeTimeOfDay
     ) -> SCNVector3 {
@@ -2713,13 +2734,7 @@ enum VoyageSceneKit {
     ) -> HomeIslandOceanEffects.Appearance {
         let source = voyagingCelestialPosition(for: timeOfDay)
         let target = voyagingLightTarget
-        let strength: Float
-        switch timeOfDay {
-        case .morning: strength = 0.65
-        case .day: strength = 1
-        case .evening: strength = 0.55
-        case .night: strength = 0.10
-        }
+        let strength = voyagingCelestialStrength(for: timeOfDay)
         let horizon = voyagingAtmosphereColor(
             timeOfDay: timeOfDay,
             palette: palette
@@ -2761,17 +2776,18 @@ enum VoyageSceneKit {
         timeOfDay: AftideHomeTimeOfDay
     ) -> [SCNNode] {
         let palette = timeOfDay == .night ? AftideHomePalette.voyagingNight : timeOfDay.palette
+        let strength = voyagingCelestialStrength(for: timeOfDay)
         let ambient = SCNNode()
         ambient.light = SCNLight()
         ambient.light?.type = .ambient
         ambient.light?.color = UIColor(rgb: palette.ambient)
-        ambient.light?.intensity = timeOfDay == .day ? 620 : 440
+        ambient.light?.intensity = CGFloat(240 + 380 * strength)
 
         let key = SCNNode()
         key.light = SCNLight()
         key.light?.type = .directional
         key.light?.color = UIColor(rgb: palette.key)
-        key.light?.intensity = timeOfDay == .day ? 1_100 : 900
+        key.light?.intensity = CGFloat(220 + 880 * strength)
         key.position = voyagingCelestialPosition(for: timeOfDay)
         key.look(at: voyagingLightTarget)
 
@@ -2779,7 +2795,7 @@ enum VoyageSceneKit {
         fill.light = SCNLight()
         fill.light?.type = .directional
         fill.light?.color = UIColor(rgb: palette.fill)
-        fill.light?.intensity = 180
+        fill.light?.intensity = CGFloat(70 + 110 * strength)
         fill.position = SCNVector3(5, 3, 6)
         fill.look(at: voyagingLightTarget)
         return [ambient, key, fill]
