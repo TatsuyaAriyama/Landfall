@@ -2656,11 +2656,27 @@ enum VoyageSceneKit {
         material.emission.contents = UIColor(rgb: palette.reflection)
         material.emission.intensity = 0.62
         material.writesToDepthBuffer = false
+        material.shaderModifiers = [.surface: """
+        #pragma body
+        // Keep the geometric disc crisp while the background texture supplies
+        // the much wider atmospheric halo. Subtle limb darkening gives the
+        // sphere a finite photosphere instead of a flat white UI circle.
+        float facing = clamp(
+            dot(normalize(_surface.normal), normalize(_surface.view)),
+            0.0,
+            1.0
+        );
+        float limb = 0.78 + sqrt(facing) * 0.22;
+        _surface.diffuse.rgb *= limb;
+        _surface.emission.rgb *= limb;
+        """]
         sphere.firstMaterial = material
         let node = SCNNode(geometry: sphere)
         node.name = "voyagingSun"
         node.position = voyagingCelestialPosition(for: timeOfDay)
-        node.scale = SCNVector3(0.27, 0.27, 0.27)
+        // The previous five-degree disc dominated the portrait composition.
+        // Retain a stylized scale, but separate the photosphere from its halo.
+        node.scale = SCNVector3(0.17, 0.17, 0.17)
         node.renderingOrder = -20
         return node
     }
