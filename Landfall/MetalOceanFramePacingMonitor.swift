@@ -25,6 +25,22 @@ struct MetalOceanFramePacingMonitor {
         at time: TimeInterval,
         targetFramesPerSecond: Int = 60
     ) -> Bool {
+#if targetEnvironment(simulator)
+#if DEBUG
+        // Host scheduling and Simulator GPU translation do not represent the
+        // selected iPhone's thermal or frame-pacing headroom. Keep Ultra visual
+        // checks stable unless a diagnostic launch explicitly exercises either
+        // degradation path.
+        let runsDiagnostic = UserDefaults.standard.bool(
+            forKey: "LandfallMetalSimulateOverload"
+        ) || UserDefaults.standard.bool(
+            forKey: "LandfallMetalSimulateThermalPressure"
+        )
+        guard runsDiagnostic else { return false }
+#else
+        return false
+#endif
+#endif
         if isUnderSeriousThermalPressure {
             guard !hasSignaledThermalPressure else { return false }
             reset()
