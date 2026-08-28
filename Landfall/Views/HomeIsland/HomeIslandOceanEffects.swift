@@ -548,10 +548,33 @@ enum HomeIslandOceanEffects {
             + sunBroad * 0.018
             + sunCore * glintBreakup * mix(0.28, 0.36, lowLightAdaptation));
 
+    float crestSteepness = smoothstep(0.022, 0.052, length(slope));
+    // Keep the fallback optically equivalent to native Metal: a high, steep
+    // crest transmits a restrained amount of back light through a short water
+    // path. This is volume response, so it precedes opaque aerated foam.
+    float forwardScatter = pow(
+        clamp(dot(viewDirection, -celestialDirection), 0.0, 1.0),
+        4.0
+    );
+    float daylightTransmission = smoothstep(0.18, 0.58, uSunStrength);
+    float thinCrest = crest * crestSteepness
+        * macroVisibility * (1.0 - horizonField * 0.78);
+    float crestOpticalPath = mix(0.46, 0.18, crest);
+    float3 crestTransmittance = exp(
+        -float3(0.78, 0.28, 0.12) * crestOpticalPath
+    );
+    float3 transmittedCrest = mix(
+        uShallow,
+        uSun * crestTransmittance,
+        0.46
+    );
+    float crestTransmission = thinCrest * forwardScatter
+        * daylightTransmission * 0.20;
+    col = mix(col, transmittedCrest, clamp(crestTransmission, 0.0, 1.0));
+
     // Only sufficiently high, steep and broken crests produce white water.
     // This removes the repeating bright lines that made the former surface
     // read as a patterned plane.
-    float crestSteepness = smoothstep(0.022, 0.052, length(slope));
     float foamWarp = sin(
         dot(p, float2(-1.37, 2.11)) - uTime * 0.33
     );

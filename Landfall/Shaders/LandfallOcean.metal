@@ -937,13 +937,31 @@ static inline half4 landfallShadeOcean(
         * (sunShoulder * glintBreakup * glintVisibility * 0.020
             + sunBroad * 0.018
             + sunCore * glintBreakup * mix(0.28, 0.36, lowLightAdaptation));
+    float crestSteepness = smoothstep(0.022, 0.052, length(in.slope));
+    // A crest is a thin volume of water, not an opaque bright stripe. When the
+    // sun sits behind it, Beer-Lambert transmission warms the upper, steep face
+    // while the trough remains optically deep. Foam is composited afterwards,
+    // so aerated fragments still replace the transmitted water where it breaks.
     float forwardScatter = pow(
         saturate(dot(viewDirection, -celestialDirection)),
         4.0
     );
-    color += ocean.sunColor * underwaterScatter * forwardScatter * 0.035;
+    float daylightTransmission = smoothstep(0.18, 0.58, ocean.sunStrength);
+    float thinCrest = crest * crestSteepness
+        * macroVisibility * (1.0 - horizonField * 0.78);
+    float crestOpticalPath = mix(0.46, 0.18, crest);
+    float3 crestTransmittance = exp(
+        -float3(0.78, 0.28, 0.12) * crestOpticalPath
+    );
+    float3 transmittedCrest = mix(
+        ocean.shallowColor,
+        ocean.sunColor * crestTransmittance,
+        0.46
+    );
+    float crestTransmission = thinCrest * forwardScatter
+        * daylightTransmission * mix(0.16, 0.24, detailQuality);
+    color = mix(color, transmittedCrest, saturate(crestTransmission));
 
-    float crestSteepness = smoothstep(0.022, 0.052, length(in.slope));
     float foamWarp = sin(
         dot(p, float2(-1.37, 2.11)) - ocean.time * 0.33
     );
