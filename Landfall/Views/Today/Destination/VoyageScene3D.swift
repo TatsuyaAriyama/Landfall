@@ -1424,6 +1424,11 @@ enum VoyageSceneKit {
     float uBoatWettable;
     float uBoatWaterline;
     float3 uBoatWaterlineNormal;
+    float3 uBoatWaterlineOrigin;
+    float3 uBoatWaterlineForward;
+    float3 uBoatWaterlineAcross;
+    float3 uBoatWaterlineHalfSize;
+    float3 uBoatWaterlineCurvature;
     float4x4 uBoatLocalToModel;
     float3 uBoatGrainAxis;
     float3 uBoatSeaBounce;
@@ -1538,10 +1543,27 @@ enum VoyageSceneKit {
     float lineBreakup = sin(boatP.x * 7.1 + sin(boatP.z * 10.9) * 0.82) * 0.014
         + sin(boatP.z * 18.7 - boatP.x * 3.4) * 0.006;
     float brokenLine = uBoatWaterline + lineBreakup;
+    float3 waterlineOffset = boatP - uBoatWaterlineOrigin;
+    float normalizedForward = clamp(
+        dot(waterlineOffset, normalize(uBoatWaterlineForward))
+            / max(uBoatWaterlineHalfSize.x, 0.001),
+        -1.25,
+        1.25
+    );
+    float normalizedAcross = clamp(
+        dot(waterlineOffset, normalize(uBoatWaterlineAcross))
+            / max(uBoatWaterlineHalfSize.y, 0.001),
+        -1.25,
+        1.25
+    );
+    float waveCurvature = uBoatWaterlineCurvature.x
+            * normalizedForward * normalizedForward
+        + uBoatWaterlineCurvature.y
+            * normalizedAcross * normalizedAcross;
     float waterlineDistance = dot(
         boatP,
         normalize(uBoatWaterlineNormal)
-    ) - brokenLine;
+    ) - brokenLine - waveCurvature;
     float belowSurface = uBoatWettable
         * (1.0 - smoothstep(-0.025, 0.055, waterlineDistance));
     float waterlineRim = uBoatWettable
@@ -1749,6 +1771,11 @@ enum VoyageSceneKit {
         )
         material.setValue(NSNumber(value: authoredBoatWaterline), forKey: "uBoatWaterline")
         material.setValue(SCNVector3(0, 1, 0), forKey: "uBoatWaterlineNormal")
+        material.setValue(SCNVector3Zero, forKey: "uBoatWaterlineOrigin")
+        material.setValue(SCNVector3(1, 0, 0), forKey: "uBoatWaterlineForward")
+        material.setValue(SCNVector3(0, 0, 1), forKey: "uBoatWaterlineAcross")
+        material.setValue(SCNVector3(1, 0.5, 0), forKey: "uBoatWaterlineHalfSize")
+        material.setValue(SCNVector3Zero, forKey: "uBoatWaterlineCurvature")
         material.setValue(
             NSValue(scnMatrix4: SCNMatrix4(localToModel)),
             forKey: "uBoatLocalToModel"
@@ -1824,35 +1851,94 @@ enum VoyageSceneKit {
         return materials
     }
 
-    /// CPU側の波面を船モデル座標へ変換し、船体の濡れ境界へ渡す。
-    /// 波の高さだけでなく法線も共有するため、ロール・ピッチ中も接触線が傾く。
+    /// CPU側の5点波面を船モデル座標へ変換し、船体の濡れ境界へ渡す。
+    /// 中央の接平面に船首尾・左右舷の二次残差を加えるため、ロール・
+    /// ピッチ中も実際の波の曲率に沿って濡れ境界が曲がる。
     static func updateBoatWaterline(
-        surface: HomeIslandMarineDynamics.WaveSample,
+        patch: HomeIslandMarineDynamics.WaterlinePatch,
         buoyancyNode: SCNNode,
         materials: [SCNMaterial]
     ) {
-        let worldOrigin = buoyancyNode.simdWorldPosition
-        let worldContact = SIMD3<Float>(
-            worldOrigin.x,
-            surface.worldHeight,
-            worldOrigin.z
-        )
-        let localContact = buoyancyNode.simdConvertPosition(
-            worldContact,
-            from: nil
-        )
+        func localContact(
+            _ point: HomeIslandMarineDynamics.SurfacePoint
+        ) -> SIMD3<Float> {
+            buoyancyNode.simdConvertPosition(
+                SIMD3(
+                    point.worldXZ.x,
+                    point.sample.worldHeight,
+                    point.worldXZ.y
+                ),
+                from: nil
+            )
+        }
+        func flatLocalPosition(
+            _ point: HomeIslandMarineDynamics.SurfacePoint
+        ) -> SIMD3<Float> {
+            buoyancyNode.simdConvertPosition(
+                SIMD3(
+                    point.worldXZ.x,
+                    patch.center.sample.worldHeight,
+                    point.worldXZ.y
+                ),
+                from: nil
+            )
+        }
+        let center = localContact(patch.center)
+        let bow = localContact(patch.bow)
+        let stern = localContact(patch.stern)
+        let port = localContact(patch.port)
+        let starboard = localContact(patch.starboard)
         let localNormal = simd_normalize(
-            buoyancyNode.simdConvertVector(surface.normal, from: nil)
+            buoyancyNode.simdConvertVector(patch.center.sample.normal, from: nil)
         )
         // The voyage bob is physically lowered to the authored waterline.
         // `localContact` therefore already contains that offset; adding it a
         // second time would put the wet boundary above the depth intersection.
-        let waterline = simd_dot(localContact, localNormal)
+        let waterline = simd_dot(center, localNormal)
+        let forwardVector = flatLocalPosition(patch.bow)
+            - flatLocalPosition(patch.stern)
+        let acrossVector = flatLocalPosition(patch.starboard)
+            - flatLocalPosition(patch.port)
+        let forwardLength = max(simd_length(forwardVector), 0.001)
+        let acrossLength = max(simd_length(acrossVector), 0.001)
+        let forward = forwardVector / forwardLength
+        let across = acrossVector / acrossLength
+        func planeResidual(_ point: SIMD3<Float>) -> Float {
+            simd_dot(point, localNormal) - waterline
+        }
+        let forwardCurvature = min(max(
+            (planeResidual(bow) + planeResidual(stern)) * 0.5,
+            -0.16
+        ), 0.16)
+        let acrossCurvature = min(max(
+            (planeResidual(port) + planeResidual(starboard)) * 0.5,
+            -0.16
+        ), 0.16)
         for material in materials {
             material.setValue(NSNumber(value: waterline), forKey: "uBoatWaterline")
             material.setValue(
                 SCNVector3(localNormal.x, localNormal.y, localNormal.z),
                 forKey: "uBoatWaterlineNormal"
+            )
+            material.setValue(
+                SCNVector3(center.x, center.y, center.z),
+                forKey: "uBoatWaterlineOrigin"
+            )
+            material.setValue(
+                SCNVector3(forward.x, forward.y, forward.z),
+                forKey: "uBoatWaterlineForward"
+            )
+            material.setValue(
+                SCNVector3(across.x, across.y, across.z),
+                forKey: "uBoatWaterlineAcross"
+            )
+            material.setValue(
+                SCNVector3(forwardLength * 0.5, acrossLength * 0.5, 0),
+                forKey: "uBoatWaterlineHalfSize"
+            )
+            material.setValue(
+                SCNVector3(forwardCurvature, acrossCurvature, 0),
+                forKey: "uBoatWaterlineCurvature"
             )
         }
     }
@@ -3397,7 +3483,7 @@ final class VoyagingHomeAnimator: NSObject {
                 propulsionSpeed: resting || reduceMotion ? 0 : windStrength * 1.6
             )
             VoyageSceneKit.updateBoatWaterline(
-                surface: frame.waterSurface,
+                patch: frame.waterlinePatch,
                 buoyancyNode: bob,
                 materials: boatSurfaceMaterials
             )

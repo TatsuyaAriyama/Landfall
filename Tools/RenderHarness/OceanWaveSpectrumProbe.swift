@@ -35,7 +35,58 @@ enum OceanWaveSpectrumProbe {
                 "analytical slope"
             )
         }
+        verifyHullFootprintCurvature()
         print("Ocean wave spectrum parity probe: PASS")
+    }
+
+    /// The wet hull boundary retains the even (curved) part of the wave after
+    /// its center tangent plane has removed height and first-order slope.
+    private static func verifyHullFootprintCurvature() {
+        let center = SIMD2<Float>(4.7, -3.1)
+        let forward = simd_normalize(SIMD2<Float>(0.81, 0.59))
+        let across = SIMD2<Float>(-forward.y, forward.x)
+        let halfLength: Float = 2.15 * 0.5
+        let halfBeam: Float = 0.92 * 0.5
+        let time: Float = 8.4
+        let amplitudeScale: Float = 0.72
+        let centerSample = OceanWaveSpectrum.sample(
+            at: center,
+            time: time,
+            amplitudeScale: amplitudeScale
+        )
+        let normal = simd_normalize(
+            SIMD3<Float>(-centerSample.slope.x, 1, -centerSample.slope.y)
+        )
+        func planeResidual(at position: SIMD2<Float>) -> Float {
+            let height = OceanWaveSpectrum.sample(
+                at: position,
+                time: time,
+                amplitudeScale: amplitudeScale
+            ).height
+            return simd_dot(
+                SIMD3(
+                    position.x - center.x,
+                    height - centerSample.height,
+                    position.y - center.y
+                ),
+                normal
+            )
+        }
+        let bowResidual = planeResidual(at: center + forward * halfLength)
+        let sternResidual = planeResidual(at: center - forward * halfLength)
+        let portResidual = planeResidual(at: center - across * halfBeam)
+        let starboardResidual = planeResidual(at: center + across * halfBeam)
+        let forwardCurvature = (bowResidual + sternResidual) * 0.5
+        let acrossCurvature = (portResidual + starboardResidual) * 0.5
+
+        require(
+            abs(forwardCurvature - -0.003_363_087_8) < 0.000_002,
+            "forward hull curvature fixture"
+        )
+        require(
+            abs(acrossCurvature - -0.000_788_922_77) < 0.000_002,
+            "across hull curvature fixture"
+        )
     }
 
     private static func numericalSlope(for fixture: Fixture) -> SIMD2<Float> {

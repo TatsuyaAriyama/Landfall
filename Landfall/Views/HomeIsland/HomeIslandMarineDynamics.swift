@@ -89,6 +89,22 @@ enum HomeIslandMarineDynamics {
         static let zero = BoatMotion(heave: 0, roll: 0, pitch: 0)
     }
 
+    struct SurfacePoint {
+        let worldXZ: SIMD2<Float>
+        let sample: WaveSample
+    }
+
+    /// Five samples spanning the water-contact footprint. The center supplies
+    /// the tangent plane; opposing pairs retain the wave curvature discarded by
+    /// a single normal so the wet boundary can bend around the hull.
+    struct WaterlinePatch {
+        let center: SurfacePoint
+        let bow: SurfacePoint
+        let stern: SurfacePoint
+        let port: SurfacePoint
+        let starboard: SurfacePoint
+    }
+
     struct BoatTuning {
         var hullLength: Float = 2.15
         var beam: Float = 0.92
@@ -174,9 +190,7 @@ enum HomeIslandMarineDynamics {
     struct Frame {
         let motion: BoatMotion
         let wake: WakeState
-        /// The same analytical surface sample that drives the visible ocean.
-        /// Consumers use it to keep the hull's wet boundary on the wave plane.
-        let waterSurface: WaveSample
+        let waterlinePatch: WaterlinePatch
     }
 
     static func boatMotion(
@@ -186,31 +200,72 @@ enum HomeIslandMarineDynamics {
         field: WaveField = .homeIsland,
         tuning: BoatTuning = .homeIsland
     ) -> BoatMotion {
+        hullResponse(
+            atWorldXZ: center,
+            forward: rawForward,
+            time: time,
+            field: field,
+            tuning: tuning
+        ).motion
+    }
+
+    private struct HullResponse {
+        let motion: BoatMotion
+        let waterlinePatch: WaterlinePatch
+    }
+
+    private static func hullResponse(
+        atWorldXZ center: SIMD2<Float>,
+        forward rawForward: SIMD2<Float>,
+        time: Float,
+        field: WaveField,
+        tuning: BoatTuning
+    ) -> HullResponse {
         let forward = normalized(rawForward, fallback: SIMD2(1, 0))
         let starboard = SIMD2(-forward.y, forward.x)
         let halfLength = tuning.hullLength * 0.5
         let halfBeam = tuning.beam * 0.5
-        let bow = field.sample(atWorldXZ: center + forward * halfLength, time: time)
-        let stern = field.sample(atWorldXZ: center - forward * halfLength, time: time)
-        let port = field.sample(atWorldXZ: center - starboard * halfBeam, time: time)
-        let right = field.sample(atWorldXZ: center + starboard * halfBeam, time: time)
-
-        return BoatMotion(
-            heave: (bow.displacement + stern.displacement + port.displacement
-                    + right.displacement) * 0.25 * tuning.heaveAmount,
+        func point(_ worldXZ: SIMD2<Float>) -> SurfacePoint {
+            SurfacePoint(
+                worldXZ: worldXZ,
+                sample: field.sample(atWorldXZ: worldXZ, time: time)
+            )
+        }
+        let patch = WaterlinePatch(
+            center: point(center),
+            bow: point(center + forward * halfLength),
+            stern: point(center - forward * halfLength),
+            port: point(center - starboard * halfBeam),
+            starboard: point(center + starboard * halfBeam)
+        )
+        let motion = BoatMotion(
+            heave: (patch.bow.sample.displacement
+                    + patch.stern.sample.displacement
+                    + patch.port.sample.displacement
+                    + patch.starboard.sample.displacement)
+                * 0.25 * tuning.heaveAmount,
             roll: clamp(
-                atan2(port.worldHeight - right.worldHeight, tuning.beam)
+                atan2(
+                    patch.port.sample.worldHeight
+                        - patch.starboard.sample.worldHeight,
+                    tuning.beam
+                )
                     * tuning.angleAmount,
                 -tuning.maximumRoll,
                 tuning.maximumRoll
             ),
             pitch: clamp(
-                atan2(bow.worldHeight - stern.worldHeight, tuning.hullLength)
+                atan2(
+                    patch.bow.sample.worldHeight
+                        - patch.stern.sample.worldHeight,
+                    tuning.hullLength
+                )
                     * tuning.angleAmount,
                 -tuning.maximumPitch,
                 tuning.maximumPitch
             )
         )
+        return HullResponse(motion: motion, waterlinePatch: patch)
     }
 
     /// Renderer-loop component that keeps hull motion and the analytical wake
@@ -249,10 +304,6 @@ enum HomeIslandMarineDynamics {
             configureIfNeeded(buoyancyNode)
             consumePendingReset(fallback: buoyancyNode)
             let worldPosition = boatRoot.presentation.simdWorldPosition
-            let waterSurface = field.sample(
-                atWorldXZ: SIMD2(worldPosition.x, worldPosition.z),
-                time: oceanTime
-            )
             let elapsedTime = min(max(rawDeltaTime, 0), 0.25)
             let responseDeltaTime = min(elapsedTime, 0.1)
 
@@ -263,13 +314,14 @@ enum HomeIslandMarineDynamics {
                 SIMD2(transformed.x, transformed.z),
                 fallback: SIMD2(1, 0)
             )
-            let target = HomeIslandMarineDynamics.boatMotion(
+            let hull = HomeIslandMarineDynamics.hullResponse(
                 atWorldXZ: SIMD2(worldPosition.x, worldPosition.z),
                 forward: physicalForward,
                 time: oceanTime,
                 field: field,
                 tuning: tuning
             )
+            let target = hull.motion
 
             if reduceMotion {
                 smoothedMotion = .zero
@@ -279,7 +331,7 @@ enum HomeIslandMarineDynamics {
                 return Frame(
                     motion: .zero,
                     wake: inactiveWake(at: worldPosition),
-                    waterSurface: waterSurface
+                    waterlinePatch: hull.waterlinePatch
                 )
             }
 
@@ -344,7 +396,7 @@ enum HomeIslandMarineDynamics {
                     hullSize: SIMD2(tuning.hullLength, tuning.beam),
                     isPresent: true
                 ),
-                waterSurface: waterSurface
+                waterlinePatch: hull.waterlinePatch
             )
         }
 
