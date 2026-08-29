@@ -683,9 +683,7 @@ struct PublicMemberProfileView: View {
                         retryMessage(loadError)
                             .padding(.top, 20)
                     } else {
-                        dayGrid
-                            .padding(.top, 8)
-                        dayDetail
+                        recordsPanel
                     }
                 }
                 .padding(LFMetrics.cardPadding)
@@ -743,8 +741,16 @@ struct PublicMemberProfileView: View {
             }
             Spacer(minLength: 0)
         }
+        .padding(14)
+        .background(
+            Color.white.opacity(showsOceanBackground ? 0.72 : 0.46),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(LFColor.ink.opacity(0.09), lineWidth: 1)
+        }
         .padding(.top, 16)
-        .padding(.bottom, 8)
     }
 
     private var monthNavigation: some View {
@@ -763,6 +769,11 @@ struct PublicMemberProfileView: View {
                 shiftMonth(1)
             }
         }
+        .padding(.horizontal, 4)
+        .background(
+            LFColor.ink.opacity(0.035),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+        )
     }
 
     private func monthArrow(
@@ -829,14 +840,28 @@ struct PublicMemberProfileView: View {
         }
     }
 
+    private var recordsPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            dayGrid
+            dayDetail
+        }
+        .padding(16)
+        .background(
+            Color.white.opacity(showsOceanBackground ? 0.76 : 0.54),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(LFColor.ink.opacity(0.09), lineWidth: 1)
+        }
+        .padding(.top, 12)
+    }
+
     @ViewBuilder
     private var dayDetail: some View {
         if days.isEmpty {
-            Text("No records this day. Rest is part of the voyage.")
-                .font(LFFont.copy(15))
-                .foregroundStyle(LFColor.ink.opacity(0.5))
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 20)
+            quietDayMessage("No records this day. Rest is part of the voyage.")
+                .padding(.top, 14)
         } else if let selectedDay {
             VStack(alignment: .leading, spacing: 0) {
                 Text(verbatim: LF.dayMonth(dateFor(day: selectedDay)))
@@ -847,10 +872,8 @@ struct PublicMemberProfileView: View {
                     .padding(.bottom, 2)
 
                 if selectedSessions.isEmpty {
-                    Text("No records this day. Rest is part of the voyage.")
-                        .font(LFFont.copy(15))
-                        .foregroundStyle(LFColor.ink.opacity(0.5))
-                        .padding(.top, 12)
+                    quietDayMessage("No records this day. Rest is part of the voyage.")
+                        .padding(.top, 10)
                 } else {
                     ForEach(Array(selectedSessions.enumerated()), id: \.offset) { index, session in
                         if index > 0 {
@@ -863,18 +886,31 @@ struct PublicMemberProfileView: View {
                 }
             }
         } else {
-            Text("Tap a day to see its records.")
-                .font(LFFont.copy(15))
-                .foregroundStyle(LFColor.ink.opacity(0.5))
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 20)
+            quietDayMessage("Tap a day to see its records.")
+                .padding(.top, 14)
         }
+    }
+
+    private func quietDayMessage(_ message: LocalizedStringKey) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "moon.stars")
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(LFColor.returnOrange.opacity(0.76))
+                .frame(width: 24, height: 24)
+            Text(message)
+                .font(LFFont.copy(15))
+                .foregroundStyle(LFColor.ink.opacity(0.58))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(LFColor.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
     }
 
     private func publicSessionRow(_ session: SharedSession) -> some View {
         let style = TileStyle.from(session.styleToken)
         let detail = sessionDetail(session)
-        return HStack(alignment: .center, spacing: 10) {
+        return HStack(alignment: .top, spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(style.background)
@@ -896,7 +932,7 @@ struct PublicMemberProfileView: View {
                     Text(verbatim: detail)
                         .font(LFFont.label(13))
                         .foregroundStyle(LFColor.ink.opacity(0.5))
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
             }
             Spacer(minLength: 8)
@@ -905,6 +941,7 @@ struct PublicMemberProfileView: View {
                 .monospacedDigit()
                 .foregroundStyle(LFColor.ink.opacity(0.7))
                 .fixedSize()
+                .padding(.top, 2)
         }
         .padding(.vertical, 8)
     }
