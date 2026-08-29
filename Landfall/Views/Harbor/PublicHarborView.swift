@@ -897,6 +897,7 @@ struct PublicMemberProfileView: View {
                 .font(.system(size: 16, weight: .regular))
                 .foregroundStyle(LFColor.returnOrange.opacity(0.76))
                 .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
             Text(message)
                 .font(LFFont.copy(15))
                 .foregroundStyle(LFColor.ink.opacity(0.58))
@@ -905,6 +906,8 @@ struct PublicMemberProfileView: View {
         }
         .padding(14)
         .background(LFColor.ink.opacity(0.035), in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(message))
     }
 
     private func publicSessionRow(_ session: SharedSession) -> some View {
