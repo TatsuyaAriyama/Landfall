@@ -458,11 +458,29 @@ struct PublicHarborView: View {
                     Rectangle()
                         .fill(LFColor.ink.opacity(0.08))
                         .frame(height: 1)
+                        .padding(.leading, showsOceanBackground ? 54 : 44)
                 }
                 memberRow(member)
             }
         }
-        .padding(.top, 6)
+        .padding(.horizontal, showsOceanBackground ? 12 : 0)
+        .padding(.vertical, showsOceanBackground ? 5 : 0)
+        .background(
+            Color.white.opacity(showsOceanBackground ? 0.72 : 0),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+        )
+        .overlay {
+            if showsOceanBackground {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(LFColor.ink.opacity(0.09), lineWidth: 1)
+            }
+        }
+        .shadow(
+            color: Color.black.opacity(showsOceanBackground ? 0.08 : 0),
+            radius: 14,
+            y: 7
+        )
+        .padding(.top, showsOceanBackground ? 10 : 6)
     }
 
     private func memberRow(_ member: HarborMember) -> some View {
@@ -505,42 +523,41 @@ struct PublicHarborView: View {
 
             if member.id != myUid {
                 Menu {
-                    Button {
-                        reporting = member
-                    } label: {
-                        Label("Report", systemImage: "flag")
-                    }
-                    Button(role: .destructive) {
-                        blocking = member
-                    } label: {
-                        Label("Block this sailor", systemImage: "hand.raised")
-                    }
+                    memberActions(member)
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundStyle(LFColor.ink.opacity(0.45))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(LFColor.ink.opacity(0.52))
                         .frame(width: 44, height: 44)
+                        .background(LFColor.ink.opacity(0.055), in: Circle())
                         .contentShape(Rectangle())
                 }
                 .disabled(blockingMemberID != nil)
+                .accessibilityLabel(Text("Sailor actions"))
+                .accessibilityValue(Text(verbatim: member.displayName))
             }
         }
         .padding(.vertical, showsOceanBackground ? 9 : 4)
         .contextMenu {
             if member.id != myUid {
-                Button {
-                    reporting = member
-                } label: {
-                    Label("Report", systemImage: "flag")
-                }
-                Button(role: .destructive) {
-                    blocking = member
-                } label: {
-                    Label("Block this sailor", systemImage: "hand.raised")
-                }
-                .disabled(blockingMemberID != nil)
+                memberActions(member)
             }
         }
+    }
+
+    @ViewBuilder
+    private func memberActions(_ member: HarborMember) -> some View {
+        Button {
+            reporting = member
+        } label: {
+            Label("Report", systemImage: "flag")
+        }
+        Button(role: .destructive) {
+            blocking = member
+        } label: {
+            Label("Block this sailor", systemImage: "hand.raised")
+        }
+        .disabled(blockingMemberID != nil)
     }
 
     private func leaveHarbor() {
