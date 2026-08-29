@@ -92,6 +92,13 @@ struct PublicJournalComposer: View {
                     Button("Cancel") { requestDismiss() }
                         .disabled(publishing || published)
                 }
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        bodyFocused = false
+                    }
+                    .font(LFFont.label(15))
+                }
             }
             .safeAreaInset(edge: .bottom) {
                 if !published {
@@ -179,6 +186,7 @@ struct PublicJournalComposer: View {
                         .frame(minHeight: 150)
                         .focused($bodyFocused)
                         .accessibilityLabel(Text("Page text"))
+                        .accessibilityHint(Text("What stayed with you today?"))
                 }
 
                 HStack {
