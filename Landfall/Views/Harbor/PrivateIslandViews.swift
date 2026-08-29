@@ -1226,7 +1226,7 @@ struct PrivateIslandChatDock: View {
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottomTrailing) {
                     ScrollView {
-                        LazyVStack(spacing: 10) {
+                        LazyVStack(spacing: 3) {
                             if messages.isEmpty {
                                 Text("Say hello to everyone on the island.")
                                     .font(LFFont.label(12))
@@ -1234,8 +1234,14 @@ struct PrivateIslandChatDock: View {
                                     .frame(maxWidth: .infinity)
                                     .padding(.top, 26)
                             } else {
-                                ForEach(messages) { message in
-                                    messageRow(message)
+                                ForEach(Array(messages.enumerated()), id: \.element.id) { index, message in
+                                    let context = messageContext(at: index)
+
+                                    if context.startsDay {
+                                        chatDayDivider(message.createdAt)
+                                    }
+
+                                    messageRow(message, context: context)
                                         .id(message.id)
                                 }
                             }
@@ -1309,22 +1315,48 @@ struct PrivateIslandChatDock: View {
         .accessibilityHint(Text("Jumps to the latest message"))
     }
 
-    private func messageRow(_ message: PrivateIslandChatMessage) -> some View {
+    private func chatDayDivider(_ date: Date) -> some View {
+        HStack(spacing: 9) {
+            Rectangle()
+                .fill(PrivateIslandGlass.ink.opacity(0.08))
+                .frame(height: 1)
+            Text(date, format: .dateTime.month(.abbreviated).day())
+                .font(LFFont.label(9))
+                .foregroundStyle(PrivateIslandGlass.ink.opacity(0.38))
+                .fixedSize()
+            Rectangle()
+                .fill(PrivateIslandGlass.ink.opacity(0.08))
+                .frame(height: 1)
+        }
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func messageRow(
+        _ message: PrivateIslandChatMessage,
+        context: ChatMessageContext
+    ) -> some View {
         let mine = message.senderID == currentUserID
         return HStack(alignment: .bottom, spacing: 7) {
             if mine { Spacer(minLength: 46) }
 
             if !mine {
-                Text(verbatim: senderInitial(message.senderName))
-                    .font(LFFont.copy(10))
-                    .foregroundStyle(PrivateIslandGlass.ink)
-                    .frame(width: 26, height: 26)
-                    .background(PrivateIslandGlass.ink.opacity(0.07), in: Circle())
-                    .accessibilityHidden(true)
+                if context.endsGroup {
+                    Text(verbatim: senderInitial(message.senderName))
+                        .font(LFFont.copy(10))
+                        .foregroundStyle(PrivateIslandGlass.ink)
+                        .frame(width: 26, height: 26)
+                        .background(PrivateIslandGlass.ink.opacity(0.07), in: Circle())
+                        .accessibilityHidden(true)
+                } else {
+                    Color.clear
+                        .frame(width: 26, height: 1)
+                        .accessibilityHidden(true)
+                }
             }
 
             VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
-                if !mine {
+                if !mine, context.startsGroup {
                     Text(verbatim: message.senderName)
                         .font(LFFont.label(9))
                         .foregroundStyle(PrivateIslandGlass.ink.opacity(0.48))
@@ -1365,18 +1397,49 @@ struct PrivateIslandChatDock: View {
                         }
                     }
 
-                Text(message.createdAt, style: .time)
-                    .font(LFFont.label(8))
-                    .foregroundStyle(PrivateIslandGlass.ink.opacity(0.35))
+                if context.endsGroup {
+                    Text(message.createdAt, style: .time)
+                        .font(LFFont.label(8))
+                        .foregroundStyle(PrivateIslandGlass.ink.opacity(0.35))
+                }
             }
+            .frame(maxWidth: 380, alignment: mine ? .trailing : .leading)
 
             if !mine { Spacer(minLength: 46) }
         }
         .frame(maxWidth: .infinity)
+        .padding(.top, context.startsGroup ? 7 : 0)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             Text(verbatim: "\(mine ? LF.text("You") : message.senderName): \(message.text)")
         )
+    }
+
+    private func messageContext(at index: Int) -> ChatMessageContext {
+        let message = messages[index]
+        let previous = index > messages.startIndex ? messages[index - 1] : nil
+        let next = index < messages.index(before: messages.endIndex) ? messages[index + 1] : nil
+
+        return ChatMessageContext(
+            startsDay: previous.map {
+                !Calendar.current.isDate($0.createdAt, inSameDayAs: message.createdAt)
+            } ?? true,
+            startsGroup: !belongsToSameGroup(previous, message),
+            endsGroup: !belongsToSameGroup(message, next)
+        )
+    }
+
+    private func belongsToSameGroup(
+        _ earlier: PrivateIslandChatMessage?,
+        _ later: PrivateIslandChatMessage?
+    ) -> Bool {
+        guard let earlier, let later,
+              earlier.senderID == later.senderID,
+              Calendar.current.isDate(earlier.createdAt, inSameDayAs: later.createdAt)
+        else { return false }
+
+        let interval = later.createdAt.timeIntervalSince(earlier.createdAt)
+        return (0...(5 * 60)).contains(interval)
     }
 
     private var inputBar: some View {
@@ -1566,6 +1629,12 @@ private struct ChatLatestMarkerOffsetKey: PreferenceKey {
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
+}
+
+private struct ChatMessageContext {
+    let startsDay: Bool
+    let startsGroup: Bool
+    let endsGroup: Bool
 }
 
 // MARK: - Glass language
