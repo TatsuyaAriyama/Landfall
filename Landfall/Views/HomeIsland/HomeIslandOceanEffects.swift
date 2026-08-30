@@ -808,39 +808,76 @@ enum HomeIslandOceanEffects {
     float halfHullLength = max(boatSize.x * 0.5, 0.001);
     float halfHullBeam = max(boatSize.y * 0.5, 0.001);
     if (boatPresence > 0.5) {
-        float longitudinalUnit = boatLongitudinal / halfHullLength;
-        float lateralUnit = boatLateral / halfHullBeam;
-        float hullExponent = mix(
-            2.45,
-            1.48,
-            smoothstep(-0.24, 0.58, longitudinalUnit)
-        );
-        float hullDistance = pow(
-            pow(abs(longitudinalUnit), hullExponent)
-                + pow(abs(lateralUnit), hullExponent),
-            1.0 / hullExponent
-        );
-        float relativeSurfaceHeight = clamp(height - boatHeave, -0.12, 0.16);
-        float contactScale = 1.0 + relativeSurfaceHeight * 1.10;
-        hullDistance = max(hullDistance / contactScale, 0.001);
-        float contactLoad = smoothstep(-0.07, 0.11, relativeSurfaceHeight);
-        float submergedShadow = (1.0 - smoothstep(0.62, 1.20, hullDistance))
-            * mix(0.72, 1.0, contactLoad);
-        float meniscus = 1.0 - smoothstep(0.035, 0.18, abs(hullDistance - 1.0));
-        float meniscusBreak = 0.72 + 0.28 * sin(
-            boatLongitudinal * 8.1 - boatLateral * 10.7 + uTime * 0.34
-        );
-        float reflectedHull = smoothstep(0.70, 1.02, hullDistance)
-            * (1.0 - smoothstep(1.02, 1.72, hullDistance));
-        float reflectionBreak = smoothstep(
-            0.28,
-            0.82,
-            0.5 + 0.5 * sin(
-                boatLongitudinal * 5.7 + boatLateral * 9.3
-                    + height * 18.0 - uTime * 0.24
-            )
-        );
-        col = mix(col, uDeep, submergedShadow * 0.24 * surfaceEdge);
+        float contactLoad = 0.0;
+        float submergedShadow = 0.0;
+        float meniscus = 0.0;
+        float meniscusBreak = 0.0;
+        float reflectedHull = 0.0;
+        float reflectionBreak = 0.0;
+        const float contactExtent = 2.03;
+        float bowAftMax = halfHullLength * 2.16;
+        float longitudinalLimit = max(
+            halfHullLength * contactExtent,
+            max(halfHullLength + 0.05, halfHullLength * 1.16)
+        ) + 0.01;
+        float bowLateralLimit = halfHullBeam * 0.12 + bowAftMax * 0.21
+            + max(halfHullBeam * 0.105, 0.042)
+            + max(halfHullBeam * 0.16, 0.060);
+        float lateralLimit = max(
+            halfHullBeam * contactExtent,
+            bowLateralLimit
+        ) + 0.01;
+        bool insideContact = abs(boatLongitudinal) < longitudinalLimit
+            && abs(boatLateral) < lateralLimit;
+        if (insideContact) {
+            float longitudinalUnit = boatLongitudinal / halfHullLength;
+            float lateralUnit = boatLateral / halfHullBeam;
+            float hullExponent = mix(
+                2.45,
+                1.48,
+                smoothstep(-0.24, 0.58, longitudinalUnit)
+            );
+            float hullDistance = pow(
+                pow(abs(longitudinalUnit), hullExponent)
+                    + pow(abs(lateralUnit), hullExponent),
+                1.0 / hullExponent
+            );
+            float relativeSurfaceHeight = clamp(
+                height - boatHeave,
+                -0.12,
+                0.16
+            );
+            float contactScale = 1.0 + relativeSurfaceHeight * 1.10;
+            hullDistance = max(hullDistance / contactScale, 0.001);
+            contactLoad = smoothstep(-0.07, 0.11, relativeSurfaceHeight);
+            submergedShadow = (
+                1.0 - smoothstep(0.62, 1.20, hullDistance)
+            ) * mix(0.72, 1.0, contactLoad);
+            meniscus = 1.0 - smoothstep(
+                0.035,
+                0.18,
+                abs(hullDistance - 1.0)
+            );
+            meniscusBreak = 0.72 + 0.28 * sin(
+                boatLongitudinal * 8.1
+                    - boatLateral * 10.7 + uTime * 0.34
+            );
+            reflectedHull = smoothstep(0.70, 1.02, hullDistance)
+                * (1.0 - smoothstep(1.02, 1.72, hullDistance));
+            reflectionBreak = smoothstep(
+                0.28,
+                0.82,
+                0.5 + 0.5 * sin(
+                    boatLongitudinal * 5.7 + boatLateral * 9.3
+                        + height * 18.0 - uTime * 0.24
+                )
+            );
+            col = mix(
+                col,
+                uDeep,
+                submergedShadow * 0.24 * surfaceEdge
+            );
+        }
         float3 worldViewDirection = normalize(
             (scn_frame.inverseViewTransform * float4(viewDirection, 0.0)).xyz
         );

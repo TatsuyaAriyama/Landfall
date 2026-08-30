@@ -396,6 +396,27 @@ static inline LandfallHullSample landfallSampleHullContact(
         return {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, float2(0.0)};
     }
 
+    // Hull contact is compact, but its superellipse and broken bow shoulder
+    // used to run across the entire ocean. This conservative support box
+    // contains every non-zero contact, reflection and shoulder contribution.
+    constexpr float contactExtent = 2.03;
+    float bowAftMax = boat.halfLength * 2.16;
+    float longitudinalLimit = max(
+        boat.halfLength * contactExtent,
+        max(boat.halfLength + 0.05, boat.halfLength * 1.16)
+    ) + 0.01;
+    float bowLateralLimit = boat.halfBeam * 0.12 + bowAftMax * 0.21
+        + max(boat.halfBeam * 0.105, 0.042)
+        + max(boat.halfBeam * 0.16, 0.060);
+    float lateralLimit = max(
+        boat.halfBeam * contactExtent,
+        bowLateralLimit
+    ) + 0.01;
+    if (abs(boat.longitudinal) >= longitudinalLimit
+        || abs(boat.lateral) >= lateralLimit) {
+        return {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, float2(0.0)};
+    }
+
     float longitudinalUnit = boat.longitudinal / boat.halfLength;
     float lateralUnit = boat.lateral / boat.halfBeam;
     // A symmetric ellipse leaves a rounded halo ahead of every bow. Blend a
@@ -697,32 +718,35 @@ static inline half4 landfallShadeOcean(
             0.48,
             capillaryFootprint
         );
-        float rippleD = dot(p, capillaryDirectionA) * 8.4
-            - ocean.time * 2.72 - rippleWarp * 0.81;
-        float rippleE = dot(p, capillaryDirectionB) * 10.7
-            - ocean.time * 3.16 + rippleWarp * 0.54 - sin(rippleD) * 0.18;
-        float tierBlend = smoothstep(0.75, 1.0, detailQuality);
-        float interference = mix(
-            0.72,
-            1.0,
-            0.5 + 0.5 * sin(rippleD - rippleE)
-        );
-        capillarySlope = (
-            capillaryDirectionA * (cos(rippleD) * 0.0065)
-            + capillaryDirectionB * (cos(rippleE) * 0.0048)
-        ) * capillaryVisibility * tierBlend
-            * interference * nearRippleVisibility;
-        float capillaryGroup = 0.5 + 0.5 * sin(
-            dot(p, float2(0.673, -0.740)) * 1.17
-                - ocean.time * 0.38 + sin(rippleD * 0.21) * 1.35
-        );
-        float groupEnvelope = mix(
-            0.16,
-            1.0,
-            smoothstep(0.30, 0.78, capillaryGroup)
-        );
-        capillaryFacetRadiance = sin(rippleD) * sin(rippleE)
-            * groupEnvelope * capillaryVisibility * tierBlend;
+        if (capillaryVisibility > 0.0) {
+            float rippleD = dot(p, capillaryDirectionA) * 8.4
+                - ocean.time * 2.72 - rippleWarp * 0.81;
+            float rippleE = dot(p, capillaryDirectionB) * 10.7
+                - ocean.time * 3.16 + rippleWarp * 0.54
+                - sin(rippleD) * 0.18;
+            float tierBlend = smoothstep(0.75, 1.0, detailQuality);
+            float interference = mix(
+                0.72,
+                1.0,
+                0.5 + 0.5 * sin(rippleD - rippleE)
+            );
+            capillarySlope = (
+                capillaryDirectionA * (cos(rippleD) * 0.0065)
+                + capillaryDirectionB * (cos(rippleE) * 0.0048)
+            ) * capillaryVisibility * tierBlend
+                * interference * nearRippleVisibility;
+            float capillaryGroup = 0.5 + 0.5 * sin(
+                dot(p, float2(0.673, -0.740)) * 1.17
+                    - ocean.time * 0.38 + sin(rippleD * 0.21) * 1.35
+            );
+            float groupEnvelope = mix(
+                0.16,
+                1.0,
+                smoothstep(0.30, 0.78, capillaryGroup)
+            );
+            capillaryFacetRadiance = sin(rippleD) * sin(rippleE)
+                * groupEnvelope * capillaryVisibility * tierBlend;
+        }
     }
     float2 detailSlope = (
         (
