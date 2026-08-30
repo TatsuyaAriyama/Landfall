@@ -89,6 +89,7 @@ struct SettingsView: View {
     @State private var showingFeedback = false
     @StateObject private var voyagePass = VoyagePassStore.shared
     @AppStorage(NotificationService.enabledKey) private var notifyEnabled = false
+    @State private var updatingNotifications = false
     @AppStorage(StudyTimer.startKey, store: StudyTimer.defaults) private var timerStart: Double = 0
     @AppStorage(StudyTimer.itemKey, store: StudyTimer.defaults) private var timerItemID = ""
     @AppStorage(StudyTimer.soundKey, store: StudyTimer.defaults)
@@ -685,26 +686,52 @@ struct SettingsView: View {
             Toggle(isOn: Binding(
                 get: { notifyEnabled },
                 set: { wants in
+                    guard !updatingNotifications else { return }
+                    updatingNotifications = true
+                    notifyEnabled = wants
                     if wants {
                         Task {
                             let granted = await NotificationService.enable(
                                 recordedToday: StudyDayStore.recordedToday(context: modelContext)
                             )
                             notifyEnabled = granted
+                            updatingNotifications = false
                         }
                     } else {
-                        notifyEnabled = false
-                        Task { await NotificationService.disable() }
+                        Task {
+                            await NotificationService.disable()
+                            updatingNotifications = false
+                        }
                     }
                 }
             )) {
-                Text("Notifications")
-                    .font(LFFont.copy(17))
-                    .foregroundStyle(LFColor.ink)
+                HStack(spacing: 12) {
+                    Image(systemName: notifyEnabled ? "bell.fill" : "bell")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(LFColor.harborSand)
+                        .frame(width: 38, height: 38)
+                        .background(LFColor.harborTeal, in: RoundedRectangle(cornerRadius: 11))
+                        .accessibilityHidden(true)
+
+                    Text("Notifications")
+                        .font(LFFont.copy(17))
+                        .foregroundStyle(LFColor.ink)
+
+                    if updatingNotifications {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(LFColor.returnOrange)
+                            .accessibilityHidden(true)
+                    }
+                }
             }
             .tint(LFColor.returnOrange)
+            .disabled(updatingNotifications)
 
             if notifyEnabled {
+                Divider()
+                    .overlay(LFColor.ink.opacity(0.10))
+
                 HStack {
                     Text("Time of day")
                         .font(LFFont.copy(16))
@@ -723,8 +750,13 @@ struct SettingsView: View {
                             }
                         }
                 }
-                .padding(.top, 2)
             }
+        }
+        .padding(14)
+        .background(LFColor.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 18))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(LFColor.ink.opacity(0.08), lineWidth: 1)
         }
     }
 
