@@ -76,6 +76,7 @@ struct SettingsView: View {
     @State private var current: AppIconOption = .harbor
     /// 削除しようとしている到達済みの島(確認ダイアログ用)。
     @State private var pendingDeleteIsland: Destination?
+    @State private var confirmingSignOut = false
     @State private var confirmingDeleteAccount = false
     @State private var deletingAccount = false
     @State private var showingPrologue = false
@@ -401,6 +402,16 @@ struct SettingsView: View {
             AssetPlacementStudioView(homeProgressRatio: homeProgressRatio)
         }
         .confirmationDialog(
+            "Sign out",
+            isPresented: $confirmingSignOut,
+            titleVisibility: .visible
+        ) {
+            Button("Sign out", role: .destructive) {
+                Task { await signOutAndClearLocalData() }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog(
             "Delete your account?",
             isPresented: $confirmingDeleteAccount,
             titleVisibility: .visible
@@ -422,6 +433,9 @@ struct SettingsView: View {
         ) {
             Button("Delete", role: .destructive) {
                 if let island = pendingDeleteIsland { deleteIsland(island) }
+                pendingDeleteIsland = nil
+            }
+            Button("Cancel", role: .cancel) {
                 pendingDeleteIsland = nil
             }
         } message: {
@@ -639,17 +653,19 @@ struct SettingsView: View {
                         }
                     }
                     Spacer(minLength: 8)
-                    Button {
-                        pendingDeleteIsland = island
+                    Menu {
+                        Button("Delete", systemImage: "trash", role: .destructive) {
+                            pendingDeleteIsland = island
+                        }
                     } label: {
-                        Image(systemName: "minus")
-                            .font(.system(size: 15, weight: .regular))
-                            .foregroundStyle(LFColor.deepRust)
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(LFColor.ink.opacity(0.46))
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(Text("Delete"))
+                    .accessibilityLabel(Text("Delete this destination"))
                 }
                 .padding(.vertical, 10)
             }
@@ -716,7 +732,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             if auth.isSignedIn {
                 Button {
-                    Task { await signOutAndClearLocalData() }
+                    confirmingSignOut = true
                 } label: {
                     Text("Sign out")
                         .font(LFFont.copy(16))
