@@ -162,24 +162,35 @@ struct OnboardingView: View {
                 .frame(maxWidth: .infinity)
                 .accessibilityHidden(true)
 
-            Text(item.eyebrow)
-                .font(LFFont.label(12))
-                .tracking(2.2)
-                .foregroundStyle(LFColor.harborSand.opacity(0.72))
-                .padding(.top, usesSpacers ? 28 : 16)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(item.eyebrow)
+                    .font(LFFont.label(12))
+                    .tracking(2.2)
+                    .foregroundStyle(LFColor.harborSand.opacity(0.72))
 
-            Text(item.headline)
-                .font(LFFont.copy(29))
-                .foregroundStyle(Color.white)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 9)
+                Text(item.headline)
+                    .font(LFFont.copy(29))
+                    .foregroundStyle(Color.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 9)
 
-            Text(item.subline)
-                .font(LFFont.copy(16))
-                .foregroundStyle(Color.white.opacity(0.7))
-                .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 12)
+                Text(item.subline)
+                    .font(LFFont.copy(16))
+                    .foregroundStyle(Color.white.opacity(0.76))
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 12)
+            }
+            .padding(18)
+            .background(
+                Color(hex: 0x0A2521).opacity(0.68),
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(LFColor.harborSand.opacity(0.14), lineWidth: 1)
+            }
+            .padding(.top, usesSpacers ? 24 : 14)
 
             if usesSpacers { Spacer(minLength: 14) }
         }
@@ -262,7 +273,7 @@ private struct OnboardingPage {
         case destination
         case workItems
         case voyage
-        case menu
+        case islandTools
         case returnHome
     }
 
@@ -281,8 +292,8 @@ private struct OnboardingPage {
         OnboardingPage(
             kind: .destination,
             eyebrow: "DESTINATION",
-            headline: "Tap the sea to choose an island.",
-            subline: "Give it a name and a date. Your destination draws nearer day by day."
+            headline: "Choose your destination from Home.",
+            subline: "Tap the destination below your player card, then give it a name and date."
         ),
         OnboardingPage(
             kind: .workItems,
@@ -297,10 +308,10 @@ private struct OnboardingPage {
             subline: "Make landfall when you finish, then leave a short note about the work."
         ),
         OnboardingPage(
-            kind: .menu,
+            kind: .islandTools,
             eyebrow: "LOOK BACK & EXPLORE",
-            headline: "Everything is close at hand.",
-            subline: "Open Logbook, Harbor, Style, and Settings from the menu. Tap the date for Trace."
+            headline: "Your tools live on the island.",
+            subline: "Use the top-right toolbar for Style, ToDo, music, and Settings. Walk to the campfire or notice board for Logbook and Harbor."
         ),
         OnboardingPage(
             kind: .returnHome,
@@ -333,8 +344,8 @@ private struct TutorialIllustration: View {
                 TutorialWorkItemsArt(animate: animate)
             case .voyage:
                 TutorialVoyageArt(animate: animate)
-            case .menu:
-                TutorialMenuArt(animate: animate)
+            case .islandTools:
+                TutorialIslandToolsArt(animate: animate)
             case .returnHome:
                 TutorialReturnArt(animate: animate)
             }
@@ -546,27 +557,49 @@ private struct TutorialVoyageArt: View {
     }
 }
 
-private struct TutorialMenuArt: View {
+private struct TutorialIslandToolsArt: View {
     let animate: Bool
-    private let items: [(LocalizedStringKey, TileSymbol)] = [
-        ("Logbook", .book), ("Harbor", .lighthouse), ("Style", .sailboat), ("Settings", .wheel)
+    private let toolbarItems: [(LocalizedStringKey, String)] = [
+        ("Style", "sailboat.fill"),
+        ("ToDo", "checklist"),
+        ("Music", "music.note"),
+        ("Settings", "gearshape.fill")
+    ]
+    private let landmarks: [(LocalizedStringKey, String)] = [
+        ("Logbook", "flame.fill"),
+        ("Harbor", "signpost.right.fill")
     ]
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)],
-                spacing: 9
-            ) {
-                ForEach(items.indices, id: \.self) { index in
+        VStack(spacing: 18) {
+            HStack(spacing: 12) {
+                ForEach(toolbarItems.indices, id: \.self) { index in
+                    let item = toolbarItems[index]
+                    Image(systemName: item.1)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(LFColor.harborSand)
+                        .frame(width: 46, height: 46)
+                        .background(Color.white.opacity(0.075), in: Circle())
+                        .overlay(Circle().stroke(LFColor.harborSand.opacity(0.2), lineWidth: 1))
+                        .accessibilityLabel(Text(item.0))
+                }
+            }
+            .scaleEffect(animate ? 1.02 : 0.97)
+            .animation(
+                animate ? .easeInOut(duration: 1.35).repeatForever(autoreverses: true) : nil,
+                value: animate
+            )
+
+            HStack(spacing: 10) {
+                ForEach(landmarks.indices, id: \.self) { index in
+                    let landmark = landmarks[index]
                     HStack(spacing: 8) {
-                        TileSymbolView(
-                            symbol: items[index].1,
-                            fg: LFColor.harborSand,
-                            bg: Color(hex: 0x173F3B)
-                        )
-                        .frame(width: 28, height: 28)
-                        Text(items[index].0)
+                        Image(systemName: landmark.1)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(index == 0 ? LFColor.sunYellow : LFColor.harborSand)
+                            .frame(width: 32, height: 32)
+                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                        Text(landmark.0)
                             .font(LFFont.label(12))
                             .foregroundStyle(Color.white.opacity(0.75))
                             .lineLimit(1)
@@ -579,20 +612,8 @@ private struct TutorialMenuArt: View {
                 }
             }
             .padding(.horizontal, 34)
-
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(Color(hex: 0x173F3B))
-                .frame(width: 46, height: 46)
-                .background(LFColor.harborSand, in: Circle())
-                .scaleEffect(animate ? 1.04 : 0.94)
-                .animation(
-                    animate ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true) : nil,
-                    value: animate
-                )
-                .offset(x: -19, y: -21)
         }
-        .padding(.vertical, 38)
+        .padding(.vertical, 30)
     }
 }
 

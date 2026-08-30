@@ -49,8 +49,8 @@
 "Your work becomes a voyage." = "作業が、航海になる。";
 "Choose what to do and set sail. The time you spend becomes your route." = "やることを選んで出航。進んだ時間が、航路として残ります。";
 "DESTINATION" = "目的地";
-"Tap the sea to choose an island." = "海をタップして、目的の島を決める。";
-"Give it a name and a date. Your destination draws nearer day by day." = "島の名前と期日を決めると、日ごとに少しずつ近づきます。";
+"Choose your destination from Home." = "ホームから目的地を決める。";
+"Tap the destination below your player card, then give it a name and date." = "プレイヤーカードの下にある目的地をタップし、名前と期日を設定します。";
 "WORK ITEMS" = "作業項目";
 "Tap to begin. Hold to rearrange." = "タップで始める。長押しで並べ替える。";
 "Add work items with +. Each one keeps its own voyage record." = "＋で項目を追加。それぞれの作業時間が記録されます。";
@@ -58,8 +58,8 @@
 "Your time moves with the ship." = "時間は、船とともに進む。";
 "Make landfall when you finish, then leave a short note about the work." = "終えたら着岸して、作業のひとことを残せます。";
 "LOOK BACK & EXPLORE" = "振り返る・広げる";
-"Everything is close at hand." = "すべて、すぐ手の届く場所に。";
-"Open Logbook, Harbor, Style, and Settings from the menu. Tap the date for Trace." = "航海誌・港・装い・設定はメニューから。軌跡は日付をタップします。";
+"Your tools live on the island." = "必要な道具は、島の中に。";
+"Use the top-right toolbar for Style, ToDo, music, and Settings. Walk to the campfire or notice board for Logbook and Harbor." = "装い・ToDo・音楽・設定は右上のツールバーから。航海誌は焚き火、港は掲示板まで歩いて開きます。";
 "YOUR VOYAGE, YOUR PACE" = "自分の速さで";
 "Even if it breaks, you can move forward again." = "途切れても、また進めばいい。";
 "Motivation comes in waves. Still, keep the voyage going." = "モチベーションの波はある。それでも、航海を続けよう";
