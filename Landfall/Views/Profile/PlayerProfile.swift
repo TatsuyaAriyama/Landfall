@@ -229,8 +229,13 @@ private struct ProfileStylePicker: View, Equatable {
                                     lineWidth: selected == style.rawValue ? 3 : 1
                                 )
                             )
+                            .overlay(alignment: .bottomTrailing) {
+                                ProfileSelectionBadge(isVisible: selected == style.rawValue)
+                            }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(Text(style.accessibilityName))
+                    .accessibilityAddTraits(selected == style.rawValue ? .isSelected : [])
                 }
             }
             .padding(.vertical, 4)   // 選択枠が切れないように
@@ -268,8 +273,13 @@ private struct ProfileSymbolPicker: View, Equatable {
                                     lineWidth: 3
                                 )
                         )
+                        .overlay(alignment: .bottomTrailing) {
+                            ProfileSelectionBadge(isVisible: selected == symbol.rawValue)
+                        }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(Text(symbol.accessibilityName))
+                    .accessibilityAddTraits(selected == symbol.rawValue ? .isSelected : [])
                 }
             }
             .padding(.vertical, 4)   // 選択枠が切れないように
@@ -414,13 +424,19 @@ struct ProfileEditorSheet: View {
                     }
 
                 Button(action: submit) {
-                    Text("Save this card")
-                        .font(LFFont.copy(17))
-                        .foregroundStyle(LFColor.paper)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(LFColor.ink)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    HStack(spacing: 9) {
+                        if working {
+                            ProgressView()
+                                .tint(LFColor.paper)
+                        }
+                        Text(working ? "Saving…" : "Save this card")
+                    }
+                    .font(LFFont.copy(17))
+                    .foregroundStyle(LFColor.paper)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .background(LFColor.ink)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(working)
@@ -481,6 +497,23 @@ struct ProfileEditorSheet: View {
     private var previewName: String {
         let normalized = PlayerProfile.normalizedName(name)
         return normalized.isEmpty ? LF.text("Sailor") : normalized
+    }
+}
+
+private struct ProfileSelectionBadge: View {
+    let isVisible: Bool
+
+    var body: some View {
+        if isVisible {
+            Image(systemName: "checkmark")
+                .font(.system(size: 8, weight: .black))
+                .foregroundStyle(LFColor.paper)
+                .frame(width: 17, height: 17)
+                .background(LFColor.returnOrange, in: Circle())
+                .overlay(Circle().stroke(LFColor.paper.opacity(0.85), lineWidth: 1))
+                .offset(x: 3, y: 3)
+                .accessibilityHidden(true)
+        }
     }
 }
 
