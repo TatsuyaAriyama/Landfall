@@ -635,39 +635,6 @@ enum HomeIslandOceanEffects {
     col = mix(col, facetSky, facetLift * facetVisibility * 0.078);
     col = mix(col, uDeep, facetShade * facetVisibility * 0.052);
 
-    // The fine normals use the same sky/deep radiance split as the broad
-    // facets, making them readable without layering on a detached pattern.
-    float microSlopeLength = length(detailSlope);
-    float broadFacetRadiance = clamp(
-        rippleCosA * rippleCosB * 0.72
-            + rippleCosB * rippleCosC * 0.28,
-        -1.0,
-        1.0
-    );
-    float microFacetRadiance = broadFacetRadiance;
-    float microFacetVisibility = rippleVisibility
-        * mix(0.34, 1.0, fineField)
-        * (1.0 - horizonField * 0.96)
-        * distanceVisibility
-        * smoothstep(0.0015, 0.024, microSlopeLength);
-    float microFacetContrast = mix(
-        0.035,
-        0.16,
-        clamp(uSunStrength, 0.0, 1.0)
-    );
-    col *= 1.0
-        + microFacetRadiance * microFacetVisibility * microFacetContrast;
-    col = mix(
-        col,
-        facetSky,
-        max(microFacetRadiance, 0.0) * microFacetVisibility * 0.020
-    );
-    col = mix(
-        col,
-        uDeep,
-        max(-microFacetRadiance, 0.0) * microFacetVisibility * 0.014
-    );
-
     float sunFacing = max(
         dot(waterNormal, normalize(viewDirection + celestialDirection)),
         0.0
@@ -739,6 +706,7 @@ enum HomeIslandOceanEffects {
         1.0
     );
     float foamFilter = max(fwidth(foamTurbulence) * 0.62, 0.015);
+    float foamResolution = 1.0 - smoothstep(0.08, 0.22, foamFilter);
     float foamFragments = smoothstep(
         0.72 - foamFilter,
         0.88 + foamFilter,
@@ -749,7 +717,9 @@ enum HomeIslandOceanEffects {
         0.68,
         normalizedViewRange
     );
-    float crestFoam = breaking * mix(0.46, 1.0, crestSteepness) * foamFragments
+    float resolvedSteepness = crestSteepness * crestSteepness;
+    float crestFoam = breaking * resolvedSteepness
+        * foamFragments * foamFragments * foamResolution
         * macroVisibility * crestRangeVisibility;
     float decayTexture = 0.5 + 0.5 * sin(
         dot(p, float2(-2.17, 3.83)) - uTime * 0.41 + foamWarp * 1.10
@@ -761,8 +731,9 @@ enum HomeIslandOceanEffects {
         smoothstep(0.42 - decayFilter, 0.80 + decayFilter, decayTexture)
     );
     float remnantFoam = foamRemnant
-        * mix(0.04, 0.16, crestSteepness)
-        * decayFragments * macroVisibility * (1.0 - horizonField * 0.84);
+        * resolvedSteepness * 0.16
+        * decayFragments * foamResolution
+        * macroVisibility * (1.0 - horizonField * 0.84);
     // Aerated water reflects the current environment instead of acting as a
     // white emissive overlay. This keeps moonlit wake visible but attached to
     // the night sea, while daylight foam retains its brighter scattering.

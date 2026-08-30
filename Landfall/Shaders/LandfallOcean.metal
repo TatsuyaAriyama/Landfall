@@ -713,7 +713,6 @@ static inline half4 landfallShadeOcean(
     );
     float rippleEnergy = mix(0.72, 1.16, rippleGroup);
     float2 capillarySlope = float2(0.0);
-    float capillaryFacetRadiance = 0.0;
     float capillaryVisibility = 0.0;
     if (detailQuality > 0.75) {
         constexpr float2 capillaryDirectionA = float2(-0.952, 0.306);
@@ -750,17 +749,6 @@ static inline half4 landfallShadeOcean(
                 + capillaryDirectionB * (cos(rippleE) * 0.0048)
             ) * capillaryVisibility * tierBlend
                 * interference * nearRippleVisibility;
-            float capillaryGroup = 0.5 + 0.5 * sin(
-                dot(p, float2(0.673, -0.740)) * 1.17
-                    - ocean.time * 0.38 + sin(rippleD * 0.21) * 1.35
-            );
-            float groupEnvelope = mix(
-                0.16,
-                1.0,
-                smoothstep(0.30, 0.78, capillaryGroup)
-            );
-            capillaryFacetRadiance = sin(rippleD) * sin(rippleE)
-                * groupEnvelope * capillaryVisibility * tierBlend;
         }
     }
     float2 detailSlope = (
@@ -950,46 +938,6 @@ static inline half4 landfallShadeOcean(
     color = mix(color, facetSky, facetLift * facetVisibility * 0.078);
     color = mix(color, ocean.deepColor, facetShade * facetVisibility * 0.052);
 
-    // Preserve the fine normal field in color as well as in reflection.
-    float microSlopeLength = length(detailSlope);
-    float microFacetVisibility = rippleVisibility
-        * mix(0.34, 1.0, fineField)
-        * (1.0 - horizonField * 0.96)
-        * distanceVisibility
-        * smoothstep(0.0015, 0.024, microSlopeLength);
-    // Intersecting ripples form short facets, not full sinusoidal bands. Build
-    // their radiance from the same normal phases so the light stays attached
-    // to the moving surface while two directions break each other's stripes.
-    float broadFacetRadiance = clamp(
-        rippleCosA * rippleCosB * 0.72
-            + rippleCosB * rippleCosC * 0.28,
-        -1.0,
-        1.0
-    );
-    float microFacetRadiance = mix(
-        broadFacetRadiance,
-        capillaryFacetRadiance,
-        smoothstep(0.78, 1.0, detailQuality)
-            * fineField * capillaryVisibility * 0.92
-    );
-    float microFacetContrast = mix(
-        0.035,
-        0.16,
-        saturate(ocean.sunStrength)
-    );
-    color *= 1.0
-        + microFacetRadiance * microFacetVisibility * microFacetContrast;
-    float microFacetLift = saturate(microFacetRadiance)
-        * microFacetVisibility;
-    float microFacetShade = saturate(-microFacetRadiance)
-        * microFacetVisibility;
-    color = mix(
-        color,
-        facetSky,
-        microFacetLift * mix(0.008, 0.020, saturate(ocean.sunStrength))
-    );
-    color = mix(color, ocean.deepColor, microFacetShade * 0.014);
-
     float3 halfVector = normalize(viewDirection + celestialDirection);
     float sunFacing = max(dot(normal, halfVector), 0.0);
     float sunShoulder = pow(sunFacing, 18.0);
@@ -1067,6 +1015,7 @@ static inline half4 landfallShadeOcean(
         0.50 + foamA * 0.23 + foamB * 0.17 + foamC * 0.10
     );
     float foamFilter = max(fwidth(foamTurbulence) * 0.62, 0.015);
+    float foamResolution = 1.0 - smoothstep(0.08, 0.22, foamFilter);
     float foamFragments = smoothstep(
         0.72 - foamFilter,
         0.88 + foamFilter,
@@ -1077,7 +1026,9 @@ static inline half4 landfallShadeOcean(
         0.68,
         normalizedViewRange
     );
-    float crestFoam = in.breaking * mix(0.46, 1.0, crestSteepness) * foamFragments
+    float resolvedSteepness = crestSteepness * crestSteepness;
+    float crestFoam = in.breaking * resolvedSteepness
+        * foamFragments * foamFragments * foamResolution
         * macroVisibility * crestRangeVisibility;
     float decayTexture = 0.5 + 0.5 * sin(
         dot(p, float2(-2.17, 3.83)) - ocean.time * 0.41 + foamWarp * 1.10
@@ -1089,8 +1040,9 @@ static inline half4 landfallShadeOcean(
         smoothstep(0.42 - decayFilter, 0.80 + decayFilter, decayTexture)
     );
     float remnantFoam = in.foamRemnant
-        * mix(0.04, 0.16, crestSteepness)
-        * decayFragments * macroVisibility * (1.0 - horizonField * 0.84);
+        * resolvedSteepness * 0.16
+        * decayFragments * foamResolution
+        * macroVisibility * (1.0 - horizonField * 0.84);
     // Foam scatters the light available in the scene; it does not glow with a
     // fixed white value after sunset. Keep the same material response at every
     // time of day while letting the shared lighting palette set its radiance.
