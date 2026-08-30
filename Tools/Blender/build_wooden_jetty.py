@@ -1,9 +1,11 @@
 """Build Landfall's social harbor arrival jetty.
 
-The jetty is deliberately shorter than the first long-pier revision and hands
-arrivals to a low side float. Continuous double rope rails, a clearly framed
-boarding gate, deep driven piles, and submerged cross-bracing make the harbor
-safe without reading as a featureless bridge.
+The jetty is organised like a small working harbor rather than a repeated
+boardwalk kit: a grounded shore threshold hands load to two longitudinal
+stringers, driven-pile bents carry the span, a deliberately marked side gate
+serves the low boarding float, and a reinforced seaward head gives the player
+a visual destination. Rail posts are less frequent than structural piles, so
+the silhouette reads as construction instead of a row of identical pegs.
 
 Everything here stays inside the island's flat-shaded, untextured vocabulary:
 no image maps, no smooth normals, only solid colours and real geometry. Depth
@@ -52,6 +54,8 @@ def material(
     roughness: float = 0.94,
     *,
     metallic: float = 0.0,
+    emission: str | None = None,
+    emission_strength: float = 0.0,
 ) -> bpy.types.Material:
     value = bpy.data.materials.new(name)
     value.diffuse_color = rgba(color)
@@ -60,6 +64,13 @@ def material(
     shader.inputs["Base Color"].default_value = rgba(color)
     shader.inputs["Roughness"].default_value = roughness
     shader.inputs["Metallic"].default_value = metallic
+    if emission is not None:
+        emission_input = shader.inputs.get("Emission Color") or shader.inputs.get("Emission")
+        if emission_input is not None:
+            emission_input.default_value = rgba(emission)
+        strength_input = shader.inputs.get("Emission Strength")
+        if strength_input is not None:
+            strength_input.default_value = emission_strength
     return value
 
 
@@ -72,25 +83,34 @@ bpy.ops.object.delete(use_global=False)
 MATS = {
     # Deck: the walking plane is the brightest wood, so it separates from the
     # structure below it at a glance and carries the eye down the pier.
-    "deck_worn": material("LF_JettyDeckWorn", "#A89479", 0.97),
-    "deck": material("LF_JettyDeck", "#8E7550", 0.96),
-    "deck_grey": material("LF_JettyDeckGrey", "#75613F", 0.98),
-    "deck_new": material("LF_JettyDeckNew", "#8F6B3E", 0.93),
+    # The in-game environment is deliberately bright. These base values leave
+    # enough headroom for sunlight instead of washing every board to cream.
+    "deck_worn": material("LF_JettyDeckWorn", "#826D50", 0.92),
+    "deck": material("LF_JettyDeck", "#6E573B", 0.90),
+    "deck_grey": material("LF_JettyDeckGrey", "#5A5142", 0.95),
+    "deck_new": material("LF_JettyDeckNew", "#8A5C31", 0.86),
     # Piles: a cooler, clearly darker ladder that never merges with the deck.
-    "pile_sun": material("LF_JettyPileSun", "#5E5648", 0.98),
-    "pile_wet": material("LF_JettyPileWet", "#443023", 0.90),
-    "pile_deep": material("LF_JettyPileDeep", "#2A2A21", 0.95),
-    "weed": material("LF_JettyWeed", "#3A4A33", 1.0),
-    "barnacle": material("LF_JettyBarnacle", "#8B8471", 0.99),
+    "pile_sun": material("LF_JettyPileSun", "#4C4336", 0.94),
+    "pile_wet": material("LF_JettyPileWet", "#293A35", 0.74),
+    "pile_deep": material("LF_JettyPileDeep", "#182420", 0.90),
+    "weed": material("LF_JettyWeed", "#344A3C", 1.0),
+    "barnacle": material("LF_JettyBarnacle", "#777260", 0.99),
     # Framing: the darkest wood in the model. Everything the deck sits on.
-    "frame": material("LF_JettyFrame", "#3A2A1E", 0.98),
-    "frame_deep": material("LF_JettyFrameDeep", "#241A14", 0.99),
+    "frame": material("LF_JettyFrame", "#302319", 0.94),
+    "frame_deep": material("LF_JettyFrameDeep", "#1B1713", 0.98),
     # Cordage and ironwork.
-    "rope": material("LF_JettyRope", "#C3AB7C", 0.99),
-    "rope_dark": material("LF_JettyRopeDark", "#8A6F49", 0.99),
-    "iron": material("LF_JettyIron", "#20272A", 0.72, metallic=0.35),
-    "rust": material("LF_JettyRust", "#6E4028", 0.90, metallic=0.12),
-    "moss": material("LF_JettyMoss", "#4A6144", 1.0),
+    "rope": material("LF_JettyRope", "#AB9063", 0.98),
+    "rope_dark": material("LF_JettyRopeDark", "#735A3B", 0.98),
+    "iron": material("LF_JettyIron", "#182126", 0.52, metallic=0.52),
+    "rust": material("LF_JettyRust", "#70412B", 0.76, metallic=0.18),
+    "moss": material("LF_JettyMoss", "#3F5940", 1.0),
+    "marker": material(
+        "LF_JettyMarkerGlow",
+        "#B86B2E",
+        0.38,
+        emission="#E58A38",
+        emission_strength=1.35,
+    ),
 }
 
 root = bpy.data.objects.new("Wooden_Jetty", None)
@@ -259,11 +279,12 @@ water_level = 0.0
 plank_count = 50
 spacing = (deck_end - deck_start) / plank_count
 
-# The deck is laid as three courses across, so the most-walked centre band can
-# be silvered while the outer boards stay darker. A handful of rows are single
-# full-width replacement boards in fresher timber, which is also what breaks up
-# the butt-joint grid.
-replaced_rows = {12, 34}
+# Working piers use full-width transverse decking. The previous three-course
+# layout created two longitudinal butt joints on every row and looked like a
+# brick or tile grid from the gameplay camera. Full planks give the eye one
+# strong construction direction and also cut the deck's mesh count by two
+# thirds. A few renewed boards identify the maintained boarding zone.
+replaced_rows = {12, 28, 31, 34}
 
 
 def board_tone(y: float, jitter: float) -> bpy.types.Material:
@@ -282,50 +303,36 @@ for index in range(plank_count):
     z_shift = RNG.uniform(-0.009, 0.009)
     yaw = RNG.uniform(-0.018, 0.018)
     width = RNG.uniform(1.23, 1.36)
-    if index in replaced_rows:
-        # A board that was pulled and renewed: one piece, no butt joints, and
-        # noticeably fresher than the timber either side of it.
-        add_box(
-            f"Deck_Replacement_{index + 1:02}",
-            (x_shift, y, deck_height + z_shift),
-            (width, spacing * 0.86, 0.105),
-            MATS["deck_new"],
-            (RNG.uniform(-0.006, 0.006), 0, yaw),
-            0.016,
-        )
-        continue
-    # Staggered butt joints. The seams wander so the deck never reads as a grid,
-    # and the 12 mm gaps show the near-black framing underneath as shadow lines.
-    left_seam = -RNG.uniform(0.20, 0.34)
-    right_seam = RNG.uniform(0.20, 0.34)
-    courses = (
-        ("L", -width * 0.5, left_seam, board_tone(y, RNG.uniform(-0.14, 0.14))),
-        (
-            "C",
-            left_seam,
-            right_seam,
-            MATS["deck_worn"] if RNG.random() < 0.74 else board_tone(y, 0.0),
-        ),
-        ("R", right_seam, width * 0.5, board_tone(y, RNG.uniform(-0.14, 0.14))),
+    mat = MATS["deck_new"] if index in replaced_rows else board_tone(
+        y,
+        RNG.uniform(-0.12, 0.12),
     )
-    for course, inner, outer, mat in courses:
-        span = outer - inner - 0.012
-        add_box(
-            f"Deck_Board_{index + 1:02}_{course}",
-            ((inner + outer) * 0.5 + x_shift, y, deck_height + z_shift + RNG.uniform(-0.005, 0.005)),
-            (span, spacing * 0.84, 0.105),
-            mat,
-            (RNG.uniform(-0.008, 0.008), 0, yaw + RNG.uniform(-0.006, 0.006)),
-            0.014,
-        )
+    add_box(
+        f"Deck_Plank_{index + 1:02}",
+        (x_shift, y, deck_height + z_shift),
+        (width, spacing * 0.84, 0.105),
+        mat,
+        (RNG.uniform(-0.008, 0.008), 0, yaw),
+        0.014,
+    )
 
-# A two-board approach slopes down to the island surface.
-for index, (y, z, pitch) in enumerate(((-1.93, 0.30, -0.18), (-2.12, 0.19, -0.23))):
+# A three-tread threshold makes the land-to-timber handoff legible and spreads
+# load onto a cross sill instead of letting two loose-looking boards touch sand.
+add_box(
+    "Shore_Abutment_Sill",
+    (0, -2.24, 0.10),
+    (1.62, 0.22, 0.20),
+    MATS["frame_deep"],
+    bevel=0.022,
+)
+for index, (y, z, pitch) in enumerate(
+    ((-1.92, 0.31, -0.15), (-2.12, 0.22, -0.18), (-2.31, 0.135, -0.16))
+):
     add_box(
         f"Shore_Ramp_{index + 1:02}",
         (0, y, z),
-        (1.30, 0.35, 0.105),
-        MATS["deck"] if index == 0 else MATS["deck_grey"],
+        (1.42, 0.34, 0.105),
+        MATS["deck_worn"] if index < 2 else MATS["deck"],
         (pitch, 0, RNG.uniform(-0.01, 0.01)),
         0.018,
     )
@@ -358,6 +365,12 @@ post_ys = tuple(
     deck_start + 0.25 + index * post_spacing
     for index in range(8)
 )
+# Structural bents stay closely spaced below the deck, but only five of them
+# rise as rail posts. This preserves believable load paths while removing the
+# picket-fence rhythm that dominated the gameplay silhouette.
+rail_post_indices = (0, 2, 4, 5, 7)
+rail_post_index_set = set(rail_post_indices)
+rail_post_ys = tuple(post_ys[index] for index in rail_post_indices)
 for index, y in enumerate(post_ys):
     add_box(
         f"Cross_Beam_{index + 1:02}",
@@ -372,7 +385,8 @@ for index, y in enumerate(post_ys):
 # four stacked segments so the sea leaves a mark on it: bleached timber above
 # the splash line, a dark saturated tide band, a fouled shelf that steps proud
 # of the shaft, then near-black wood the rest of the way down.
-pile_top = 1.10
+rail_pile_top = 1.10
+support_pile_top = 0.56
 pile_bottom = -3.20
 splash_top = water_level + 0.28
 tide_bottom = water_level - 0.22
@@ -386,6 +400,7 @@ for row, y in enumerate(post_ys):
     for x in (-0.72, 0.72):
         side = "L" if x < 0 else "R"
         radius = 0.105 if row % 3 else 0.115
+        pile_top = rail_pile_top if row in rail_post_index_set else support_pile_top
         # Each pile was driven a little off plumb. The head stays exactly on the
         # authored rail line; only the buried foot wanders.
         foot = Vector((x + RNG.uniform(-0.030, 0.030), y + RNG.uniform(-0.030, 0.030), pile_bottom))
@@ -429,6 +444,17 @@ for row, y in enumerate(post_ys):
             vertices=9,
         )
         pile_heads.append((x, y, radius))
+
+        # A shallow cap protects end grain. Low structural heads use iron so
+        # they remain part of the frame; the five rail posts get timber caps.
+        add_cylinder(
+            f"Pile_Cap_{row + 1:02}_{side}",
+            (x, y, pile_top + 0.018),
+            radius + 0.012,
+            0.036,
+            MATS["deck_grey"] if row in rail_post_index_set else MATS["iron"],
+            vertices=9,
+        )
 
         # Barnacle crust on the seaward faces of the outer piles only.
         if row % 2 == 0:
@@ -525,12 +551,33 @@ for side, x in (("L", -0.67), ("R", 0.67)):
             bevel=0.016,
         )
 
+# Iron heel plates make the two starboard gate jambs readable even when the
+# rope is seen against pale water. They also explain where the separate
+# boarding connector bears against the fixed pier.
+for index, y in enumerate((gate_start, gate_end), 1):
+    add_box(
+        f"Boarding_Gate_Heel_{index:02}",
+        (0.686, y, 0.405),
+        (0.075, 0.22, 0.20),
+        MATS["iron"],
+        bevel=0.010,
+    )
+    add_cylinder(
+        f"Boarding_Gate_Bolt_{index:02}",
+        (0.727, y, 0.475),
+        0.025,
+        0.018,
+        MATS["rust"],
+        vertices=6,
+        rotation=(0, math.pi / 2, 0),
+    )
+
 # Each side is authored as two continuous ropes. Mid-span sag points are part
 # of the same curve, so there are no floating endpoints or pass-through gaps.
 for side, x in (("L", -0.72), ("R", 0.72)):
-    post_spans = (post_ys,)
+    post_spans = (rail_post_ys,)
     if side == "R":
-        post_spans = (post_ys[:5], post_ys[5:])
+        post_spans = (rail_post_ys[:3], rail_post_ys[3:])
     for span_index, span in enumerate(post_spans, 1):
         upper_points: list[tuple[float, float, float]] = []
         lower_points: list[tuple[float, float, float]] = []
@@ -558,7 +605,8 @@ for side, x in (("L", -0.72), ("R", 0.72)):
 # Lashings sit where the rails actually meet the posts. The two gate posts get
 # extra turns, which is both how a real gate post is served and a quiet way of
 # pointing at the boarding opening.
-for row, y in enumerate(post_ys):
+for row in rail_post_indices:
+    y = post_ys[row]
     for x in (-0.72, 0.72):
         side = "L" if x < 0 else "R"
         radius = (0.105 if row % 3 else 0.115) + 0.014
@@ -654,6 +702,26 @@ add_cylinder(
     vertices=8,
 )
 
+# Two compact rubbing fenders protect the actual boarding side. They are kept
+# below the toe board, leaving the gate and the playable connector clear.
+for index, y in enumerate((gate_start + 0.22, gate_end - 0.22), 1):
+    add_beam(
+        f"Boarding_Fender_Lanyard_{index:02}",
+        (0.67, y, 0.51),
+        (0.77, y, 0.25),
+        0.014,
+        MATS["rope_dark"],
+        vertices=5,
+    )
+    add_cylinder(
+        f"Boarding_Fender_{index:02}",
+        (0.79, y, 0.12),
+        0.064,
+        0.29,
+        MATS["iron"],
+        vertices=8,
+    )
+
 # Seaward ladder reaches below deck height without increasing the placement footprint.
 for x in (-0.25, 0.25):
     add_beam(
@@ -672,6 +740,42 @@ for index, z in enumerate((0.12, 0.28, 0.44)):
         0.026,
         MATS["rust"],
         vertices=7,
+    )
+
+# Reinforced seaward head. A full-width end beam closes the stringers, short
+# knees transfer side load into the final bent, and two low amber reflectors
+# establish a destination without turning the pier into an illuminated ride.
+add_box(
+    "Seaward_End_Beam",
+    (0, deck_end - 0.015, 0.245),
+    (1.48, 0.15, 0.22),
+    MATS["frame_deep"],
+    bevel=0.016,
+)
+for side, x in (("L", -0.54), ("R", 0.54)):
+    add_beam(
+        f"Seaward_Knee_{side}",
+        (x, deck_end - 0.10, 0.20),
+        (x * 0.72, deck_end - 0.62, -0.15),
+        0.043,
+        MATS["frame"],
+        vertices=7,
+    )
+    add_cylinder(
+        f"Seaward_Marker_Base_{side}",
+        (x, deck_end - 0.11, 0.50),
+        0.050,
+        0.12,
+        MATS["iron"],
+        vertices=8,
+    )
+    add_cylinder(
+        f"Seaward_Marker_{side}",
+        (x, deck_end - 0.11, 0.585),
+        0.057,
+        0.050,
+        MATS["marker"],
+        vertices=10,
     )
 
 # Small moss straps around the landward piles blend the prop into grassy islands.
