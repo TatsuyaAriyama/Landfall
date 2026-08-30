@@ -145,6 +145,16 @@ private final class HomeIslandInteractiveSceneView: SCNView {
     }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        // A SwiftUI TextField/TextEditor can live above this SceneKit view while
+        // modifier-only presses still continue through the responder chain. In
+        // particular, consuming Shift here prevents hardware keyboards from
+        // producing punctuation such as apostrophes and question marks in the
+        // voyage memo. Text entry always owns the complete key sequence.
+        guard !hasActiveTextInput else {
+            stopKeyboardMovement()
+            super.pressesBegan(presses, with: event)
+            return
+        }
         let movementKeys = Set(presses.compactMap(\.key?.keyCode).filter(isHandledKey))
         guard !movementKeys.isEmpty else {
             super.pressesBegan(presses, with: event)
@@ -155,6 +165,11 @@ private final class HomeIslandInteractiveSceneView: SCNView {
     }
 
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if hasActiveTextInput {
+            stopKeyboardMovement()
+            super.pressesEnded(presses, with: event)
+            return
+        }
         releaseMovementKeys(from: presses)
         let containsOnlyMovementKeys = presses.allSatisfy {
             $0.key.map { isHandledKey($0.keyCode) } ?? false
@@ -182,6 +197,10 @@ private final class HomeIslandInteractiveSceneView: SCNView {
             || key == .keyboardLeftShift
             || key == .keyboardRightShift
             || key == .keyboardSpacebar
+    }
+
+    private var hasActiveTextInput: Bool {
+        window?.keelmiraFirstResponder is UITextInput
     }
 
     private func releaseMovementKeys(from presses: Set<UIPress>) {
@@ -240,6 +259,19 @@ private final class HomeIslandInteractiveSceneView: SCNView {
             input.forward /= magnitude
         }
         keyboardMovementHandler?(input, deltaTime)
+    }
+}
+
+private extension UIView {
+    /// UIKit has no public window-level first-responder lookup. Walking the
+    /// visible hierarchy keeps the SceneKit keyboard router independent of the
+    /// concrete SwiftUI text-control implementation.
+    var keelmiraFirstResponder: UIResponder? {
+        if isFirstResponder { return self }
+        for subview in subviews {
+            if let responder = subview.keelmiraFirstResponder { return responder }
+        }
+        return nil
     }
 }
 

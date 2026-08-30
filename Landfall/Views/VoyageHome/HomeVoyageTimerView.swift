@@ -1,6 +1,7 @@
 import Combine
 import SwiftData
 import SwiftUI
+import UIKit
 import WidgetKit
 
 extension StudyTimer {
@@ -156,6 +157,103 @@ private enum VoyageTemporaryMemoStore {
             defaults.removeObject(forKey: storageKey)
         } else {
             defaults.set(memos, forKey: storageKey)
+        }
+    }
+}
+
+/// A plain-text editor for scratch notes that may contain code, SQL, dates, or
+/// shell fragments. UITextView exposes the exact keyboard traits SwiftUI's
+/// TextEditor does not, so hardware-keyboard punctuation remains unchanged.
+private struct VoyageTemporaryMemoEditor: UIViewRepresentable {
+    @Binding var text: String
+    var isFocused: FocusState<Bool>.Binding
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = UITextView()
+        view.delegate = context.coordinator
+        view.backgroundColor = .clear
+        view.isOpaque = false
+        view.isScrollEnabled = true
+        view.keyboardDismissMode = .interactive
+        view.font = UIFontMetrics.default.scaledFont(
+            for: .systemFont(ofSize: 14, weight: .medium)
+        )
+        view.textColor = .black
+        view.tintColor = UIColor(LFColor.coral)
+        view.textContainerInset = UIEdgeInsets(top: 8, left: 5, bottom: 8, right: 5)
+        view.textContainer.lineFragmentPadding = 0
+        view.accessibilityLabel = LF.text("Temporary memo")
+        applyPlainTextTraits(to: view)
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        context.coordinator.parent = self
+        applyPlainTextTraits(to: view)
+        // Do not replace the backing string during an active hardware-keyboard
+        // sequence. SwiftUI may refresh between modifier and character events;
+        // assigning here would reset the insertion point and drop the rest of
+        // the sequence.
+        if !view.isFirstResponder, view.text != text {
+            view.text = text
+        }
+        if isFocused.wrappedValue {
+            context.coordinator.hasObservedFocusRequest = true
+            if !view.isFirstResponder {
+                DispatchQueue.main.async { view.becomeFirstResponder() }
+            }
+        } else if view.isFirstResponder,
+                  context.coordinator.hasObservedFocusRequest {
+            context.coordinator.hasObservedFocusRequest = false
+            view.resignFirstResponder()
+        }
+    }
+
+    private func applyPlainTextTraits(to view: UITextView) {
+        view.autocapitalizationType = .none
+        view.autocorrectionType = .no
+        view.spellCheckingType = .no
+        view.smartQuotesType = .no
+        view.smartDashesType = .no
+        view.smartInsertDeleteType = .no
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: VoyageTemporaryMemoEditor
+        var hasObservedFocusRequest = false
+
+        init(parent: VoyageTemporaryMemoEditor) {
+            self.parent = parent
+        }
+
+        func textViewDidBeginEditing(_ textView: UITextView) {
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.isFocused.wrappedValue = true
+            }
+        }
+
+        func textViewDidEndEditing(_ textView: UITextView) {
+            hasObservedFocusRequest = false
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.isFocused.wrappedValue = false
+            }
+        }
+
+        func textViewDidChange(_ textView: UITextView) {
+            let limited = String(
+                textView.text.prefix(VoyageTemporaryMemoStore.maximumCharacters)
+            )
+            if textView.text != limited {
+                let insertion = min(textView.selectedRange.location, limited.utf16.count)
+                textView.text = limited
+                textView.selectedRange = NSRange(location: insertion, length: 0)
+            }
+            guard parent.text != limited else { return }
+            parent.text = limited
         }
     }
 }
@@ -725,20 +823,9 @@ struct HomeVoyageTimerView: View {
                         .allowsHitTesting(false)
                 }
 
-                TextEditor(text: $note)
-                    .font(LFFont.copy(14))
-                    .foregroundStyle(Color.black)
-                    .tint(LFColor.coral)
-                    .scrollContentBackground(.hidden)
-                    .focused($noteFocused)
+                VoyageTemporaryMemoEditor(text: $note, isFocused: $noteFocused)
                     .frame(minHeight: compactHUD ? 150 : 190)
                     .accessibilityLabel(Text("Temporary memo"))
-                    .onChange(of: note) { _, value in
-                        guard value.count > VoyageTemporaryMemoStore.maximumCharacters else {
-                            return
-                        }
-                        note = String(value.prefix(VoyageTemporaryMemoStore.maximumCharacters))
-                    }
             }
             .padding(7)
             .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
