@@ -1290,6 +1290,7 @@
 "Your suggestion" = "改善案";
 "What should we improve? Please include what you expected and what happened." = "改善してほしいことを、期待した動きや実際に起きたことと一緒に教えてください。";
 "App version, iOS version, and language are included automatically. Study records are never attached." = "アプリとiOSのバージョン、言語設定は自動で添付されます。学習記録は送信されません。";
+"An unsent draft stays on this device." = "未送信の下書きは、この端末だけに保存されます。";
 "Sending…" = "送信中…";
 "Send to the crew" = "運営チームに送る";
 "%lld more characters to send" = "あと%lld文字で送信できます";

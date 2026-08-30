@@ -4,11 +4,15 @@ struct FeedbackView: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var messageFocused: Bool
 
-    @State private var category: FeedbackCategory = .idea
-    @State private var message = ""
+    @AppStorage("feedback.draft.category.v1") private var categoryRaw = FeedbackCategory.idea.rawValue
+    @AppStorage("feedback.draft.message.v1") private var message = ""
     @State private var isSubmitting = false
     @State private var submittedFeedbackID: String?
     @State private var errorMessage: String?
+
+    private var category: FeedbackCategory {
+        FeedbackCategory(rawValue: categoryRaw) ?? .idea
+    }
 
     private var trimmedMessage: String {
         message.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -49,128 +53,153 @@ struct FeedbackView: View {
     }
 
     private var formView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Help shape the next voyage")
-                        .font(LFFont.copy(24))
-                        .foregroundStyle(LFColor.ink)
-                    Text("Tell the crew what would make KeelMira better. Every note reaches the operations team.")
-                        .font(LFFont.label(14))
-                        .foregroundStyle(LFColor.ink.opacity(0.60))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionLabel("Category")
-
-                    LazyVGrid(
-                        columns: [
-                            GridItem(.flexible(), spacing: 9),
-                            GridItem(.flexible(), spacing: 9),
-                        ],
-                        spacing: 9
-                    ) {
-                        ForEach(FeedbackCategory.allCases) { option in
-                            categoryButton(option)
-                        }
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .firstTextBaseline) {
-                        sectionLabel("Your suggestion")
-                        Spacer()
-                        Text("\(message.count) / \(FeedbackService.maximumLength)")
-                            .font(LFFont.label(12))
-                            .foregroundStyle(LFColor.ink.opacity(0.42))
-                            .monospacedDigit()
-                    }
-
-                    ZStack(alignment: .topLeading) {
-                        if message.isEmpty {
-                            Text("What should we improve? Please include what you expected and what happened.")
-                                .font(LFFont.label(15))
-                                .foregroundStyle(LFColor.ink.opacity(0.36))
-                                .padding(.horizontal, 17)
-                                .padding(.vertical, 18)
-                                .allowsHitTesting(false)
-                        }
-
-                        TextEditor(text: $message)
-                            .font(LFFont.copy(16))
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Help shape the next voyage")
+                            .font(LFFont.copy(24))
                             .foregroundStyle(LFColor.ink)
-                            .scrollContentBackground(.hidden)
-                            .padding(12)
-                            .frame(minHeight: 190)
-                            .focused($messageFocused)
-                            .onChange(of: message) { _, newValue in
-                                if newValue.count > FeedbackService.maximumLength {
-                                    message = String(newValue.prefix(FeedbackService.maximumLength))
-                                }
-                                errorMessage = nil
+                        Text("Tell the crew what would make KeelMira better. Every note reaches the operations team.")
+                            .font(LFFont.label(14))
+                            .foregroundStyle(LFColor.ink.opacity(0.60))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        sectionLabel("Category")
+
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.flexible(), spacing: 9),
+                                GridItem(.flexible(), spacing: 9),
+                            ],
+                            spacing: 9
+                        ) {
+                            ForEach(FeedbackCategory.allCases) { option in
+                                categoryButton(option)
                             }
-                    }
-                    .background(LFColor.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(messageFocused ? LFColor.returnOrange.opacity(0.65) : LFColor.ink.opacity(0.10), lineWidth: 1)
-                    }
-
-                    Text("App version, iOS version, and language are included automatically. Study records are never attached.")
-                        .font(LFFont.label(12))
-                        .foregroundStyle(LFColor.ink.opacity(0.48))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let errorMessage {
-                    Label(errorMessage, systemImage: "exclamationmark.circle")
-                        .font(LFFont.label(13))
-                        .foregroundStyle(LFColor.coral)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if remainingCharactersToSubmit > 0 {
-                    Label(
-                        LF.format(
-                            "%lld more characters to send",
-                            Int64(remainingCharactersToSubmit)
-                        ),
-                        systemImage: "character.cursor.ibeam"
-                    )
-                    .font(LFFont.label(13))
-                    .foregroundStyle(LFColor.returnOrange)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityAddTraits(.isStaticText)
-                }
-
-                Button {
-                    submit()
-                } label: {
-                    HStack(spacing: 10) {
-                        if isSubmitting {
-                            ProgressView()
-                                .tint(LFColor.paper)
-                        } else {
-                            Image(systemName: "paperplane.fill")
                         }
-                        Text(isSubmitting ? "Sending…" : "Send to the crew")
                     }
-                    .font(LFFont.copy(17))
-                    .foregroundStyle(LFColor.paper)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(canSubmit ? LFColor.harborTeal : LFColor.ink.opacity(0.20), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline) {
+                            sectionLabel("Your suggestion")
+                            Spacer()
+                            Text("\(message.count) / \(FeedbackService.maximumLength)")
+                                .font(LFFont.label(12))
+                                .foregroundStyle(LFColor.ink.opacity(0.42))
+                                .monospacedDigit()
+                        }
+
+                        ZStack(alignment: .topLeading) {
+                            if message.isEmpty {
+                                Text("What should we improve? Please include what you expected and what happened.")
+                                    .font(LFFont.label(15))
+                                    .foregroundStyle(LFColor.ink.opacity(0.36))
+                                    .padding(.horizontal, 17)
+                                    .padding(.vertical, 18)
+                                    .allowsHitTesting(false)
+                            }
+
+                            TextEditor(text: $message)
+                                .font(LFFont.copy(16))
+                                .foregroundStyle(LFColor.ink)
+                                .scrollContentBackground(.hidden)
+                                .padding(12)
+                                .frame(minHeight: 190)
+                                .focused($messageFocused)
+                                .onChange(of: message) { _, newValue in
+                                    if newValue.count > FeedbackService.maximumLength {
+                                        message = String(newValue.prefix(FeedbackService.maximumLength))
+                                    }
+                                    errorMessage = nil
+                                }
+                        }
+                        .background(LFColor.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(messageFocused ? LFColor.returnOrange.opacity(0.65) : LFColor.ink.opacity(0.10), lineWidth: 1)
+                        }
+
+                        Label("An unsent draft stays on this device.", systemImage: "lock.fill")
+                            .font(LFFont.label(12))
+                            .foregroundStyle(LFColor.harborTeal.opacity(0.76))
+
+                        Text("App version, iOS version, and language are included automatically. Study records are never attached.")
+                            .font(LFFont.label(12))
+                            .foregroundStyle(LFColor.ink.opacity(0.48))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    if let errorMessage {
+                        Label(errorMessage, systemImage: "exclamationmark.circle")
+                            .font(LFFont.label(13))
+                            .foregroundStyle(LFColor.coral)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(LFColor.coral.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                    }
+
+                    if remainingCharactersToSubmit > 0 {
+                        Label(
+                            LF.format(
+                                "%lld more characters to send",
+                                Int64(remainingCharactersToSubmit)
+                            ),
+                            systemImage: "character.cursor.ibeam"
+                        )
+                        .font(LFFont.label(13))
+                        .foregroundStyle(LFColor.returnOrange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isStaticText)
+                    }
                 }
-                .buttonStyle(.plain)
-                .disabled(!canSubmit)
-                .accessibilityHint(Text("Sends this suggestion privately to the operations team."))
+                .padding(LFMetrics.cardPadding)
+                .padding(.top, 12)
+                .padding(.bottom, 20)
             }
-            .padding(LFMetrics.cardPadding)
-            .padding(.top, 12)
-            .padding(.bottom, 28)
+            .scrollDismissesKeyboard(.interactively)
+
+            submitBar
         }
-        .scrollDismissesKeyboard(.interactively)
+    }
+
+    private var submitBar: some View {
+        Button {
+            submit()
+        } label: {
+            HStack(spacing: 10) {
+                if isSubmitting {
+                    ProgressView()
+                        .tint(LFColor.paper)
+                } else {
+                    Image(systemName: "paperplane.fill")
+                }
+                Text(isSubmitting ? "Sending…" : "Send to the crew")
+            }
+            .font(LFFont.copy(17))
+            .foregroundStyle(LFColor.paper)
+            .frame(maxWidth: .infinity)
+            .frame(height: 54)
+            .background(
+                canSubmit ? LFColor.harborTeal : LFColor.ink.opacity(0.20),
+                in: RoundedRectangle(cornerRadius: 17, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSubmit)
+        .accessibilityHint(Text("Sends this suggestion privately to the operations team."))
+        .padding(.horizontal, LFMetrics.cardPadding)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .background(LFColor.paper)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(LFColor.ink.opacity(0.08))
+                .frame(height: 1)
+        }
     }
 
     private var successView: some View {
@@ -209,7 +238,7 @@ struct FeedbackView: View {
     private func categoryButton(_ option: FeedbackCategory) -> some View {
         let selected = category == option
         return Button {
-            category = option
+            categoryRaw = option.rawValue
             Haptics.tap(.light)
         } label: {
             Label(option.title, systemImage: option.symbol)
@@ -243,6 +272,8 @@ struct FeedbackView: View {
                     category: category,
                     message: trimmedMessage
                 )
+                message = ""
+                categoryRaw = FeedbackCategory.idea.rawValue
                 Haptics.success()
             } catch {
                 if let feedbackError = error as? FeedbackSubmissionError {
