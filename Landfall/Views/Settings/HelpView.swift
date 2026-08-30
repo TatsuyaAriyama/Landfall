@@ -238,33 +238,33 @@ struct HelpView: View {
                     detail: "Tap the destination below your player card at the top left of Home."
                 )
                 GameGuideStep(
-                    icon: .date,
-                    title: "Open Trace",
-                    detail: "Tap the date in the top-left corner of Home."
+                    icon: .player,
+                    title: "Review your records",
+                    detail: "Tap your player card at the top left of Home."
                 )
                 GameGuideStep(
-                    icon: .logbook,
-                    title: "Open Logbook",
-                    detail: "Open the top-right menu and choose Logbook."
+                    icon: .todo,
+                    title: "Open the ToDo list",
+                    detail: "Tap the checklist in the top-right toolbar."
                 )
                 GameGuideStep(
-                    icon: .menu,
-                    title: "Open another deck",
-                    detail: "Use the top-right menu to open My Island, Harbor, Logbook, Style, Help, or Settings."
+                    icon: .settings,
+                    title: "Open settings",
+                    detail: "Tap the gear in the top-right toolbar."
                 )
             }
 
         case .island:
             GameGuideCard(title: "My Island", route: "04 · ASHORE") {
                 GameGuideStep(
-                    icon: .island,
-                    title: "Visit your island",
-                    detail: "Open the top-right menu and choose My Island."
+                    icon: .harbor,
+                    title: "Open the harbor",
+                    detail: "Walk to the notice board and tap it."
                 )
                 GameGuideStep(
                     icon: .islandEdit,
-                    title: "Build and explore",
-                    detail: "Use Edit to place items. Switch to Explore to walk around."
+                    title: "Edit your island",
+                    detail: "Tap the hammer in the top-right toolbar to place or move items. Close the editor to walk again."
                 )
                 GameGuideStep(
                     icon: .campfire,
@@ -519,10 +519,10 @@ private enum GameControlIcon {
     case pause
     case finish
     case destination
-    case date
-    case logbook
-    case menu
-    case island
+    case player
+    case todo
+    case settings
+    case harbor
     case islandEdit
     case campfire
     case tent
@@ -594,36 +594,33 @@ private enum GameControlIcon {
         case .destination:
             tileSymbol(.island, style: .seaGreen)
 
-        case .date:
-            VStack(spacing: 0) {
-                Text("SAT")
-                    .font(LFFont.label(7))
-                    .foregroundStyle(LFColor.returnOrange)
-                Text("8/9")
-                    .font(LFFont.number(12))
-                    .foregroundStyle(LFColor.harborSand)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 11))
-            .overlay(RoundedRectangle(cornerRadius: 11).stroke(LFColor.harborSand.opacity(0.18), lineWidth: 1))
+        case .player:
+            controlButton(
+                systemName: "person.crop.circle.fill",
+                foreground: LFColor.harborSand,
+                background: .white.opacity(0.09)
+            )
 
-        case .logbook:
-            tileSymbol(.book, style: .coral)
+        case .todo:
+            controlButton(
+                systemName: "checklist",
+                foreground: LFColor.harborSand,
+                background: .white.opacity(0.09)
+            )
 
-        case .menu:
-            ZStack {
-                RoundedRectangle(cornerRadius: 11).fill(.white.opacity(0.07))
-                HStack(spacing: 3) {
-                    Text("Home")
-                        .font(LFFont.label(9))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
-                }
-                .foregroundStyle(LFColor.harborSand)
-            }
+        case .settings:
+            controlButton(
+                systemName: "gearshape.fill",
+                foreground: LFColor.harborSand,
+                background: .white.opacity(0.09)
+            )
 
-        case .island:
-            tileSymbol(.island, style: .seaGreen)
+        case .harbor:
+            controlButton(
+                systemName: "signpost.right.fill",
+                foreground: LFColor.harborSand,
+                background: .white.opacity(0.09)
+            )
 
         case .islandEdit:
             controlButton(systemName: "hammer.fill", foreground: LFColor.harborSand, background: .white.opacity(0.09))
