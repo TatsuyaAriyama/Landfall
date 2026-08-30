@@ -66,50 +66,119 @@ def harbor_materials(prefix: str) -> dict[str, bpy.types.Material]:
     }
 
 
+def boarding_float_materials() -> dict[str, bpy.types.Material]:
+    """The fixed jetty's material ladder, repeated under float-specific names.
+
+    Keeping this palette local avoids silently changing the other harbor props
+    while making a future float rebuild deterministic with the fixed pier.
+    """
+    return {
+        "deck_worn": kit.material("LF_BoardingFloatDeckWorn", "#826D50", 0.92),
+        "deck": kit.material("LF_BoardingFloatDeck", "#6E573B", 0.90),
+        "deck_grey": kit.material("LF_BoardingFloatDeckGrey", "#5A5142", 0.95),
+        "deck_new": kit.material("LF_BoardingFloatDeckNew", "#8A5C31", 0.86),
+        "pile_sun": kit.material("LF_BoardingFloatPileSun", "#4C4336", 0.94),
+        "pile_wet": kit.material("LF_BoardingFloatPileWet", "#293A35", 0.74),
+        "pile_deep": kit.material("LF_BoardingFloatPileDeep", "#182420", 0.90),
+        "frame": kit.material("LF_BoardingFloatFrame", "#302319", 0.94),
+        "frame_deep": kit.material("LF_BoardingFloatFrameDeep", "#1B1713", 0.98),
+        "rope": kit.material("LF_BoardingFloatRope", "#AB9063", 0.98),
+        "rope_dark": kit.material("LF_BoardingFloatRopeDark", "#735A3B", 0.98),
+        "iron": kit.material(
+            "LF_BoardingFloatIron",
+            "#182126",
+            0.52,
+            metallic=0.52,
+        ),
+        "rust": kit.material(
+            "LF_BoardingFloatRust",
+            "#70412B",
+            0.76,
+            metallic=0.18,
+        ),
+    }
+
+
 def build_harbor_boarding_float() -> None:
     kit.reset_scene()
     root = kit.make_root("harbor_boarding_float", "Harbor_Boarding_Float", "medium")
     objects: list[bpy.types.Object] = []
-    mats = harbor_materials("BoardingFloat")
+    mats = boarding_float_materials()
 
-    # Low deck: its authored negative height puts it close to the boat deck
-    # after Home Island's common surface offset is applied.
+    # Low deck: dimensions and height are consumed by HomeIslandMetrics. Full
+    # transverse planks repeat the fixed pier's construction direction; the
+    # older alternating cream boards made this read as a separate plastic kit.
+    plank_tones = (
+        "deck_worn", "deck", "deck", "deck_grey", "deck",
+        "deck_worn", "deck", "deck_new", "deck", "deck_grey",
+        "deck", "deck_worn", "deck_new", "deck", "deck_grey",
+        "deck", "deck_worn",
+    )
     for index in range(17):
         y = -1.42 + index * 0.177
         kit.add_box(
             f"Float_Plank_{index + 1:02}",
             (0, y, -0.28 + (0.006 if index % 3 == 0 else 0)),
             (1.34, 0.158, 0.105),
-            mats["sun"] if index % 4 == 0 else mats["wood"],
+            mats[plank_tones[index]],
             root,
             objects,
             rotation=(0, 0, math.radians((index % 3 - 1) * 0.35)),
             bevel=0.015,
         )
+
+    # Two stringers and four crossheads carry the walking surface. The dark
+    # gap between boards and frame is the same contact-shadow device used on
+    # the upper jetty.
     for x in (-0.46, 0.46):
         kit.add_box(
             f"Float_Stringer_{'L' if x < 0 else 'R'}",
             (x, 0, -0.42),
             (0.14, 3.04, 0.17),
-            mats["deep"],
+            mats["frame_deep"],
             root,
             objects,
             bevel=0.018,
         )
-    for x in (-0.47, 0.47):
-        kit.add_cylinder(
-            f"Floatation_Log_{'L' if x < 0 else 'R'}",
-            (x, 0, -0.61),
-            0.17,
-            2.78,
-            mats["wet"],
+    for index, y in enumerate((-1.30, -0.44, 0.44, 1.30), 1):
+        kit.add_box(
+            f"Float_Crosshead_{index:02}",
+            (0, y, -0.43),
+            (1.46, 0.13, 0.16),
+            mats["frame"],
             root,
             objects,
-            vertices=9,
-            rotation=(math.pi / 2, 0, 0),
+            bevel=0.014,
         )
 
-    # The landward connector rises in four readable steps to the main pier.
+    # Concealed rectangular pontoons replace the wheel-like exposed logs.
+    # Their dark, wet material keeps buoyancy visible without competing with
+    # the deck and matches the fixed pier's submerged framing.
+    for x in (-0.43, 0.43):
+        side = "L" if x < 0 else "R"
+        kit.add_box(
+            f"Float_Pontoon_{side}",
+            (x, 0, -0.61),
+            (0.34, 2.78, 0.32),
+            mats["pile_deep"],
+            root,
+            objects,
+            bevel=0.075,
+        )
+
+    # The connector uses the same timber treads over dark side stringers. Its
+    # footprint and four rises remain unchanged, preserving arrival walking.
+    for side_y in (-0.46, 0.46):
+        kit.add_beam(
+            f"Connector_Stringer_{'A' if side_y < 0 else 'B'}",
+            (-0.66, side_y, -0.34),
+            (-1.48, side_y, 0.56),
+            0.048,
+            mats["frame_deep"],
+            root,
+            objects,
+            vertices=7,
+        )
     for index in range(4):
         x = -0.79 - index * 0.20
         z = -0.18 + index * 0.18
@@ -117,74 +186,229 @@ def build_harbor_boarding_float() -> None:
             f"Pier_Connector_Step_{index + 1}",
             (x, 0.02, z),
             (0.34, 1.02, 0.13),
-            mats["sun"] if index > 1 else mats["wood"],
+            mats["deck_worn"] if index > 1 else mats["deck"],
             root,
             objects,
             bevel=0.018,
         )
+
+    # Proper end posts make the sloped rope a handrail rather than two sticks
+    # floating beside the stairs.
     for side_y in (-0.49, 0.49):
+        side = "A" if side_y < 0 else "B"
+        kit.add_cylinder(
+            f"Connector_Low_Post_{side}",
+            (-0.70, side_y, 0.10),
+            0.055,
+            0.66,
+            mats["pile_sun"],
+            root,
+            objects,
+            vertices=8,
+        )
+        kit.add_cylinder(
+            f"Connector_High_Post_{side}",
+            (-1.40, side_y, 0.68),
+            0.055,
+            0.58,
+            mats["pile_sun"],
+            root,
+            objects,
+            vertices=8,
+        )
         kit.add_beam(
-            f"Connector_Rail_{'A' if side_y < 0 else 'B'}",
-            (-0.72, side_y, -0.02),
-            (-1.40, side_y, 0.67),
-            0.035,
+            f"Connector_Rail_{side}",
+            (-0.70, side_y, 0.41),
+            (-1.40, side_y, 0.96),
+            0.028,
             mats["rope"],
             root,
             objects,
             vertices=7,
         )
 
-    # The boat-facing rail stops at a broad central boarding gate. Posts frame
-    # the opening, but no rope crosses the gangplank or the navigator's path.
-    # The opposite side remains open toward the stair connector.
-    gate_half_length = 0.62
-    for y in (-1.32, -gate_half_length, gate_half_length, 1.32):
+    # Two driven guide piles let the platform follow the tide. Metal collars
+    # tie them to the frame, making the object read specifically as a floating
+    # berth rather than a short duplicate pier.
+    for y, label in ((-1.31, "Bow"), (1.31, "Stern")):
+        for name, z, depth, mat in (
+            ("Deep", -0.75, 0.70, mats["pile_deep"]),
+            ("Wet", -0.18, 0.44, mats["pile_wet"]),
+            ("Sun", 0.31, 0.54, mats["pile_sun"]),
+        ):
+            kit.add_cylinder(
+                f"Guide_Pile_{label}_{name}",
+                (0.76, y, z),
+                0.105,
+                depth,
+                mat,
+                root,
+                objects,
+                vertices=9,
+            )
+        kit.add_torus(
+            f"Guide_Collar_{label}",
+            (0.76, y, -0.29),
+            0.126,
+            0.020,
+            mats["iron"],
+            root,
+            objects,
+            major_segments=12,
+            minor_segments=4,
+        )
         kit.add_cylinder(
-            f"Outer_Post_{y:+.2f}",
-            (0.68, y, 0.02),
-            0.075,
-            1.30,
-            mats["wet"],
+            f"Guide_Pile_Cap_{label}",
+            (0.76, y, 0.595),
+            0.117,
+            0.040,
+            mats["deck_grey"],
+            root,
+            objects,
+            vertices=9,
+        )
+
+    # The boat-facing rope terminates at a broad central gate. Gate posts are
+    # lower and slimmer than the guide piles, matching the hierarchy of the
+    # upper jetty rather than repeating four identical poles.
+    gate_half_length = 0.62
+    for y, label in ((-gate_half_length, "Bow"), (gate_half_length, "Stern")):
+        kit.add_cylinder(
+            f"Boarding_Gate_Post_{label}",
+            (0.68, y, 0.08),
+            0.070,
+            0.72,
+            mats["pile_sun"],
             root,
             objects,
             vertices=8,
         )
+        kit.add_cylinder(
+            f"Boarding_Gate_Cap_{label}",
+            (0.68, y, 0.455),
+            0.080,
+            0.034,
+            mats["deck_grey"],
+            root,
+            objects,
+            vertices=8,
+        )
+        kit.add_box(
+            f"Boarding_Gate_Heel_{label}",
+            (0.69, y, -0.24),
+            (0.10, 0.20, 0.16),
+            mats["iron"],
+            root,
+            objects,
+            bevel=0.010,
+        )
+
     for index, (start, end) in enumerate(
         ((-1.32, -gate_half_length), (gate_half_length, 1.32)),
         1,
     ):
         middle = (start + end) * 0.5
-        kit.add_beam(
-            f"Float_Upper_Rope_{index}",
-            (0.68, start, 0.58),
-            (0.68, middle, 0.49),
-            0.023,
-            mats["rope"],
+        outer_height = 0.49
+        gate_height = 0.41
+        for tier, drop, radius, mat in (
+            ("Upper", 0.00, 0.023, mats["rope"]),
+            ("Lower", 0.24, 0.020, mats["rope_dark"]),
+        ):
+            kit.add_beam(
+                f"Float_{tier}_Rope_{index}",
+                (0.70, start, outer_height - drop),
+                (0.68, middle, min(outer_height, gate_height) - 0.09 - drop),
+                radius,
+                mat,
+                root,
+                objects,
+                vertices=7,
+            )
+            kit.add_beam(
+                f"Float_{tier}_Rope_Return_{index}",
+                (0.68, middle, min(outer_height, gate_height) - 0.09 - drop),
+                (0.68, end, gate_height - drop),
+                radius,
+                mat,
+                root,
+                objects,
+                vertices=7,
+            )
+
+    # A split rubbing wale and two hanging fenders protect the boat side while
+    # preserving the authored central boarding opening.
+    for index, (start, end) in enumerate(
+        ((-1.45, -gate_half_length), (gate_half_length, 1.45)),
+        1,
+    ):
+        kit.add_box(
+            f"Rubbing_Wale_{index}",
+            (0.70, (start + end) * 0.5, -0.36),
+            (0.12, end - start, 0.20),
+            mats["pile_wet"],
             root,
             objects,
-            vertices=7,
+            bevel=0.018,
         )
+        y = (start + end) * 0.5
         kit.add_beam(
-            f"Float_Upper_Rope_Return_{index}",
-            (0.68, middle, 0.49),
-            (0.68, end, 0.58),
-            0.023,
-            mats["rope"],
+            f"Float_Fender_Lanyard_{index}",
+            (0.73, y, -0.21),
+            (0.81, y, -0.43),
+            0.014,
+            mats["rope_dark"],
             root,
             objects,
-            vertices=7,
+            vertices=5,
         )
-    for y in (-1.22, 1.22):
         kit.add_cylinder(
-            f"Mooring_Bollard_{'Bow' if y < 0 else 'Stern'}",
-            (-0.50, y, 0.04),
-            0.06,
-            0.62,
+            f"Float_Fender_{index}",
+            (0.82, y, -0.55),
+            0.062,
+            0.26,
             mats["iron"],
             root,
             objects,
             vertices=8,
         )
+
+    # Low cleats repeat the upper pier's ironwork without adding more posts.
+    for y in (-1.22, 1.22):
+        kit.add_cylinder(
+            f"Mooring_Cleat_Pin_{'Bow' if y < 0 else 'Stern'}",
+            (-0.46, y, -0.12),
+            0.027,
+            0.20,
+            mats["iron"],
+            root,
+            objects,
+            vertices=7,
+        )
+        kit.add_beam(
+            f"Mooring_Cleat_Arm_{'Bow' if y < 0 else 'Stern'}",
+            (-0.58, y, -0.03),
+            (-0.34, y, -0.03),
+            0.030,
+            mats["iron"],
+            root,
+            objects,
+            vertices=7,
+        )
+
+    # Sparse fixings catch close-range light without returning to a tile grid.
+    for index in range(1, 17, 3):
+        y = -1.42 + index * 0.177
+        for x in (-0.52, 0.52):
+            kit.add_cylinder(
+                f"Float_Deck_Nail_{index + 1:02}_{'L' if x < 0 else 'R'}",
+                (x, y, -0.22),
+                0.015,
+                0.014,
+                mats["iron"],
+                root,
+                objects,
+                vertices=6,
+            )
     finish("harbor_boarding_float", root, objects)
 
 
