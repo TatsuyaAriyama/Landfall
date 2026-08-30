@@ -616,6 +616,18 @@ static inline half4 landfallShadeOcean(
     float nearField = 1.0 - smoothstep(8.0, 24.0, cameraDistance);
     float midField = 1.0 - smoothstep(24.0, 52.0, cameraDistance);
     float horizonField = smoothstep(34.0, 64.0, cameraDistance);
+    // The home-island overview camera sits beyond the former 24 m fine-detail
+    // cutoff. Extend only resolved daylight detail into that composition so
+    // the sea does not turn flat before aerial perspective begins.
+    float homeDaylight = ocean.shoreline * smoothstep(
+        0.70,
+        0.95,
+        ocean.sunStrength
+    );
+    float overviewField = (
+        1.0 - smoothstep(18.0, 52.0, cameraDistance)
+    ) * homeDaylight;
+    float fineField = max(nearField, overviewField * 0.78);
     // Filter each normal octave at its own projected wavelength. The former
     // shared cutoff discarded the long 3.4 m ripple as soon as the shortest
     // 1.3 m band became undersampled, flattening every oblique voyage view.
@@ -634,7 +646,7 @@ static inline half4 landfallShadeOcean(
         abs(dot(footprintX, rippleDirectionC)),
         abs(dot(footprintY, rippleDirectionC))
     );
-    float nearRippleVisibility = mix(0.34, 1.0, nearField);
+    float nearRippleVisibility = mix(0.34, 1.0, fineField);
     float rippleVisibilityA = (
         1.0 - smoothstep(0.42, 1.15, rippleFootprintA)
     ) * nearRippleVisibility;
@@ -685,6 +697,9 @@ static inline half4 landfallShadeOcean(
         - ocean.time * 1.47 - rippleWarp * 0.36;
     float rippleC = dot(p, rippleDirectionC) * 3.55
         - ocean.time * 2.05 + rippleWarp * 0.52;
+    float rippleCosA = cos(rippleA);
+    float rippleCosB = cos(rippleB);
+    float rippleCosC = cos(rippleC);
     // Wind arrives in short, uneven packets. Modulate the crossed ripple
     // slopes together so fine reflection breaks into calm and active patches
     // instead of exposing three uniform sinusoidal bands.
@@ -750,20 +765,20 @@ static inline half4 landfallShadeOcean(
     }
     float2 detailSlope = (
         (
-            rippleDirectionA * (cos(rippleA) * 0.026 * rippleVisibilityA)
-            + rippleDirectionB * (cos(rippleB) * 0.025 * rippleVisibilityB)
-            + rippleDirectionC * (cos(rippleC) * 0.016 * rippleVisibilityC)
+            rippleDirectionA * (rippleCosA * 0.026 * rippleVisibilityA)
+            + rippleDirectionB * (rippleCosB * 0.025 * rippleVisibilityB)
+            + rippleDirectionC * (rippleCosC * 0.016 * rippleVisibilityC)
         ) * rippleEnergy
         + capillarySlope
-    ) * ocean.microNormalScale * mix(0.72, 1.14, nearField);
+    ) * ocean.microNormalScale * mix(0.72, 1.14, fineField);
     detailSlope += wake.slope * macroVisibility * mix(0.76, 1.0, detailQuality);
     detailSlope += hull.slope * macroVisibility;
-    float reflectionDetailGain = mix(0.90, 1.55, nearField);
+    float reflectionDetailGain = mix(0.90, 1.55, fineField);
     // Keep the real swell normal close to the camera, but suppress it where
     // grazing projection would turn a soft swell into a screen-wide band.
     float broadNormalVisibility = macroVisibility
         * distanceVisibility * sampledBroadVisibility
-        * mix(0.22, 0.04, stripeRisk);
+        * mix(0.30, 0.035, stripeRisk);
     float3 broadNormal = normalize(mix(
         float3(0.0, 1.0, 0.0),
         in.worldNormal,
@@ -772,7 +787,7 @@ static inline half4 landfallShadeOcean(
     float detailNormalVisibility = max(
         rippleVisibility * (1.0 - horizonField * 0.84),
         subjectBoost * 0.80
-    ) * distanceVisibility * mix(0.65, 0.35, stripeRisk);
+    ) * distanceVisibility * mix(0.74, 0.32, stripeRisk);
     float3 normal = normalize(mix(
         broadNormal,
         normalize(
@@ -824,7 +839,7 @@ static inline half4 landfallShadeOcean(
     float underwaterScatter = exp(-opticalDepth * 0.16);
     color += ocean.shallowColor * underwaterScatter * 0.12;
 
-    float detailColorGain = 0.28 * nearField
+    float detailColorGain = 0.28 * fineField
         * distanceVisibility * rippleVisibility;
     float2 shadedSlope = detailSlope * detailColorGain;
     float directionalShade = saturate(0.50 + dot(shadedSlope, float2(-3.2, 3.8)));
@@ -932,13 +947,13 @@ static inline half4 landfallShadeOcean(
     float facetVisibility = broadNormalVisibility
         * (1.0 - horizonField * 0.90);
     float3 facetSky = mix(ocean.horizonColor, ocean.skyColor, 0.32);
-    color = mix(color, facetSky, facetLift * facetVisibility * 0.065);
-    color = mix(color, ocean.deepColor, facetShade * facetVisibility * 0.045);
+    color = mix(color, facetSky, facetLift * facetVisibility * 0.078);
+    color = mix(color, ocean.deepColor, facetShade * facetVisibility * 0.052);
 
     // Preserve the fine normal field in color as well as in reflection.
     float microSlopeLength = length(detailSlope);
     float microFacetVisibility = rippleVisibility
-        * nearField * nearField
+        * mix(0.34, 1.0, fineField)
         * (1.0 - horizonField * 0.96)
         * distanceVisibility
         * smoothstep(0.0015, 0.024, microSlopeLength);
@@ -946,8 +961,8 @@ static inline half4 landfallShadeOcean(
     // their radiance from the same normal phases so the light stays attached
     // to the moving surface while two directions break each other's stripes.
     float broadFacetRadiance = clamp(
-        sin(rippleA) * sin(rippleB) * 0.72
-            + sin(rippleB - rippleC) * 0.28,
+        rippleCosA * rippleCosB * 0.72
+            + rippleCosB * rippleCosC * 0.28,
         -1.0,
         1.0
     );
@@ -955,7 +970,7 @@ static inline half4 landfallShadeOcean(
         broadFacetRadiance,
         capillaryFacetRadiance,
         smoothstep(0.78, 1.0, detailQuality)
-            * nearField * capillaryVisibility * 0.92
+            * fineField * capillaryVisibility * 0.92
     );
     float microFacetContrast = mix(
         0.035,
@@ -999,10 +1014,10 @@ static inline half4 landfallShadeOcean(
         0.78 + capillaryFootprint,
         capillaryFacing
     );
-    float ultraGlintBlend = smoothstep(0.80, 1.0, detailQuality) * nearField;
+    float ultraGlintBlend = smoothstep(0.80, 1.0, detailQuality) * fineField;
     glintBreakup *= mix(1.0, 0.34 + capillarySparkle * 0.66, ultraGlintBlend);
     float glintVisibility = rippleVisibility
-        * mix(0.34, 1.0, nearField)
+        * mix(0.34, 1.0, fineField)
         * (1.0 - horizonField * 0.58)
         * distanceVisibility;
     color += ocean.sunColor * celestialReflectionStrength
@@ -1257,13 +1272,15 @@ static inline half4 landfallShadeOcean(
     // Begin before perspective compresses the last mesh rows into one pixel.
     // The transition then spans several distant wave bands instead of becoming
     // a single ruler-straight color step at the geometric edge.
-    float atmosphereEnd = clamp(
+    float baseAtmosphereEnd = clamp(
         min(ocean.surfaceSize.x, ocean.surfaceSize.y) * 0.55,
         46.0,
         54.0
     );
+    float atmosphereEnd = mix(baseAtmosphereEnd, 72.0, homeDaylight);
+    float atmosphereStart = mix(0.56, 0.62, homeDaylight);
     float farAtmosphere = smoothstep(
-        atmosphereEnd * 0.56,
+        atmosphereEnd * atmosphereStart,
         atmosphereEnd,
         cameraDistance
     );

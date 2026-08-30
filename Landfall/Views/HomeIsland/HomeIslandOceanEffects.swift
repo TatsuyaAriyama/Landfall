@@ -338,6 +338,13 @@ enum HomeIslandOceanEffects {
     float nearField = 1.0 - smoothstep(8.0, 24.0, viewRange);
     float midField = 1.0 - smoothstep(24.0, 52.0, viewRange);
     float horizonField = smoothstep(34.0, 64.0, viewRange);
+    // Keep the home-island overview inside the fine-reflection field. Other
+    // ocean layouts and low-light scenes retain their original distance LOD.
+    float homeDaylight = uShoreline * smoothstep(0.70, 0.95, uSunStrength);
+    float overviewField = (
+        1.0 - smoothstep(18.0, 52.0, viewRange)
+    ) * homeDaylight;
+    float fineField = max(nearField, overviewField * 0.78);
     // Each wavelength gets a matching derivative cutoff. Long, resolvable
     // normals therefore survive an oblique camera even after shorter ripples
     // have been filtered away.
@@ -356,7 +363,7 @@ enum HomeIslandOceanEffects {
         abs(dot(footprintX, rippleDirectionC)),
         abs(dot(footprintY, rippleDirectionC))
     );
-    float nearRippleVisibility = mix(0.34, 1.0, nearField);
+    float nearRippleVisibility = mix(0.34, 1.0, fineField);
     float rippleVisibilityA = (
         1.0 - smoothstep(0.42, 1.15, rippleFootprintA)
     ) * nearRippleVisibility;
@@ -400,6 +407,9 @@ enum HomeIslandOceanEffects {
         - uTime * 1.47 - rippleWarp * 0.36;
     float rippleC = dot(p, rippleDirectionC) * 3.55
         - uTime * 2.05 + rippleWarp * 0.52;
+    float rippleCosA = cos(rippleA);
+    float rippleCosB = cos(rippleB);
+    float rippleCosC = cos(rippleC);
     // Keep the fallback material in the same wind packets as native Metal so
     // its extra normal energy becomes irregular facets, not repeating bands.
     float rippleGroup = smoothstep(
@@ -417,11 +427,11 @@ enum HomeIslandOceanEffects {
         smoothstep(10.0, 34.0, distanceFromIsland)
     );
     float2 detailSlope = (
-        rippleDirectionA * (cos(rippleA) * 0.026 * rippleVisibilityA)
-        + rippleDirectionB * (cos(rippleB) * 0.025 * rippleVisibilityB)
-        + rippleDirectionC * (cos(rippleC) * 0.016 * rippleVisibilityC)
+        rippleDirectionA * (rippleCosA * 0.026 * rippleVisibilityA)
+        + rippleDirectionB * (rippleCosB * 0.025 * rippleVisibilityB)
+        + rippleDirectionC * (rippleCosC * 0.016 * rippleVisibilityC)
     ) * rippleEnergy * detailCalm * surfaceEdge * uMicroNormalScale
-        * mix(0.72, 1.14, nearField);
+        * mix(0.72, 1.14, fineField);
     float3 worldUp = normalize(
         (scn_frame.viewTransform * float4(0.0, 1.0, 0.0, 0.0)).xyz
     );
@@ -429,7 +439,7 @@ enum HomeIslandOceanEffects {
     // the grazing-angle banding that made the voyage surface look painted.
     float broadNormalVisibility = macroVisibility
         * distanceVisibility * sampledBroadVisibility
-        * mix(0.22, 0.04, stripeRisk);
+        * mix(0.30, 0.035, stripeRisk);
     float3 broadNormal = normalize(mix(
         worldUp,
         _surface.normal,
@@ -438,7 +448,7 @@ enum HomeIslandOceanEffects {
     float detailNormalVisibility = max(
         rippleVisibility * (1.0 - horizonField * 0.84),
         subjectBoost * 0.80
-    ) * distanceVisibility * mix(0.65, 0.35, stripeRisk);
+    ) * distanceVisibility * mix(0.74, 0.32, stripeRisk);
     float3 waterNormal = normalize(mix(
         broadNormal,
         normalize(
@@ -501,7 +511,7 @@ enum HomeIslandOceanEffects {
         col = mix(col, uShallow, coastalLift * 0.22);
     }
 
-    float detailColorGain = 0.28 * nearField
+    float detailColorGain = 0.28 * fineField
         * distanceVisibility * rippleVisibility;
     float2 shadedSlope = detailSlope * detailColorGain;
     float directionalShade = clamp(
@@ -622,26 +632,24 @@ enum HomeIslandOceanEffects {
     float facetVisibility = broadNormalVisibility
         * (1.0 - horizonField * 0.90);
     float3 facetSky = mix(uHorizon, uSky, 0.32);
-    col = mix(col, facetSky, facetLift * facetVisibility * 0.065);
-    col = mix(col, uDeep, facetShade * facetVisibility * 0.045);
+    col = mix(col, facetSky, facetLift * facetVisibility * 0.078);
+    col = mix(col, uDeep, facetShade * facetVisibility * 0.052);
 
     // The fine normals use the same sky/deep radiance split as the broad
     // facets, making them readable without layering on a detached pattern.
     float microSlopeLength = length(detailSlope);
-    float2 microSlopeDirection = detailSlope / max(microSlopeLength, 0.001);
-    float microSunwardFacet = clamp(
-        0.5 + dot(microSlopeDirection, sunAcrossWater) * 0.5,
-        0.0,
+    float broadFacetRadiance = clamp(
+        rippleCosA * rippleCosB * 0.72
+            + rippleCosB * rippleCosC * 0.28,
+        -1.0,
         1.0
     );
-    float microFacetLift = smoothstep(0.54, 0.76, microSunwardFacet);
-    float microFacetShade = 1.0 - smoothstep(0.24, 0.46, microSunwardFacet);
+    float microFacetRadiance = broadFacetRadiance;
     float microFacetVisibility = rippleVisibility
-        * mix(0.34, 1.0, nearField)
+        * mix(0.34, 1.0, fineField)
         * (1.0 - horizonField * 0.96)
         * distanceVisibility
-        * smoothstep(0.004, 0.035, microSlopeLength);
-    float microFacetRadiance = (microSunwardFacet - 0.5) * 2.0;
+        * smoothstep(0.0015, 0.024, microSlopeLength);
     float microFacetContrast = mix(
         0.035,
         0.16,
@@ -652,12 +660,12 @@ enum HomeIslandOceanEffects {
     col = mix(
         col,
         facetSky,
-        microFacetLift * microFacetVisibility * 0.018
+        max(microFacetRadiance, 0.0) * microFacetVisibility * 0.020
     );
     col = mix(
         col,
         uDeep,
-        microFacetShade * microFacetVisibility * 0.014
+        max(-microFacetRadiance, 0.0) * microFacetVisibility * 0.014
     );
 
     float sunFacing = max(
@@ -675,7 +683,7 @@ enum HomeIslandOceanEffects {
     );
     float glintBreakup = 0.02 + 0.98 * smoothstep(0.38, 0.92, glintA * glintB);
     float glintVisibility = rippleVisibility
-        * mix(0.34, 1.0, nearField)
+        * mix(0.34, 1.0, fineField)
         * (1.0 - horizonField * 0.58)
         * distanceVisibility;
     col += uSun * celestialReflectionStrength
@@ -1113,13 +1121,15 @@ enum HomeIslandOceanEffects {
     // The final mesh rows converge on the exact sky-haze color. Otherwise the
     // finite plane advertises its edge as a perfectly straight horizon line.
     // Start early enough that perspective leaves several rows for the blend.
-    float atmosphereEnd = clamp(
+    float baseAtmosphereEnd = clamp(
         min(uSurfaceSize.x, uSurfaceSize.y) * 0.55,
         46.0,
         54.0
     );
+    float atmosphereEnd = mix(baseAtmosphereEnd, 72.0, homeDaylight);
+    float atmosphereStart = mix(0.56, 0.62, homeDaylight);
     float farAtmosphere = smoothstep(
-        atmosphereEnd * 0.56,
+        atmosphereEnd * atmosphereStart,
         atmosphereEnd,
         viewRange
     );
