@@ -32,7 +32,9 @@ enum HomeIslandOceanEffects {
             sky: 0x4A9DCA,
             horizon: 0xC7F2E9,
             sun: 0xFFF1C7,
-            fog: 0x6BA1AA,
+            // The finite ocean must converge on the SwiftUI daylight sky or
+            // its final mesh row appears as a ruler-straight horizon.
+            fog: 0x84BCC6,
             sunDirection: SCNVector3(-0.34, 0.72, 0.60),
             sunStrength: 1
         )
@@ -559,6 +561,36 @@ enum HomeIslandOceanEffects {
         integratedFarReflection,
         unresolvedWaveEnergy * 0.78
     );
+    float reflectedElevation = dot(reflectionDirection, worldUp);
+    float horizonHaze = 1.0 - smoothstep(
+        0.02,
+        0.34,
+        abs(reflectedElevation)
+    );
+    reflectedSky = mix(reflectedSky, uHorizon * 1.06, horizonHaze * 0.28);
+    // Match the native renderer's broad directional light path so fallback
+    // previews retain the same horizon composition without extra wave work.
+    float celestialElevation = dot(celestialDirection, worldUp);
+    float3 reflectedPlanar = reflectionDirection
+        - worldUp * reflectedElevation;
+    float3 celestialPlanar = celestialDirection
+        - worldUp * celestialElevation;
+    float azimuthAlignment = clamp(
+        dot(reflectedPlanar, celestialPlanar) /
+        max(length(reflectedPlanar) * length(celestialPlanar), 0.001),
+        0.0,
+        1.0
+    );
+    float lowCelestial = 1.0 - smoothstep(
+        0.28,
+        0.72,
+        abs(celestialElevation)
+    );
+    float celestialPath = horizonHaze
+        * smoothstep(0.62, 0.96, azimuthAlignment)
+        * mix(0.35, 1.0, lowCelestial);
+    reflectedSky += uSun
+        * celestialReflectionStrength * celestialPath * 0.052;
     float celestialAlignment = clamp(
         dot(reflectionDirection, celestialDirection),
         0.0,
@@ -1044,7 +1076,17 @@ enum HomeIslandOceanEffects {
     // The final mesh rows converge on the exact sky-haze color. Otherwise the
     // finite plane advertises its edge as a perfectly straight horizon line.
     // Start early enough that perspective leaves several rows for the blend.
-    float farAtmosphere = smoothstep(32.0, 64.0, viewRange);
+    float atmosphereEnd = clamp(
+        min(uSurfaceSize.x, uSurfaceSize.y) * 0.55,
+        46.0,
+        54.0
+    );
+    float farAtmosphere = smoothstep(
+        atmosphereEnd * 0.56,
+        atmosphereEnd,
+        viewRange
+    );
+    farAtmosphere = max(farAtmosphere, 1.0 - surfaceEdge);
     float samplingHaze = max(
         (1.0 - sampledBroadVisibility) * 0.08,
         unresolvedWaveEnergy * 0.06

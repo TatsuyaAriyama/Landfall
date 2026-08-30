@@ -859,6 +859,27 @@ static inline half4 landfallShadeOcean(
     );
     float horizonHaze = 1.0 - smoothstep(0.02, 0.34, abs(reflectionDirection.y));
     reflectedSky = mix(reflectedSky, ocean.horizonColor * 1.06, horizonHaze * 0.28);
+    // A broad celestial path connects the directional light to the horizon.
+    // It complements the narrow specular aureole below without adding another
+    // procedural pattern or fragment loop.
+    float3 reflectedPlanar = reflectionDirection;
+    reflectedPlanar.y = 0.0;
+    float3 celestialPlanar = celestialDirection;
+    celestialPlanar.y = 0.0;
+    float azimuthAlignment = saturate(
+        dot(reflectedPlanar, celestialPlanar) /
+        max(length(reflectedPlanar) * length(celestialPlanar), 0.001)
+    );
+    float lowCelestial = 1.0 - smoothstep(
+        0.28,
+        0.72,
+        abs(celestialDirection.y)
+    );
+    float celestialPath = horizonHaze
+        * smoothstep(0.62, 0.96, azimuthAlignment)
+        * mix(0.35, 1.0, lowCelestial);
+    reflectedSky += ocean.sunColor
+        * celestialReflectionStrength * celestialPath * 0.052;
     // The sun also brightens the air around it. Reflect that finite sky lobe
     // before the fine facet glints below: this creates a continuous light path
     // across broad waves, while the existing specular terms retain its broken
@@ -1212,7 +1233,29 @@ static inline half4 landfallShadeOcean(
     // Begin before perspective compresses the last mesh rows into one pixel.
     // The transition then spans several distant wave bands instead of becoming
     // a single ruler-straight color step at the geometric edge.
-    float farAtmosphere = smoothstep(32.0, 64.0, cameraDistance);
+    float atmosphereEnd = clamp(
+        min(ocean.surfaceSize.x, ocean.surfaceSize.y) * 0.55,
+        46.0,
+        54.0
+    );
+    float farAtmosphere = smoothstep(
+        atmosphereEnd * 0.56,
+        atmosphereEnd,
+        cameraDistance
+    );
+    float edgeAtmosphere = max(
+        smoothstep(
+            ocean.surfaceSize.x * 0.43,
+            ocean.surfaceSize.x * 0.50,
+            abs(in.localPosition.x)
+        ),
+        smoothstep(
+            ocean.surfaceSize.y * 0.43,
+            ocean.surfaceSize.y * 0.50,
+            abs(in.localPosition.y)
+        )
+    );
+    farAtmosphere = max(farAtmosphere, edgeAtmosphere);
     float samplingHaze = max(
         (1.0 - sampledBroadVisibility) * 0.08,
         unresolvedWaveEnergy * 0.06
