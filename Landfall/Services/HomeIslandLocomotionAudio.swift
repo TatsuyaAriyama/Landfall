@@ -13,19 +13,18 @@ final class HomeIslandLocomotionAudio {
     private var windBuffer: AVAudioPCMBuffer?
     private var nextVoice = 0
     private var nextVariant: [HomeIslandGroundSurface: Int] = [:]
-    private var started = false
+    private var prepared = false
     private var windScheduled = false
     private let sampleRate: Double = 44_100
-
-    init() {
-        queue.async { [weak self] in self?.prepare() }
-    }
 
     func playFootstep(surface: HomeIslandGroundSurface, intensity: Float) {
         queue.async { [weak self] in
             guard let self else { return }
             self.prepare()
-            guard self.started, let variants = self.stepBuffers[surface], !variants.isEmpty else {
+            guard self.engine.isRunning,
+                  let variants = self.stepBuffers[surface],
+                  !variants.isEmpty
+            else {
                 return
             }
             let variant = self.nextVariant[surface, default: 0] % variants.count
@@ -41,8 +40,17 @@ final class HomeIslandLocomotionAudio {
     func setWindIntensity(_ intensity: Float) {
         queue.async { [weak self] in
             guard let self else { return }
+            let clampedIntensity = min(max(intensity, 0), 1)
+            // Do not create buffers or wake an audio engine for the ordinary
+            // idle case. The first footstep or an audible sprint owns startup.
+            guard clampedIntensity > 0.001 || self.prepared else { return }
             self.prepare()
-            guard self.started else { return }
+            guard self.engine.isRunning else { return }
+            if clampedIntensity <= 0.001 {
+                self.windPlayer.volume = 0
+                self.windPlayer.pause()
+                return
+            }
             if !self.windScheduled, let windBuffer = self.windBuffer {
                 self.windScheduled = true
                 self.windPlayer.scheduleBuffer(
@@ -51,11 +59,11 @@ final class HomeIslandLocomotionAudio {
                     options: .loops,
                     completionHandler: nil
                 )
-                self.windPlayer.play()
             }
+            if !self.windPlayer.isPlaying { self.windPlayer.play() }
             // Kept deliberately below the wave ambience; it should be felt
             // only near full sprint rather than becoming a constant hiss.
-            self.windPlayer.volume = min(max(intensity, 0), 1) * 0.085
+            self.windPlayer.volume = clampedIntensity * 0.085
         }
     }
 
@@ -63,12 +71,20 @@ final class HomeIslandLocomotionAudio {
         queue.async { [weak self] in
             guard let self else { return }
             self.windPlayer.volume = 0
+            self.windPlayer.stop()
+            self.windScheduled = false
             self.stepPlayers.forEach { $0.stop() }
+            // A stopped scene should not keep an audio render thread alive.
+            // Playback restarts lazily with the next audible locomotion event.
+            if self.engine.isRunning { self.engine.pause() }
         }
     }
 
     private func prepare() {
-        guard !started else { return }
+        if prepared {
+            if !engine.isRunning { try? engine.start() }
+            return
+        }
         guard let format = AVAudioFormat(
             standardFormatWithSampleRate: sampleRate,
             channels: 1
@@ -89,11 +105,10 @@ final class HomeIslandLocomotionAudio {
                 }
             )
             windBuffer = makeWindBuffer(format: format)
+            prepared = true
             try engine.start()
-            started = true
         } catch {
             engine.stop()
-            started = false
         }
     }
 

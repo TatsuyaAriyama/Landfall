@@ -119,20 +119,14 @@ private final class HomeIslandInteractiveSceneView: SCNView {
     private var keyboardDisplayLink: CADisplayLink?
     private var lastKeyboardTimestamp: CFTimeInterval?
     private let gamepadRouter = HomeIslandGamepadInputRouter()
+    private var acceptsInteractiveInput = true
 
     override var canBecomeFirstResponder: Bool { true }
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        if window != nil {
-            becomeFirstResponder()
-            gamepadRouter.movementHandler = { [weak self] input, deltaTime in
-                self?.gamepadMovementHandler?(input, deltaTime)
-            }
-            gamepadRouter.lookHandler = { [weak self] x, y, deltaTime in
-                self?.gamepadLookHandler?(x, y, deltaTime)
-            }
-            gamepadRouter.start()
+        if window != nil, acceptsInteractiveInput {
+            startInteractiveInput()
         } else {
             stopKeyboardMovement()
             gamepadRouter.stop()
@@ -145,6 +139,10 @@ private final class HomeIslandInteractiveSceneView: SCNView {
     }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        guard acceptsInteractiveInput else {
+            super.pressesBegan(presses, with: event)
+            return
+        }
         // A SwiftUI TextField/TextEditor can live above this SceneKit view while
         // modifier-only presses still continue through the responder chain. In
         // particular, consuming Shift here prevents hardware keyboards from
@@ -226,6 +224,39 @@ private final class HomeIslandInteractiveSceneView: SCNView {
         keyboardMovementHandler?(.zero, 0)
     }
 
+    func setInteractiveInputActive(_ active: Bool) {
+        guard acceptsInteractiveInput != active else { return }
+        acceptsInteractiveInput = active
+        if active, window != nil {
+            startInteractiveInput()
+        } else {
+            stopKeyboardMovement()
+            gamepadRouter.stop()
+        }
+    }
+
+    private func startInteractiveInput() {
+        becomeFirstResponder()
+        gamepadRouter.movementHandler = { [weak self] input, deltaTime in
+            self?.gamepadMovementHandler?(input, deltaTime)
+        }
+        gamepadRouter.lookHandler = { [weak self] x, y, deltaTime in
+            self?.gamepadLookHandler?(x, y, deltaTime)
+        }
+        gamepadRouter.start()
+    }
+
+    func prepareForDismantle() {
+        acceptsInteractiveInput = false
+        stopKeyboardMovement()
+        gamepadRouter.stop()
+        gamepadRouter.movementHandler = nil
+        gamepadRouter.lookHandler = nil
+        keyboardMovementHandler = nil
+        gamepadMovementHandler = nil
+        gamepadLookHandler = nil
+    }
+
     @objc private func handleKeyboardFrame(_ displayLink: CADisplayLink) {
         guard !heldMovementKeys.isEmpty else {
             stopKeyboardMovement()
@@ -301,8 +332,10 @@ struct HomeIslandSceneView: UIViewRepresentable {
     /// 設定で選んだ島の明るさ(EV)。歩いていても写真モードでも土台になる。
     var islandExposureOffset: Float = 0
     var cameraInteractionLocked: Bool
-    /// 文字入力のあいだ、島の描画枚数を落とすための合図。
+    /// A visible overlay can leave the world as a live backdrop at lower cost.
     var rendersThrottled = false
+    /// Full-screen destinations and the background suspend the renderer entirely.
+    var renderingActive = true
     var walkInput: HomeIslandWalkInput
     /// 飾りを掴んだ瞬間。移動は指を離した位置で確定するので、HUDはこの
     /// あいだだけ「動かしています」の顔をしていればよい。
@@ -380,17 +413,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
         )
         view.backgroundColor = .clear
         view.isOpaque = false
+        view.alpha = startsMooredAtIsland && !playsArrivalOnAppear ? 1 : 0
         view.antialiasingMode = metalProfile.antialiasingMode
         view.preferredFramesPerSecond = metalProfile.interactiveFramesPerSecond
-        // Walking is renderer-driven and must remain responsive even when the
-        // user asks to reduce non-essential motion. The arrival/camera effects
-        // themselves are shortened or skipped below.
-        view.rendersContinuously = true
-        view.isPlaying = true
         view.autoenablesDefaultLighting = false
         view.allowsCameraControl = false
         view.delegate = context.coordinator
         context.coordinator.install(in: view)
+        context.coordinator.setRenderingActive(renderingActive)
         return view
     }
 
@@ -398,11 +428,24 @@ struct HomeIslandSceneView: UIViewRepresentable {
         context.coordinator.update(owner: self)
     }
 
+    static func dismantleUIView(_ view: SCNView, coordinator: Coordinator) {
+        coordinator.prepareForDismantle()
+        (view as? HomeIslandInteractiveSceneView)?.prepareForDismantle()
+        view.delegate = nil
+        view.isPlaying = false
+        view.rendersContinuously = false
+        view.scene?.isPaused = true
+        view.pointOfView = nil
+        view.scene = nil
+    }
+
     final class Coordinator: NSObject, SCNSceneRendererDelegate, UIGestureRecognizerDelegate {
         private var owner: HomeIslandSceneView
         private weak var view: SCNView?
         private var placementParent = SCNNode()
         private var placementNodes: [UUID: SCNNode] = [:]
+        private var renderedPlacements: [HomeIslandPlacement]?
+        private var renderedPlacementIslandScale: Float?
         private let remotePlayersParent = SCNNode()
         private var remotePlayerVisuals: [String: RemotePlayerVisual] = [:]
         private let remotePlayersLock = NSLock()
@@ -458,6 +501,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var processedCaptureRequestID: UUID?
         private var processedBoatBoardingRequestID: UUID?
         private var lastFrameTime: TimeInterval?
+        private var isRenderingActive: Bool?
         private var renderedMode: HomeIslandMode = .arrival
         private var renderedBoatCustomizationActive = false
         private var renderedBoatAppearanceID = ""
@@ -492,6 +536,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var runningJumpBeganPoint: CGPoint?
         private var arrivalStarted = false
         private var arrivalFinished = false
+        private var arrivalAwaitsFirstRenderedFrame = false
         private var arrivalNavigatorIsWalking = false
         private var renderedNavigatorOnArrivalJetty: Bool?
         private var reportedNavigatorOnArrivalJetty: Bool?
@@ -1348,12 +1393,16 @@ struct HomeIslandSceneView: UIViewRepresentable {
 #endif
             } else {
                 updateCamera()
-                startArrivalIfNeeded()
+                // A cold SceneKit scene can need a frame to upload its assets.
+                // Begin the cinematic only after that complete frame exists so
+                // the approach never spends its opening beat on an empty sky.
+                arrivalAwaitsFirstRenderedFrame = true
             }
         }
 
         func update(owner: HomeIslandSceneView) {
             self.owner = owner
+            setRenderingActive(owner.renderingActive)
             let framesPerSecond = owner.rendersThrottled
                 ? 20
                 : MetalRenderingProfile.current.interactiveFramesPerSecond
@@ -1396,6 +1445,41 @@ struct HomeIslandSceneView: UIViewRepresentable {
             processCameraRequestIfNeeded()
             processCaptureRequestIfNeeded()
             processBoatBoardingRequestIfNeeded()
+        }
+
+        func setRenderingActive(_ active: Bool) {
+            guard isRenderingActive != active else { return }
+            isRenderingActive = active
+            lastFrameTime = nil
+            oceanFramePacing.reset()
+            guard let view else { return }
+
+            if active {
+                (view as? HomeIslandInteractiveSceneView)?.setInteractiveInputActive(true)
+                view.scene?.isPaused = false
+                view.rendersContinuously = true
+                view.isPlaying = true
+                view.setNeedsDisplay()
+            } else {
+                touchWalkInput = .zero
+                keyboardWalkInput = .zero
+                gamepadWalkInput = .zero
+                clearPendingTouchJump()
+                storeCachedWalkInput(.zero)
+                lastWindIntensity = 0
+                locomotionAudio.stop()
+                (view as? HomeIslandInteractiveSceneView)?.setInteractiveInputActive(false)
+                view.isPlaying = false
+                view.rendersContinuously = false
+                view.scene?.isPaused = true
+            }
+        }
+
+        func prepareForDismantle() {
+            locomotionAudio.stop()
+            isRenderingActive = false
+            lastFrameTime = nil
+            oceanFramePacing.reset()
         }
 
         private func updateExposure() {
@@ -2064,7 +2148,20 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func syncPlacements() {
-            let visiblePlacements = owner.store.placements.filter {
+            let placements = owner.store.placements
+            let islandScale = owner.islandScale
+            guard renderedPlacements != placements
+                    || renderedPlacementIslandScale != islandScale
+            else {
+                // Selection is independent of geometry and must still react to
+                // a tap even when the placed objects themselves did not change.
+                updateSelectionOutline()
+                return
+            }
+            renderedPlacements = placements
+            renderedPlacementIslandScale = islandScale
+
+            let visiblePlacements = placements.filter {
                 HomeIslandAssetCatalog.isVisibleInCurrentBuild(assetID: $0.assetID)
             }
             let visibleIDs = Set(visiblePlacements.map(\.id))
@@ -2200,14 +2297,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 scheduleSeatDemoIfRequested()
             }
 #endif
-            let playerJettySurfaces: [JettyWalkSurface] = owner.store.placements.compactMap {
+            let playerJettySurfaces: [JettyWalkSurface] = placements.compactMap {
                 placement -> JettyWalkSurface? in
                 guard placement.assetID == "wooden_jetty" else { return nil }
                 return JettyWalkSurface(transform: placement.transform)
             }
             jettyWalkSurfaces = (arrivalJettyWalkSurface.map { [$0] } ?? [])
                 + playerJettySurfaces
-            lookoutWalkSurfaces = owner.store.placements.compactMap {
+            lookoutWalkSurfaces = placements.compactMap {
                 placement -> LookoutWalkSurface? in
                 guard placement.assetID == "cliff_lookout" else { return nil }
                 return LookoutWalkSurface(transform: placement.transform)
@@ -4875,6 +4972,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 resetLocomotionState()
                 break
             case .explore:
+                if previousMode == .arrival, !arrivalFinished {
+                    // The SwiftUI watchdog may advance the mode after an
+                    // interrupted SceneKit action. Reconcile the world itself
+                    // as well as the HUD so the boat and navigator are moored.
+                    completeArrivalImmediately()
+                }
                 if previousMode == .departure {
                     // A reused representable must recover just as cleanly as a
                     // newly-created Home Island scene after a timer voyage.
@@ -5192,8 +5295,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         private func updateWalking(deltaTime: Float) -> Bool {
             lastLocomotionDeltaTime = min(max(deltaTime, 0), 0.05)
+            // Every mode transition already resets locomotion once. Repeating
+            // the motor, ground sample, camera spring, and audio reset on every
+            // cinematic/editing frame adds work without changing the pose.
+            guard owner.mode == .explore else { return false }
             guard !(owner.startsMooredAtIsland && owner.locksMooredOverview),
-                  owner.mode == .explore,
                   !owner.cameraInteractionLocked,
                   !owner.cameraShowcaseActive,
                   !boardingRequested,
@@ -6114,6 +6220,31 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 "camera"
             case .departure:
                 "departure"
+            }
+        }
+
+        func renderer(
+            _ renderer: SCNSceneRenderer,
+            didRenderScene scene: SCNScene,
+            atTime time: TimeInterval
+        ) {
+            guard arrivalAwaitsFirstRenderedFrame else { return }
+            arrivalAwaitsFirstRenderedFrame = false
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                guard self.owner.renderingActive else {
+                    self.arrivalAwaitsFirstRenderedFrame = true
+                    return
+                }
+                guard self.owner.mode == .arrival else {
+                    self.view?.alpha = 1
+                    return
+                }
+                let duration = UIAccessibility.isReduceMotionEnabled ? 0 : 0.18
+                UIView.animate(withDuration: duration) {
+                    self.view?.alpha = 1
+                }
+                self.startArrivalIfNeeded()
             }
         }
 

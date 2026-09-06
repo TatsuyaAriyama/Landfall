@@ -203,6 +203,7 @@ struct VoyageHomeView: View {
                             onArrivalCompleted: finishHomeArrival,
                             onDepartureCompleted: finishIslandDeparture,
                             onBoardingRejected: cancelIslandDeparture,
+                            renderingActive: backdropActive,
                             onDestinationLandfall: { destination in
                                 pendingLandingDestination = destination
                             }
@@ -707,10 +708,16 @@ struct VoyageHomeView: View {
         scenePhase == .active &&
         !menuOpen &&
         (presentedRoute == nil || presentedRoute == .logbook) &&
+        privateIslandVisit == nil &&
+        !sharingToday &&
         !showingTrace &&
         !showingSettings &&
         !showingPrologue &&
         !showingHelp &&
+        !creatingItem &&
+        editingItem == nil &&
+        manualRequest == nil &&
+        celebrating == nil &&
         sailAnimator.kind == nil
     }
 
@@ -2399,6 +2406,7 @@ private struct VoyageHomeIslandSceneHost: View {
     let onArrivalCompleted: () -> Void
     let onDepartureCompleted: () -> Void
     let onBoardingRejected: () -> Void
+    let renderingActive: Bool
     let onDestinationLandfall: (Destination) -> Void
 
     var body: some View {
@@ -2414,6 +2422,7 @@ private struct VoyageHomeIslandSceneHost: View {
             onArrivalCompleted: onArrivalCompleted,
             onDepartureCompleted: onDepartureCompleted,
             onBoardingRejected: onBoardingRejected,
+            renderingActive: renderingActive,
             showsDestination: true,
             onDestinationLandfall: onDestinationLandfall,
             multiplayerSession: multiplayerSession,

@@ -64,6 +64,7 @@ enum HomeIslandInteriorKind: String, Identifiable {
 
 struct HomeIslandInteriorView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var walkInput = HomeIslandWalkInput.zero
     @State private var revealed = false
 
@@ -77,6 +78,7 @@ struct HomeIslandInteriorView: View {
             HomeIslandInteriorSceneView(
                 kind: kind,
                 walkInput: walkInput,
+                renderingActive: scenePhase == .active,
                 onExitRequested: exitInterior
             )
             .ignoresSafeArea()
@@ -279,6 +281,15 @@ private final class InteriorInteractiveSceneView: SCNView {
         keyboardMovementHandler?(.zero)
     }
 
+    func cancelKeyboardMovement() {
+        clearKeyboardInput()
+    }
+
+    func prepareForDismantle() {
+        clearKeyboardInput()
+        keyboardMovementHandler = nil
+    }
+
     private func publishKeyboardInput() {
         let left = heldMovementKeys.contains(.keyboardA)
             || heldMovementKeys.contains(.keyboardLeftArrow)
@@ -304,6 +315,7 @@ private final class InteriorInteractiveSceneView: SCNView {
 private struct HomeIslandInteriorSceneView: UIViewRepresentable {
     let kind: HomeIslandInteriorKind
     var walkInput: HomeIslandWalkInput
+    var renderingActive: Bool
     var onExitRequested: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -311,23 +323,37 @@ private struct HomeIslandInteriorSceneView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> SCNView {
-        let view = InteriorInteractiveSceneView(frame: .zero)
+        let profile = MetalRenderingProfile.current
+        let view = InteriorInteractiveSceneView(
+            frame: .zero,
+            options: MetalRenderingProfile.sceneViewOptions()
+        )
         view.backgroundColor = kind == .weatheredCottage
             ? UIColor(rgb: 0x211C18)
             : UIColor(rgb: 0x172F2B)
-        view.antialiasingMode = .multisampling4X
-        view.preferredFramesPerSecond = 60
-        view.rendersContinuously = true
-        view.isPlaying = true
+        view.antialiasingMode = profile.antialiasingMode
+        view.preferredFramesPerSecond = profile.interactiveFramesPerSecond
         view.autoenablesDefaultLighting = false
         view.allowsCameraControl = false
         view.delegate = context.coordinator
         context.coordinator.install(in: view)
+        context.coordinator.setRenderingActive(renderingActive)
         return view
     }
 
     func updateUIView(_ view: SCNView, context: Context) {
         context.coordinator.update(owner: self)
+    }
+
+    static func dismantleUIView(_ view: SCNView, coordinator: Coordinator) {
+        coordinator.prepareForDismantle()
+        (view as? InteriorInteractiveSceneView)?.prepareForDismantle()
+        view.delegate = nil
+        view.isPlaying = false
+        view.rendersContinuously = false
+        view.scene?.isPaused = true
+        view.pointOfView = nil
+        view.scene = nil
     }
 
     final class Coordinator: NSObject, SCNSceneRendererDelegate, UIGestureRecognizerDelegate {
@@ -343,6 +369,7 @@ private struct HomeIslandInteriorSceneView: UIViewRepresentable {
         private var initialFieldOfView: CGFloat = 64
         private var lastFrameTime: TimeInterval?
         private var walkingPhase: Float = 0
+        private var isRenderingActive: Bool?
 
         init(owner: HomeIslandInteriorSceneView) {
             self.owner = owner
@@ -400,6 +427,35 @@ private struct HomeIslandInteriorSceneView: UIViewRepresentable {
         func update(owner: HomeIslandInteriorSceneView) {
             self.owner = owner
             touchInput = owner.walkInput
+            setRenderingActive(owner.renderingActive)
+        }
+
+        func setRenderingActive(_ active: Bool) {
+            guard isRenderingActive != active else { return }
+            isRenderingActive = active
+            lastFrameTime = nil
+            guard let view else { return }
+
+            if active {
+                view.scene?.isPaused = false
+                view.rendersContinuously = true
+                view.isPlaying = true
+                view.setNeedsDisplay()
+            } else {
+                touchInput = .zero
+                keyboardInput = .zero
+                (view as? InteriorInteractiveSceneView)?.cancelKeyboardMovement()
+                view.isPlaying = false
+                view.rendersContinuously = false
+                view.scene?.isPaused = true
+            }
+        }
+
+        func prepareForDismantle() {
+            touchInput = .zero
+            keyboardInput = .zero
+            isRenderingActive = false
+            lastFrameTime = nil
         }
 
         @objc private func handleLook(_ recognizer: UIPanGestureRecognizer) {

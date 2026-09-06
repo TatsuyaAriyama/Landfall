@@ -3968,6 +3968,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             if value {
                 azimuthDelta = 0
                 polarDelta = 0
+                cameraDisplayLink?.isPaused = true
             }
             view.delegate = self
             view.rendersContinuously = true
@@ -4014,6 +4015,9 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
                 maximum: 60,
                 preferred: 60
             )
+            // SceneKit owns the animated world. This second display link is
+            // needed only while orbit momentum is decaying after a drag.
+            displayLink.isPaused = true
             displayLink.add(to: .main, forMode: .common)
             cameraDisplayLink = displayLink
         }
@@ -4093,6 +4097,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
                 // rotateLeft(2π * dx / clientHeight), rotateUp(2π * dy / clientHeight)
                 azimuthDelta -= 2 * .pi * deltaX / height
                 polarDelta -= 2 * .pi * deltaY / height
+                cameraDisplayLink?.isPaused = false
                 stepOrbit()
             case .ended, .cancelled, .failed:
                 previousPanTranslation = .zero
@@ -4135,6 +4140,7 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
             )
             azimuthDelta = 0
             polarDelta = 0
+            cameraDisplayLink?.isPaused = true
             clampOrbit()
             applyCamera()
             updateAccessibilityValue()
@@ -4195,7 +4201,10 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
         }
 
         @objc private func onCameraFrame() {
-            guard !reduceMotion else { return }
+            guard !reduceMotion else {
+                cameraDisplayLink?.isPaused = true
+                return
+            }
             stepOrbit()
         }
 
@@ -4216,6 +4225,9 @@ struct VoyagingHomeSceneView: UIViewRepresentable {
 
             clampOrbit()
             applyCamera()
+            if azimuthDelta == 0, polarDelta == 0 {
+                cameraDisplayLink?.isPaused = true
+            }
         }
 
         private func clampOrbit() {

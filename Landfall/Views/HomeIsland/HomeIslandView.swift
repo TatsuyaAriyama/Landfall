@@ -251,6 +251,7 @@ struct HomeIslandView: View {
     private let onEmbeddedArrivalCompleted: () -> Void
     private let onEmbeddedDepartureCompleted: (() -> Void)?
     private let onEmbeddedBoardingRejected: () -> Void
+    private let renderingActive: Bool
     private let multiplayerSession: HomeIslandMultiplayerSession?
     private let onPrivateIslandSelected: (PrivateIslandRoom) -> Void
     /// ホームとして見せている島だけが、沖の目的地と、その設定の入口を持つ。
@@ -270,6 +271,7 @@ struct HomeIslandView: View {
         onArrivalCompleted: @escaping () -> Void = {},
         onDepartureCompleted: (() -> Void)? = nil,
         onBoardingRejected: @escaping () -> Void = {},
+        renderingActive: Bool = true,
         showsDestination: Bool = false,
         onDestinationLandfall: ((Destination) -> Void)? = nil,
         multiplayerSession: HomeIslandMultiplayerSession? = nil,
@@ -287,6 +289,7 @@ struct HomeIslandView: View {
         onEmbeddedArrivalCompleted = onArrivalCompleted
         onEmbeddedDepartureCompleted = onDepartureCompleted
         onEmbeddedBoardingRejected = onBoardingRejected
+        self.renderingActive = renderingActive
         self.multiplayerSession = multiplayerSession
         self.onPrivateIslandSelected = onPrivateIslandSelected
         let readOnly = multiplayerSession?.isReadOnly == true
@@ -309,7 +312,8 @@ struct HomeIslandView: View {
     /// above the island. This also keeps controller input from moving the
     /// navigator behind sheets and full-screen presentations.
     private var sceneInputLocked: Bool {
-        scenePhase != .active
+        !renderingActive
+            || scenePhase != .active
             || isCapturing
             || showingHarborPanel
             || privateChatExpanded
@@ -317,6 +321,7 @@ struct HomeIslandView: View {
             || showingBoatCustomization
             || showingDestinationSetup
             || showingVoyagePass
+            || showingIslandSlots
             || showingLogbook
             || activeInterior != nil
             || showingPlayerStats
@@ -326,6 +331,20 @@ struct HomeIslandView: View {
             || showingCaptureError
             || showingSelectionActions
             || showingIslandResetConfirm
+    }
+
+    /// Full-screen destinations do not need a live SceneKit world behind them.
+    /// Partial HUDs keep a throttled live backdrop so their spatial context stays clear.
+    private var sceneRenderingActive: Bool {
+        renderingActive
+            && scenePhase == .active
+            && !showingVoyagePass
+            && !showingIslandSlots
+            && !showingLogbook
+            && activeInterior == nil
+            && !showingIslandShare
+            && !showingSettings
+            && !showingHarborPanel
     }
 
     var body: some View {
@@ -468,9 +487,10 @@ struct HomeIslandView: View {
                 cameraExposureOffset: cameraExposureOffset,
                 islandExposureOffset: islandBrightness.exposureOffset,
                 cameraInteractionLocked: sceneInputLocked,
-                // 文字を打っている間は島を毎秒二十枚に落とす。波は動いたまま
-                // だが、鍵盤の反応に回す余力がその分だけ戻る。
-                rendersThrottled: editingPlayerProfile || privateChatInputFocused,
+                // Interactive overlays keep the island legible as a 20 fps
+                // backdrop; full-screen destinations suspend it completely.
+                rendersThrottled: sceneInputLocked,
+                renderingActive: sceneRenderingActive,
                 walkInput: sceneInputLocked ? .zero : walkInput,
                 onMoveBegan: {
                     movingSelection = true
@@ -495,12 +515,7 @@ struct HomeIslandView: View {
                     }
                 },
                 onArrivalCompleted: {
-                    guard mode == .arrival else { return }
-                    withAnimation(.easeOut(duration: 0.28)) {
-                        mode = .explore
-                    }
-                    Haptics.tap(.medium)
-                    onEmbeddedArrivalCompleted()
+                    finishArrival()
                 },
                 onJettyPresenceChanged: { isOnJetty in
                     withAnimation(.easeOut(duration: 0.18)) {
@@ -644,7 +659,7 @@ struct HomeIslandView: View {
 
             if mode != .departure, !showingHarborPanel {
                 VStack(spacing: 0) {
-                    if mode != .camera {
+                    if mode != .camera, mode != .arrival {
                         Group {
                             if showingBoatCustomization {
                                 boatCustomizationTopBar
@@ -841,6 +856,15 @@ struct HomeIslandView: View {
                 privateChatExpanded = false
                 privateChatInputFocused = false
             }
+        }
+        .task(id: mode) {
+            guard mode == .arrival else { return }
+            // SceneKit actions pause with the app and can also be interrupted by
+            // a renderer reset. Match departure's safety net so the player can
+            // never be stranded on an arrival-only HUD.
+            try? await Task.sleep(for: .seconds(9))
+            guard !Task.isCancelled else { return }
+            finishArrival()
         }
         .onChange(of: noticeBoardRequestID) { _, requestID in
             guard requestID != nil else { return }
@@ -2312,8 +2336,9 @@ struct HomeIslandView: View {
 
     private var arrivalStatus: some View {
         HStack(spacing: 9) {
-            ProgressView()
-                .tint(Color(uiColor: VoyageSceneKit.sand))
+            Image(systemName: "sailboat.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
             Text(verbatim: LF.format("Approaching %@…", arrivalIslandName))
                 .font(LFFont.label(12))
                 .foregroundStyle(.white.opacity(0.84))
@@ -2413,6 +2438,15 @@ struct HomeIslandView: View {
             guard mode == .departure else { return }
             finishDeparture()
         }
+    }
+
+    private func finishArrival() {
+        guard mode == .arrival else { return }
+        withAnimation(.easeOut(duration: 0.28)) {
+            mode = .explore
+        }
+        Haptics.tap(.medium)
+        onEmbeddedArrivalCompleted()
     }
 
     private func finishDeparture() {

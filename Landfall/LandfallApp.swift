@@ -38,8 +38,7 @@ struct LandfallApp: App {
     }
 
     /// 永続コンテナを用意する。破損や移行不能で失敗しても即クラッシュさせず、
-    /// 壊れたローカルストアを退避して作り直す。記録はクラウド(Firestore)に
-    /// 控えがあり、次回サインイン時の同期で戻る。
+    /// 元のローカルストアを Recovery に残してから作り直す。
     private static func makeContainer() -> ModelContainer {
         let schema = Schema([StudyDay.self, StudyItem.self, StudySession.self, Destination.self])
         #if DEBUG
@@ -55,8 +54,14 @@ struct LandfallApp: App {
         do {
             return try ModelContainer(for: schema, configurations: config)
         } catch {
-            // ストア本体と付随ファイル(-shm / -wal)を削除して再生成を試みる。
-            wipeStoreFiles(base: config.url)
+            let persistentStoreError = error
+            // ストアを安全に退避できた場合だけ、空の永続ストアを作る。
+            // 退避に失敗したら元データを残し、この起動はメモリ内ストアにする。
+            guard quarantineStoreFiles(base: config.url) else {
+                let memory = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+                return (try? ModelContainer(for: schema, configurations: memory))
+                    ?? { fatalError("ModelContainer を初期化できませんでした: \(persistentStoreError)") }()
+            }
             do {
                 return try ModelContainer(for: schema, configurations: config)
             } catch {
@@ -68,12 +73,64 @@ struct LandfallApp: App {
         }
     }
 
-    /// SwiftData ストア本体と付随ファイル(-shm / -wal)を削除する。
-    private static func wipeStoreFiles(base: URL) {
-        for url in [base,
-                    base.deletingPathExtension().appendingPathExtension("store-shm"),
-                    base.deletingPathExtension().appendingPathExtension("store-wal")] {
-            try? FileManager.default.removeItem(at: url)
+    /// SwiftData ストア一式を、同じ親ディレクトリ内の日時付き Recovery へ退避する。
+    /// 先に全ファイルのコピーを完了させるため、コピー失敗時は元データに触れない。
+    private static func quarantineStoreFiles(base: URL) -> Bool {
+        let fileManager = FileManager.default
+        let candidates = [
+            base,
+            URL(fileURLWithPath: base.path + "-shm"),
+            URL(fileURLWithPath: base.path + "-wal"),
+            URL(fileURLWithPath: base.path + "-journal"),
+            base.deletingLastPathComponent().appendingPathComponent(
+                ".\(base.deletingPathExtension().lastPathComponent)_SUPPORT",
+                isDirectory: true
+            )
+        ]
+        let existingFiles = candidates.filter { fileManager.fileExists(atPath: $0.path) }
+        guard !existingFiles.isEmpty else { return true }
+
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+
+        let recoveryRoot = base.deletingLastPathComponent()
+            .appendingPathComponent("Recovery", isDirectory: true)
+        let recoveryDirectory = recoveryRoot.appendingPathComponent(
+            "SwiftData-\(formatter.string(from: Date()))-\(UUID().uuidString.prefix(8))",
+            isDirectory: true
+        )
+
+        do {
+            try fileManager.createDirectory(
+                at: recoveryDirectory,
+                withIntermediateDirectories: true
+            )
+            for source in existingFiles {
+                let destination = recoveryDirectory.appendingPathComponent(source.lastPathComponent)
+                try fileManager.copyItem(at: source, to: destination)
+            }
+        } catch {
+            // この時点で元ファイルは一度も変更していない。
+            try? fileManager.removeItem(at: recoveryDirectory)
+            return false
+        }
+
+        do {
+            for source in existingFiles {
+                try fileManager.removeItem(at: source)
+            }
+            return true
+        } catch {
+            // 削除が途中で失敗しても次回起動に不完全な組を残さないよう、
+            // Recovery のコピーから欠けた元ファイルを戻すことを試みる。
+            for source in existingFiles where !fileManager.fileExists(atPath: source.path) {
+                let backup = recoveryDirectory.appendingPathComponent(source.lastPathComponent)
+                try? fileManager.copyItem(at: backup, to: source)
+            }
+            return false
         }
     }
 
