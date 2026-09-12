@@ -72,6 +72,7 @@ struct ForgottenSeaPrologueView: View {
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
     @FocusState private var nameFieldFocused: Bool
+    @ScaledMetric(relativeTo: .body) private var letterTypeSize: CGFloat = 18
 
     @State private var phase: Phase = .lighthouse
     @State private var playerName = ""
@@ -312,144 +313,133 @@ struct ForgottenSeaPrologueView: View {
     }
 
     private var letter: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                letterPaper
+                    .padding(.horizontal, 24)
+                    .padding(.top, 10)
+                    .padding(.bottom, 24)
+                    .frame(maxWidth: .infinity)
+            }
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollDismissesKeyboard(.interactively)
+            .clipped()
+
+            departureControls
+        }
+    }
+
+    private var letterPaper: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color(hex: 0x23483F))
-                    Circle()
-                        .stroke(Color(hex: 0xB69A5D), lineWidth: 1)
-                        .padding(3)
-                    Text(verbatim: "M")
-                        .font(.system(size: 15, weight: .regular, design: .serif))
-                        .foregroundStyle(Color(hex: 0xD6C28C))
+            Text("A letter from beyond")
+                .font(LFFont.label(12))
+                .foregroundStyle(Color(hex: 0x69716F))
+                .padding(.bottom, 30)
+
+            VStack(alignment: .leading, spacing: 18) {
+                Text("This island is not the whole world.")
+                Text("Someone who knows you is waiting beyond.")
+                Text("Write your name, and sail beyond the sea.")
+            }
+            .font(storyFont(letterTypeSize))
+            .foregroundStyle(Color(hex: 0x303735))
+            .lineSpacing(8)
+            .fixedSize(horizontal: false, vertical: true)
+
+            Text(verbatim: "M.")
+                .font(.system(size: letterTypeSize + 3, weight: .regular, design: .serif).italic())
+                .foregroundStyle(Color(hex: 0x424A47))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.top, 32)
+        }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 30)
+        .frame(maxWidth: 460, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color(hex: 0xF2F4F1))
+                .overlay {
+                    ProloguePaperTexture()
+                        .clipShape(RoundedRectangle(cornerRadius: 2))
                 }
-                .frame(width: 34, height: 34)
-                .accessibilityHidden(true)
+                .shadow(color: .black.opacity(0.24), radius: 18, x: 0, y: 8)
+                .shadow(color: .black.opacity(0.16), radius: 2, x: 0, y: 1)
+        }
+    }
 
-                Text("A letter from beyond")
-                    .font(storyFont(11))
-                    .tracking(2.1)
-                    .textCase(.uppercase)
-                Spacer()
-            }
-            .foregroundStyle(Color(hex: 0x31504A).opacity(0.76))
-
-            HStack(spacing: 8) {
-                Rectangle().frame(height: 1)
-                Circle().frame(width: 4, height: 4)
-                Rectangle().frame(height: 1)
-            }
-            .foregroundStyle(Color(hex: 0xA58C56).opacity(0.48))
-            .padding(.top, 14)
-
-            Text("This island is not the whole world.")
-                .padding(.top, 20)
-            Text("Someone who knows you is waiting beyond.")
-                .padding(.top, 10)
-            Text("Write your name, and sail beyond the sea.")
-                .padding(.top, 10)
-
-            Rectangle()
-                .fill(Color(hex: 0xA58C56).opacity(0.34))
-                .frame(height: 1)
-                .padding(.vertical, 18)
-
+    /// Profile entry belongs to the app, not to the sender's stationery.
+    private var departureControls: some View {
+        VStack(alignment: .leading, spacing: 14) {
             if mode == .firstRun {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Your name")
-                        .font(storyFont(10))
-                        .tracking(1.8)
-                        .textCase(.uppercase)
-                        .foregroundStyle(Color(hex: 0x31504A).opacity(0.68))
+                    HStack {
+                        Text("Your name")
+                            .font(LFFont.label(13))
+                        Spacer()
+                        Text(verbatim: "\(nameCharacterCount)/\(PlayerProfile.nameCharacterLimit)")
+                            .font(LFFont.label(12))
+                            .foregroundStyle(
+                                nameCharacterCount > PlayerProfile.nameCharacterLimit
+                                    ? LFColor.returnOrange : Color.white.opacity(0.6)
+                            )
+                            .accessibilityLabel(Text(verbatim: LF.format(
+                                "%lld of %lld characters",
+                                Int64(nameCharacterCount), Int64(PlayerProfile.nameCharacterLimit)
+                            )))
+                    }
+                    .foregroundStyle(Color.white.opacity(0.82))
 
                     TextField("Sailor", text: $playerName)
                         .focused($nameFieldFocused)
                         .textInputAutocapitalization(.words)
                         .autocorrectionDisabled()
                         .submitLabel(.go)
-                        .font(storyFont(20))
-                        .foregroundStyle(Color(hex: 0x173F3B))
-                        .padding(.horizontal, 2)
-                        .frame(height: 42)
-                        .overlay(alignment: .bottom) {
-                            Rectangle()
-                                .fill(Color(hex: 0x7D704B).opacity(0.54))
-                                .frame(height: 1)
+                        .font(LFFont.copy(18))
+                        .foregroundStyle(Color.white.opacity(0.94))
+                        .tint(Color.white)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 48)
+                        .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
                         }
+                        .accessibilityLabel(Text("Your name"))
                         .onSubmit {
                             if canSetSail { setSail() }
                         }
-
-                    Text(verbatim: "\(nameCharacterCount)/\(PlayerProfile.nameCharacterLimit)")
-                        .font(storyFont(10))
-                        .foregroundStyle(
-                            nameCharacterCount > PlayerProfile.nameCharacterLimit
-                                ? LFColor.returnOrange
-                                : Color(hex: 0x31504A).opacity(0.54)
-                        )
-                        .accessibilityLabel(
-                            Text(
-                                verbatim: LF.format(
-                                    "%lld of %lld characters",
-                                    Int64(nameCharacterCount),
-                                    Int64(PlayerProfile.nameCharacterLimit)
-                                )
-                            )
-                        )
                 }
-            } else {
-                Text(verbatim: PlayerProfile.displayName)
-                    .font(storyFont(22))
-                    .foregroundStyle(Color(hex: 0x173F3B))
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Button(action: setSail) {
-                Text("Set sail")
-                    .font(storyFont(14, emphasized: true))
-                    .tracking(1.8)
-                    .textCase(.uppercase)
-                    .foregroundStyle(Color(hex: 0xEFE4C7))
-                    .frame(maxWidth: .infinity)
-                    .frame(minHeight: 50)
-                    .background(Color(hex: 0x23483F))
-                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .stroke(Color(hex: 0xB69A5D).opacity(0.72), lineWidth: 1)
-                            .padding(3)
-                    }
+                HStack(spacing: 10) {
+                    Text("Set sail")
+                        .font(LFFont.copy(16))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 14, weight: .medium))
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(Color(hex: 0x243C35))
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(Color(hex: 0xEFF2EE), in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(LFPressableButtonStyle())
             .disabled(!canSetSail)
             .opacity(canSetSail ? 1 : 0.46)
-            .padding(.top, 18)
             .accessibilityHint(Text("Closes the prologue and begins your voyage"))
         }
-        .font(storyFont(17))
-        .foregroundStyle(Color(hex: 0x173F3B))
-        .lineSpacing(5)
+        .frame(maxWidth: 460)
         .padding(.horizontal, 24)
-        .padding(.vertical, 22)
-        .background {
-            EstateLetterPaperShape(cut: 12)
-                .fill(Color(hex: 0xE8DDBB).opacity(0.985))
-                .overlay {
-                    EstatePaperTexture()
-                        .clipShape(EstateLetterPaperShape(cut: 12))
-                }
-                .overlay {
-                    EstateLetterPaperShape(cut: 12)
-                        .stroke(Color(hex: 0x8E7A4B).opacity(0.52), lineWidth: 1)
-                        .padding(4)
-                }
-                .shadow(color: .black.opacity(0.46), radius: 18, y: 10)
-        }
-        .frame(maxWidth: 520)
-        .padding(.horizontal, 18)
-        .padding(.bottom, 14)
+        .padding(.top, 16)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity)
+        .background {
+            LinearGradient(colors: [.black.opacity(0), .black.opacity(0.48)],
+                           startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea(edges: .bottom)
+        }
     }
 
     private func resetForPresentation() {
@@ -561,53 +551,34 @@ struct ForgottenSeaPrologueView: View {
     }
 }
 
-private struct EstateLetterPaperShape: InsettableShape {
-    var cut: CGFloat
-    var insetAmount: CGFloat = 0
-
-    func path(in rect: CGRect) -> Path {
-        let r = rect.insetBy(dx: insetAmount, dy: insetAmount)
-        let c = min(cut, min(r.width, r.height) * 0.12)
-        var path = Path()
-        path.move(to: CGPoint(x: r.minX + c, y: r.minY))
-        path.addLine(to: CGPoint(x: r.maxX - c, y: r.minY))
-        path.addLine(to: CGPoint(x: r.maxX, y: r.minY + c))
-        path.addLine(to: CGPoint(x: r.maxX, y: r.maxY - c))
-        path.addLine(to: CGPoint(x: r.maxX - c, y: r.maxY))
-        path.addLine(to: CGPoint(x: r.minX + c, y: r.maxY))
-        path.addLine(to: CGPoint(x: r.minX, y: r.maxY - c))
-        path.addLine(to: CGPoint(x: r.minX, y: r.minY + c))
-        path.closeSubpath()
-        return path
-    }
-
-    func inset(by amount: CGFloat) -> EstateLetterPaperShape {
-        var copy = self
-        copy.insetAmount += amount
-        return copy
-    }
-}
-
-private struct EstatePaperTexture: View {
+/// Neutral cotton-paper grain, kept away from the ink so glyph edges stay crisp.
+private struct ProloguePaperTexture: View {
     var body: some View {
         Canvas { context, size in
-            for index in 0..<34 {
-                let x = size.width * CGFloat((index * 47 + 13) % 97) / 97
-                let y = size.height * CGFloat((index * 31 + 7) % 89) / 89
-                var fiber = Path()
-                fiber.move(to: CGPoint(x: x, y: y))
-                fiber.addLine(
-                    to: CGPoint(
-                        x: min(size.width, x + CGFloat(5 + index % 9)),
-                        y: y + CGFloat((index % 3) - 1)
-                    )
-                )
-                context.stroke(
-                    fiber,
-                    with: .color(Color(hex: 0x806E43).opacity(0.055)),
-                    lineWidth: 0.65
-                )
+            var state: UInt64 = 0x5041504552
+            func sample() -> CGFloat {
+                state = state &* 6_364_136_223_846_793_005 &+ 1
+                return CGFloat(state >> 40) / CGFloat(1 << 24)
             }
+            for _ in 0..<Int(size.width * size.height / 45) {
+                let x = sample() * size.width
+                let y = sample() * size.height
+                let length = 0.5 + sample() * 1.5
+                let grain = CGRect(x: x, y: y, width: length, height: 0.45)
+                context.fill(Path(ellipseIn: grain),
+                             with: .color(Color(hex: 0x52615A).opacity(0.055)))
+            }
+
+            // The paper was folded once; a shallow, irregular crease carries
+            // the material without an ornamental frame or distressed edges.
+            let foldY = size.height * 0.56
+            var fold = Path()
+            fold.move(to: CGPoint(x: 0, y: foldY + 0.5))
+            fold.addQuadCurve(to: CGPoint(x: size.width, y: foldY - 0.5),
+                              control: CGPoint(x: size.width * 0.45, y: foldY + 1.5))
+            context.stroke(fold, with: .color(.black.opacity(0.035)), lineWidth: 0.7)
+            context.translateBy(x: 0, y: 0.8)
+            context.stroke(fold, with: .color(.white.opacity(0.55)), lineWidth: 0.6)
         }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
