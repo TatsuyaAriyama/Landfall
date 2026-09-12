@@ -470,10 +470,7 @@ struct HomeIslandView: View {
             // voyage home uses the same composition; rendering this color as
             // an SCNScene background made My Island noticeably darker even
             // though both cameras used the same exposure.
-            Color(uiColor: UIColor(rgb: 0x8BCFDB))
-                // 空だけは色調整の外にいるので、島の明るさと同じ向きへ寄せる。
-                .brightness(islandBrightness.skyBrightness)
-                .ignoresSafeArea()
+            HomeIslandSkyBackdrop(brightness: islandBrightness)
 
             HomeIslandSceneView(
                 store: store,
@@ -901,7 +898,7 @@ struct HomeIslandView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: compactTopHUD ? 4 : 8) {
+        HStack(spacing: compactTopHUD ? 2 : 8) {
             Button {
                 walkInput = .zero
                 openUtility(.player)
@@ -911,7 +908,6 @@ struct HomeIslandView: View {
             .buttonStyle(LFPressableButtonStyle())
             .contentShape(Capsule())
             .accessibilityHint(Text("Shows your work history"))
-                .layoutPriority(1)
 
             Spacer(minLength: compactTopHUD ? 0 : 4)
 
@@ -929,6 +925,7 @@ struct HomeIslandView: View {
                                 .font(.system(size: topControlSymbolSize, weight: .semibold))
                                 .foregroundStyle(homeGlassInk)
                                 .frame(width: topControlWidth, height: topControlHeight)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(LFPressableButtonStyle())
                         .accessibilityLabel(
@@ -954,6 +951,7 @@ struct HomeIslandView: View {
                             .font(.system(size: topControlSymbolSize, weight: .semibold))
                             .foregroundStyle(homeGlassInk)
                             .frame(width: topControlWidth, height: topControlHeight)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .accessibilityLabel(Text("Camera mode"))
@@ -966,59 +964,62 @@ struct HomeIslandView: View {
                                 .font(.system(size: topControlSymbolSize, weight: .semibold))
                                 .foregroundStyle(homeGlassInk)
                                 .frame(width: topControlWidth, height: topControlHeight)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(LFPressableButtonStyle())
                         .accessibilityLabel(Text("Edit Island"))
                     }
 
-                    Button {
-                        walkInput = .zero
-                        openUtility(.todo)
-                    } label: {
-                        Image(systemName: "checklist")
-                            .font(.system(size: topControlSymbolSize, weight: .semibold))
-                            .foregroundStyle(homeGlassInk)
-                            .frame(width: topControlWidth, height: topControlHeight)
-                    }
-                    .buttonStyle(LFPressableButtonStyle())
-                    .accessibilityLabel(Text("ToDo list"))
+                    Menu {
+                        Button {
+                            walkInput = .zero
+                            openUtility(.todo)
+                        } label: {
+                            Label("ToDo list", systemImage: "checklist")
+                        }
 
-                    Button {
-                        walkInput = .zero
-                        openUtility(.music)
+                        Button {
+                            walkInput = .zero
+                            openUtility(.music)
+                        } label: {
+                            Label("Music", systemImage: "music.note")
+                        }
+                        .accessibilityValue(musicAccessibilityValue)
+                        .accessibilityHint(Text("Choose a track"))
+
+                        Divider()
+
+                        Button {
+                            walkInput = .zero
+                            showingSettings = true
+                            Haptics.tap(.light)
+                        } label: {
+                            Label("Settings", systemImage: "gearshape.fill")
+                        }
+                        .accessibilityHint(Text("Change language, app icon, and account"))
                     } label: {
                         ZStack(alignment: .topTrailing) {
-                            Image(systemName: "music.note")
-                                .font(.system(size: topControlSymbolSize, weight: .semibold))
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: topControlSymbolSize, weight: .bold))
                                 .foregroundStyle(homeGlassInk)
                             if homeMusic.isPlaying {
                                 Circle()
                                     .fill(Color(uiColor: VoyageSceneKit.returnOrange))
                                     .frame(width: 6, height: 6)
                                     .offset(x: 5, y: -5)
+                                    .accessibilityHidden(true)
                             }
                         }
                         .frame(width: topControlWidth, height: topControlHeight)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(LFPressableButtonStyle())
-                    .accessibilityLabel(Text("Music"))
-                    .accessibilityValue(musicAccessibilityValue)
-                    .accessibilityHint(Text("Choose a track"))
-
-                    Button {
-                        walkInput = .zero
-                        showingSettings = true
-                        Haptics.tap(.light)
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: topControlSymbolSize, weight: .semibold))
-                            .foregroundStyle(homeGlassInk)
-                            .frame(width: topControlWidth, height: topControlHeight)
-                    }
-                    .buttonStyle(LFPressableButtonStyle())
-                    .accessibilityLabel(Text("Settings"))
-                    .accessibilityHint(Text("Change language, app icon, and account"))
+                    .tint(homeGlassInk)
+                    .menuIndicator(.hidden)
+                    .menuOrder(.fixed)
+                    .accessibilityLabel(Text("More actions"))
                 }
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(3)
                 .background(homeGlassBackground, in: Capsule())
                 .overlay(Capsule().stroke(homeGlassInk.opacity(0.12), lineWidth: 1))
@@ -1034,6 +1035,7 @@ struct HomeIslandView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(homeGlassInk.opacity(store.canUndo ? 1 : 0.30))
                             .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .disabled(!store.canUndo)
@@ -1049,6 +1051,7 @@ struct HomeIslandView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(homeGlassInk.opacity(store.canRedo ? 1 : 0.30))
                             .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .disabled(!store.canRedo)
@@ -1062,6 +1065,7 @@ struct HomeIslandView: View {
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(homeGlassInk.opacity(store.placements.isEmpty ? 0.30 : 1))
                             .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .disabled(store.placements.isEmpty)
@@ -1075,10 +1079,12 @@ struct HomeIslandView: View {
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(homeGlassInk)
                             .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(LFPressableButtonStyle())
                     .accessibilityLabel(Text("Finish editing"))
                 }
+                .fixedSize(horizontal: true, vertical: false)
                 .padding(3)
                 .background(homeGlassBackground, in: Capsule())
                 .overlay(Capsule().stroke(homeGlassInk.opacity(0.12), lineWidth: 1))
@@ -1412,20 +1418,21 @@ struct HomeIslandView: View {
                     .font(LFFont.copy(compactTopHUD ? 13 : 14))
                     .foregroundStyle(homeGlassInk)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+                    .minimumScaleFactor(0.85)
                     .allowsTightening(true)
 
                 Text(verbatim: "LV \(levelProgress.level)")
-                    .font(LFFont.label(compactTopHUD ? 8 : 9))
+                    .font(LFFont.label(10))
                     .tracking(0.6)
-                    .foregroundStyle(homeGlassInk.opacity(0.58))
+                    .foregroundStyle(homeGlassInk.opacity(0.68))
             }
 
             Spacer(minLength: 0)
         }
         .padding(.leading, compactTopHUD ? 6 : 7)
         .padding(.trailing, compactTopHUD ? 10 : 12)
-        .frame(width: playerCardWidth, height: playerCardHeight)
+        .frame(minWidth: compactTopHUD ? 100 : 150, maxWidth: playerCardWidth)
+        .frame(height: playerCardHeight)
         .background(homeGlassBackground, in: Capsule())
         .overlay(Capsule().stroke(homeGlassInk.opacity(0.12), lineWidth: 1))
         .accessibilityElement(children: .combine)
@@ -1804,32 +1811,32 @@ struct HomeIslandView: View {
         }
     }
 
-    /// iPhone では名札とツール列が画面幅をほとんど食い切り、島の景色に
-    /// 貼りついて見えていた。コンパクト時だけ一回り小さくして、両端と
-    /// 名札の隣に余白を返す。iPad は元の大きさのまま。
+    /// The name card yields a little width on a narrow phone, while each
+    /// control keeps a full 44-point target. Four actions and a 112-point
+    /// name card fit together even in a 320-point viewport.
     private var playerCardWidth: CGFloat {
         compactTopHUD ? 124 : 178
     }
 
     private var playerCardHeight: CGFloat {
-        compactTopHUD ? 40 : 46
+        50
     }
 
     private var playerAvatarSide: CGFloat {
-        compactTopHUD ? 26 : 32
+        compactTopHUD ? 28 : 32
     }
 
     private var topControlWidth: CGFloat {
-        compactTopHUD ? 30 : 40
+        44
     }
 
-    /// ツール列の丸みは名札の高さに合わせる（左右の帯が段違いに見えない）。
+    /// Match the control capsule's six points of padding to the name card.
     private var topControlHeight: CGFloat {
         playerCardHeight - 6
     }
 
     private var topControlSymbolSize: CGFloat {
-        compactTopHUD ? 14 : 16
+        16
     }
 
     private var topControlSpacing: CGFloat {
@@ -2236,24 +2243,63 @@ struct HomeIslandView: View {
         return Text(verbatim: LF.format("Unlocks at Level %lld", Int64(ship.unlockLevel)))
     }
 
+    private var cameraExposureValueText: String {
+        let value = abs(cameraExposureOffset) < 0.025 ? 0 : cameraExposureOffset
+        return String(format: "%+.2f EV", value)
+    }
+
     private var cameraCaptureControls: some View {
         VStack(spacing: 9) {
             if showingCameraExposureControl {
-                HStack(spacing: 10) {
-                    Image(systemName: "sun.min")
-                    Slider(value: $cameraExposureOffset, in: -1.2...0.8, step: 0.05) {
-                        Text("Exposure")
+                VStack(spacing: 0) {
+                    HStack(spacing: 10) {
+                        HStack(spacing: 8) {
+                            Text("Exposure")
+                                .font(LFFont.label(12))
+                            Text(verbatim: cameraExposureValueText)
+                                .font(LFFont.copy(14))
+                                .monospacedDigit()
+                                .fixedSize()
+                        }
+                        .accessibilityElement(children: .combine)
+                        Spacer(minLength: 0)
+                        Button {
+                            cameraExposureOffset = 0
+                            Haptics.tap(.light)
+                        } label: {
+                            Text("Reset")
+                                .font(LFFont.label(12))
+                                .fontWeight(.semibold)
+                                .padding(.horizontal, 10)
+                                .frame(minWidth: 44, minHeight: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(LFPressableButtonStyle())
+                        .accessibilityLabel(Text("Exposure") + Text(" · ") + Text("Reset"))
+                        .accessibilityValue(Text(verbatim: "0 EV"))
+                        .disabled(abs(cameraExposureOffset) < 0.025)
+                        .opacity(abs(cameraExposureOffset) < 0.025 ? 0.4 : 1)
                     }
-                    .tint(.white)
-                    .accessibilityValue(Text(String(format: "%+.1f EV", cameraExposureOffset)))
-                    Image(systemName: "sun.max.fill")
+                    HStack(spacing: 10) {
+                        Image(systemName: "sun.min")
+                            .accessibilityHidden(true)
+                        Slider(value: $cameraExposureOffset, in: -1.2...0.8, step: 0.05) {
+                            Text("Exposure")
+                        }
+                        .tint(.white)
+                        .accessibilityValue(Text(verbatim: cameraExposureValueText))
+                        Image(systemName: "sun.max.fill")
+                            .accessibilityHidden(true)
+                    }
+                    .frame(minHeight: 44)
                 }
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.9))
                 .padding(.horizontal, 15)
-                .frame(width: 250, height: 46)
-                .background(.black.opacity(0.52), in: Capsule())
-                .overlay(Capsule().stroke(.white.opacity(0.13), lineWidth: 1))
+                .padding(.vertical, 4)
+                .frame(width: 280)
+                .background(.black.opacity(0.52), in: RoundedRectangle(cornerRadius: 22))
+                .overlay(RoundedRectangle(cornerRadius: 22).stroke(.white.opacity(0.13), lineWidth: 1))
                 .disabled(isCapturing)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -2308,6 +2354,7 @@ struct HomeIslandView: View {
                     Haptics.tap(.light)
                 }
                 .disabled(isCapturing)
+                .accessibilityAddTraits(showingCameraExposureControl ? .isSelected : [])
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
@@ -2608,7 +2655,8 @@ struct HomeIslandView: View {
         let capturedAt = Date()
         guard let rendered = HomeIslandPhotoExport.render(
             sceneImage: image,
-            capturedAt: capturedAt
+            capturedAt: capturedAt,
+            brightness: islandBrightness
         ) else {
             showingCaptureError = true
             return
