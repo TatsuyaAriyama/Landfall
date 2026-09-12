@@ -862,52 +862,8 @@ struct SettingsView: View {
     }
 
     /// 端末や部屋の明かりで海と砂の見え方は変わる。標準を真ん中に置いた
-    /// 5段で、歩いているときの明るさそのものを選べるようにする。
     private var islandBrightnessSection: some View {
-        let selected = HomeIslandBrightness.resolve(islandBrightness)
-        return VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                ForEach(HomeIslandBrightness.allCases) { level in
-                    brightnessPill(level, selected: selected)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(selected.label)
-                    .font(LFFont.copy(15))
-                    .foregroundStyle(LFColor.ink)
-                Text("The brightness of your island while you walk it.")
-                    .font(LFFont.label(13))
-                    .foregroundStyle(LFColor.ink.opacity(0.52))
-            }
-        }
-    }
-
-    private func brightnessPill(
-        _ level: HomeIslandBrightness,
-        selected: HomeIslandBrightness
-    ) -> some View {
-        let isOn = level == selected
-        return Button {
-            Haptics.tap()
-            islandBrightness = level.rawValue
-        } label: {
-            Text(verbatim: "\(level.step)")
-                .font(LFFont.number(15))
-                .foregroundStyle(isOn ? LFColor.paper : LFColor.ink.opacity(0.72))
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: 44)
-                .background(isOn ? LFColor.ink : Color.clear)
-                .overlay(
-                    Capsule(style: .continuous)
-                        .stroke(LFColor.ink.opacity(isOn ? 0 : 0.25), lineWidth: 1)
-                )
-                .clipShape(Capsule(style: .continuous))
-                .contentShape(Capsule(style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(level.label)
-        .accessibilityAddTraits(isOn ? .isSelected : [])
+        HomeIslandBrightnessControl(token: $islandBrightness, ink: LFColor.ink)
     }
 
     private func themePill(_ theme: AppTheme) -> some View {

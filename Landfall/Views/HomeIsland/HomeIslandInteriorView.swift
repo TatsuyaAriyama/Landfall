@@ -65,6 +65,8 @@ enum HomeIslandInteriorKind: String, Identifiable {
 struct HomeIslandInteriorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(HomeIslandBrightness.storageKey)
+    private var islandBrightnessToken = HomeIslandBrightness.fallback.rawValue
     @State private var walkInput = HomeIslandWalkInput.zero
     @State private var revealed = false
 
@@ -79,6 +81,7 @@ struct HomeIslandInteriorView: View {
                 kind: kind,
                 walkInput: walkInput,
                 renderingActive: scenePhase == .active,
+                islandExposureOffset: HomeIslandBrightness.resolve(islandBrightnessToken).exposureOffset,
                 onExitRequested: exitInterior
             )
             .ignoresSafeArea()
@@ -316,6 +319,7 @@ private struct HomeIslandInteriorSceneView: UIViewRepresentable {
     let kind: HomeIslandInteriorKind
     var walkInput: HomeIslandWalkInput
     var renderingActive: Bool
+    var islandExposureOffset: Float = 0
     var onExitRequested: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -385,15 +389,16 @@ private struct HomeIslandInteriorSceneView: UIViewRepresentable {
             camera.zNear = 0.025
             camera.zFar = 120
             camera.wantsHDR = true
-            // 家の中も島の一部なので、設定で選んだ明るさをそのまま持ち込む。
-            let base: Float = owner.kind == .weatheredCottage ? -0.28 : -0.18
-            camera.exposureOffset = CGFloat(base + HomeIslandBrightness.current.exposureOffset)
+            // Keep the saved brightness steady when looking toward a lantern
+            // or a dark corner instead of letting eye adaptation override it.
+            camera.wantsExposureAdaptation = false
             camera.bloomIntensity = 0.28
             camera.bloomThreshold = 0.72
             camera.vignettingIntensity = 0.24
             camera.vignettingPower = 0.62
             cameraNode.name = "interior-first-person-camera"
             cameraNode.camera = camera
+            updateExposure()
             cameraNode.position = owner.kind.spawn
             view.scene?.rootNode.addChildNode(cameraNode)
             view.pointOfView = cameraNode
@@ -427,7 +432,19 @@ private struct HomeIslandInteriorSceneView: UIViewRepresentable {
         func update(owner: HomeIslandInteriorSceneView) {
             self.owner = owner
             touchInput = owner.walkInput
+            updateExposure()
             setRenderingActive(owner.renderingActive)
+        }
+
+        private func updateExposure() {
+            // Retain each room's authored baseline while following the same
+            // persisted island brightness on both installation and updates.
+            let base: Float = owner.kind == .weatheredCottage ? -0.28 : -0.18
+            let exposure = CGFloat(base + owner.islandExposureOffset)
+            guard let camera = cameraNode.camera,
+                  camera.exposureOffset != exposure
+            else { return }
+            camera.exposureOffset = exposure
         }
 
         func setRenderingActive(_ active: Bool) {

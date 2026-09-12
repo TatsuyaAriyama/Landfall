@@ -196,6 +196,7 @@ struct HomeIslandView: View {
     @State private var showingTodoList = false
     @StateObject private var todoStore = HomeIslandTodoStore.shared
     @State private var showingPlayerStats = false
+    @State private var showingIslandBrightness = false
     /// The family whose variants are open, and the one each family is
     /// showing. Both are per-session: a drawer that reopened on "pink desk"
     /// a week later would be a surprise, but switching twice in one build
@@ -325,6 +326,7 @@ struct HomeIslandView: View {
             || showingLogbook
             || activeInterior != nil
             || showingPlayerStats
+            || showingIslandBrightness
             || showingMusicPicker
             || showingSettings
             || showingIslandShare
@@ -973,6 +975,15 @@ struct HomeIslandView: View {
                     Menu {
                         Button {
                             walkInput = .zero
+                            openUtility(.brightness)
+                        } label: {
+                            Label("Island brightness", systemImage: "sun.max")
+                        }
+
+                        Divider()
+
+                        Button {
+                            walkInput = .zero
                             openUtility(.todo)
                         } label: {
                             Label("ToDo list", systemImage: "checklist")
@@ -1531,12 +1542,14 @@ struct HomeIslandView: View {
         case todo
         case music
         case player
+        case brightness
     }
 
     private var activeUtility: HomeUtility? {
         if showingTodoList { return .todo }
         if showingMusicPicker { return .music }
         if showingPlayerStats { return .player }
+        if showingIslandBrightness { return .brightness }
         return nil
     }
 
@@ -1547,6 +1560,7 @@ struct HomeIslandView: View {
             showingTodoList = !alreadyOpen && utility == .todo
             showingMusicPicker = !alreadyOpen && utility == .music
             showingPlayerStats = !alreadyOpen && utility == .player
+            showingIslandBrightness = !alreadyOpen && utility == .brightness
         }
         Haptics.tap(.light)
     }
@@ -1556,6 +1570,7 @@ struct HomeIslandView: View {
             showingTodoList = false
             showingMusicPicker = false
             showingPlayerStats = false
+            showingIslandBrightness = false
         }
         selectedRecordDay = nil
     }
@@ -1619,14 +1634,14 @@ struct HomeIslandView: View {
                                 Image(systemName: "xmark")
                                     .font(.system(size: 10, weight: .bold))
                                     .foregroundStyle(utilityInk.opacity(0.6))
-                                    .frame(width: 26, height: 26)
+                                    .frame(width: utility == .brightness ? 44 : 26, height: utility == .brightness ? 44 : 26)
                                     .background(utilityInk.opacity(0.06), in: Circle())
                             }
                             .buttonStyle(LFPressableButtonStyle())
                             .accessibilityLabel(Text("Close"))
                         }
                         .padding(.horizontal, 12)
-                        .frame(height: 38)
+                        .frame(height: utility == .brightness ? 48 : 38)
 
                         Rectangle()
                             .fill(utilityInk.opacity(0.10))
@@ -1650,15 +1665,21 @@ struct HomeIslandView: View {
                                     selectedDay: $selectedRecordDay,
                                     compact: true
                                 )
+                            case .brightness:
+                                HomeIslandBrightnessControl(token: $islandBrightnessToken)
                             }
                         }
                         .padding(10)
                     }
                     .frame(width: utilityPanelWidth(for: utility))
-                    .background(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(.regularMaterial)
-                    )
+                    .background {
+                        if utility == .brightness {
+                            Color.clear.lfHomeFeatureCard(cornerRadius: 20)
+                        } else {
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .fill(.regularMaterial)
+                        }
+                    }
                     .overlay(
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .stroke(utilityInk.opacity(0.12), lineWidth: 1)
@@ -1800,6 +1821,7 @@ struct HomeIslandView: View {
         case .todo: "ToDo"
         case .music: "Music"
         case .player: "Player"
+        case .brightness: "Island brightness"
         }
     }
 
@@ -1808,6 +1830,7 @@ struct HomeIslandView: View {
         case .todo: "checklist"
         case .music: "music.note"
         case .player: "person.crop.circle"
+        case .brightness: "sun.max"
         }
     }
 

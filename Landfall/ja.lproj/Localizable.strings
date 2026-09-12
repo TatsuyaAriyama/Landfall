@@ -1470,3 +1470,6 @@
 "Standard" = "標準";
 "Bright" = "明るめ";
 "Brightest" = "いちばん明るい";
+
+"Reset island brightness" = "島の明るさを標準に戻す";
+"Your island stays in daylight. This setting keeps your preferred brightness outdoors and indoors." = "島は昼の景色です。屋外と建物内の見やすさを調整し、選んだ明るさを保ちます。";
