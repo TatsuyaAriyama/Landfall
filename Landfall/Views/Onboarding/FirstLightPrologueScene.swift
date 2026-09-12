@@ -23,7 +23,7 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> SCNView {
-        let view = SCNView(frame: .zero)
+        let view = SCNView(frame: .zero, options: MetalRenderingProfile.sceneViewOptions())
         view.scene = FirstLightPrologueSceneFactory.makeScene(animate: animate)
         view.pointOfView = view.scene?.rootNode.childNode(
             withName: FirstLightPrologueSceneFactory.cameraName,
@@ -31,7 +31,7 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
         )
         view.backgroundColor = FirstLightPrologueSceneFactory.skyColor
         view.isOpaque = true
-        view.antialiasingMode = .multisampling2X
+        view.antialiasingMode = .multisampling4X
         view.contentScaleFactor = min(UIScreen.main.scale, 2)
         view.preferredFramesPerSecond = 30
         view.autoenablesDefaultLighting = false
@@ -48,7 +48,7 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
         view.addGestureRecognizer(tap)
 
         context.coordinator.install(on: view)
-        context.coordinator.apply(stage: stage, animated: false)
+        context.coordinator.apply(stage: stage, animated: animate)
         return view
     }
 
@@ -138,24 +138,40 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
             currentStage = stage
 
             let pose = FirstLightPrologueSceneFactory.cameraPose(for: stage)
-            let duration: TimeInterval = animated ? (stage == .bottle ? 2.8 : 1.0) : 0
-            camera?.removeAllActions()
-            cameraTarget?.removeAllActions()
+            let duration: TimeInterval = stage == .lighthouse ? 7.5 : (stage == .bottle ? 3.6 : 1.2)
+            guard let camera, let cameraTarget else { return }
+            let origin = camera.position
+            let originTarget = cameraTarget.position
+            let originFieldOfView = camera.camera?.fieldOfView ?? pose.fieldOfView
+            camera.removeAllActions()
+            cameraTarget.removeAllActions()
 
-            SCNTransaction.begin()
-            SCNTransaction.animationDuration = duration
-            SCNTransaction.animationTimingFunction = CAMediaTimingFunction(
-                controlPoints: 0.22,
-                0.72,
-                0.18,
-                1
-            )
-            camera?.position = pose.position
-            cameraTarget?.position = pose.target
-            camera?.camera?.fieldOfView = pose.fieldOfView
-            updateCameraDirection()
+            // Move the lens and its subject on the same clock. Mixing a model
+            // camera position with a presentation target twists the view during
+            // the long descent, even though both endpoints look correct.
+            if animated {
+                camera.runAction(.customAction(duration: duration) { [weak cameraTarget] node, elapsed in
+                    let t = min(Float(elapsed / CGFloat(duration)), 1)
+                    let eased = t * t * t * (t * (t * 6 - 15) + 10)
+                    func blend(_ a: SCNVector3, _ b: SCNVector3) -> SCNVector3 {
+                        SCNVector3(a.x + (b.x - a.x) * eased,
+                                   a.y + (b.y - a.y) * eased,
+                                   a.z + (b.z - a.z) * eased)
+                    }
+                    node.position = blend(origin, pose.position)
+                    cameraTarget?.position = blend(originTarget, pose.target)
+                    node.camera?.fieldOfView = originFieldOfView
+                        + (pose.fieldOfView - originFieldOfView) * CGFloat(eased)
+                    node.look(at: blend(originTarget, pose.target),
+                              up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
+                }, forKey: "prologueCameraMove")
+            } else {
+                camera.position = pose.position
+                cameraTarget.position = pose.target
+                camera.camera?.fieldOfView = pose.fieldOfView
+                updateCameraDirection()
+            }
             bottleGlow?.opacity = stage == .lighthouse ? 0.02 : 0.10
-            SCNTransaction.commit()
 
             if !animationEnabled {
                 settleStaticFrame()
@@ -174,7 +190,7 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
                     .ignoreHiddenNodes: true,
                 ]
             )
-            guard hits.contains(where: { hit in
+            let hitBottle = hits.contains(where: { hit in
                 var node: SCNNode? = hit.node
                 while let current = node {
                     if current.name == FirstLightPrologueSceneFactory.bottleHitName {
@@ -183,7 +199,18 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
                     node = current.parent
                 }
                 return false
-            }) else { return }
+            })
+            // A screen-space touch allowance needs no invisible geometry;
+            // transparent hit spheres can still contaminate HDR rendering.
+            let bottle = view.scene?.rootNode.childNode(
+                withName: FirstLightPrologueSceneFactory.bottleHitName, recursively: true
+            )
+            let projected = bottle.map { view.projectPoint($0.worldPosition) }
+            let nearBottle = projected.map {
+                $0.z >= 0 && $0.z <= 1
+                    && hypot(point.x - CGFloat($0.x), point.y - CGFloat($0.y)) <= 44
+            } ?? false
+            guard hitBottle || nearBottle else { return }
 
             DispatchQueue.main.async { [weak self] in
                 self?.owner.onBottleTapped()
@@ -204,7 +231,6 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
             lighthouseRotor?.eulerAngles.y = elapsed * 0.24
             let pulse = 0.84 + sin(elapsed * 2.4) * 0.12
             bottleGlow?.scale = SCNVector3(pulse, pulse, pulse)
-            updateCameraDirection()
             if seaMaterial?.program != nil,
                framePacing.observe(at: time, targetFramesPerSecond: 30) {
                 reduceRenderingQualityIfNeeded()
@@ -221,7 +247,7 @@ struct FirstLightPrologueSceneView: UIViewRepresentable {
         private func updateCameraDirection() {
             guard let camera, let cameraTarget else { return }
             camera.look(
-                at: cameraTarget.presentation.position,
+                at: cameraTarget.position,
                 up: SCNVector3(0, 1, 0),
                 localFront: SCNVector3(0, 0, -1)
             )
@@ -258,27 +284,28 @@ private enum FirstLightPrologueSceneFactory {
     static let lighthouseRotorName = "firstLightLighthouseRotor"
     static let skyColor = UIColor(rgb: 0x071B1A)
 
-    private static let surfaceY: Float = 0.10
+    private static let seaLevel: Float = 0.10
+    private static let surfaceY: Float = 0.32
     private static let lighthousePosition = SCNVector3(-1.9, surfaceY, -2.4)
-    private static let bottlePosition = SCNVector3(2.8, surfaceY + 0.08, 4.0)
+    private static let bottlePosition = SCNVector3(2.8, surfaceY + 0.15, 4.0)
 
     static func cameraPose(for stage: FirstLightPrologueSceneView.Stage) -> CameraPose {
         switch stage {
         case .lighthouse:
             CameraPose(
-                position: SCNVector3(4.8, 7.4, 6.6),
-                target: SCNVector3(-1.9, 6.45, -1.4),
-                fieldOfView: 38
+                position: SCNVector3(6.0, 8.1, 11.2),
+                target: SCNVector3(-2.2, 6.1, -2.4),
+                fieldOfView: 43
             )
         case .bottle:
             CameraPose(
-                position: SCNVector3(5.65, 1.42, 6.72),
-                target: bottlePosition,
-                fieldOfView: 44
+                position: SCNVector3(4.25, 1.17, 5.85),
+                target: SCNVector3(2.8, surfaceY + 0.20, 4.0),
+                fieldOfView: 42
             )
         case .letter:
             CameraPose(
-                position: SCNVector3(4.65, 0.92, 5.45),
+                position: SCNVector3(4.65, 1.14, 5.45),
                 target: bottlePosition,
                 fieldOfView: 38
             )
@@ -287,7 +314,7 @@ private enum FirstLightPrologueSceneFactory {
 
     static func makeScene(animate: Bool) -> SCNScene {
         let scene = SCNScene()
-        scene.background.contents = skyColor
+        scene.background.contents = makeSky()
         scene.fogColor = UIColor(rgb: 0x173937)
         scene.fogStartDistance = 24
         scene.fogEndDistance = 72
@@ -314,7 +341,7 @@ private enum FirstLightPrologueSceneFactory {
                     widthSegments: MetalRenderingProfile.current.oceanSegments(base: 140),
                     depthSegments: MetalRenderingProfile.current.oceanSegments(base: 140),
                     centerX: 0,
-                    surfaceY: surfaceY,
+                    surfaceY: seaLevel,
                     includesShoreline: true,
                     rootName: "firstLightSea"
                 ),
@@ -346,13 +373,15 @@ private enum FirstLightPrologueSceneFactory {
         camera.camera?.zNear = 0.08
         camera.camera?.zFar = 180
         camera.camera?.wantsHDR = true
-        camera.camera?.wantsExposureAdaptation = true
-        camera.camera?.exposureOffset = -0.34
-        camera.camera?.bloomIntensity = 0.22
+        // A fixed exposure keeps the lantern and pale letter from causing a
+        // visible brightness pump as the camera crosses the shoreline.
+        camera.camera?.wantsExposureAdaptation = false
+        camera.camera?.exposureOffset = -0.18
+        camera.camera?.bloomIntensity = 0.32
         camera.camera?.bloomThreshold = 1.08
         camera.camera?.bloomBlurRadius = 6
         let pose = cameraPose(for: .lighthouse)
-        camera.position = pose.position
+        camera.position = animate ? SCNVector3(7.1, 8.7, 13.0) : pose.position
         camera.camera?.fieldOfView = pose.fieldOfView
         scene.rootNode.addChildNode(camera)
 
@@ -374,17 +403,37 @@ private enum FirstLightPrologueSceneFactory {
         return scene
     }
 
+    private static func makeSky() -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: CGSize(width: 8, height: 512), format: format).image { context in
+            let colors = [UIColor(rgb: 0x041214).cgColor,
+                          UIColor(rgb: 0x102F35).cgColor,
+                          UIColor(rgb: 0x426663).cgColor] as CFArray
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                            colors: colors, locations: [0, 0.55, 1]) else { return }
+            context.cgContext.drawLinearGradient(gradient, start: .zero,
+                                                  end: CGPoint(x: 0, y: 512), options: [])
+        }
+    }
+
     private static func addIsland(to root: SCNNode) {
         guard let foundation = AssetPlacementRuntime.makeAssetNode(
             resourceName: HomeIslandMetrics.foundationResourceName
         ) else { return }
         foundation.name = "firstLightShallowIsland"
         HomeIslandSandSurface.apply(to: foundation)
-        // The authored Home Island is compressed vertically and lowered until
-        // its broad sand apron almost meets the sea. This keeps the familiar
-        // coastline while making the prologue feel younger and more exposed.
+        foundation.enumerateChildNodes { node, _ in
+            node.geometry?.materials.forEach { material in
+                if material.name == "home-island-pristine-sand" {
+                    material.emission.intensity = 0.025
+                }
+            }
+        }
+        // Keep the compressed beach above wave crests. Coincident ocean and
+        // sand planes produce moving straight cuts through the close-up.
         foundation.scale = SCNVector3(0.72, 0.22, 0.72)
-        foundation.position = SCNVector3(0, -0.04, 0)
+        foundation.position = SCNVector3(0, surfaceY - (HomeIslandMetrics.surfaceY + 0.018) * 0.22, 0)
         root.addChildNode(foundation)
     }
 
@@ -404,8 +453,34 @@ private enum FirstLightPrologueSceneFactory {
             withName: "LF_LighthouseBeaconRotor",
             recursively: true
         )
-        rotor?.name = lighthouseRotorName
         root.addChildNode(lighthouse)
+        if let rotor {
+            // USDZ meshes may carry an origin at the foot of the tower.
+            // Rotate around the lens itself in world-up space, preserving the
+            // imported axis conversion so the lamp cannot orbit outside its room.
+            let bounds = rotor.boundingBox
+            let center = SCNVector3((bounds.min.x + bounds.max.x) * 0.5,
+                                    (bounds.min.y + bounds.max.y) * 0.5,
+                                    (bounds.min.z + bounds.max.z) * 0.5)
+            let pivot = SCNNode()
+            pivot.name = lighthouseRotorName
+            pivot.position = rotor.convertPosition(center, to: root)
+            let originalTransform = rotor.simdWorldTransform
+            root.addChildNode(pivot)
+            rotor.removeFromParentNode()
+            pivot.addChildNode(rotor)
+            rotor.simdWorldTransform = originalTransform
+        }
+
+        let lantern = SCNNode()
+        lantern.position = SCNVector3(lighthousePosition.x, surfaceY + 7.16, lighthousePosition.z)
+        lantern.light = SCNLight()
+        lantern.light?.type = .omni
+        lantern.light?.color = UIColor(rgb: 0xFFD28B)
+        lantern.light?.intensity = 520
+        lantern.light?.attenuationStartDistance = 0.3
+        lantern.light?.attenuationEndDistance = 4.5
+        root.addChildNode(lantern)
     }
 
     private static func addCampfire(to root: SCNNode) {
@@ -453,22 +528,6 @@ private enum FirstLightPrologueSceneFactory {
 
         bottleRoot.addChildNode(makeMessageBottle())
 
-        // The invisible volume gives a finger a generous target without
-        // making the small real-world bottle look like a treasure chest.
-        let targetGeometry = SCNSphere(radius: 0.42)
-        targetGeometry.segmentCount = 12
-        let targetMaterial = SCNMaterial()
-        targetMaterial.lightingModel = .constant
-        targetMaterial.diffuse.contents = UIColor.clear
-        targetMaterial.transparency = 0
-        targetMaterial.colorBufferWriteMask = []
-        targetMaterial.readsFromDepthBuffer = false
-        targetMaterial.writesToDepthBuffer = false
-        targetGeometry.firstMaterial = targetMaterial
-        let target = SCNNode(geometry: targetGeometry)
-        target.name = bottleHitName
-        bottleRoot.addChildNode(target)
-
         let glowGeometry = SCNSphere(radius: 0.23)
         glowGeometry.segmentCount = 24
         let glowMaterial = SCNMaterial()
@@ -484,14 +543,6 @@ private enum FirstLightPrologueSceneFactory {
         glow.name = bottleGlowName
         bottleRoot.addChildNode(glow)
 
-        let light = SCNNode()
-        light.light = SCNLight()
-        light.light?.type = .omni
-        light.light?.color = UIColor(rgb: 0xFFD989)
-        light.light?.intensity = 10
-        light.light?.attenuationStartDistance = 0.15
-        light.light?.attenuationEndDistance = 1.9
-        bottleRoot.addChildNode(light)
         root.addChildNode(bottleRoot)
     }
 
@@ -500,14 +551,14 @@ private enum FirstLightPrologueSceneFactory {
         ambient.light = SCNLight()
         ambient.light?.type = .ambient
         ambient.light?.color = UIColor(rgb: 0x86A39D)
-        ambient.light?.intensity = 310
+        ambient.light?.intensity = 220
         root.addChildNode(ambient)
 
         let dawn = SCNNode()
         dawn.light = SCNLight()
         dawn.light?.type = .directional
         dawn.light?.color = UIColor(rgb: 0xFFE1B7)
-        dawn.light?.intensity = 1_050
+        dawn.light?.intensity = 680
         dawn.eulerAngles = SCNVector3(-0.72, -0.58, -0.12)
         dawn.light?.castsShadow = true
         dawn.light?.shadowMode = .deferred
@@ -521,7 +572,7 @@ private enum FirstLightPrologueSceneFactory {
         firelight.light = SCNLight()
         firelight.light?.type = .omni
         firelight.light?.color = UIColor(rgb: 0xFFAE62)
-        firelight.light?.intensity = 420
+        firelight.light?.intensity = 120
         firelight.light?.attenuationStartDistance = 0.3
         firelight.light?.attenuationEndDistance = 7
         root.addChildNode(firelight)
@@ -536,38 +587,20 @@ private enum FirstLightPrologueSceneFactory {
         let glass = SCNMaterial()
         glass.name = "first-light-bottle-glass"
         glass.lightingModel = .physicallyBased
-        glass.diffuse.contents = UIColor(rgb: 0x9FD7C8).withAlphaComponent(0.22)
+        glass.diffuse.contents = UIColor(rgb: 0x72B8A4).withAlphaComponent(0.64)
         glass.emission.contents = UIColor(rgb: 0x78B9A8)
-        glass.emission.intensity = 0.16
-        glass.roughness.contents = 0.12
+        glass.emission.intensity = 0.035
+        glass.roughness.contents = 0.22
         glass.metalness.contents = 0
-        glass.transparency = 0.48
+        glass.transparency = 0.82
         glass.blendMode = .alpha
-        glass.isDoubleSided = true
+        glass.isDoubleSided = false
+        glass.writesToDepthBuffer = false
 
-        let bodyGeometry = SCNCylinder(radius: 0.12, height: 0.34)
-        bodyGeometry.radialSegmentCount = 24
+        let bodyGeometry = makeBottleGlassGeometry()
         bodyGeometry.firstMaterial = glass
         let body = SCNNode(geometry: bodyGeometry)
         root.addChildNode(body)
-
-        let shoulderGeometry = SCNCone(
-            topRadius: 0.055,
-            bottomRadius: 0.12,
-            height: 0.10
-        )
-        shoulderGeometry.radialSegmentCount = 24
-        shoulderGeometry.firstMaterial = glass
-        let shoulder = SCNNode(geometry: shoulderGeometry)
-        shoulder.position.y = 0.22
-        root.addChildNode(shoulder)
-
-        let neckGeometry = SCNCylinder(radius: 0.055, height: 0.13)
-        neckGeometry.radialSegmentCount = 20
-        neckGeometry.firstMaterial = glass
-        let neck = SCNNode(geometry: neckGeometry)
-        neck.position.y = 0.335
-        root.addChildNode(neck)
 
         let lipGeometry = SCNTorus(ringRadius: 0.058, pipeRadius: 0.012)
         lipGeometry.ringSegmentCount = 20
@@ -605,5 +638,42 @@ private enum FirstLightPrologueSceneFactory {
 
         root.scale = SCNVector3(0.86, 0.86, 0.86)
         return root
+    }
+
+    /// One revolved shell avoids the opaque internal end caps and overlapping
+    /// transparent surfaces of stacked cylinders and cones.
+    private static func makeBottleGlassGeometry() -> SCNGeometry {
+        let profile: [(radius: Float, y: Float)] = [
+            (0.001, -0.18), (0.085, -0.18), (0.108, -0.17),
+            (0.12, -0.145), (0.12, 0.13), (0.116, 0.17),
+            (0.102, 0.20), (0.076, 0.235), (0.057, 0.26),
+            (0.055, 0.285), (0.055, 0.40),
+        ]
+        let segments = 48
+        var vertices: [SCNVector3] = []
+        var normals: [SCNVector3] = []
+        var indices: [Int32] = []
+        for (ring, point) in profile.enumerated() {
+            let previous = profile[max(0, ring - 1)]
+            let next = profile[min(profile.count - 1, ring + 1)]
+            let dr = next.radius - previous.radius
+            let dy = next.y - previous.y
+            let length = max(sqrt(dr * dr + dy * dy), 0.0001)
+            for segment in 0...segments {
+                let angle = Float(segment) / Float(segments) * .pi * 2
+                vertices.append(SCNVector3(point.radius * cos(angle), point.y,
+                                           point.radius * sin(angle)))
+                normals.append(SCNVector3(dy * cos(angle) / length, -dr / length,
+                                          dy * sin(angle) / length))
+                if ring < profile.count - 1, segment < segments {
+                    let a = Int32(ring * (segments + 1) + segment)
+                    let b = a + Int32(segments + 1)
+                    indices += [a, b, a + 1, a + 1, b, b + 1]
+                }
+            }
+        }
+        return SCNGeometry(sources: [SCNGeometrySource(vertices: vertices),
+                                     SCNGeometrySource(normals: normals)],
+                           elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles)])
     }
 }

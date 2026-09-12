@@ -50,7 +50,7 @@ struct ForgottenSeaPrologueView: View {
         case replay
     }
 
-    private enum Phase {
+    private enum Phase: Hashable {
         case lighthouse
         case bottle
         case letter
@@ -79,6 +79,7 @@ struct ForgottenSeaPrologueView: View {
     @State private var revealTask: Task<Void, Never>?
     @State private var typewriterTask: Task<Void, Never>?
     @State private var openingVisibleCharacterCount = 0
+    @State private var bottleCueVisible = false
 
     init(mode: Mode = .firstRun, onComplete: @escaping () -> Void) {
         self.mode = mode
@@ -156,6 +157,7 @@ struct ForgottenSeaPrologueView: View {
             )
             .ignoresSafeArea()
             .accessibilityLabel(Text("A glowing bottle lies on the beach"))
+            .accessibilityHidden(phase != .bottle)
             .accessibilityAction(named: Text("Open the letter")) {
                 if phase == .bottle { openLetter() }
             }
@@ -170,6 +172,9 @@ struct ForgottenSeaPrologueView: View {
                 if phase == .lighthouse {
                     openingCopy
                         .transition(.opacity.combined(with: .offset(y: 12)))
+                } else if phase == .bottle, bottleCueVisible {
+                    bottleCue
+                        .transition(.opacity)
                 } else if phase == .letter {
                     letter
                         .transition(
@@ -184,6 +189,20 @@ struct ForgottenSeaPrologueView: View {
         .animation(.easeInOut(duration: reduceMotion ? 0.15 : 0.72), value: phase)
         .onAppear(perform: resetForPresentation)
         .onDisappear(perform: stopPresentation)
+        .task(id: phase) {
+            guard phase == .bottle else { return }
+            do {
+                try await Task.sleep(for: .seconds(reduceMotion ? 0 : 3.6))
+            } catch { return }
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: reduceMotion ? 0.15 : 0.6)) {
+                bottleCueVisible = true
+            }
+            if voiceOverEnabled {
+                UIAccessibility.post(notification: .announcement,
+                                     argument: LF.text("A glowing bottle lies on the beach"))
+            }
+        }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 HomeWaveAmbience.shared.play()
@@ -251,8 +270,12 @@ struct ForgottenSeaPrologueView: View {
                 .fill(Color(hex: 0xC7A968).opacity(0.72))
                 .frame(width: 42, height: 1)
 
-            Text(verbatim: visibleOpeningText)
-                .font(storyFont(18))
+            Text(verbatim: openingText)
+                .hidden()
+                .overlay(alignment: .topLeading) {
+                    Text(verbatim: visibleOpeningText)
+                }
+                .font(storyFont(20))
                 .tracking(usesJapaneseTypography ? 0.05 : 0.45)
                 .foregroundStyle(Color(hex: 0xF1E8CF))
                 .lineSpacing(7)
@@ -267,6 +290,25 @@ struct ForgottenSeaPrologueView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: openingText))
         .accessibilityAddTraits(.isHeader)
+    }
+
+    private var bottleCue: some View {
+        Button(action: openLetter) {
+            VStack(spacing: 12) {
+                Image(systemName: "hand.tap")
+                    .font(.system(size: 20, weight: .light))
+                    .accessibilityHidden(true)
+                Text("Open the letter")
+                    .font(storyFont(16))
+                    .tracking(1.2)
+            }
+            .foregroundStyle(Color(hex: 0xF1E8CF))
+            .frame(minWidth: 160, minHeight: 80)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.bottom, 42)
+        .shadow(color: .black.opacity(0.8), radius: 6, y: 2)
     }
 
     private var letter: some View {
@@ -413,7 +455,8 @@ struct ForgottenSeaPrologueView: View {
     private func resetForPresentation() {
         hasCompleted = false
         phase = .lighthouse
-        openingVisibleCharacterCount = reduceMotion ? openingText.count : 0
+        bottleCueVisible = false
+        openingVisibleCharacterCount = reduceMotion || voiceOverEnabled ? openingText.count : 0
         nameFieldFocused = false
         playerName = mode == .replay
             ? PlayerProfile.displayName
@@ -437,22 +480,18 @@ struct ForgottenSeaPrologueView: View {
 
     private func scheduleBottleReveal() {
         revealTask?.cancel()
-        guard phase == .lighthouse, !isDebugStatic else { return }
+        guard phase == .lighthouse, !isDebugStatic,
+              openingVisibleCharacterCount == openingText.count else { return }
         revealTask = Task { @MainActor in
             do {
-                try await Task.sleep(for: .seconds(reduceMotion ? 3.0 : 5.4))
+                // Hold the completed sentence, regardless of translation length.
+                try await Task.sleep(for: .seconds(voiceOverEnabled ? 6.0 : 2.8))
             } catch {
                 return
             }
             guard !Task.isCancelled, phase == .lighthouse else { return }
             withAnimation(.easeInOut(duration: reduceMotion ? 0.15 : 0.9)) {
                 phase = .bottle
-            }
-            if voiceOverEnabled {
-                UIAccessibility.post(
-                    notification: .announcement,
-                    argument: LF.text("A glowing bottle lies on the beach")
-                )
             }
             revealTask = nil
         }
@@ -462,25 +501,38 @@ struct ForgottenSeaPrologueView: View {
         typewriterTask?.cancel()
         typewriterTask = nil
         guard phase == .lighthouse else { return }
-        guard !reduceMotion else {
+        guard !reduceMotion && !voiceOverEnabled else {
             openingVisibleCharacterCount = openingText.count
+            scheduleBottleReveal()
             return
         }
         guard openingVisibleCharacterCount < openingText.count else { return }
 
         typewriterTask = Task { @MainActor in
             if openingVisibleCharacterCount == 0 {
-                try? await Task.sleep(for: .milliseconds(420))
+                do {
+                    try await Task.sleep(for: .milliseconds(700))
+                } catch { return }
             }
             while !Task.isCancelled,
                   phase == .lighthouse,
                   openingVisibleCharacterCount < openingText.count {
                 openingVisibleCharacterCount += 1
                 let revealed = String(openingText.prefix(openingVisibleCharacterCount))
-                let pause: Int = revealed.last == "。" || revealed.last == "." ? 300 : 52
-                try? await Task.sleep(for: .milliseconds(pause))
+                let pause: Int
+                switch revealed.last {
+                case "。", ".": pause = 360
+                case "、", ",": pause = 160
+                case "\n": pause = 240
+                default: pause = 52
+                }
+                do {
+                    try await Task.sleep(for: .milliseconds(pause))
+                } catch { return }
             }
+            guard !Task.isCancelled else { return }
             typewriterTask = nil
+            scheduleBottleReveal()
         }
     }
 
@@ -489,13 +541,6 @@ struct ForgottenSeaPrologueView: View {
         Haptics.tap(.medium)
         withAnimation(.easeInOut(duration: reduceMotion ? 0.15 : 0.72)) {
             phase = .letter
-        }
-        if mode == .firstRun {
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(reduceMotion ? 80 : 520))
-                guard phase == .letter else { return }
-                nameFieldFocused = true
-            }
         }
     }
 
