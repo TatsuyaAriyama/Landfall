@@ -1725,10 +1725,13 @@ enum AssetPlacementRuntime {
         if resourceName == "spring_water_bottle" {
             clearThePlastic(on: node)
         }
-        if resourceName == "weathered_lighthouse", !UIAccessibility.isReduceMotionEnabled {
-            let beacon = node.childNode(withName: "LF_LighthouseBeaconRotor_Mesh", recursively: true)
-                ?? node.childNode(withName: "LF_LighthouseBeaconRotor", recursively: true)
-            beacon?.runAction(.repeatForever(.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 8)))
+        if resourceName == "weathered_lighthouse",
+           let pivot = LighthouseBeaconAnimation.rotationPivot(in: node),
+           !UIAccessibility.isReduceMotionEnabled {
+            pivot.runAction(
+                .repeatForever(.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 8)),
+                forKey: LighthouseBeaconAnimation.rotationActionKey
+            )
         }
         if resourceName == "campfire_circle", !UIAccessibility.isReduceMotionEnabled {
             let flameLayers = [

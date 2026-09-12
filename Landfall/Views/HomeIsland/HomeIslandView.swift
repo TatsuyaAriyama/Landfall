@@ -2715,23 +2715,36 @@ struct HomeIslandView: View {
         actionTitle: String? = nil,
         action: (() -> Void)? = nil
     ) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Image(systemName: symbol)
-                .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(LFHomeFeatureStyle.ink)
+                .accessibilityHidden(true)
+
             Text(verbatim: text)
                 .font(LFFont.label(12))
-                .foregroundStyle(.white)
-                .lineLimit(1)
+                .foregroundStyle(LFHomeFeatureStyle.ink)
+                .fixedSize(horizontal: false, vertical: true)
+
             if let actionTitle, let action {
-                Button(actionTitle, action: action)
-                    .font(LFFont.label(12))
-                    .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+                Button(action: action) {
+                    Text(verbatim: actionTitle)
+                        .font(LFFont.copy(12))
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
+                        .padding(.horizontal, 12)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .background(LFHomeFeatureStyle.field, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(LFPressableButtonStyle())
+                .fixedSize()
             }
         }
-        .padding(.horizontal, 13)
-        .frame(height: 38)
-        .background(.black.opacity(0.50), in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.14), lineWidth: 1))
+        .padding(.horizontal, 12)
+        .padding(.vertical, action == nil ? 12 : 5)
+        .frame(minHeight: 44)
+        .lfHomeFeatureCard(cornerRadius: 22)
+        .padding(.horizontal, 12)
     }
 
     @ViewBuilder
@@ -2744,14 +2757,14 @@ struct HomeIslandView: View {
                     fallbackSymbol: asset.symbolName
                 )
                     .frame(width: 38, height: 38)
-                    .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                    .background(LFHomeFeatureStyle.field, in: RoundedRectangle(cornerRadius: 12))
 
                 Text(verbatim: asset.title)
-                    .font(LFFont.copy(12))
-                    .foregroundStyle(.white)
+                    .font(LFFont.copy(13))
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                    .frame(width: 48, alignment: .leading)
+                    .minimumScaleFactor(0.85)
+                    .frame(width: 64, alignment: .leading)
 
                 toolButton("Rotate", symbol: "rotate.right") {
                     store.rotateSelected()
@@ -2777,9 +2790,9 @@ struct HomeIslandView: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.82))
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
                         .frame(width: 44, height: 50)
-                        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                        .background(LFHomeFeatureStyle.field, in: RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(LFPressableButtonStyle())
                 .accessibilityLabel(Text("More actions"))
@@ -2792,18 +2805,14 @@ struct HomeIslandView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.62))
+                        .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
                         .frame(width: 44, height: 50)
                 }
                 .buttonStyle(LFPressableButtonStyle())
                 .accessibilityLabel(Text("Clear selection"))
             }
             .padding(7)
-            .background(hudBackground, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 19, style: .continuous)
-                    .stroke(Color(uiColor: VoyageSceneKit.sand).opacity(0.17), lineWidth: 1)
-            }
+            .lfHomeFeatureCard(cornerRadius: 19)
         }
     }
 
@@ -2821,15 +2830,15 @@ struct HomeIslandView: View {
                 Image(systemName: symbol)
                     .font(.system(size: 14, weight: .semibold))
                 Text(title)
-                    .font(LFFont.label(8))
+                    .font(LFFont.label(10))
                     .lineLimit(1)
             }
-            .foregroundStyle(active ? Color(uiColor: VoyageSceneKit.sand) : .white.opacity(0.86))
+            .foregroundStyle(LFHomeFeatureStyle.ink)
             .frame(width: 44, height: 50)
             .background(
                 active
-                    ? Color(uiColor: VoyageSceneKit.ember).opacity(0.24)
-                    : .white.opacity(0.06),
+                    ? LFHomeFeatureStyle.ink.opacity(0.14)
+                    : LFHomeFeatureStyle.field,
                 in: RoundedRectangle(cornerRadius: 12)
             )
         }
@@ -2881,8 +2890,8 @@ struct HomeIslandView: View {
                 } label: {
                     Image(systemName: "minus")
                         .font(.system(size: 15, weight: .bold))
-                        .frame(width: 42, height: 38)
-                        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 11))
+                        .frame(width: 44, height: 44)
+                        .background(LFHomeFeatureStyle.field, in: RoundedRectangle(cornerRadius: 11))
                 }
                 .buttonStyle(LFPressableButtonStyle())
                 .disabled(selected.transform.scale <= 0.25)
@@ -2891,12 +2900,12 @@ struct HomeIslandView: View {
                 VStack(spacing: 1) {
                     Text("Size")
                         .font(LFFont.label(10))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
                     Text(
                         verbatim: "\(calibrationScalePercent(for: selected))%"
                     )
                         .font(LFFont.copy(15))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
                         .monospacedDigit()
                 }
                 .frame(maxWidth: .infinity)
@@ -2910,20 +2919,16 @@ struct HomeIslandView: View {
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 15, weight: .bold))
-                        .frame(width: 42, height: 38)
-                        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 11))
+                        .frame(width: 44, height: 44)
+                        .background(LFHomeFeatureStyle.field, in: RoundedRectangle(cornerRadius: 11))
                 }
                 .buttonStyle(LFPressableButtonStyle())
                 .disabled(selected.transform.scale >= 2)
                 .accessibilityLabel(Text("Larger"))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(LFHomeFeatureStyle.ink)
             .padding(6)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .stroke(.white.opacity(0.12), lineWidth: 1)
-            }
+            .lfHomeFeatureCard(cornerRadius: 17)
         }
     }
 
@@ -3577,14 +3582,14 @@ struct HomeIslandView: View {
             Haptics.tap(.light)
         } label: {
             Label(category.title, systemImage: category.symbol)
-                .font(LFFont.label(9))
+                .font(LFFont.label(11))
                 .foregroundStyle(
                     selected
                         ? LFHomeFeatureStyle.ink
                         : LFHomeFeatureStyle.secondaryInk
                 )
                 .padding(.horizontal, 10)
-                .frame(height: 28)
+                .frame(height: 32)
                 .background(
                     selected
                         ? LFHomeFeatureStyle.ink.opacity(0.14)
@@ -3600,8 +3605,11 @@ struct HomeIslandView: View {
                             lineWidth: 1
                         )
                 }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(LFPressableButtonStyle())
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     /// Simulator-only tuning value. It is deliberately absolute so a value

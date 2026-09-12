@@ -94,10 +94,12 @@ final class HomeIslandGamepadInputRouter {
         )
         movementHandler?(movement, deltaTime)
 
-        let lookX = gamepad.rightThumbstick.xAxis.value
-        let lookY = gamepad.rightThumbstick.yAxis.value
-        if abs(lookX) > 0.10 || abs(lookY) > 0.10 {
-            lookHandler?(lookX, lookY, deltaTime)
+        let look = HomeIslandGamepadMapping.look(
+            stickX: gamepad.rightThumbstick.xAxis.value,
+            stickY: gamepad.rightThumbstick.yAxis.value
+        )
+        if look != .zero {
+            lookHandler?(look.x, look.y, deltaTime)
         }
     }
 

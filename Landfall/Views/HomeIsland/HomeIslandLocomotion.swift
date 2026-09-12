@@ -207,6 +207,18 @@ private enum HomeIslandLocomotionSimulation {
 
 /// Pure mapping shared by a physical gamepad and deterministic probes.
 enum HomeIslandGamepadMapping {
+    /// A radial dead zone makes fine camera adjustment equally responsive in
+    /// every direction. Rescaling from its edge also avoids a sudden camera
+    /// speed jump when the stick first leaves rest.
+    static func look(stickX: Float, stickY: Float) -> SIMD2<Float> {
+        let deadZone: Float = 0.10
+        let stick = SIMD2<Float>(stickX, stickY)
+        let length = simd_length(stick)
+        guard length.isFinite, length > deadZone else { return .zero }
+        let response = min((length - deadZone) / (1 - deadZone), 1)
+        return stick * (response / length)
+    }
+
     static func movement(
         stickX: Float,
         stickY: Float,

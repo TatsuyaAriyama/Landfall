@@ -326,7 +326,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
     var boatBoardingRequest: HomeIslandBoatBoardingRequest?
     var mode: HomeIslandMode
     /// 歩いているときの明るさ。写真モードのスライダはここからの増減。
-    static let baseExposureOffset: Float = 0.45
+    static let baseExposureOffset: Float = 0.20
     /// 写真モードでの増減(EV)。0 のあいだは歩いているときと同じ明るさ。
     var cameraExposureOffset: Float
     /// 設定で選んだ島の明るさ(EV)。歩いていても写真モードでも土台になる。
@@ -1828,8 +1828,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
             scene.fogColor = UIColor(rgb: 0x6BA1AA)
             scene.fogStartDistance = 52
             scene.fogEndDistance = 118
-            scene.lightingEnvironment.contents = UIColor(rgb: 0xD9FFF5)
-            scene.lightingEnvironment.intensity = 0.96
+            scene.lightingEnvironment.contents = UIColor(rgb: 0xDAE6EA)
+            scene.lightingEnvironment.intensity = 0.65
 
             let ocean = HomeIslandOceanEffects.makeScene(
                 islandScale: owner.islandScale,
@@ -1903,20 +1903,22 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let ambient = SCNNode()
             ambient.light = SCNLight()
             ambient.light?.type = .ambient
-            ambient.light?.color = UIColor(rgb: 0xF5F0DF)
-            ambient.light?.intensity = 900
+            // Keep sky fill below the sun so wood grain, pale stone and
+            // contact shadows survive the user's brighter exposure settings.
+            ambient.light?.color = UIColor(rgb: 0xD6E4EB)
+            ambient.light?.intensity = 400
             scene.rootNode.addChildNode(ambient)
 
             let key = SCNNode()
             key.light = SCNLight()
             key.light?.type = .directional
-            key.light?.color = UIColor(rgb: 0xFFE8BE)
-            key.light?.intensity = 1_550
+            key.light?.color = UIColor(rgb: 0xFFF3DC)
+            key.light?.intensity = 1_200
             key.light?.castsShadow = true
             key.light?.categoryBitMask = 1
             key.light?.shadowMode = .deferred
-            key.light?.shadowRadius = 4
-            key.light?.shadowColor = UIColor.black.withAlphaComponent(0.26)
+            key.light?.shadowRadius = 3
+            key.light?.shadowColor = UIColor.black.withAlphaComponent(0.34)
             key.light?.shadowMapSize = CGSize(width: 2_048, height: 2_048)
             key.position = SCNVector3(-7, 12, 8)
             key.look(at: SCNVector3Zero)
@@ -1925,8 +1927,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
             let fill = SCNNode()
             fill.light = SCNLight()
             fill.light?.type = .directional
-            fill.light?.color = UIColor(rgb: 0xA9CFC4)
-            fill.light?.intensity = 460
+            fill.light?.color = UIColor(rgb: 0xB6CCD7)
+            fill.light?.intensity = 220
             fill.position = SCNVector3(9, 7, -7)
             fill.look(at: SCNVector3Zero)
             scene.rootNode.addChildNode(fill)
@@ -1947,13 +1949,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
             cameraComponent.projectionDirection = .horizontal
             cameraComponent.zNear = 0.08
             cameraComponent.zFar = 1_500
-            // Exploration stays bright, while photo mode can lower the exposure
-            // to preserve detail in pale sand and sunlit props.
+            // One fixed exposure baseline keeps walking and photography
+            // consistent; composition changes must not pump the brightness.
             cameraComponent.wantsHDR = true
+            cameraComponent.wantsExposureAdaptation = false
             cameraComponent.exposureOffset = CGFloat(
                 HomeIslandSceneView.baseExposureOffset + owner.islandExposureOffset
             )
-            cameraComponent.contrast = 0.05
+            cameraComponent.contrast = 0.08
             cameraNode.camera = cameraComponent
             scene.rootNode.addChildNode(cameraNode)
             camera = cameraNode

@@ -2,9 +2,8 @@ import SceneKit
 import UIKit
 
 /// Gives the home island one continuous, physically based sand surface instead
-/// of a collection of flat beige materials. The texture is generated locally
-/// and deterministically, so it remains sharp without adding a large asset to
-/// the app bundle or depending on the network.
+/// of a collection of flat beige materials. Bundled sand maps supply the
+/// wind-shaped grain; the scene's light supplies its highlights and shadows.
 enum HomeIslandSandSurface {
     private struct TextureSet {
         let color: UIImage
@@ -34,19 +33,21 @@ enum HomeIslandSandSurface {
         material.name = "home-island-pristine-sand"
         material.lightingModel = .physicallyBased
         material.diffuse.contents = textures.color
+        // Leave headroom for the sun without bleaching the pale grain.
+        material.diffuse.intensity = 0.90
         configure(material.diffuse)
         material.normal.contents = textures.normal
-        material.normal.intensity = 0.42
+        material.normal.intensity = 0.62
         configure(material.normal)
         material.roughness.contents = textures.roughness
         material.roughness.intensity = 1
         configure(material.roughness)
         material.ambientOcclusion.contents = textures.occlusion
-        material.ambientOcclusion.intensity = 0.22
+        material.ambientOcclusion.intensity = 0.55
         configure(material.ambientOcclusion)
         material.metalness.contents = UIColor.black
-        material.emission.contents = textures.color
-        material.emission.intensity = 0.38
+        // Sand should receive shade from props, rather than glowing through it.
+        material.emission.contents = UIColor.black
         material.isDoubleSided = true
         material.locksAmbientWithDiffuse = false
 
@@ -62,18 +63,36 @@ enum HomeIslandSandSurface {
                 let name = source.name ?? ""
                 guard name.hasPrefix("LF_HomeSand") else { return source }
                 let material = SCNMaterial()
-                material.name = "home-island-clean-sand-edge"
-                material.lightingModel = .constant
-                material.diffuse.contents = UIColor(
-                    red: 0.88,
-                    green: 0.85,
-                    blue: 0.78,
-                    alpha: 1
-                )
+                material.name = "home-island-sand-edge-\(name)"
+                material.lightingModel = .physicallyBased
+                material.diffuse.contents = edgeColor(for: name)
+                material.roughness.contents = 0.96
+                material.metalness.contents = 0
                 material.isDoubleSided = true
                 return material
             }
         }
+    }
+
+    private static func edgeColor(for name: String) -> UIColor {
+        // Preserve the authored strata with a quiet sandstone palette. The old
+        // shared constant material erased both their colors and their lighting.
+        let components: (CGFloat, CGFloat, CGFloat)
+        switch name {
+        case "LF_HomeSandstoneLight": components = (0.78, 0.75, 0.67)
+        case "LF_HomeSandstone": components = (0.72, 0.69, 0.61)
+        case "LF_HomeSandstoneWarm": components = (0.69, 0.65, 0.57)
+        case "LF_HomeSandstoneDeep": components = (0.58, 0.56, 0.51)
+        case "LF_HomeSandstoneCool": components = (0.64, 0.64, 0.59)
+        case "LF_HomeSandShadow": components = (0.77, 0.73, 0.65)
+        default: components = (0.86, 0.83, 0.76)
+        }
+        return UIColor(
+            red: components.0,
+            green: components.1,
+            blue: components.2,
+            alpha: 1
+        )
     }
 
     private static func configure(_ property: SCNMaterialProperty) {
@@ -121,7 +140,10 @@ enum HomeIslandSandSurface {
             count: vertices.count * 4
         ).enumerated().map { offset, value -> Float in
             switch offset % 4 {
-            case 0, 3: 1
+            case 0: 1
+            // U follows +X and V follows +Z, so cross(normal, tangent) needs
+            // negative handedness to follow the texture's V direction.
+            case 3: -1
             default: value
             }
         }

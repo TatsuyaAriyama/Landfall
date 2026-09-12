@@ -8,7 +8,9 @@ cd "$repo_root"
 probe_binary="$(mktemp /tmp/keelmira-first-voyage-probe.XXXXXX)"
 progression_probe_binary="$(mktemp /tmp/keelmira-progression-probe.XXXXXX)"
 ocean_probe_binary="$(mktemp /tmp/keelmira-ocean-wave-probe.XXXXXX)"
-trap 'rm -f "$probe_binary" "$progression_probe_binary" "$ocean_probe_binary"' EXIT
+gamepad_probe_binary="$(mktemp /tmp/keelmira-gamepad-look-probe.XXXXXX)"
+beacon_probe_binary="$(mktemp /tmp/keelmira-beacon-pivot-probe.XXXXXX)"
+trap 'rm -f "$probe_binary" "$progression_probe_binary" "$ocean_probe_binary" "$gamepad_probe_binary" "$beacon_probe_binary"' EXIT
 
 xcrun swiftc \
   Landfall/Models/FirstVoyageRoutingPolicy.swift \
@@ -28,6 +30,18 @@ xcrun swiftc \
   Tools/RenderHarness/OceanWaveSpectrumProbe.swift \
   -o "$ocean_probe_binary"
 "$ocean_probe_binary"
+
+xcrun swiftc \
+  Landfall/Views/HomeIsland/HomeIslandLocomotion.swift \
+  Tools/RenderHarness/HomeIslandGamepadLookProbe.swift \
+  -o "$gamepad_probe_binary"
+"$gamepad_probe_binary"
+
+xcrun swiftc \
+  Landfall/Views/AssetStudio/LighthouseBeaconAnimation.swift \
+  Tools/RenderHarness/LighthouseBeaconPivotProbe.swift \
+  -o "$beacon_probe_binary"
+"$beacon_probe_binary" Landfall/Resources/weathered_lighthouse.usdz
 
 search_swift() {
   /usr/bin/grep -R -n -E --include='*.swift' "$1" Landfall Shared LandfallWidget

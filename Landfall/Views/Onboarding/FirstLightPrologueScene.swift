@@ -281,7 +281,7 @@ private enum FirstLightPrologueSceneFactory {
     static let cameraTargetName = "firstLightCameraTarget"
     static let bottleHitName = "firstLightBottleHitTarget"
     static let bottleGlowName = "firstLightBottleGlow"
-    static let lighthouseRotorName = "firstLightLighthouseRotor"
+    static let lighthouseRotorName = LighthouseBeaconAnimation.pivotName
     static let skyColor = UIColor(rgb: 0x071B1A)
 
     private static let seaLevel: Float = 0.10
@@ -446,30 +446,11 @@ private enum FirstLightPrologueSceneFactory {
         lighthouse.eulerAngles.y = 0
         lighthouse.scale = SCNVector3(1.35, 1.35, 1.35)
 
-        let rotor = lighthouse.childNode(
-            withName: "LF_LighthouseBeaconRotor_Mesh",
-            recursively: true
-        ) ?? lighthouse.childNode(
-            withName: "LF_LighthouseBeaconRotor",
-            recursively: true
-        )
         root.addChildNode(lighthouse)
-        if let rotor {
-            // USDZ meshes may carry an origin at the foot of the tower.
-            // Rotate around the lens itself in world-up space, preserving the
-            // imported axis conversion so the lamp cannot orbit outside its room.
-            let bounds = rotor.boundingBox
-            let center = SCNVector3((bounds.min.x + bounds.max.x) * 0.5,
-                                    (bounds.min.y + bounds.max.y) * 0.5,
-                                    (bounds.min.z + bounds.max.z) * 0.5)
-            let pivot = SCNNode()
-            pivot.name = lighthouseRotorName
-            pivot.position = rotor.convertPosition(center, to: root)
-            let originalTransform = rotor.simdWorldTransform
-            root.addChildNode(pivot)
-            rotor.removeFromParentNode()
-            pivot.addChildNode(rotor)
-            rotor.simdWorldTransform = originalTransform
+        if let pivot = LighthouseBeaconAnimation.rotationPivot(in: lighthouse) {
+            // The prologue's renderer drives this same pivot at its own speed.
+            // Stop the runtime loop so two clocks cannot animate the lens.
+            pivot.removeAction(forKey: LighthouseBeaconAnimation.rotationActionKey)
         }
 
         let lantern = SCNNode()
