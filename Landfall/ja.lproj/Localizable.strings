@@ -1473,3 +1473,29 @@
 
 "Reset island brightness" = "島の明るさを標準に戻す";
 "Your island stays in daylight. This setting keeps your preferred brightness outdoors and indoors." = "島は昼の景色です。屋外と建物内の見やすさを調整し、選んだ明るさを保ちます。";
+
+"All items" = "すべて";
+"Favorites" = "お気に入り";
+"Recently used" = "最近使った物";
+"Search item names" = "家具や飾りの名前を検索";
+"Clear search" = "検索を消去";
+"Close search" = "検索を閉じる";
+"Add to favorites" = "お気に入りに追加";
+"Remove from favorites" = "お気に入りから外す";
+"Catalog filter" = "カタログの絞り込み";
+"Reset filters" = "絞り込みを解除";
+"No matching items" = "当てはまる物がありません";
+"Touch and hold an item to add it to favorites." = "物を長押しすると、お気に入りに追加できます。";
+"Items appear here after you place them." = "島に置いた物が、ここに並びます。";
+"Try another name or reset the filters." = "別の名前で探すか、絞り込みを解除してください。";
+"Whole island" = "島全体";
+"Main character" = "主人公";
+"Jetty" = "桟橋";
+"Frame subject" = "構図";
+"Thirds grid" = "三分割ガイド";
+"Align" = "整列";
+"Placement assistance" = "配置の補助";
+"Gently aligns nearby props while moving" = "移動中に近くの飾りと位置や向きを揃えます";
+
+"On" = "オン";
+"Off" = "オフ";

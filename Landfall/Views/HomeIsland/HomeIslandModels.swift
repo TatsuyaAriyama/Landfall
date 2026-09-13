@@ -2023,7 +2023,7 @@ final class HomeIslandStore: ObservableObject {
     }
 
     @discardableResult
-    func add(assetID: String, x: Float, z: Float, playerLevel: Int) -> UUID? {
+    func add(assetID: String, x: Float, z: Float, playerLevel: Int, yaw: Float? = nil) -> UUID? {
         guard !isReadOnly,
               canAdd(assetID: assetID),
               let asset = HomeIslandAssetCatalog.asset(id: assetID),
@@ -2040,7 +2040,7 @@ final class HomeIslandStore: ObservableObject {
             // trees stops looking stamped, and because the angle comes from
             // the placement itself it never changes afterwards. (Deriving it
             // from the island's object count used to do exactly that.)
-            yaw: HomeIslandAssetCatalog.naturalFacing(assetID: assetID, id: placementID),
+            yaw: yaw ?? HomeIslandAssetCatalog.naturalFacing(assetID: assetID, id: placementID),
             scale: asset.defaultScale,
             excluding: nil,
             requireValidCoastPoint: true
@@ -2057,7 +2057,7 @@ final class HomeIslandStore: ObservableObject {
     }
 
     @discardableResult
-    func moveSelected(x: Float, z: Float) -> Bool {
+    func moveSelected(x: Float, z: Float, yaw: Float? = nil) -> Bool {
         guard !isReadOnly,
               let selectedID,
               let index = placements.firstIndex(where: { $0.id == selectedID })
@@ -2067,7 +2067,7 @@ final class HomeIslandStore: ObservableObject {
             assetID: placements[index].assetID,
             x: x,
             z: z,
-            yaw: placements[index].transform.yaw,
+            yaw: yaw ?? placements[index].transform.yaw,
             scale: placements[index].transform.scale,
             excluding: selectedID,
             requireValidCoastPoint: true
@@ -2089,7 +2089,7 @@ final class HomeIslandStore: ObservableObject {
             assetID: placements[index].assetID,
             x: x,
             z: z,
-            yaw: placements[index].transform.yaw,
+            yaw: yaw ?? placements[index].transform.yaw,
             scale: placements[index].transform.scale,
             requireValidCoastPoint: false,
             islandScale: islandScale

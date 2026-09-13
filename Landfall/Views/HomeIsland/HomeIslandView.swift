@@ -146,6 +146,7 @@ struct HomeIslandView: View {
     @State private var placementAssetID: String?
     @State private var movingSelection = false
     @State private var placementMoveBlocked = false
+    @AppStorage("homeIsland.placementAssistance") private var placementAssistanceEnabled = false
     @State private var showingSizeControls = false
     @State private var showingSelectionActions = false
     @State private var showingIslandResetConfirm = false
@@ -156,6 +157,7 @@ struct HomeIslandView: View {
     /// 写真モードの明るさ増減(EV)。0 = 歩いているときのまま。
     @State private var cameraExposureOffset: Float = 0
     @State private var showingCameraExposureControl = false
+    @State private var showingCameraCompositionGuide = false
     @State private var boatBoardingRequest: HomeIslandBoatBoardingRequest?
     @State private var mode: HomeIslandMode = .arrival
     @State private var walkInput = HomeIslandWalkInput.zero
@@ -173,6 +175,10 @@ struct HomeIslandView: View {
     // every time meant scrolling past forty tiles to get back to it.
     @AppStorage("homeIsland.buildCategory") private var selectedAssetCategoryToken =
         HomeIslandAssetCategory.all.rawValue
+    @StateObject private var catalogPreferences = HomeIslandCatalogPreferences()
+    @State private var catalogScope = HomeIslandCatalogScope.all
+    @State private var catalogQuery = ""
+    @State private var showingCatalogSearch = false
     @State private var transientNotice: String?
     @State private var isDismissingAfterDeparture = false
     @State private var isNavigatorOnArrivalJetty = false
@@ -485,6 +491,7 @@ struct HomeIslandView: View {
                 mode: mode,
                 cameraExposureOffset: cameraExposureOffset,
                 islandExposureOffset: islandBrightness.exposureOffset,
+                placementAssistanceEnabled: placementAssistanceEnabled,
                 cameraInteractionLocked: sceneInputLocked,
                 // Interactive overlays keep the island legible as a 20 fps
                 // backdrop; full-screen destinations suspend it completely.
@@ -583,6 +590,17 @@ struct HomeIslandView: View {
                         sendCameraAction(.reset)
                     }
                 }
+            }
+
+            // This guide belongs only to the SwiftUI preview. Capture reads
+            // the underlying SCNView, so it can never enter the saved photo.
+            if mode == .camera, showingCameraCompositionGuide {
+                HomeIslandPhotoThirdsGuide()
+                    .stroke(.white.opacity(0.58), lineWidth: 0.75)
+                    .shadow(color: .black.opacity(0.48), radius: 1)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
 
             if showingBoatCustomization || showingDestinationSetup {
@@ -2273,6 +2291,57 @@ struct HomeIslandView: View {
 
     private var cameraCaptureControls: some View {
         VStack(spacing: 9) {
+            HStack(spacing: 8) {
+                Menu {
+                    Button("Whole island", systemImage: "globe.asia.australia") {
+                        sendCameraAction(.frameIsland)
+                    }
+                    Button("Main character", systemImage: "person.crop.rectangle") {
+                        sendCameraAction(.frameNavigator)
+                    }
+                    Button("Jetty", systemImage: "water.waves") {
+                        sendCameraAction(.frameJetty)
+                    }
+                } label: {
+                    Label("Frame subject", systemImage: "viewfinder")
+                        .font(LFFont.label(12))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(width: 116, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(Text("Frame subject"))
+
+                Rectangle()
+                    .fill(.white.opacity(0.16))
+                    .frame(width: 1, height: 20)
+                    .accessibilityHidden(true)
+
+                Button {
+                    showingCameraCompositionGuide.toggle()
+                    Haptics.tap(.light)
+                } label: {
+                    Label("Thirds grid", systemImage: "grid")
+                        .font(LFFont.label(12))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .frame(width: 116, height: 44)
+                        .background(
+                            .white.opacity(showingCameraCompositionGuide ? 0.16 : 0),
+                            in: Capsule()
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(LFPressableButtonStyle())
+                .accessibilityAddTraits(showingCameraCompositionGuide ? .isSelected : [])
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(.black.opacity(0.52), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.13), lineWidth: 1))
+            .disabled(isCapturing)
+
             if showingCameraExposureControl {
                 VStack(spacing: 0) {
                     HStack(spacing: 10) {
@@ -2532,6 +2601,9 @@ struct HomeIslandView: View {
     /// The palette selection survives a placement so a grove can be planted
     /// tap by tap; it steps aside only once the allowance is used up.
     private func finishPlacement(_ placementID: UUID) {
+        if let placement = store.placements.first(where: { $0.id == placementID }) {
+            catalogPreferences.recordPlacement(assetID: placement.assetID)
+        }
         movingSelection = false
         showingSizeControls = allowsAssetSizeCalibration
         if let assetID = placementAssetID, !store.canAdd(assetID: assetID) {
@@ -2835,7 +2907,7 @@ struct HomeIslandView: View {
                     .foregroundStyle(LFHomeFeatureStyle.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
-                    .frame(width: 64, alignment: .leading)
+                    .frame(maxWidth: 64, alignment: .leading)
 
                 toolButton("Rotate", symbol: "rotate.right") {
                     store.rotateSelected()
@@ -2843,6 +2915,12 @@ struct HomeIslandView: View {
                 .disabled(selected.assetID == "wooden_jetty")
                 .opacity(selected.assetID == "wooden_jetty" ? 0.34 : 1)
                 .accessibilityHint(Text("Rotates 15 degrees clockwise"))
+                toolButton("Align", symbol: "align.horizontal.center", active: placementAssistanceEnabled) {
+                    placementAssistanceEnabled.toggle()
+                }
+                .accessibilityLabel(Text("Placement assistance"))
+                .accessibilityValue(Text(placementAssistanceEnabled ? "On" : "Off"))
+                .accessibilityHint(Text("Gently aligns nearby props while moving"))
                 if allowsAssetSizeCalibration {
                     toolButton(
                         "Size",
@@ -3062,17 +3140,33 @@ struct HomeIslandView: View {
     private var assetShelf: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
-                Label("Build", systemImage: "hammer.fill")
+                Text("Build")
                     .font(LFFont.copy(13))
                     .foregroundStyle(LFHomeFeatureStyle.ink)
                 islandSlotChip
-                Spacer()
-                Text(
-                    verbatim: "\(assets.filter { HomeIslandAssetCatalog.isUnlocked($0, playerLevel: levelProgress.level) }.count)/\(assets.count)"
-                )
-                .font(LFFont.label(9))
-                .monospacedDigit()
-                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                Spacer(minLength: 0)
+                catalogScopeMenu
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        showingCatalogSearch.toggle()
+                        if !showingCatalogSearch { catalogQuery = "" }
+                    }
+                    Haptics.tap(.light)
+                } label: {
+                    Image(systemName: showingCatalogSearch ? "xmark" : "magnifyingglass")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
+                        .frame(width: 44, height: 44)
+                        .background(LFHomeFeatureStyle.field, in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(LFPressableButtonStyle())
+                .accessibilityLabel(Text(showingCatalogSearch ? "Close search" : "Search item names"))
+            }
+
+            if showingCatalogSearch {
+                HomeIslandCatalogSearchField(query: $catalogQuery)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -3091,13 +3185,17 @@ struct HomeIslandView: View {
                     )
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                // Lazy: a tile's thumbnail is rendered from its USDZ the first
-                // time it appears, so opening build mode only pays for the few
-                // tiles on screen instead of the whole catalog.
-                LazyHStack(spacing: 10) {
-                    ForEach(visibleShelfEntries) { entry in
-                        assetButton(entry.asset, family: entry.family)
+            Group {
+                if visibleShelfEntries.isEmpty {
+                    catalogEmptyState
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        // Keep thumbnails lazy as search and shortcuts change.
+                        LazyHStack(spacing: 10) {
+                            ForEach(visibleShelfEntries) { entry in
+                                assetButton(entry.asset, family: entry.family)
+                            }
+                        }
                     }
                 }
             }
@@ -3115,6 +3213,76 @@ struct HomeIslandView: View {
                 .frame(height: 1)
         }
         .safeAreaPadding(.bottom, 3)
+        .onChange(of: catalogQuery) { _, _ in expandedFamilyID = nil }
+        .onChange(of: catalogScope) { _, _ in expandedFamilyID = nil }
+    }
+
+    private var catalogScopeMenu: some View {
+        Menu {
+            Picker("Catalog filter", selection: $catalogScope) {
+                ForEach(HomeIslandCatalogScope.allCases) { scope in
+                    Label(LocalizedStringKey(scope.titleKey), systemImage: scope.symbol)
+                        .tag(scope)
+                }
+            }
+            if catalogFiltersActive {
+                Button("Reset filters", action: resetCatalogFilters)
+            }
+        } label: {
+            Label(LocalizedStringKey(catalogScope.titleKey), systemImage: catalogScope.symbol)
+                .font(LFFont.label(11))
+                .foregroundStyle(LFHomeFeatureStyle.ink)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .frame(minHeight: 44)
+                .background(LFHomeFeatureStyle.field, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .tint(LFHomeFeatureStyle.ink)
+        .menuIndicator(.hidden)
+        .accessibilityLabel(Text("Catalog filter"))
+        .accessibilityValue(Text(LocalizedStringKey(catalogScope.titleKey)))
+    }
+
+    private var catalogFiltersActive: Bool {
+        catalogScope != .all || selectedAssetCategory != .all
+            || !catalogQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var catalogEmptyState: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("No matching items")
+                    .font(LFFont.copy(13))
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
+                Text(catalogScope == .favorites && catalogPreferences.favoriteIDs.isEmpty
+                     ? "Touch and hold an item to add it to favorites."
+                     : catalogScope == .recent && catalogPreferences.recentIDs.isEmpty
+                     ? "Items appear here after you place them."
+                     : "Try another name or reset the filters.")
+                    .font(LFFont.label(11))
+                    .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Button("Reset filters", action: resetCatalogFilters)
+                .font(LFFont.copy(12))
+                .foregroundStyle(LFHomeFeatureStyle.ink)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
+                .background(LFHomeFeatureStyle.field, in: Capsule())
+                .buttonStyle(LFPressableButtonStyle())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+    }
+
+    private func resetCatalogFilters() {
+        catalogQuery = ""
+        catalogScope = .all
+        selectedAssetCategoryToken = HomeIslandAssetCategory.all.rawValue
+        expandedFamilyID = nil
+        Haptics.tap(.light)
     }
 
     private func assetButton(
@@ -3282,6 +3450,7 @@ struct HomeIslandView: View {
                 atLimit: atLimit
             )
         )
+        .modifier(HomeIslandCatalogFavoriteModifier(assetID: asset.id, preferences: catalogPreferences))
     }
 
     /// 航海証で開く飾り。レベルの鍵と違って証は切れるので、これは「これから
@@ -3408,9 +3577,14 @@ struct HomeIslandView: View {
     /// 並べ替えの最後にカタログ順を必ず見るので、同点の並びは毎回同じになる。
     private var visibleAssets: [HomeIslandAsset] {
         assets
-            .filter { selectedAssetCategory.contains($0.id) }
+            .filter(matchesCatalogAsset)
             .enumerated()
             .sorted { lhs, rhs in
+                if catalogScope == .recent {
+                    let lhsRank = catalogPreferences.recentIDs.firstIndex(of: lhs.element.id) ?? Int.max
+                    let rhsRank = catalogPreferences.recentIDs.firstIndex(of: rhs.element.id) ?? Int.max
+                    if lhsRank != rhsRank { return lhsRank < rhsRank }
+                }
                 let lhsTier = assetOrderTier(lhs.element)
                 let rhsTier = assetOrderTier(rhs.element)
                 if lhsTier != rhsTier { return lhsTier < rhsTier }
@@ -3420,6 +3594,24 @@ struct HomeIslandView: View {
                 return lhs.offset < rhs.offset
             }
             .map(\.element)
+    }
+
+    private func matchesCatalogAsset(_ asset: HomeIslandAsset) -> Bool {
+        guard selectedAssetCategory.contains(asset.id) else { return false }
+        switch catalogScope {
+        case .all: break
+        case .favorites:
+            guard catalogPreferences.favoriteIDs.contains(asset.id) else { return false }
+        case .recent:
+            guard catalogPreferences.recentIDs.contains(asset.id) else { return false }
+        }
+        let family = HomeIslandAssetCatalog.family(containing: asset.id)
+        let variant = family?.variants.first { $0.assetID == asset.id }
+        return HomeIslandCatalogSearch.matches(
+            query: catalogQuery,
+            names: [asset.title, asset.titleKey, family?.title ?? "",
+                    family?.titleKey ?? "", variant?.name ?? "", variant?.nameKey ?? ""]
+        )
     }
 
     /// One slot on the shelf. A prop that comes in several occupies a single
@@ -3459,16 +3651,18 @@ struct HomeIslandView: View {
         of family: HomeIslandAssetFamily,
         fallback: HomeIslandAsset
     ) -> HomeIslandAsset {
-        guard let chosen = familySelection[family.id],
+        guard catalogScope != .recent,
+              let chosen = familySelection[family.id],
               family.assetIDs.contains(chosen),
-              let asset = HomeIslandAssetCatalog.asset(id: chosen)
+              let asset = HomeIslandAssetCatalog.asset(id: chosen),
+              matchesCatalogAsset(asset)
         else { return fallback }
         return asset
     }
 
     private var expandedFamily: HomeIslandAssetFamily? {
         guard let expandedFamilyID else { return nil }
-        return HomeIslandAssetCatalog.families.first { $0.id == expandedFamilyID }
+        return visibleShelfEntries.first { $0.family?.id == expandedFamilyID }?.family
     }
 
     /// The chooser row. It opens above the shelf rather than as a popover
@@ -3640,6 +3834,7 @@ struct HomeIslandView: View {
                     placementLimit: placementLimit
                 )
             )
+            .modifier(HomeIslandCatalogFavoriteModifier(assetID: asset.id, preferences: catalogPreferences))
         }
     }
 
@@ -4704,6 +4899,21 @@ private struct HomeUtilityCatcherShape: Shape {
         var path = Path(rect)
         if !cutOut.isNull, !cutOut.isEmpty {
             path.addRect(cutOut)
+        }
+        return path
+    }
+}
+
+private struct HomeIslandPhotoThirdsGuide: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        for fraction in [CGFloat(1) / 3, CGFloat(2) / 3] {
+            let x = rect.minX + rect.width * fraction
+            let y = rect.minY + rect.height * fraction
+            path.move(to: CGPoint(x: x, y: rect.minY))
+            path.addLine(to: CGPoint(x: x, y: rect.maxY))
+            path.move(to: CGPoint(x: rect.minX, y: y))
+            path.addLine(to: CGPoint(x: rect.maxX, y: y))
         }
         return path
     }

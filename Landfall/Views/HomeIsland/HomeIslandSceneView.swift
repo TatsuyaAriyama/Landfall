@@ -13,6 +13,9 @@ enum HomeIslandCameraAction: Equatable {
     case moveRight
     case zoomIn
     case zoomOut
+    case frameIsland
+    case frameNavigator
+    case frameJetty
 }
 
 struct HomeIslandCameraRequest: Equatable {
@@ -331,6 +334,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
     var cameraExposureOffset: Float
     /// 設定で選んだ島の明るさ(EV)。歩いていても写真モードでも土台になる。
     var islandExposureOffset: Float = 0
+    var placementAssistanceEnabled = false
     var cameraInteractionLocked: Bool
     /// A visible overlay can leave the world as a live backdrop at lower cost.
     var rendersThrottled = false
@@ -493,6 +497,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
         private var moveDragPlacementID: UUID?
         private var moveDragLastGroundPoint: SCNVector3?
         private var moveDragPosition: SCNVector3?
+        private var moveDragSnapPreview: HomeIslandPlacementSnap.Pose?
+        private var placementGuideNode: SCNNode?
         private var selectionMoveBlocked = false
         private var selectionMovePanActive = false
         private var selectionMoveTouchPlacementID: UUID?
@@ -1402,6 +1408,20 @@ struct HomeIslandSceneView: UIViewRepresentable {
 
         func update(owner: HomeIslandSceneView) {
             self.owner = owner
+            if owner.mode != .edit || !owner.placementAssistanceEnabled || owner.cameraInteractionLocked {
+                clearPlacementGuides()
+            }
+            if !owner.placementAssistanceEnabled, moveDragSnapPreview != nil {
+                moveDragSnapPreview = nil
+                if let id = moveDragPlacementID, let raw = moveDragPosition,
+                   let node = placementNodes[id],
+                   let placement = owner.store.placements.first(where: { $0.id == id }) {
+                    node.position.x = raw.x
+                    node.position.z = raw.z
+                    node.eulerAngles.y = placement.transform.yaw
+                    restSurfaceGuests(draggedHost: placement, at: node.position)
+                }
+            }
             setRenderingActive(owner.renderingActive)
             let framesPerSecond = owner.rendersThrottled
                 ? 20
@@ -2126,6 +2146,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     among: placements,
                     excluding: placement.id
                 )
+            HomeIslandContactShadow.update(on: node, groundY: HomeIslandMetrics.surfaceY)
         }
 
         /// Re-stand everything that rests on a surface, reading the dragged
@@ -2182,6 +2203,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
                         resourceName: placement.assetID
                     ) else { continue }
                     loaded.name = "home-placement:\(placement.id.uuidString)"
+                    HomeIslandContactShadow.install(on: loaded, assetID: placement.assetID)
                     if placement.assetID == "wooden_jetty" {
                         installJettyCollision(on: loaded)
                     }
@@ -2194,6 +2216,11 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     placement.transform.apply(to: node)
                     node.position.x = moveDragPosition.x
                     node.position.z = moveDragPosition.z
+                    if let preview = moveDragSnapPreview {
+                        node.position.x = preview.x
+                        node.position.z = preview.z
+                        node.eulerAngles.y = preview.yaw
+                    }
                 } else {
                     placement.transform.apply(to: node)
                 }
@@ -2949,11 +2976,17 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 // spot used to report the same thing, which read as "you may
                 // not overlap that" even though overlap is always allowed.
                 let atLimit = !owner.store.canAdd(assetID: assetID)
+                let initial = HomeIslandTransform(
+                    x: point.x, z: point.z, yaw: 0,
+                    scale: HomeIslandAssetCatalog.asset(id: assetID)?.defaultScale ?? 1
+                )
+                let snapped = assistedPlacement(initial, assetID: assetID, excluding: nil)
                 guard let placementID = owner.store.add(
                     assetID: assetID,
-                    x: point.x,
-                    z: point.z,
-                    playerLevel: owner.playerLevel
+                    x: snapped.pose.x,
+                    z: snapped.pose.z,
+                    playerLevel: owner.playerLevel,
+                    yaw: snapped.pose.yaw == 0 ? nil : snapped.pose.yaw
                 ) else {
                     if atLimit {
                         owner.onPlacementRejected(.limitReached)
@@ -3649,11 +3682,14 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     transform.z
                 )
                 moveDragPosition = worldPosition
-                node.position.x = worldPosition.x
-                node.position.z = worldPosition.z
-                node.eulerAngles.y = transform.yaw
+                let snapped = assistedPlacement(transform, assetID: selected.assetID, excluding: selected.id)
+                moveDragSnapPreview = snapped.pose
+                updatePlacementGuides(snapped.guides)
+                node.position.x = snapped.pose.x
+                node.position.z = snapped.pose.z
+                node.eulerAngles.y = snapped.pose.yaw
                 liftOntoSurface(node, placement: selected, among: owner.store.placements)
-                restSurfaceGuests(draggedHost: selected, at: worldPosition)
+                restSurfaceGuests(draggedHost: selected, at: node.position)
                 view.setNeedsDisplay()
             case .ended:
                 // Fall back to the node's own previewed position: losing the
@@ -3673,7 +3709,12 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     clearSelectionMoveDrag()
                     return
                 }
-                guard owner.store.moveSelected(x: position.x, z: position.z) else {
+                let preview = moveDragSnapPreview
+                guard owner.store.moveSelected(
+                    x: preview?.x ?? position.x,
+                    z: preview?.z ?? position.z,
+                    yaw: preview?.yaw
+                ) else {
                     selected.transform.apply(to: node)
                     clearSelectionMoveDrag()
                     owner.onPlacementRejected(.reserved)
@@ -3728,6 +3769,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
         }
 
         private func clearSelectionMoveDrag() {
+            clearPlacementGuides()
+            moveDragSnapPreview = nil
             moveDragPlacementID = nil
             moveDragLastGroundPoint = nil
             moveDragPosition = nil
@@ -3760,6 +3803,8 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 )
             }
             self.moveDragPlacementID = nil
+            moveDragSnapPreview = nil
+            clearPlacementGuides()
             moveDragLastGroundPoint = nil
             moveDragPosition = nil
             selectionMovePanActive = false
@@ -3771,6 +3816,66 @@ struct HomeIslandSceneView: UIViewRepresentable {
                     onMoveBlockedChanged(false)
                 }
             }
+        }
+
+        private func assistedPlacement(
+            _ transform: HomeIslandTransform,
+            assetID: String,
+            excluding id: UUID?
+        ) -> HomeIslandPlacementSnap.Result {
+            HomeIslandPlacementSnap.resolve(
+                .init(x: transform.x, z: transform.z, yaw: transform.yaw),
+                assetID: assetID,
+                excluding: id,
+                neighbors: owner.store.placements.map {
+                    .init(id: $0.id, assetID: $0.assetID,
+                          pose: .init(x: $0.transform.x, z: $0.transform.z, yaw: $0.transform.yaw))
+                },
+                enabled: owner.placementAssistanceEnabled && owner.mode == .edit,
+                isValid: { candidate in
+                    guard let valid = self.owner.store.validTransform(
+                        assetID: assetID, x: candidate.x, z: candidate.z,
+                        yaw: candidate.yaw, scale: transform.scale, excluding: id,
+                        requireValidCoastPoint: assetID == "wooden_jetty"
+                    ) else { return false }
+                    return hypot(valid.x - candidate.x, valid.z - candidate.z) < 0.001
+                }
+            )
+        }
+
+        private func clearPlacementGuides() {
+            placementGuideNode?.removeFromParentNode()
+            placementGuideNode = nil
+        }
+
+        private func updatePlacementGuides(_ guides: [HomeIslandPlacementSnap.Guide]) {
+            clearPlacementGuides()
+            guard owner.mode == .edit, owner.placementAssistanceEnabled,
+                  !guides.isEmpty, let root = view?.scene?.rootNode else { return }
+            let holder = SCNNode()
+            holder.name = "home-island-placement-guides"
+            let material = SCNMaterial()
+            material.lightingModel = .constant
+            material.diffuse.contents = UIColor(red: 0.24, green: 0.71, blue: 0.62, alpha: 0.82)
+            material.writesToDepthBuffer = false
+            for guide in guides {
+                let delta = guide.to - guide.from
+                let length = simd_length(delta)
+                guard length > 0.05 else { continue }
+                let line = SCNBox(width: 0.025, height: 0.012, length: CGFloat(length), chamferRadius: 0)
+                line.firstMaterial = material
+                let node = SCNNode(geometry: line)
+                node.position = SCNVector3(
+                    (guide.from.x + guide.to.x) * 0.5,
+                    HomeIslandMetrics.surfaceY + 0.065,
+                    (guide.from.y + guide.to.y) * 0.5
+                )
+                node.eulerAngles.y = atan2(delta.x, delta.y)
+                node.castsShadow = false
+                holder.addChildNode(node)
+            }
+            root.addChildNode(holder)
+            placementGuideNode = holder
         }
 
         private func setSelectionMoveBlocked(_ blocked: Bool) {
@@ -3969,6 +4074,7 @@ struct HomeIslandSceneView: UIViewRepresentable {
             azimuth = nearestEquivalentAzimuth(to: 0.72)
             elevation = owner.mode == .camera ? 0.38 : 0.42
             radius = owner.mode == .camera ? 25.5 : 30.8
+            camera?.camera?.fieldOfView = 48
             cameraTarget?.position = SCNVector3(0, 0.34, 0)
             guard animated else {
                 updateCamera()
@@ -4004,7 +4110,58 @@ struct HomeIslandSceneView: UIViewRepresentable {
                 zoomCamera(by: 0.78)
             case .zoomOut:
                 zoomCamera(by: 1.28)
+            case .frameIsland, .frameNavigator, .frameJetty:
+                guard owner.mode == .camera else { return }
+                framePhotoSubject(request.action)
             }
+        }
+
+        private func framePhotoSubject(_ action: HomeIslandCameraAction) {
+            guard let cameraTarget else { return }
+            let subjectRadius: Float
+            switch action {
+            case .frameIsland:
+                cameraTarget.position = SCNVector3(0, 0.8, owner.islandScale)
+                azimuth = nearestEquivalentAzimuth(to: 0.72)
+                // An overview looks down far enough that the finite ocean
+                // mesh cannot become an artificial triangular horizon.
+                elevation = 1.24
+                subjectRadius = 14.8 * owner.islandScale
+            case .frameNavigator:
+                guard let navigator = navigatorNode else { return }
+                let position = navigator.presentation.position
+                cameraTarget.position = SCNVector3(position.x, position.y + 0.72, position.z)
+                azimuth = nearestEquivalentAzimuth(to: .pi / 2 - navigator.eulerAngles.y + 0.32)
+                elevation = 0.18
+                subjectRadius = 1.8
+            case .frameJetty:
+                let midpoint = (
+                    HomeIslandMetrics.jettyDeckSeawardEndLocalZ
+                        + HomeIslandMetrics.jettyDeckLandwardEndLocalZ
+                ) / 2
+                let position = arrivalJettyWalkSurface?.worldPosition(localX: 0, localZ: midpoint)
+                    ?? HomeIslandMetrics.arrivalJettyPosition(islandScale: owner.islandScale)
+                cameraTarget.position = SCNVector3(position.x, HomeIslandMetrics.surfaceY + 0.2, position.z)
+                azimuth = nearestEquivalentAzimuth(to: 0.72)
+                elevation = 0.38
+                subjectRadius = 4.7
+            default:
+                return
+            }
+            let size = view?.bounds.size ?? CGSize(width: 1, height: 1)
+            let lens = HomeIslandPhotoFraming.lens(
+                subjectRadius: subjectRadius,
+                aspectRatio: Float(size.width / max(size.height, 1))
+            )
+            radius = lens.radius
+            // Set lens and pose in one transaction so a preset never flashes
+            // its new field of view before the camera reaches the new frame.
+            SCNTransaction.begin()
+            SCNTransaction.animationDuration = UIAccessibility.isReduceMotionEnabled ? 0 : 0.42
+            SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            camera?.camera?.fieldOfView = CGFloat(lens.horizontalFieldOfView)
+            updateCamera()
+            SCNTransaction.commit()
         }
 
         /// SCNViewだけを撮るため、SwiftUI側のシャッターやガイドは画像に入らない。
@@ -6078,16 +6235,9 @@ struct HomeIslandSceneView: UIViewRepresentable {
             guard let scene = view?.scene, let foundationNode else {
                 return HomeIslandGroundSample(height: HomeIslandMetrics.surfaceY)
             }
-            let options: [String: Any] = [
-                SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.all.rawValue,
-                SCNHitTestOption.backFaceCulling.rawValue: false,
-            ]
-            let hits = scene.rootNode.hitTestWithSegment(
-                from: SCNVector3(x, 30, z),
-                to: SCNVector3(x, -10, z),
-                options: options
-            )
-            for hit in hits where isDescendant(hit.node, of: foundationNode) {
+            if let hit = HomeIslandFoundationRaycast.sample(
+                in: foundationNode, worldRoot: scene.rootNode, x: x, z: z
+            ) {
                 return HomeIslandGroundSample(
                     height: hit.worldCoordinates.y,
                     normal: SIMD3<Float>(
