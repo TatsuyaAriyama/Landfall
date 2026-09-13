@@ -101,7 +101,17 @@ struct TraceView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     header
                     TimelineView(.periodic(from: .now, by: 60)) { context in
-                        WorkRecordWeeklySummaryView(sessions: sessions, now: max(context.date, Date()))
+                        WorkRecordWeeklySummaryView(
+                            sessions: sessions, now: max(context.date, Date()),
+                            selectedDay: selectedDay,
+                            onSelectDay: { day in
+                                let currentMonth = calendar.dateInterval(of: .month, for: today)!.start
+                                let targetMonth = calendar.dateInterval(of: .month, for: day)!.start
+                                monthOffset = calendar.dateComponents([.month], from: currentMonth, to: targetMonth).month ?? 0
+                                section = .calendar
+                                selectDay(day)
+                            }
+                        )
                     }
                     .padding(.top, 18)
                     sectionPicker

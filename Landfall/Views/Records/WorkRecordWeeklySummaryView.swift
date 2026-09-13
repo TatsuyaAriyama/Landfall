@@ -6,6 +6,8 @@ struct WorkRecordWeeklySummaryView: View {
     let sessions: [StudySession]
     var now: Date = Date()
     var calendar: Calendar = .current
+    var selectedDay: Date? = nil
+    var onSelectDay: ((Date) -> Void)? = nil
 
     private var summary: WorkRecordWeeklySummary.Summary {
         WorkRecordWeeklySummary.summarize(sessions.map {
@@ -43,6 +45,7 @@ struct WorkRecordWeeklySummaryView: View {
                     daysMetric(value)
                 }
             }
+            weeklyChart(value)
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: comparison(value))
                     .font(LFFont.copy(12))
@@ -61,27 +64,30 @@ struct WorkRecordWeeklySummaryView: View {
                     .fill(LFHomeFeatureStyle.outline)
                     .frame(height: 1)
                     .accessibilityHidden(true)
-                Text("Main activities this week")
-                    .font(LFFont.label(10))
-                    .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
-                ForEach(value.leadingItems) { item in
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text(verbatim: item.name ?? LF.text("Unassigned activity"))
-                                .lineLimit(2)
-                            Spacer(minLength: 0)
-                            Text(verbatim: Self.duration(item.seconds))
-                                .fixedSize()
+                DisclosureGroup {
+                    ForEach(value.leadingItems) { item in
+                        ViewThatFits(in: .horizontal) {
+                            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                Text(verbatim: item.name ?? LF.text("Unassigned activity"))
+                                    .lineLimit(2)
+                                Spacer(minLength: 0)
+                                Text(verbatim: Self.duration(item.seconds))
+                                    .fixedSize()
+                            }
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(verbatim: item.name ?? LF.text("Unassigned activity"))
+                                Text(verbatim: Self.duration(item.seconds))
+                                    .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                            }
                         }
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(verbatim: item.name ?? LF.text("Unassigned activity"))
-                            Text(verbatim: Self.duration(item.seconds))
-                                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
-                        }
+                        .font(LFFont.copy(12))
+                        .accessibilityElement(children: .combine)
                     }
-                    .font(LFFont.copy(12))
-                    .accessibilityElement(children: .combine)
+                } label: {
+                    Text("Main activities this week")
+                        .font(LFFont.label(12))
                 }
+                .tint(LFHomeFeatureStyle.ink)
             }
         }
         .foregroundStyle(LFHomeFeatureStyle.ink)
@@ -89,6 +95,68 @@ struct WorkRecordWeeklySummaryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .lfHomeFeatureCard(cornerRadius: 20)
         .accessibilityIdentifier("workRecordWeeklySummary")
+    }
+
+    /// The original island week chart, using the same seconds and cutoff as
+    /// the metrics above so short sessions and week boundaries stay consistent.
+    private func weeklyChart(_ value: WorkRecordWeeklySummary.Summary) -> some View {
+        let maximum = max(1, value.days.map(\.seconds).max() ?? 0)
+        return VStack(alignment: .trailing, spacing: 7) {
+            HStack(alignment: .bottom, spacing: 5) {
+                ForEach(value.days) { day in
+                    let isToday = calendar.isDate(day.date, inSameDayAs: now)
+                    let isSelected = calendar.isDate(day.date, inSameDayAs: selectedDay ?? now)
+                    let isFuture = day.date > calendar.startOfDay(for: now)
+                    Button {
+                        onSelectDay?(day.date)
+                    } label: {
+                        VStack(spacing: 6) {
+                            Text(verbatim: day.seconds > 0 ? shortDuration(day.seconds) : "")
+                                .font(LFFont.label(8))
+                                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .frame(height: 11)
+                            GeometryReader { proxy in
+                                VStack {
+                                    Spacer(minLength: 0)
+                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                        .fill(isToday ? Color(uiColor: VoyageSceneKit.returnOrange)
+                                              : LFHomeFeatureStyle.ink.opacity(day.seconds > 0 ? 0.72 : 0.10))
+                                        .frame(height: max(5, proxy.size.height * CGFloat(day.seconds) / CGFloat(maximum)))
+                                }
+                            }
+                            .frame(height: 78)
+                            Text(verbatim: day.date.formatted(.dateTime.weekday(.abbreviated)))
+                                .font(LFFont.label(9))
+                                .foregroundStyle(LFHomeFeatureStyle.ink.opacity(isSelected || isToday ? 1 : 0.48))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(LFHomeFeatureStyle.ink.opacity(isSelected ? 0.11 : 0)))
+                        }
+                        .padding(.vertical, 3)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(LFPressableButtonStyle())
+                    .disabled(isFuture || onSelectDay == nil)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(verbatim: "\(LF.dayWithWeekday(day.date)), \(Self.duration(day.seconds))"))
+                    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+                    .accessibilityHint(Text("Shows this day's work below the card"))
+                }
+            }
+            Text(verbatim: LF.format("%lld records", Int64(value.recordCount)))
+                .font(LFFont.label(10))
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+        }
+        .accessibilityIdentifier("workRecordWeekChart")
+    }
+
+    private func shortDuration(_ seconds: Int) -> String {
+        if seconds >= 3600 { return String(format: "%.1fh", Double(seconds) / 3600) }
+        if seconds >= 60 { return "\(seconds / 60)m" }
+        return "\(seconds)s"
     }
 
     private var title: some View {

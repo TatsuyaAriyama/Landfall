@@ -3893,9 +3893,15 @@ private struct HomeIslandPlayerStatsView: View {
                     .font(LFFont.label(12))
                     .foregroundStyle(panelInk)
                     TimelineView(.periodic(from: .now, by: 60)) { context in
-                        WorkRecordWeeklySummaryView(sessions: sessions, now: max(context.date, Date()))
+                        WorkRecordWeeklySummaryView(
+                            sessions: sessions, now: max(context.date, Date()),
+                            selectedDay: selectedDay,
+                            onSelectDay: {
+                                selectedDay = $0
+                                Haptics.tap(.light)
+                            }
+                        )
                     }
-                    weeklyChart
                 }
                 .transition(.opacity)
         }
@@ -3914,9 +3920,15 @@ private struct HomeIslandPlayerStatsView: View {
                     .font(LFFont.label(12))
                     .foregroundStyle(panelInk)
                     TimelineView(.periodic(from: .now, by: 60)) { context in
-                        WorkRecordWeeklySummaryView(sessions: sessions, now: max(context.date, Date()))
+                        WorkRecordWeeklySummaryView(
+                            sessions: sessions, now: max(context.date, Date()),
+                            selectedDay: selectedDay,
+                            onSelectDay: {
+                                selectedDay = $0
+                                Haptics.tap(.light)
+                            }
+                        )
                     }
-                    weeklyChart
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -3981,123 +3993,6 @@ private struct HomeIslandPlayerStatsView: View {
         )
     }
 
-    private var metricRow: some View {
-        HStack(spacing: 10) {
-            metricCard(
-                title: "This week",
-                value: LF.duration(minutes: weekTotalMinutes),
-                symbol: "calendar"
-            )
-            metricCard(
-                title: "Total time",
-                value: LF.duration(minutes: totalMinutes),
-                symbol: "hourglass"
-            )
-        }
-    }
-
-    private func metricCard(title: LocalizedStringKey, value: String, symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: symbol)
-                .font(LFFont.label(10))
-                .foregroundStyle(panelInk.opacity(0.50))
-
-            Text(verbatim: value)
-                .font(LFFont.number(19))
-                .foregroundStyle(panelInk)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(13)
-        .background(panelInk.opacity(0.055), in: RoundedRectangle(cornerRadius: 17))
-    }
-
-    private var weeklyChart: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack {
-                Text("Weekly activity")
-                    .font(LFFont.copy(14))
-                    .foregroundStyle(panelInk)
-                Spacer()
-                Text(verbatim: LF.format("%lld records", Int64(weekSessionCount)))
-                    .font(LFFont.label(10))
-                    .foregroundStyle(panelInk.opacity(0.42))
-            }
-
-            HStack(alignment: .bottom, spacing: 5) {
-                ForEach(weekDays) { day in
-                    let isSelected = isSelectedDay(day)
-                    Button {
-                        selectedDay = day.date
-                        Haptics.tap(.light)
-                    } label: {
-                        VStack(spacing: 6) {
-                            Text(verbatim: day.minutes > 0 ? shortMinutes(day.minutes) : "")
-                                .font(LFFont.label(8))
-                                .foregroundStyle(panelInk.opacity(0.48))
-                                .frame(height: 11)
-
-                            GeometryReader { proxy in
-                                VStack {
-                                    Spacer(minLength: 0)
-                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                        .fill(
-                                            day.isToday
-                                                ? Color(uiColor: VoyageSceneKit.returnOrange)
-                                                : panelInk.opacity(day.minutes > 0 ? 0.72 : 0.10)
-                                        )
-                                        .frame(
-                                            height: max(
-                                                5,
-                                                proxy.size.height * CGFloat(day.minutes) / CGFloat(maxWeekdayMinutes)
-                                            )
-                                        )
-                                }
-                            }
-                            .frame(height: 78)
-
-                            // 選んだ日の印は曜日の名前だけに付ける。棒の背後を
-                            // 塗ると柱が一本太って見え、今日の橙とも張り合う。
-                            Text(verbatim: day.label)
-                                .font(LFFont.label(9))
-                                .foregroundStyle(isSelected || day.isToday ? panelInk : panelInk.opacity(0.48))
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(
-                                    Capsule().fill(panelInk.opacity(isSelected ? 0.11 : 0))
-                                )
-                        }
-                        .padding(.vertical, 3)
-                        .frame(maxWidth: .infinity)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(LFPressableButtonStyle())
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(
-                        Text(verbatim: "\(day.fullDate), \(LF.duration(minutes: day.minutes))")
-                    )
-                    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-                    .accessibilityHint(Text("Shows this day's work below the card"))
-                }
-            }
-
-            if weekTotalMinutes == 0 {
-                Text("No work recorded this week.")
-                    .font(LFFont.label(11))
-                    .foregroundStyle(panelInk.opacity(0.44))
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
-        }
-        .padding(14)
-        .background(Color.white.opacity(0.52), in: RoundedRectangle(cornerRadius: 20))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(panelInk.opacity(0.09), lineWidth: 1)
-        )
-    }
-
     private var panelGlass: Color {
         Color.white.opacity(0.86)
     }
@@ -4119,64 +4014,6 @@ private struct HomeIslandPlayerStatsView: View {
     private var totalMinutes: Int {
         sessions.reduce(0) { $0 + max(0, $1.minutes) }
     }
-
-    private var weekTotalMinutes: Int {
-        weekDays.reduce(0) { $0 + $1.minutes }
-    }
-
-    private var weekSessionCount: Int {
-        guard let interval = Self.calendar.dateInterval(of: .weekOfYear, for: .now) else { return 0 }
-        return sessions.filter { interval.contains($0.date) && $0.minutes > 0 }.count
-    }
-
-    private func isSelectedDay(_ day: HomeIslandDailyMinutes) -> Bool {
-        guard let selectedDay else { return day.isToday }
-        return Self.calendar.isDate(day.date, inSameDayAs: selectedDay)
-    }
-
-    private var maxWeekdayMinutes: Int {
-        max(1, weekDays.map(\.minutes).max() ?? 0)
-    }
-
-    private var weekDays: [HomeIslandDailyMinutes] {
-        let now = Date()
-        guard let interval = Self.calendar.dateInterval(of: .weekOfYear, for: now) else { return [] }
-
-        return (0..<7).compactMap { offset in
-            guard let date = Self.calendar.date(byAdding: .day, value: offset, to: interval.start),
-                  let nextDate = Self.calendar.date(byAdding: .day, value: 1, to: date)
-            else { return nil }
-
-            let minutes = sessions.reduce(0) { total, session in
-                guard session.date >= date, session.date < nextDate else { return total }
-                return total + max(0, session.minutes)
-            }
-            return HomeIslandDailyMinutes(
-                date: date,
-                label: Self.weekdayFormatter.string(from: date),
-                fullDate: LF.dayWithWeekday(date),
-                minutes: minutes,
-                isToday: Self.calendar.isDate(date, inSameDayAs: now)
-            )
-        }
-    }
-
-    private func shortMinutes(_ minutes: Int) -> String {
-        if minutes >= 60 { return String(format: "%.1fh", Double(minutes) / 60) }
-        return "\(minutes)m"
-    }
-
-    private static var calendar: Calendar {
-        Calendar.autoupdatingCurrent
-    }
-
-    private static let weekdayFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = .autoupdatingCurrent
-        formatter.calendar = .autoupdatingCurrent
-        formatter.setLocalizedDateFormatFromTemplate("EEE")
-        return formatter
-    }()
 }
 
 /// 週グラフで選んだ日に並べる一件ぶん。
@@ -4187,16 +4024,6 @@ private struct HomeIslandRecordEntry: Identifiable {
     let note: String?
     let style: TileStyle
     let symbol: TileSymbol
-}
-
-private struct HomeIslandDailyMinutes: Identifiable {
-    let date: Date
-    let label: String
-    let fullDate: String
-    let minutes: Int
-    let isToday: Bool
-
-    var id: Date { date }
 }
 
 private struct HomeIslandMusicPanel: View {
