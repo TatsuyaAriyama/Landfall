@@ -171,7 +171,8 @@ enum TutorialFirstVoyageRecorder {
             date: date,
             minutes: minutes,
             note: nil,
-            item: nil
+            item: nil,
+            timingJSON: KeelMiraWidgetStore.timing(at: date)?.json
         )
         session.uuid = sessionID
         context.insert(session)

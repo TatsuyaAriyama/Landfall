@@ -187,7 +187,7 @@ service cloud.firestore {
     function validPrivateSession(data, documentId) {
       return validUUID(documentId)
         && data.keys().hasOnly([
-          'date', 'minutes', 'extraSeconds', 'note', 'itemUUID',
+          'date', 'minutes', 'extraSeconds', 'note', 'itemUUID', 'timingJSON',
           'itemName', 'itemStyle', 'itemSymbol', 'updatedAt'
         ])
         && data.keys().hasAll(['date', 'minutes'])
@@ -201,6 +201,8 @@ service cloud.firestore {
             && data.extraSeconds <= 59))
         && (data.minutes > 0
           || ('extraSeconds' in data && data.extraSeconds > 0))
+        && (!('timingJSON' in data)
+          || (data.timingJSON is string && data.timingJSON.size() <= 131072))
         && (!('note' in data)
           || (data.note is string && data.note.size() <= 500))
         && (!('itemUUID' in data) || validUUID(data.itemUUID))

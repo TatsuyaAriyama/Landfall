@@ -38,6 +38,7 @@ docID = 項目の UUID 文字列(大文字ハイフン形式。Web で新規作�
 | `date` | timestamp | 作業開始日時。日への帰属はこの日付 |
 | `minutes` | number(int) | 分。0〜6000。`extraSeconds` と合わせて1秒以上必須 |
 | `extraSeconds` | number(int)? | 分未満の端数。0〜59。旧クライアントでは省略 |
+| `timingJSON` | string? | 計測した開始・終了・休憩区間のJSON。最大131072 bytes。古い記録は省略。集計日付・獲得時間とは独立し、時刻を推測で補完しない |
 | `note` | string? | ひとこと。上限500文字 |
 | `itemUUID` | string? | 紐づく項目の docID |
 | `updatedAt` | timestamp? | LWW |

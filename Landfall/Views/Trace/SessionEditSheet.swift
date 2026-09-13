@@ -44,7 +44,7 @@ struct SessionEditSheet: View {
             }
             .padding(.top, 10)
 
-            Stepper(value: $minutes, in: 1...600, step: 5) {
+            Stepper(value: $minutes, in: (session.extraSeconds > 0 ? 0 : 1)...WorkRecordPolicy.maximumSessionMinutes, step: 5) {
                 Text("\(minutes) min")
                     .font(LFFont.copy(17))
                     .monospacedDigit()
@@ -132,11 +132,19 @@ struct SessionEditSheet: View {
     private var saveButton: some View {
         Button {
             noteFocused = false
-            session.minutes = min(WorkRecordPolicy.maximumSessionMinutes, max(1, minutes))
+            let originalMinutes = session.minutes
+            let originalNote = session.note
+            let originalTiming = session.timingJSON
+            let revisedMinutes = min(WorkRecordPolicy.maximumSessionMinutes, max(session.extraSeconds > 0 ? 0 : 1, minutes))
+            if revisedMinutes != originalMinutes { session.timingJSON = nil }
+            session.minutes = revisedMinutes
             session.note = WorkRecordPolicy.normalizedNote(note)
             do {
                 try modelContext.save()
             } catch {
+                session.minutes = originalMinutes
+                session.note = originalNote
+                session.timingJSON = originalTiming
                 return
             }
             SyncService.shared.publishPersistedSessionChanges([session], context: modelContext)

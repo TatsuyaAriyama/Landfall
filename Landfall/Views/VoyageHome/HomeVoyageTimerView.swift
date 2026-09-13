@@ -266,14 +266,15 @@ private enum HomeVoyageRecorder {
         note: String?,
         context: ModelContext
     ) throws -> HomeVoyageCompletion {
-        let minutes = snapshot.creditedMinutes()
-        let savedNote = WorkRecordPolicy.normalizedNote(note)
         let date = Date()
+        let minutes = snapshot.creditedMinutes(at: date)
+        let savedNote = WorkRecordPolicy.normalizedNote(note)
         let session = StudySession(
             date: date,
             minutes: minutes,
             note: savedNote,
-            item: item
+            item: item,
+            timingJSON: KeelMiraWidgetStore.timing(at: date)?.json
         )
 
         context.insert(session)
@@ -1526,6 +1527,7 @@ struct HomeVoyageTimerView: View {
     }
 
     private func togglePomodoro() {
+        KeelMiraWidgetStore.preservePomodoroBreaks()
         if mode == .free {
             pomodoroStartElapsed = Double(snapshot.elapsedSeconds())
             timerMode = HomeTimerMode.pomodoro.rawValue
@@ -1538,7 +1540,6 @@ struct HomeVoyageTimerView: View {
 
     private func toggleBreak() {
         let date = Date()
-        let now = date.timeIntervalSince1970
         guard VoyageTimerMath.isActive(
             startedAt: timerStart,
             itemID: timerItemID,
@@ -1547,30 +1548,14 @@ struct HomeVoyageTimerView: View {
             StudyTimer.clearAll()
             return
         }
-        let accumulated = VoyageTimerMath.sanitizedBreakSeconds(
-            breakSeconds,
-            startedAt: timerStart,
-            at: date
-        )
-        if VoyageTimerMath.isResting(
-            startedAt: timerStart,
-            breakStartedAt: breakStartedAt,
-            at: date
-        ) {
-            breakSeconds = min(
-                max(0, now - timerStart),
-                accumulated + max(0, now - breakStartedAt)
-            )
-            breakStartedAt = 0
-            if isVoyageResting {
-                HomeVoyageAudio.shared.stop()
-            } else {
-                playVoyageAudio(soundMode)
-            }
-        } else {
-            breakSeconds = accumulated
-            breakStartedAt = now
+        KeelMiraWidgetStore.toggleBreak(at: date)
+        let current = KeelMiraWidgetStore.timer
+        breakSeconds = current.breakSeconds
+        breakStartedAt = current.breakStartedAt
+        if isVoyageResting {
             HomeVoyageAudio.shared.stop()
+        } else {
+            playVoyageAudio(soundMode)
         }
         WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
         Haptics.tap(.medium)
@@ -2070,7 +2055,6 @@ struct HomeVoyageTimerChip: View {
 
     private func toggleBreak() {
         let date = Date()
-        let now = date.timeIntervalSince1970
         guard VoyageTimerMath.isActive(
             startedAt: timerStart,
             itemID: timerItemID,
@@ -2079,30 +2063,14 @@ struct HomeVoyageTimerChip: View {
             StudyTimer.clearAll()
             return
         }
-        let accumulated = VoyageTimerMath.sanitizedBreakSeconds(
-            breakSeconds,
-            startedAt: timerStart,
-            at: date
-        )
-        if VoyageTimerMath.isResting(
-            startedAt: timerStart,
-            breakStartedAt: breakStartedAt,
-            at: date
-        ) {
-            breakSeconds = min(
-                max(0, now - timerStart),
-                accumulated + max(0, now - breakStartedAt)
-            )
-            breakStartedAt = 0
-            if isEffectivelyResting {
-                HomeVoyageAudio.shared.stop()
-            } else {
-                HomeVoyageAudio.shared.play(soundMode)
-            }
-        } else {
-            breakSeconds = accumulated
-            breakStartedAt = now
+        KeelMiraWidgetStore.toggleBreak(at: date)
+        let current = KeelMiraWidgetStore.timer
+        breakSeconds = current.breakSeconds
+        breakStartedAt = current.breakStartedAt
+        if isEffectivelyResting {
             HomeVoyageAudio.shared.stop()
+        } else {
+            HomeVoyageAudio.shared.play(soundMode)
         }
         WidgetCenter.shared.reloadTimelines(ofKind: KeelMiraWidgetStore.widgetKind)
         Haptics.tap(.medium)

@@ -24,6 +24,8 @@ struct TraceView: View {
     @Query(sort: \StudyItem.sortOrder) private var items: [StudyItem]
 
     private let onClose: (() -> Void)?
+    private let initialDay: Date?
+    private let readOnly: Bool
     private let calendar = Calendar.current
 
     @State private var section: Section = .calendar
@@ -37,8 +39,10 @@ struct TraceView: View {
     @State private var pendingDelete: StudySession?
     @FocusState private var dayNoteFocused: Bool
 
-    init(onClose: (() -> Void)? = nil) {
+    init(onClose: (() -> Void)? = nil, initialDay: Date? = nil, readOnly: Bool = false) {
         self.onClose = onClose
+        self.initialDay = initialDay
+        self.readOnly = readOnly
     }
 
     private var displayedDate: Date {
@@ -68,7 +72,7 @@ struct TraceView: View {
     }
 
     private var canEditSelectedReflection: Bool {
-        StudyDayStore.canEditComment(for: selectedDay, now: today, calendar: calendar)
+        !readOnly && StudyDayStore.canEditComment(for: selectedDay, now: today, calendar: calendar)
     }
 
     private var recordedDayStarts: Set<Date> {
@@ -96,6 +100,10 @@ struct TraceView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
                     header
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        WorkRecordWeeklySummaryView(sessions: sessions, now: max(context.date, Date()))
+                    }
+                    .padding(.top, 18)
                     sectionPicker
                         .padding(.top, 18)
 
@@ -140,10 +148,18 @@ struct TraceView: View {
         }
         .onAppear {
             today = Date()
-            if monthOffset == 0 {
+            if let initialDay, initialDay <= today {
+                selectedDay = calendar.startOfDay(for: initialDay)
+                let currentMonth = calendar.dateInterval(of: .month, for: today)!.start
+                let targetMonth = calendar.dateInterval(of: .month, for: initialDay)!.start
+                monthOffset = calendar.dateComponents([.month], from: currentMonth, to: targetMonth).month ?? 0
+            } else if monthOffset == 0 {
                 selectedDay = calendar.startOfDay(for: today)
             }
             loadDayNote()
+        }
+        .onChange(of: sessions.map { "\($0.uuid):\($0.updatedAt.timeIntervalSince1970)" }) { _, _ in
+            today = Date()
         }
         .onChange(of: selectedDayEntry?.note) { _, _ in
             if !dayNoteFocused { loadDayNote() }
@@ -444,17 +460,7 @@ struct TraceView: View {
                 }
             }
 
-            if selectedSessions.isEmpty {
-                Text(
-                    calendar.isDate(selectedDay, inSameDayAs: today)
-                        ? "No records yet today. The day is still ahead."
-                        : "No records this day. Rest is part of the voyage."
-                )
-                .font(LFFont.copy(15))
-                .foregroundStyle(LFColor.ink.opacity(0.5))
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 2)
-            } else {
+            if !selectedSessions.isEmpty {
                 if selectedDayEntry != nil && canEditSelectedReflection {
                     TextField("Reflections on this day", text: $dayNoteDraft)
                         .font(LFFont.copy(15))
@@ -491,79 +497,20 @@ struct TraceView: View {
                     }
                 }
 
-                VStack(spacing: 0) {
-                    ForEach(Array(selectedSessions.enumerated()), id: \.element.persistentModelID) {
-                        index,
-                        session in
-                        if index > 0 {
-                            Rectangle()
-                                .fill(LFColor.ink.opacity(0.08))
-                                .frame(height: 1)
-                        }
-                        sessionRow(session)
-                    }
-                }
             }
+            let timeline = WorkRecordTimelineView.projection(sessions: sessions, day: selectedDay)
+            if timeline.timed.contains(where: { $0.continuesFromPreviousDay || $0.continuesToNextDay }) {
+                Text("Totals follow the saved date. Overnight work is shown on each day of the timeline.")
+                    .font(LFFont.label(11))
+                    .foregroundStyle(LFColor.ink.opacity(0.6))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            WorkRecordTimelineView(
+                sessions: sessions, day: selectedDay,
+                onSelect: readOnly ? nil : { editingSession = $0 },
+                onDelete: readOnly ? nil : { pendingDelete = $0 }
+            )
         }
-    }
-
-    private func sessionRow(_ session: StudySession) -> some View {
-        HStack(spacing: 12) {
-            Button {
-                editingSession = session
-            } label: {
-                HStack(spacing: 12) {
-                    if let item = session.item {
-                        ItemTileArt(item: item)
-                            .frame(width: 42, height: 42)
-                    }
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 7) {
-                            Group {
-                                if let name = session.item?.name {
-                                    Text(verbatim: name)
-                                } else {
-                                    Text("No item")
-                                }
-                            }
-                            .font(LFFont.copy(15))
-                            .foregroundStyle(LFColor.ink)
-
-                            Text(LF.duration(minutes: session.minutes))
-                                .font(LFFont.label(13))
-                                .monospacedDigit()
-                                .foregroundStyle(LFColor.returnOrange)
-                        }
-
-                        if let note = session.note, !note.isEmpty {
-                            Text(verbatim: note)
-                                .font(LFFont.label(13))
-                                .foregroundStyle(LFColor.ink.opacity(0.6))
-                                .lineLimit(2)
-                        }
-                    }
-
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                pendingDelete = session
-                Haptics.tap(.light)
-            } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(LFColor.deepRust.opacity(0.72))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Delete record"))
-        }
-        .padding(.vertical, 11)
     }
 
     // MARK: - 学びの索引
@@ -855,11 +802,13 @@ struct TraceView: View {
     }
 
     private func commitDayNote() {
+        guard !readOnly else { return }
         guard selectedDayEntry != nil, canEditSelectedReflection else { return }
         StudyDayStore.setComment(dayNoteDraft, for: selectedDay, context: modelContext)
     }
 
     private func deleteSession(_ session: StudySession) {
+        guard !readOnly else { return }
         let date = session.date
         SyncService.shared.delete(session)
         modelContext.delete(session)

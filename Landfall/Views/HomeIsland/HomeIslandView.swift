@@ -214,6 +214,7 @@ struct HomeIslandView: View {
     @State private var selectedRecordDay: Date?
     @State private var showingMusicPicker = false
     @State private var showingSettings = false
+    @State private var showingWorkRecords = false
     @State private var showingHarborPanel = false
     @State private var privateChatExpanded = false
     /// 泡ひとつまで畳んだチャット。足元のHUDはその分だけ下に戻る。
@@ -335,6 +336,7 @@ struct HomeIslandView: View {
             || showingIslandBrightness
             || showingMusicPicker
             || showingSettings
+            || showingWorkRecords
             || showingIslandShare
             || showingCaptureError
             || showingSelectionActions
@@ -352,6 +354,7 @@ struct HomeIslandView: View {
             && activeInterior == nil
             && !showingIslandShare
             && !showingSettings
+            && !showingWorkRecords
             && !showingHarborPanel
     }
 
@@ -788,6 +791,24 @@ struct HomeIslandView: View {
                 .zIndex(100)
             }
 
+            if showingWorkRecords {
+                Group {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.environment["LANDFALL_RECORDS_PREVIEW"] == "1" {
+                        WorkRecordsPreview(onClose: { showingWorkRecords = false })
+                    } else {
+                        TraceView(onClose: { showingWorkRecords = false }, initialDay: selectedRecordDay)
+                    }
+                    #else
+                    TraceView(onClose: { showingWorkRecords = false }, initialDay: selectedRecordDay)
+                    #endif
+                }
+                .environment(\.colorScheme, .light)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity)
+                .zIndex(105)
+            }
+
             if showingHarborPanel {
                 HomeIslandHarborPanel(
                     onPrivateIslandSelected: onPrivateIslandSelected,
@@ -809,6 +830,13 @@ struct HomeIslandView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["LANDFALL_RECORDS_PREVIEW"] == "1" {
+                showingWorkRecords = true
+            }
+            #endif
+        }
         // When the island is the app home, hiding the status bar briefly makes
         // SwiftUI report a zero top safe area after leaving camera mode. Keep
         // the home status region stable; standalone island photography keeps
@@ -1604,6 +1632,7 @@ struct HomeIslandView: View {
     @ViewBuilder
     private var homeUtilityPanel: some View {
         if let utility = activeUtility {
+            GeometryReader { panelGeometry in
             ZStack(alignment: .topTrailing) {
                 // A transparent catcher, not a dimming scrim: tapping the world
                 // closes the panel without the island ever being covered.
@@ -1634,6 +1663,10 @@ struct HomeIslandView: View {
                 }
                 .ignoresSafeArea()
 
+                HomeUtilityPanelViewport(
+                    scrolls: utility == .player,
+                    maximumHeight: max(240, panelGeometry.size.height - panelGeometry.safeAreaInsets.top - panelGeometry.safeAreaInsets.bottom - 100)
+                ) {
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(spacing: 0) {
                         HStack(spacing: 8) {
@@ -1710,14 +1743,16 @@ struct HomeIslandView: View {
                     // 別の日の記録が同時に出ていても読む相手がいない。
                     if utility == .player, !editingPlayerProfile {
                         selectedDayRecords
-                            .allowsHitTesting(false)
                     }
                 }
                 .frame(width: utilityPanelWidth(for: utility), alignment: .leading)
+                }
+                .frame(width: utilityPanelWidth(for: utility), alignment: .top)
                 .padding(.trailing, compactTopHUD ? 8 : 12)
                 .padding(.top, 62)
                 .transition(.scale(scale: 0.94, anchor: .topTrailing).combined(with: .opacity))
                 .environment(\.colorScheme, .light)
+            }
             }
         }
     }
@@ -1726,112 +1761,31 @@ struct HomeIslandView: View {
         Color(uiColor: VoyageSceneKit.nightBG)
     }
 
-    /// 週グラフで選んだ日の作業。帯にも枠にも入れず、島の空の上へ直に置く。
-    /// 一日ぶんを覗くための短い書き出しなので、四件までにして残りは数で示す。
-    @ViewBuilder
+    /// A short timeline stays beside the island; the complete history opens
+    /// with its selected day intact and owns scene interaction while visible.
     private var selectedDayRecords: some View {
         let day = selectedRecordDay ?? Calendar.current.startOfDay(for: Date())
-        let entries = recordEntries(on: day)
-
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(spacing: 8) {
-                Text(verbatim: LF.dayWithWeekday(day))
-                    .font(LFFont.label(11))
-                    .foregroundStyle(homeGlassInk.opacity(0.86))
-                Spacer(minLength: 0)
-                if !entries.isEmpty {
-                    Text(verbatim: LF.duration(minutes: entries.reduce(0) { $0 + $1.minutes }))
-                        .font(LFFont.label(11))
-                        .foregroundStyle(Color(uiColor: VoyageSceneKit.returnOrange))
-                }
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: LF.dayWithWeekday(day))
+                .font(LFFont.label(12))
+                .foregroundStyle(LFHomeFeatureStyle.ink)
+            Button {
+                walkInput = .zero
+                showingPlayerStats = false
+                editingPlayerProfile = false
+                showingWorkRecords = true
+            } label: {
+                Label("Open work history", systemImage: "clock.arrow.circlepath")
+                    .font(LFFont.label(12))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
             }
-
-            if entries.isEmpty {
-                Text("No work recorded on this day.")
-                    .font(LFFont.label(11))
-                    .foregroundStyle(homeGlassInk.opacity(0.68))
-            } else {
-                ForEach(entries.prefix(4)) { entry in
-                    recordEntryRow(entry)
-                }
-                if entries.count > 4 {
-                    Text(verbatim: LF.format("%lld more", Int64(entries.count - 4)))
-                        .font(LFFont.label(10))
-                        .foregroundStyle(homeGlassInk.opacity(0.66))
-                }
-            }
+            .buttonStyle(LFPressableButtonStyle())
+            .foregroundStyle(LFHomeFeatureStyle.ink)
+            WorkRecordTimelineView(sessions: studySessions, day: day, maxEntries: 3)
         }
-        .padding(.horizontal, 4)
-        // 帯を敷かないぶん、白い暈で字を浮かせる。海の上でも砂浜の上でも、
-        // 同じ濃さのまま読める。
-        .shadow(color: .white.opacity(0.85), radius: 3)
-        .shadow(color: .white.opacity(0.5), radius: 7)
-        .accessibilityElement(children: .contain)
-    }
-
-    private func recordEntryRow(_ entry: HomeIslandRecordEntry) -> some View {
-        HStack(alignment: .top, spacing: 9) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(entry.style.background)
-                TileSymbolView(
-                    symbol: entry.symbol,
-                    fg: entry.style.foreground,
-                    bg: entry.style.background
-                )
-                .frame(width: 14, height: 14)
-            }
-            .frame(width: 24, height: 24)
-
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(verbatim: entry.title)
-                        .font(LFFont.copy(12.5))
-                        .foregroundStyle(homeGlassInk)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-
-                    Spacer(minLength: 0)
-
-                    Text(verbatim: LF.duration(minutes: entry.minutes))
-                        .font(LFFont.label(11))
-                        .foregroundStyle(homeGlassInk.opacity(0.78))
-                        .monospacedDigit()
-                        .layoutPriority(1)
-                }
-
-                if let note = entry.note {
-                    Text(verbatim: note)
-                        .font(LFFont.label(10.5))
-                        .foregroundStyle(homeGlassInk.opacity(0.7))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    /// その日の記録を新しい順に。項目を消したあとの記録も見出しだけは残す。
-    private func recordEntries(on day: Date) -> [HomeIslandRecordEntry] {
-        let calendar = Calendar.current
-        let start = calendar.startOfDay(for: day)
-        guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return [] }
-
-        return studySessions
-            .filter { $0.date >= start && $0.date < end && $0.minutes > 0 }
-            .sorted(by: StudySession.newestFirst)
-            .map { session in
-                let note = session.note?.trimmingCharacters(in: .whitespacesAndNewlines)
-                return HomeIslandRecordEntry(
-                    id: session.uuid,
-                    title: session.item?.name ?? LF.text("Removed item"),
-                    minutes: session.minutes,
-                    note: (note?.isEmpty ?? true) ? nil : note,
-                    style: TileStyle.from(session.item?.styleToken ?? ""),
-                    symbol: TileSymbol.from(session.item?.symbolToken ?? "")
-                )
-            }
+        .padding(12)
+        .lfHomeFeatureCard(cornerRadius: 20)
     }
 
     private func utilityTitle(_ utility: HomeUtility) -> LocalizedStringKey {
@@ -3929,16 +3883,21 @@ private struct HomeIslandPlayerStatsView: View {
             }
             .transition(.opacity)
         } else {
-            ScrollView {
                 VStack(spacing: 12) {
                     playerSummary
-                    metricRow
+                    HStack {
+                        Text("Total time")
+                        Spacer()
+                        Text(verbatim: LF.duration(minutes: totalMinutes))
+                    }
+                    .font(LFFont.label(12))
+                    .foregroundStyle(panelInk)
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        WorkRecordWeeklySummaryView(sessions: sessions, now: max(context.date, Date()))
+                    }
                     weeklyChart
                 }
-            }
-            .frame(maxHeight: 360)
-            .scrollBounceBehavior(.basedOnSize)
-            .transition(.opacity)
+                .transition(.opacity)
         }
     }
 
@@ -3947,7 +3906,16 @@ private struct HomeIslandPlayerStatsView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     playerSummary
-                    metricRow
+                    HStack {
+                        Text("Total time")
+                        Spacer()
+                        Text(verbatim: LF.duration(minutes: totalMinutes))
+                    }
+                    .font(LFFont.label(12))
+                    .foregroundStyle(panelInk)
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        WorkRecordWeeklySummaryView(sessions: sessions, now: max(context.date, Date()))
+                    }
                     weeklyChart
                 }
                 .padding(.horizontal, 16)
@@ -4916,5 +4884,23 @@ private struct HomeIslandPhotoThirdsGuide: Shape {
             path.addLine(to: CGPoint(x: rect.maxX, y: y))
         }
         return path
+    }
+}
+
+/// Only records need a scrolling viewport around both their overview and day.
+/// Other utility panels retain their original intrinsic height and hit area.
+private struct HomeUtilityPanelViewport<Content: View>: View {
+    let scrolls: Bool
+    let maximumHeight: CGFloat
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if scrolls {
+            ScrollView(.vertical, showsIndicators: false) { content() }
+                .scrollBounceBehavior(.basedOnSize)
+                .frame(height: maximumHeight, alignment: .top)
+        } else {
+            content()
+        }
     }
 }

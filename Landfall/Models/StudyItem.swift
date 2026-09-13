@@ -51,13 +51,15 @@ final class StudySession {
     /// 端末をまたいだ同期(Firestore)で使う安定ID。
     /// 既定値を持たせ、uuidを持たない旧バージョンのストアからも軽量マイグレーションできるようにする。
     var uuid: UUID = UUID()
-    /// 作業の開始日時。日への帰属はこの日付で決まる。
+    /// 記録の帰属日時。既存の集計はこの日付を使い、実測の開始・終了は timingJSON に分けて残す。
     var date: Date
     var minutes: Int
     /// 分に収まらない端数(0...59)。集計は従来どおり分で行い、実測の秒はここへ
     /// 残す。既定値付きなので、この列を持たない旧ストアからも軽量移行できる。
     var extraSeconds: Int = 0
     var note: String?
+    /// Optional measured chronology; nil for historical and manually entered records.
+    var timingJSON: String? = nil
     var item: StudyItem?
     /// 同期で受け取ったのに、作業項目がまだ手元へ届いていないときの紐付け先。
     /// セッションの購読が項目の購読より先に返ると item が nil のまま固定されて
@@ -72,7 +74,8 @@ final class StudySession {
         minutes: Int,
         extraSeconds: Int = 0,
         note: String? = nil,
-        item: StudyItem? = nil
+        item: StudyItem? = nil,
+        timingJSON: String? = nil
     ) {
         self.uuid = UUID()
         self.date = date
@@ -80,11 +83,14 @@ final class StudySession {
         self.extraSeconds = min(WorkRecordPolicy.maximumExtraSeconds, max(0, extraSeconds))
         self.note = WorkRecordPolicy.normalizedNote(note)
         self.item = item
+        self.timingJSON = WorkSessionTiming.decode(timingJSON)?.json
         self.updatedAt = Date()
     }
 }
 
 extension StudySession {
+    var timing: WorkSessionTiming? { WorkSessionTiming.decode(timingJSON) }
+
     /// 記録された正味の長さ。手入力は秒まで、タイマー記録は分単位。
     var totalSeconds: Int {
         let safeMinutes = min(WorkRecordPolicy.maximumSessionMinutes, max(0, minutes))

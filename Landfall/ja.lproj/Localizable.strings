@@ -1499,3 +1499,32 @@
 
 "On" = "オン";
 "Off" = "オフ";
+
+"This week's record" = "今週の記録";
+"Recorded work time" = "記録した作業時間";
+"Active days" = "作業した日数";
+"Compared with the same weekday and time last week" = "先週の同じ曜日・時刻までと比較";
+"Main activities this week" = "今週の主な項目";
+"Unassigned activity" = "項目未設定";
+"No records in the same period last week" = "先週の同じ期間には記録がありません";
+"Same work time as last week" = "先週と同じ作業時間";
+"%@ more than last week" = "先週より%@多く記録";
+"%@ less than last week" = "先週より%@少なく記録";
+"%lld sec" = "%lld秒";
+"%@ %lld sec" = "%@%lld秒";
+"Time not recorded" = "時刻の記録がない作業";
+"These records keep their saved date and duration." = "保存された日付と作業時間を表示しています。";
+"Recorded work for this session" = "この記録に保存された作業時間";
+"Measured work on this day" = "この日に計測した作業時間";
+"Continued from the previous day" = "前日から継続";
+"Continues into the next day" = "翌日へ継続";
+"Work and breaks" = "作業と休憩の内訳";
+"Breaks in this session: %@" = "この記録全体の休憩：%@";
+"Break times were not saved; their positions are not shown." = "休憩の時刻が未記録のため、時間軸には配置していません。";
+"Work" = "作業";
+"Break" = "休憩";
+"Open work history" = "作業記録を開く";
+
+"Your record has not been saved. Please try again." = "記録はまだ保存されていません。もう一度お試しください。";
+
+"Totals follow the saved date. Overnight work is shown on each day of the timeline." = "合計は記録を保存した日で集計します。日をまたぐ作業は、タイムラインでは各日に分けて表示します。";

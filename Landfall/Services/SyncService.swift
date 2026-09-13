@@ -988,8 +988,15 @@ final class SyncService: ObservableObject {
                 let pending = item == nil ? dto.itemUUID : nil
                 if let existing = fetchSession(id, context) {
                     if remoteAt > existing.updatedAt {
+                        // Old clients omit optional chronology when editing a note.
+                        // Keep measured intervals only if accounting is unchanged.
+                        let sameDurationAndDate = existing.date == dto.date
+                            && existing.minutes == dto.minutes
+                            && existing.extraSeconds == (dto.extraSeconds ?? 0)
+                        let retainedTiming = sameDurationAndDate ? existing.timing?.json : nil
                         existing.date = dto.date; existing.minutes = dto.minutes
                         existing.extraSeconds = dto.extraSeconds ?? 0
+                        existing.timingJSON = dto.timingJSON ?? retainedTiming
                         existing.note = dto.note; existing.item = item
                         existing.pendingItemUUID = pending
                         existing.updatedAt = remoteAt
@@ -1008,7 +1015,8 @@ final class SyncService: ObservableObject {
                         minutes: dto.minutes,
                         extraSeconds: dto.extraSeconds ?? 0,
                         note: dto.note,
-                        item: item
+                        item: item,
+                        timingJSON: dto.timingJSON
                     )
                     if let u = UUID(uuidString: id) { session.uuid = u }
                     session.pendingItemUUID = pending
@@ -1228,6 +1236,7 @@ final class SyncService: ObservableObject {
             minutes: session.minutes,
             extraSeconds: session.extraSeconds,
             note: WorkRecordPolicy.normalizedNote(session.note),
+            timingJSON: session.timing?.json,
             // 項目がまだ手元へ届いていない記録も、繋ぎ先を落とさない。
             itemUUID: itemUUID,
             updatedAt: Date()
@@ -1267,6 +1276,7 @@ final class SyncService: ObservableObject {
         var clean = dto
         clean.extraSeconds = extraSeconds
         clean.note = WorkRecordPolicy.normalizedNote(dto.note)
+        clean.timingJSON = WorkSessionTiming.decode(dto.timingJSON)?.json
         return clean
     }
 
@@ -1300,6 +1310,7 @@ private struct SessionDTO: Codable {
     /// 秒の端数。この項目を持たない古い記録・他プラットフォームからは 0 で読む。
     var extraSeconds: Int?
     var note: String?
+    var timingJSON: String?
     var itemUUID: String?
     var updatedAt: Date?
 }

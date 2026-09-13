@@ -105,6 +105,7 @@ struct RecordSessionSheet: View {
     /// 閉じ忘れ疑いの長時間航海を着岸するときの確認。
     @State private var confirmingLong = false
     @State private var pendingMinutes = 0
+    @State private var saveError = false
     @FocusState private var noteFocused: Bool
 
     private var timerRunningHere: Bool {
@@ -161,8 +162,7 @@ struct RecordSessionSheet: View {
         .presentationDetents([.large])
         .alert("A long voyage", isPresented: $confirmingLong) {
             Button("Log the whole time") {
-                clearTimer()
-                save(minutes: pendingMinutes, date: Date())
+                stopTimerAndSave(confirmLong: true)
             }
             Button("Pick the length instead") {
                 clearTimer()
@@ -171,6 +171,11 @@ struct RecordSessionSheet: View {
             Button("Keep sailing", role: .cancel) { }   // タイマーは残す。
         } message: {
             Text("You've been under sail for \(LF.duration(minutes: pendingMinutes)). Did you forget to make landfall? Log this whole time?")
+        }
+        .alert("Could not save the voyage", isPresented: $saveError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Your record has not been saved. Please try again.")
         }
         .onAppear {
             #if DEBUG
@@ -345,16 +350,11 @@ struct RecordSessionSheet: View {
     }
 
     private func elapsedText(at now: Date) -> String {
-        let seconds = VoyageTimerMath.elapsedSeconds(
-            startedAt: timerStart,
-            breakSeconds: 0,
-            breakStartedAt: 0,
-            at: now
-        )
+        let seconds = KeelMiraWidgetStore.timer.elapsedSeconds(at: now)
         return String(format: "%d:%02d:%02d", seconds / 3600, (seconds / 60) % 60, seconds % 60)
     }
 
-    private func stopTimerAndSave() {
+    private func stopTimerAndSave(confirmLong: Bool = false) {
         let date = Date()
         guard VoyageTimerMath.isActive(
             startedAt: timerStart,
@@ -364,22 +364,17 @@ struct RecordSessionSheet: View {
             clearTimer()
             return
         }
-        let elapsed = VoyageTimerMath.elapsedSeconds(
-            startedAt: timerStart,
-            breakSeconds: 0,
-            breakStartedAt: 0,
-            at: date
-        )
-        let measured = max(1, Int((Double(elapsed) / 60).rounded()))
+        let measured = KeelMiraWidgetStore.timer.creditedMinutes(at: date)
         // 閉じ忘れ疑いの長時間は、そのまま巨大記録にせず確認する(タイマーは残したまま)。
-        if measured >= StudyTimer.longSessionMinutes {
+        if measured >= StudyTimer.longSessionMinutes && !confirmLong {
             pendingMinutes = measured
             confirmingLong = true
             return
         }
-        clearTimer()
-        // タイマーは「今」終えた記録なので現在時刻で刻む(バックフィルの日付は使わない)。
-        save(minutes: measured, date: Date())
+        // Keep the timer and its break ledger until the record is durably saved.
+        save(minutes: measured, date: date,
+             timingJSON: KeelMiraWidgetStore.timing(at: date)?.json,
+             clearsTimerAfterSave: true)
     }
 
     private func clearTimer() {
@@ -388,7 +383,7 @@ struct RecordSessionSheet: View {
         timerItemID = ""
     }
 
-    private func save(minutes: Int, date: Date) {
+    private func save(minutes: Int, date: Date, timingJSON: String? = nil, clearsTimerAfterSave: Bool = false) {
         guard minutes > 0 else { return }
         noteFocused = false
         let isToday = Calendar.current.isDateInToday(date)
@@ -400,7 +395,8 @@ struct RecordSessionSheet: View {
             date: date,
             minutes: minutes,
             note: WorkRecordPolicy.normalizedNote(note),
-            item: item
+            item: item,
+            timingJSON: timingJSON
         )
         modelContext.insert(session)
         let dayMark = StudyDayStore.markDay(
@@ -413,8 +409,10 @@ struct RecordSessionSheet: View {
         } catch {
             modelContext.delete(session)
             if dayMark.wasInserted { modelContext.delete(dayMark.day) }
+            saveError = true
             return
         }
+        if clearsTimerAfterSave { clearTimer() }
         SyncService.shared.publishPersistedSessionChanges(
             [session],
             insertedDays: dayMark.wasInserted ? [dayMark.day] : [],

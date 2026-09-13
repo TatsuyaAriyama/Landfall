@@ -37,7 +37,8 @@ enum WidgetTimerInbox {
                 date: record.finishedAt,
                 minutes: record.minutes,
                 note: nil,
-                item: item
+                item: item,
+                timingJSON: record.timingJSON
             )
             session.uuid = record.id
             context.insert(session)
