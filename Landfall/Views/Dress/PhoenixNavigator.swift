@@ -253,13 +253,14 @@ enum PhoenixNavigator {
 
     // MARK: ケープ(布の格子)
 
-    /// 布の一点。u:-1..1(左→右)、v:0..1(肩→裾)。Web capePoint と同式。
-    static func capePoint(_ u: Float, _ v: Float, _ time: Float, _ wind: Float) -> SCNVector3 {
+    /// 布の一点。timeは積算した波の位相、v:0..1(肩→裾)。
+    static func capePoint(_ u: Float, _ v: Float, _ time: Float, _ wind: Float, lateral: Float = 0) -> SCNVector3 {
         let width = 0.17 + 0.25 * pow(v, 1.1)
         let length = 0.40 + 0.10 * pow(abs(u), 2.4)
         let flutter = pow(v, 1.5) * wind
-        let t = time * (0.7 + 0.3 * wind)
+        let t = time
         let x = u * width + flutter * sin(t * 1.3 + v * 2.0) * 0.02
+            + lateral * pow(v, 1.5)
         let y = -v * length + flutter * sin(u * 2.4 + t * 1.9) * 0.012
         let z = -0.02
             - (0.24 + (wind - 1) * 0.09) * pow(v, 1.1)
@@ -319,6 +320,7 @@ enum PhoenixNavigator {
     float v = clamp(_geometry.texcoords[0].y, 0.0, 1.0);
     float time = uCapeMotion.x;
     float wind = uCapeMotion.y;
+    float lateral = uCapeMotion.z;
     float safeV = max(v, 0.0001);
     float vPow11 = pow(v, 1.1);
     float vPow15 = pow(v, 1.5);
@@ -326,14 +328,14 @@ enum PhoenixNavigator {
     float absU = abs(u);
     float length = 0.40 + 0.10 * pow(absU, 2.4);
     float flutter = vPow15 * wind;
-    float phaseTime = time * (0.7 + 0.3 * wind);
+    float phaseTime = time;
     float phaseX = phaseTime * 1.3 + v * 2.0;
     float phaseY = u * 2.4 + phaseTime * 1.9;
     float phaseZV = v * 5.2 - phaseTime * 2.1;
     float phaseZU = u * 2.6 + phaseTime * 1.5;
     float depth = 0.24 + (wind - 1.0) * 0.09;
     _geometry.position.xyz = float3(
-        u * width + flutter * sin(phaseX) * 0.02,
+        u * width + flutter * sin(phaseX) * 0.02 + lateral * vPow15,
         -v * length + flutter * sin(phaseY) * 0.012,
         -0.02 - depth * vPow11
             + flutter * (sin(phaseZV) * 0.05 + sin(phaseZU) * 0.04)
@@ -357,7 +359,7 @@ enum PhoenixNavigator {
     float3 tangentV = float3(
         u * dWidthDV
             + dFlutterDV * sin(phaseX) * 0.02
-            + flutter * cos(phaseX) * 2.0 * 0.02,
+            + flutter * cos(phaseX) * 2.0 * 0.02 + lateral * dV15,
         -length + dFlutterDV * sin(phaseY) * 0.012,
         -depth * dV11
             + dFlutterDV * zFlutter
@@ -382,8 +384,8 @@ enum PhoenixNavigator {
         // GPU deformation can move beyond the authored frame used to create
         // the immutable mesh. A fixed conservative box prevents false culling.
         geometry.boundingBox = (
-            SCNVector3(-0.50, -0.55, -0.62),
-            SCNVector3(0.50, 0.05, 0.10)
+            SCNVector3(-0.53, -0.55, -0.62),
+            SCNVector3(0.53, 0.05, 0.10)
         )
         return geometry
     }
@@ -914,7 +916,8 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
     // ポーズ基本角の現在値(POSE_BASE へ減衰補間)
     private var armRx: Float = 0, armRz: Float = 0.14
     private var armLx: Float = 0, armLz: Float = -0.14
-    private var lean: Float = 0, wind: Float = 1
+    private var lean: Float = 0
+    private var capeMotion = PhoenixCapeMotion()
     private var headX: Float = 0, scan: Float = 0.14, scanSpeed: Float = 0.3
     private var turn: Float = 0, sway: Float = 1
     private var breathAmp: Float = 1, breathSpeed: Float = 0.85
@@ -991,8 +994,12 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
         armLx = damp(armLx, base.armLx, 6, dt)
         armLz = damp(armLz, base.armLz, 6, dt)
         lean = damp(lean, base.lean, 6, dt)
-        let locomotionWind = (locomotionState?.normalizedSpeed ?? 0) * 2.1
-        wind = damp(wind, base.wind + locomotionWind, 4, dt)
+        capeMotion.step(
+            dt: dt,
+            poseWind: base.wind,
+            speed: locomotionState?.normalizedSpeed,
+            heading: boundNavigator?.eulerAngles.y
+        )
         headX = damp(headX, base.headX, 6, dt)
         scan = damp(scan, base.scan, 6, dt)
         scanSpeed = damp(scanSpeed, base.scanSpeed, 6, dt)
@@ -1008,7 +1015,7 @@ final class PhoenixAnimator: NSObject, SCNSceneRendererDelegate {
 
         // マントは不変の格子を保ち、頂点変形だけをGPUへ渡す。
         capeMaterial?.setValue(
-            SCNVector3(t, wind, 0),
+            SCNVector3(capeMotion.phase, capeMotion.wind, capeMotion.lateral),
             forKey: "uCapeMotion"
         )
 

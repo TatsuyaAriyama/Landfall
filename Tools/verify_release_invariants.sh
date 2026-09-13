@@ -10,7 +10,14 @@ progression_probe_binary="$(mktemp /tmp/keelmira-progression-probe.XXXXXX)"
 ocean_probe_binary="$(mktemp /tmp/keelmira-ocean-wave-probe.XXXXXX)"
 gamepad_probe_binary="$(mktemp /tmp/keelmira-gamepad-look-probe.XXXXXX)"
 beacon_probe_binary="$(mktemp /tmp/keelmira-beacon-pivot-probe.XXXXXX)"
-trap 'rm -f "$probe_binary" "$progression_probe_binary" "$ocean_probe_binary" "$gamepad_probe_binary" "$beacon_probe_binary"' EXIT
+cape_probe_binary="$(mktemp /tmp/keelmira-cape-motion-probe.XXXXXX)"
+trap 'rm -f "$probe_binary" "$progression_probe_binary" "$ocean_probe_binary" "$gamepad_probe_binary" "$beacon_probe_binary" "$cape_probe_binary"' EXIT
+
+xcrun swiftc \
+  Landfall/Views/Dress/PhoenixCapeMotion.swift \
+  Tools/RenderHarness/PhoenixCapeMotionProbe.swift \
+  -o "$cape_probe_binary"
+"$cape_probe_binary"
 
 xcrun swiftc \
   Landfall/Models/FirstVoyageRoutingPolicy.swift \
