@@ -14,6 +14,13 @@ enum NotificationService {
     private static let idPrefix = "landfall.gentle."
     private static let horizonDays = 14    // 先の日数ぶんだけ積んでおき、起動のたびに補充する
 
+    // MainActor methods can interleave at every notification-center await. Keep
+    // mutations in order so an in-flight add cannot outlive a later disable or
+    // restore today's reminder after a new record has removed it.
+    @MainActor private static var pendingSchedule: Task<Void, Never>?
+    @MainActor private static var scheduleRevision = UUID()
+    @MainActor private static var authorizationRevision = UUID()
+
     static var isEnabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
 
     static var hour: Int {
@@ -53,45 +60,67 @@ enum NotificationService {
     /// 拒否されたら有効フラグを戻す(トグルは実状態に合わせる)。返り値=最終的に有効か。
     @MainActor
     static func enable(recordedToday: Bool) async -> Bool {
+        let revision = UUID()
+        authorizationRevision = revision
         let center = UNUserNotificationCenter.current()
         let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+        guard authorizationRevision == revision else { return isEnabled }
         UserDefaults.standard.set(granted, forKey: enabledKey)
-        if granted {
-            await reschedule(recordedToday: recordedToday)
-        }
-        return granted
+        await reschedule(recordedToday: recordedToday)
+        return isEnabled
     }
 
     /// 設定トグルをオフにしたとき。保留中の声かけをすべて取り下げる。
     @MainActor
     static func disable() async {
+        authorizationRevision = UUID()
         UserDefaults.standard.set(false, forKey: enabledKey)
-        await removeAllPending()
+        await reschedule(recordedToday: false)
     }
 
     /// 起動時・時刻変更時・記録時に呼ぶ。有効なら先の日数ぶんを積み直す。
     /// recordedToday が true なら今日のぶんは積まない(来てくれた人を今日はつつかない)。
     @MainActor
     static func reschedule(recordedToday: Bool) async {
+        let revision = UUID()
+        scheduleRevision = revision
+        let previous = pendingSchedule
+        let task = Task { @MainActor in
+            await previous?.value
+            guard scheduleRevision == revision else { return }
+            await replacePending(recordedToday: recordedToday, revision: revision)
+        }
+        pendingSchedule = task
+        await task.value
+        if scheduleRevision == revision { pendingSchedule = nil }
+    }
+
+    @MainActor
+    private static func replacePending(recordedToday: Bool, revision: UUID) async {
         guard isEnabled else { await removeAllPending(); return }
         let center = UNUserNotificationCenter.current()
         // 未許可に変わっていたら黙って降りる。
         let settings = await center.notificationSettings()
+        guard scheduleRevision == revision else { return }
+        await removeAllPending()
+        guard scheduleRevision == revision, isEnabled else { return }
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else {
             return
         }
-        await removeAllPending()
 
         let calendar = Calendar.current
         let now = Date()
         let startOfToday = calendar.startOfDay(for: now)
         let picked = lines
+        let selectedHour = hour
+        let selectedMinute = minute
 
         for offset in 0..<horizonDays {
+            guard scheduleRevision == revision, isEnabled else { return }
             guard let day = calendar.date(byAdding: .day, value: offset, to: startOfToday) else { continue }
             var comps = calendar.dateComponents([.year, .month, .day], from: day)
-            comps.hour = hour
-            comps.minute = minute
+            comps.hour = selectedHour
+            comps.minute = selectedMinute
             guard let fireDate = calendar.date(from: comps) else { continue }
             // 過ぎた時刻は積まない。今日ぶんは、もう記録済みなら飛ばす。
             if fireDate <= now { continue }
@@ -112,6 +141,7 @@ enum NotificationService {
         }
     }
 
+    @MainActor
     private static func removeAllPending() async {
         let center = UNUserNotificationCenter.current()
         let pending = await center.pendingNotificationRequests()

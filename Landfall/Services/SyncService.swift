@@ -40,8 +40,12 @@ final class SyncService: ObservableObject {
     }
 
     func delete(_ item: StudyItem) {
+        deleteItem(id: item.uuid)
+    }
+
+    func deleteItem(id: UUID) {
         guard let uid else { return }
-        itemsCollection(uid).document(item.uuid.uuidString).delete()
+        itemsCollection(uid).document(id.uuidString).delete()
     }
 
     func push(_ session: StudySession) {
@@ -51,8 +55,12 @@ final class SyncService: ObservableObject {
     }
 
     func delete(_ session: StudySession) {
+        deleteSession(id: session.uuid)
+    }
+
+    func deleteSession(id: UUID) {
         guard let uid else { return }
-        sessionsCollection(uid).document(session.uuid.uuidString).delete()
+        sessionsCollection(uid).document(id.uuidString).delete()
     }
 
     func push(_ day: StudyDay) {

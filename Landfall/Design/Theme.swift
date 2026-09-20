@@ -19,7 +19,7 @@ private func adaptiveColor(light: UInt, dark: UInt) -> Color {
     })
 }
 
-/// KeelMira パレット。グラデーション・影は使わない。
+/// KeelMira パレット。機能面は静かに保ち、景色の色は背景に集める。
 /// ink / paper は明暗に追従する意味色(地＝paper、文字/線＝ink)。ボタンは ink 地 + paper 文字で自然に反転する。
 /// ブランド色(harborTeal, coral, midnight, sunYellow ...)は固定。航海誌カードは固定デザインのため常にライトで描く。
 enum LFColor {
@@ -80,13 +80,65 @@ enum LFHomeFeatureStyle {
     static let primaryFill = LFColor.harborTeal
 }
 
+/// 島から離れる編集・記録画面にも、空と海の奥行きを引き継ぐ。
+/// 静止画として描くため、入力中や「視差効果を減らす」設定でも動かない。
+struct LFHarborBackdrop: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        GeometryReader { geometry in
+            let dark = colorScheme == .dark
+            ZStack {
+                LinearGradient(
+                    colors: dark
+                        ? [Color(hex: 0x9FBAB6), Color(hex: 0x618D87), Color(hex: 0x153F3B)]
+                        : [Color(hex: 0xEFF3E9), Color(hex: 0xB9D4CE), Color(hex: 0x538D83)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                Path { path in
+                    let size = geometry.size
+                    path.move(to: CGPoint(x: 0, y: size.height * 0.60))
+                    path.addCurve(
+                        to: CGPoint(x: size.width, y: size.height * 0.67),
+                        control1: CGPoint(x: size.width * 0.35, y: size.height * 0.52),
+                        control2: CGPoint(x: size.width * 0.65, y: size.height * 0.73)
+                    )
+                    path.addLine(to: CGPoint(x: size.width, y: size.height))
+                    path.addLine(to: CGPoint(x: 0, y: size.height))
+                    path.closeSubpath()
+                }
+                .fill(LFColor.harborTeal.opacity(dark ? 0.18 : 0.08))
+                Path { path in
+                    let size = geometry.size
+                    path.move(to: CGPoint(x: 0, y: size.height * 0.82))
+                    path.addCurve(
+                        to: CGPoint(x: size.width, y: size.height * 0.75),
+                        control1: CGPoint(x: size.width * 0.30, y: size.height * 0.89),
+                        control2: CGPoint(x: size.width * 0.70, y: size.height * 0.69)
+                    )
+                }
+                .stroke(Color.white.opacity(0.20), lineWidth: 1)
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct LFHomeFeatureCardModifier: ViewModifier {
     var cornerRadius: CGFloat
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     func body(content: Content) -> some View {
         content
             .background(
-                LFHomeFeatureStyle.surface,
+                reduceTransparency ? Color.white : LFHomeFeatureStyle.surface,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .background(
+                .ultraThinMaterial,
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
             .overlay {

@@ -8,6 +8,9 @@ struct WorkRecordWeeklySummaryView: View {
     var calendar: Calendar = .current
     var selectedDay: Date? = nil
     var onSelectDay: ((Date) -> Void)? = nil
+    /// The island already provides the glass surface; show a brief weekly
+    /// glance there while the history screen keeps the full breakdown.
+    var compact = false
 
     private var summary: WorkRecordWeeklySummary.Summary {
         WorkRecordWeeklySummary.summarize(sessions.map {
@@ -23,77 +26,102 @@ struct WorkRecordWeeklySummaryView: View {
     var body: some View {
         let value = summary
         VStack(alignment: .leading, spacing: 12) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline) {
-                    title
-                    Spacer(minLength: 12)
-                    range(value)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    title
-                    range(value)
-                }
-            }
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .top, spacing: 20) {
-                    durationMetric(value)
+            if compact {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("This week")
+                            .font(LFFont.label(11))
+                            .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                        Text(verbatim: Self.duration(value.totalSeconds))
+                            .font(LFFont.copy(22))
+                            .monospacedDigit()
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .accessibilityElement(children: .combine)
                     Spacer(minLength: 0)
-                    daysMetric(value)
+                    Text(verbatim: LF.format("%lld days", Int64(value.activeDayCount)))
+                        .font(LFFont.label(12))
+                        .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                        .fixedSize()
+                        .accessibilityLabel(Text("Active days"))
+                        .accessibilityValue(Text(verbatim: String(value.activeDayCount)))
                 }
-                VStack(alignment: .leading, spacing: 12) {
-                    durationMetric(value)
-                    daysMetric(value)
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline) {
+                        title
+                        Spacer(minLength: 12)
+                        range(value)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        title
+                        range(value)
+                    }
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 20) {
+                        durationMetric(value)
+                        Spacer(minLength: 0)
+                        daysMetric(value)
+                    }
+                    VStack(alignment: .leading, spacing: 12) {
+                        durationMetric(value)
+                        daysMetric(value)
+                    }
                 }
             }
             weeklyChart(value)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: comparison(value))
-                    .font(LFFont.copy(12))
-                Text("Compared with the same weekday and time last week")
-                    .font(LFFont.label(10))
-                    .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-
-            if value.leadingItems.isEmpty {
-                Text("No work recorded this week.")
-                    .font(LFFont.label(12))
-                    .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
-            } else {
-                Rectangle()
-                    .fill(LFHomeFeatureStyle.outline)
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
-                DisclosureGroup {
-                    ForEach(value.leadingItems) { item in
-                        ViewThatFits(in: .horizontal) {
-                            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                                Text(verbatim: item.name ?? LF.text("Unassigned activity"))
-                                    .lineLimit(2)
-                                Spacer(minLength: 0)
-                                Text(verbatim: Self.duration(item.seconds))
-                                    .fixedSize()
-                            }
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(verbatim: item.name ?? LF.text("Unassigned activity"))
-                                Text(verbatim: Self.duration(item.seconds))
-                                    .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
-                            }
-                        }
+            if !compact {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(verbatim: comparison(value))
                         .font(LFFont.copy(12))
-                        .accessibilityElement(children: .combine)
-                    }
-                } label: {
-                    Text("Main activities this week")
-                        .font(LFFont.label(12))
                 }
-                .tint(LFHomeFeatureStyle.ink)
+                .fixedSize(horizontal: false, vertical: true)
+
+                if value.leadingItems.isEmpty {
+                    Text("No work recorded this week.")
+                        .font(LFFont.label(12))
+                        .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                } else {
+                    Rectangle()
+                        .fill(LFHomeFeatureStyle.outline)
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                    DisclosureGroup {
+                        ForEach(value.leadingItems) { item in
+                            ViewThatFits(in: .horizontal) {
+                                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                                    Text(verbatim: item.name ?? LF.text("Unassigned activity"))
+                                        .lineLimit(2)
+                                    Spacer(minLength: 0)
+                                    Text(verbatim: Self.duration(item.seconds))
+                                        .fixedSize()
+                                }
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(verbatim: item.name ?? LF.text("Unassigned activity"))
+                                    Text(verbatim: Self.duration(item.seconds))
+                                        .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                                }
+                            }
+                            .font(LFFont.copy(12))
+                            .accessibilityElement(children: .combine)
+                        }
+                    } label: {
+                        Text("Main activities this week")
+                            .font(LFFont.label(12))
+                    }
+                    .tint(LFHomeFeatureStyle.ink)
+                }
             }
         }
         .foregroundStyle(LFHomeFeatureStyle.ink)
-        .padding(14)
+        .padding(compact ? 4 : 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .lfHomeFeatureCard(cornerRadius: 20)
+        .background {
+            if !compact {
+                Color.clear.lfHomeFeatureCard(cornerRadius: 20)
+            }
+        }
         .accessibilityIdentifier("workRecordWeeklySummary")
     }
 
@@ -111,12 +139,14 @@ struct WorkRecordWeeklySummaryView: View {
                         onSelectDay?(day.date)
                     } label: {
                         VStack(spacing: 6) {
-                            Text(verbatim: day.seconds > 0 ? shortDuration(day.seconds) : "")
-                                .font(LFFont.label(8))
-                                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                                .frame(height: 11)
+                            if !compact {
+                                Text(verbatim: day.seconds > 0 ? shortDuration(day.seconds) : "")
+                                    .font(LFFont.label(8))
+                                    .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                                    .frame(height: 11)
+                            }
                             GeometryReader { proxy in
                                 VStack {
                                     Spacer(minLength: 0)
@@ -126,9 +156,9 @@ struct WorkRecordWeeklySummaryView: View {
                                         .frame(height: max(5, proxy.size.height * CGFloat(day.seconds) / CGFloat(maximum)))
                                 }
                             }
-                            .frame(height: 78)
-                            Text(verbatim: day.date.formatted(.dateTime.weekday(.abbreviated)))
-                                .font(LFFont.label(9))
+                            .frame(height: compact ? 56 : 78)
+                            Text(verbatim: day.date.formatted(.dateTime.weekday(.abbreviated).locale(AppLanguage.current.locale)))
+                                .font(LFFont.label(compact ? 10 : 9))
                                 .foregroundStyle(LFHomeFeatureStyle.ink.opacity(isSelected || isToday ? 1 : 0.48))
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 3)
@@ -146,9 +176,11 @@ struct WorkRecordWeeklySummaryView: View {
                     .accessibilityHint(Text("Shows this day's work below the card"))
                 }
             }
-            Text(verbatim: LF.format("%lld records", Int64(value.recordCount)))
-                .font(LFFont.label(10))
-                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+            if !compact {
+                Text(verbatim: LF.format("%lld records", Int64(value.recordCount)))
+                    .font(LFFont.label(10))
+                    .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+            }
         }
         .accessibilityIdentifier("workRecordWeekChart")
     }
@@ -172,7 +204,7 @@ struct WorkRecordWeeklySummaryView: View {
 
     private func durationMetric(_ value: WorkRecordWeeklySummary.Summary) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text("Recorded work time")
+            Text("Total time")
                 .font(LFFont.label(10))
                 .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
             Text(verbatim: Self.duration(value.totalSeconds))

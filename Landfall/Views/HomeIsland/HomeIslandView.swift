@@ -1633,7 +1633,7 @@ struct HomeIslandView: View {
     private var homeUtilityPanel: some View {
         if let utility = activeUtility {
             GeometryReader { panelGeometry in
-            ZStack(alignment: .topTrailing) {
+            ZStack(alignment: utility == .player ? .topLeading : .topTrailing) {
                 // A transparent catcher, not a dimming scrim: tapping the world
                 // closes the panel without the island ever being covered.
                 //
@@ -1674,8 +1674,7 @@ struct HomeIslandView: View {
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(utilityInk.opacity(0.62))
                             Text(utilityTitle(utility))
-                                .font(LFFont.label(10))
-                                .tracking(1.1)
+                                .font(LFFont.copy(13))
                                 .foregroundStyle(utilityInk.opacity(0.72))
                             Spacer(minLength: 8)
                             Button {
@@ -1685,14 +1684,14 @@ struct HomeIslandView: View {
                                 Image(systemName: "xmark")
                                     .font(.system(size: 10, weight: .bold))
                                     .foregroundStyle(utilityInk.opacity(0.6))
-                                    .frame(width: utility == .brightness ? 44 : 26, height: utility == .brightness ? 44 : 26)
+                                    .frame(width: 44, height: 44)
                                     .background(utilityInk.opacity(0.06), in: Circle())
                             }
                             .buttonStyle(LFPressableButtonStyle())
                             .accessibilityLabel(Text("Close"))
                         }
                         .padding(.horizontal, 12)
-                        .frame(height: utility == .brightness ? 48 : 38)
+                        .frame(minHeight: 48)
 
                         Rectangle()
                             .fill(utilityInk.opacity(0.10))
@@ -1721,36 +1720,26 @@ struct HomeIslandView: View {
                             }
                         }
                         .padding(10)
-                    }
-                    .frame(width: utilityPanelWidth(for: utility))
-                    .background {
-                        if utility == .brightness {
-                            Color.clear.lfHomeFeatureCard(cornerRadius: 20)
-                        } else {
-                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                .fill(.regularMaterial)
+
+                        if utility == .player, !editingPlayerProfile {
+                            Rectangle()
+                                .fill(LFHomeFeatureStyle.outline)
+                                .frame(height: 1)
+                                .padding(.horizontal, 16)
+                            selectedDayRecords
                         }
                     }
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(utilityInk.opacity(0.12), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.22), radius: 18, y: 8)
+                    .frame(width: utilityPanelWidth(for: utility))
+                    .lfHomeFeatureCard(cornerRadius: 24)
 
-                    // 選んだ日の中身はカードの外、島の景色の上に置く。パネルを
-                    // 縦に伸ばさずに済み、記録そのものは空の側で読める。
-                    // カードを書き換えている間は下げる。編集の手元と、
-                    // 別の日の記録が同時に出ていても読む相手がいない。
-                    if utility == .player, !editingPlayerProfile {
-                        selectedDayRecords
-                    }
+
                 }
                 .frame(width: utilityPanelWidth(for: utility), alignment: .leading)
                 }
                 .frame(width: utilityPanelWidth(for: utility), alignment: .top)
-                .padding(.trailing, compactTopHUD ? 8 : 12)
+                .padding(utility == .player ? .leading : .trailing, compactTopHUD ? 8 : 12)
                 .padding(.top, 62)
-                .transition(.scale(scale: 0.94, anchor: .topTrailing).combined(with: .opacity))
+                .transition(.scale(scale: 0.94, anchor: utility == .player ? .topLeading : .topTrailing).combined(with: .opacity))
                 .environment(\.colorScheme, .light)
             }
             }
@@ -1758,7 +1747,7 @@ struct HomeIslandView: View {
     }
 
     private var utilityInk: Color {
-        Color(uiColor: VoyageSceneKit.nightBG)
+        LFHomeFeatureStyle.ink
     }
 
     /// A short timeline stays beside the island; the complete history opens
@@ -1784,15 +1773,14 @@ struct HomeIslandView: View {
             .foregroundStyle(LFHomeFeatureStyle.ink)
             WorkRecordTimelineView(sessions: studySessions, day: day, maxEntries: 3)
         }
-        .padding(12)
-        .lfHomeFeatureCard(cornerRadius: 20)
+        .padding(16)
     }
 
     private func utilityTitle(_ utility: HomeUtility) -> LocalizedStringKey {
         switch utility {
         case .todo: "ToDo"
         case .music: "Music"
-        case .player: "Player"
+        case .player: "Voyage record"
         case .brightness: "Island brightness"
         }
     }
@@ -3883,27 +3871,25 @@ private struct HomeIslandPlayerStatsView: View {
             }
             .transition(.opacity)
         } else {
-                VStack(spacing: 12) {
-                    playerSummary
-                    HStack {
-                        Text("Total time")
-                        Spacer()
-                        Text(verbatim: LF.duration(minutes: totalMinutes))
-                    }
-                    .font(LFFont.label(12))
-                    .foregroundStyle(panelInk)
-                    TimelineView(.periodic(from: .now, by: 60)) { context in
-                        WorkRecordWeeklySummaryView(
-                            sessions: sessions, now: max(context.date, Date()),
-                            selectedDay: selectedDay,
-                            onSelectDay: {
-                                selectedDay = $0
-                                Haptics.tap(.light)
-                            }
-                        )
-                    }
+            VStack(spacing: 16) {
+                playerSummary
+                Rectangle()
+                    .fill(LFHomeFeatureStyle.outline)
+                    .frame(height: 1)
+                    .accessibilityHidden(true)
+                TimelineView(.periodic(from: .now, by: 60)) { context in
+                    WorkRecordWeeklySummaryView(
+                        sessions: sessions, now: max(context.date, Date()),
+                        selectedDay: selectedDay,
+                        onSelectDay: {
+                            selectedDay = $0
+                            Haptics.tap(.light)
+                        },
+                        compact: true
+                    )
                 }
-                .transition(.opacity)
+            }
+            .transition(.opacity)
         }
     }
 
@@ -3912,13 +3898,8 @@ private struct HomeIslandPlayerStatsView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     playerSummary
-                    HStack {
-                        Text("Total time")
-                        Spacer()
-                        Text(verbatim: LF.duration(minutes: totalMinutes))
-                    }
-                    .font(LFFont.label(12))
-                    .foregroundStyle(panelInk)
+                        .padding(12)
+                        .lfHomeFeatureCard()
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         WorkRecordWeeklySummaryView(
                             sessions: sessions, now: max(context.date, Date()),
@@ -3934,9 +3915,10 @@ private struct HomeIslandPlayerStatsView: View {
                 .padding(.top, 8)
                 .padding(.bottom, 24)
             }
-            .background(panelGlass.ignoresSafeArea())
+            .background(LFHarborBackdrop())
             .navigationTitle(Text("Voyage record"))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
@@ -3951,21 +3933,39 @@ private struct HomeIslandPlayerStatsView: View {
     }
 
     private var playerSummary: some View {
-        HStack(spacing: 13) {
+        HStack(alignment: .top, spacing: 12) {
             PlayerAvatarArt(styleToken: styleToken, symbolToken: symbolToken)
-                .frame(width: 52, height: 52)
-                .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
+                .frame(width: 44, height: 44)
+                .overlay(Circle().stroke(LFHomeFeatureStyle.outline, lineWidth: 1))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: displayName)
-                    .font(LFFont.copy(18))
+                    .font(LFFont.copy(17))
                     .foregroundStyle(panelInk)
-                    .lineLimit(1)
-
-                Text(verbatim: resolveText)
-                    .font(LFFont.label(11))
-                    .foregroundStyle(panelInk.opacity(resolve.isEmpty ? 0.42 : 0.66))
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !resolveText.isEmpty {
+                    Text(verbatim: resolveText)
+                        .font(LFFont.label(12))
+                        .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                        .lineLimit(2)
+                }
+
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 5) {
+                        Text("Total time")
+                        Text(verbatim: LF.duration(minutes: totalMinutes))
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Total time")
+                        Text(verbatim: LF.duration(minutes: totalMinutes))
+                    }
+                }
+                .font(LFFont.label(11))
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                .accessibilityElement(children: .combine)
             }
 
             Spacer(minLength: 8)
@@ -3977,28 +3977,19 @@ private struct HomeIslandPlayerStatsView: View {
                 Haptics.tap(.light)
             } label: {
                 Image(systemName: "pencil")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(panelInk)
                     .frame(width: 44, height: 44)
-                    .background(panelInk.opacity(0.07), in: Circle())
+                    .background(LFHomeFeatureStyle.field, in: Circle())
             }
             .buttonStyle(LFPressableButtonStyle())
             .accessibilityLabel(Text("Edit player card"))
         }
-        .padding(14)
-        .background(Color.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 20))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20)
-                .stroke(panelInk.opacity(0.11), lineWidth: 1)
-        )
-    }
-
-    private var panelGlass: Color {
-        Color.white.opacity(0.86)
+        .padding(4)
     }
 
     private var panelInk: Color {
-        Color(uiColor: VoyageSceneKit.nightBG)
+        LFHomeFeatureStyle.ink
     }
 
     private var displayName: String {
@@ -4007,8 +3998,7 @@ private struct HomeIslandPlayerStatsView: View {
     }
 
     private var resolveText: String {
-        let trimmed = resolve.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? LF.text("Add a short resolve") : trimmed
+        resolve.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var totalMinutes: Int {

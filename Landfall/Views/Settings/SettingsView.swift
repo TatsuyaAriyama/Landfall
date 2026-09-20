@@ -24,6 +24,7 @@ enum AppIconStore {
 /// 左右を同じ幅にして、タイトルは端末の中央に固定する。
 struct LFBackHeader: View {
     let title: LocalizedStringKey
+    var ink: Color = LFColor.ink
     let onBack: () -> Void
 
     var body: some View {
@@ -35,7 +36,7 @@ struct LFBackHeader: View {
                     Text("Back")
                 }
                 .font(LFFont.label(15))
-                .foregroundStyle(LFColor.ink.opacity(0.72))
+                .foregroundStyle(ink.opacity(0.72))
                 .frame(minWidth: 78, minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
             }
@@ -44,7 +45,7 @@ struct LFBackHeader: View {
             Spacer(minLength: 8)
             Text(title)
                 .font(LFFont.copy(20))
-                .foregroundStyle(LFColor.ink)
+                .foregroundStyle(ink)
                 .lineLimit(1)
             Spacer(minLength: 8)
 
@@ -109,12 +110,12 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            LFBackHeader(title: "Settings") { closeSettings() }
-                .padding(.horizontal, LFMetrics.cardPadding)
-                .padding(.vertical, 6)
+            LFBackHeader(title: "Settings", ink: LFHomeFeatureStyle.ink) { closeSettings() }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
 
             Rectangle()
-                .fill(LFColor.ink.opacity(0.08))
+                .fill(LFHomeFeatureStyle.ink.opacity(0.08))
                 .frame(height: 1)
 
             ScrollView {
@@ -133,22 +134,26 @@ struct SettingsView: View {
                         .padding(.top, 36)
                         .padding(.bottom, 18)
 
-                    HStack(spacing: 10) {
-                        ForEach(AppLanguage.allCases) { language in
-                            languagePill(language)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(AppLanguage.allCases) { language in
+                                languagePill(language)
+                            }
                         }
-                        Spacer(minLength: 0)
+                        .padding(.vertical, 2)
                     }
 
                     sectionLabel("Appearance")
                         .padding(.top, 36)
                         .padding(.bottom, 18)
 
-                    HStack(spacing: 10) {
-                        ForEach(AppTheme.allCases) { theme in
-                            themePill(theme)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(AppTheme.allCases) { theme in
+                                themePill(theme)
+                            }
                         }
-                        Spacer(minLength: 0)
+                        .padding(.vertical, 2)
                     }
 
                     sectionLabel("Island brightness")
@@ -178,17 +183,17 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Help")
                                     .font(LFFont.copy(16))
-                                    .foregroundStyle(LFColor.ink)
+                                    .foregroundStyle(LFHomeFeatureStyle.ink)
                                 Text("See how to use the main features.")
                                     .font(LFFont.label(13))
-                                    .foregroundStyle(LFColor.ink.opacity(0.52))
+                                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.52))
                             }
 
                             Spacer(minLength: 8)
 
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(LFColor.ink.opacity(0.3))
+                                .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.3))
                         }
                         .frame(minHeight: 52)
                         .contentShape(Rectangle())
@@ -210,17 +215,17 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Tutorial")
                                     .font(LFFont.copy(16))
-                                    .foregroundStyle(LFColor.ink)
+                                    .foregroundStyle(LFHomeFeatureStyle.ink)
                                 Text("View the basics again.")
                                     .font(LFFont.label(13))
-                                    .foregroundStyle(LFColor.ink.opacity(0.52))
+                                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.52))
                             }
 
                             Spacer(minLength: 8)
 
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(LFColor.ink.opacity(0.3))
+                                .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.3))
                         }
                         .frame(minHeight: 52)
                         .contentShape(Rectangle())
@@ -241,17 +246,17 @@ struct SettingsView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Opening story")
                                     .font(LFFont.copy(16))
-                                    .foregroundStyle(LFColor.ink)
+                                    .foregroundStyle(LFHomeFeatureStyle.ink)
                                 Text("Watch the opening story again.")
                                     .font(LFFont.label(13))
-                                    .foregroundStyle(LFColor.ink.opacity(0.52))
+                                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.52))
                             }
 
                             Spacer(minLength: 8)
 
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(LFColor.ink.opacity(0.3))
+                                .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.3))
                         }
                         .frame(minHeight: 52)
                         .contentShape(Rectangle())
@@ -304,17 +309,17 @@ struct SettingsView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("3D Asset Studio")
                                         .font(LFFont.copy(16))
-                                        .foregroundStyle(LFColor.ink)
+                                        .foregroundStyle(LFHomeFeatureStyle.ink)
                                     Text("Place and arrange USDZ models.")
                                         .font(LFFont.label(13))
-                                        .foregroundStyle(LFColor.ink.opacity(0.52))
+                                        .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.52))
                                 }
 
                                 Spacer(minLength: 8)
 
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(LFColor.ink.opacity(0.3))
+                                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.3))
                             }
                             .frame(minHeight: 52)
                             .contentShape(Rectangle())
@@ -328,11 +333,18 @@ struct SettingsView: View {
 
                     accountSection
                 }
-                .padding(LFMetrics.cardPadding)
+                .padding(20)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            .scrollBounceBehavior(.basedOnSize)
         }
-        .background(LFColor.paper)
+        .frame(maxWidth: 760)
+        .lfHomeFeatureCard()
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background { LFHarborBackdrop() }
+        .tint(LFHomeFeatureStyle.ink)
         // シート自身も選択言語に追従させる(切替が即時に反映される)。
         .environment(\.locale, (AppLanguage(rawValue: appLanguage) ?? .system).locale)
         .onAppear {
@@ -505,17 +517,17 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Send an improvement idea")
                         .font(LFFont.copy(16))
-                        .foregroundStyle(LFColor.ink)
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
                     Text("Your note goes privately to the operations crew.")
                         .font(LFFont.label(13))
-                        .foregroundStyle(LFColor.ink.opacity(0.52))
+                        .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.52))
                 }
 
                 Spacer(minLength: 8)
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(LFColor.ink.opacity(0.3))
+                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.3))
             }
             .frame(minHeight: 52)
             .contentShape(Rectangle())
@@ -530,10 +542,6 @@ struct SettingsView: View {
 
     private var voyagePassMarkShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: Self.voyagePassMarkSide * 0.22, style: .continuous)
-    }
-
-    private var voyagePassCardShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
     }
 
     private var voyagePassTitle: LocalizedStringKey {
@@ -561,7 +569,7 @@ struct SettingsView: View {
             HStack(spacing: 6) {
                 Text(voyagePassTitle)
                     .font(LFFont.copy(17))
-                    .foregroundStyle(LFColor.ink)
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
                 // 携えているときだけの小さな封蝋。売り込みではなく、確認の印。
                 if voyagePass.isActive {
                     Image(systemName: "checkmark.seal.fill")
@@ -572,22 +580,9 @@ struct SettingsView: View {
             }
             Text(voyagePassSupport)
                 .font(LFFont.label(13))
-                .foregroundStyle(LFColor.ink.opacity(0.52))
+                .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.52))
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
-        }
-    }
-
-    /// 紙からほんの少しだけ持ち上げる。地は ink の薄がけにして、明所でも暗所でも同じだけ浮かせる。
-    private var voyagePassSurface: some View {
-        ZStack {
-            voyagePassCardShape
-                .fill(LFColor.paper)
-                .shadow(color: Color.black.opacity(0.07), radius: 12, y: 5)
-            voyagePassCardShape
-                .fill(LFColor.ink.opacity(0.05))
-            voyagePassCardShape
-                .stroke(LFColor.ink.opacity(0.09), lineWidth: 1)
         }
     }
 
@@ -602,13 +597,12 @@ struct SettingsView: View {
             Image(systemName: "chevron.right")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(
-                    voyagePass.isActive ? LFColor.ink.opacity(0.28) : LFColor.returnOrange.opacity(0.85)
+                    voyagePass.isActive ? LFHomeFeatureStyle.ink.opacity(0.28) : LFColor.returnOrange.opacity(0.85)
                 )
                 .accessibilityHidden(true)
         }
-        .padding(14)
-        .background(voyagePassSurface)
-        .contentShape(voyagePassCardShape)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 
     /// この画面でいちばん価値のある入口。設定の一行ではなく、サービスそのものの扉として置く。
@@ -638,14 +632,14 @@ struct SettingsView: View {
             ForEach(Array(reachedIslands.enumerated()), id: \.element.persistentModelID) { index, island in
                 if index > 0 {
                     Rectangle()
-                        .fill(LFColor.ink.opacity(0.08))
+                        .fill(LFHomeFeatureStyle.ink.opacity(0.08))
                         .frame(height: 1)
                 }
                 HStack(spacing: 14) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: island.name)
                             .font(LFFont.copy(16))
-                            .foregroundStyle(LFColor.ink)
+                            .foregroundStyle(LFHomeFeatureStyle.ink)
                             .lineLimit(1)
                         if let at = island.achievedAt {
                             Text(verbatim: LF.dayMonth(at))
@@ -661,7 +655,7 @@ struct SettingsView: View {
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(LFColor.ink.opacity(0.46))
+                            .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.46))
                             .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
@@ -715,30 +709,31 @@ struct SettingsView: View {
 
                     Text("Notifications")
                         .font(LFFont.copy(17))
-                        .foregroundStyle(LFColor.ink)
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
 
                     if updatingNotifications {
                         ProgressView()
                             .controlSize(.small)
-                            .tint(LFColor.returnOrange)
+                            .tint(LFHomeFeatureStyle.ink)
                             .accessibilityHidden(true)
                     }
                 }
             }
-            .tint(LFColor.returnOrange)
+            .tint(LFHomeFeatureStyle.ink)
             .disabled(updatingNotifications)
 
             if notifyEnabled {
                 Divider()
-                    .overlay(LFColor.ink.opacity(0.10))
+                    .overlay(LFHomeFeatureStyle.ink.opacity(0.10))
 
                 HStack {
                     Text("Time of day")
                         .font(LFFont.copy(16))
-                        .foregroundStyle(LFColor.ink)
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
                     Spacer(minLength: 0)
                     DatePicker("", selection: $notifyTime, displayedComponents: .hourAndMinute)
                         .labelsHidden()
+                        .environment(\.colorScheme, .light)
                         .onChange(of: notifyTime) { _, newValue in
                             let comps = Calendar.current.dateComponents([.hour, .minute], from: newValue)
                             UserDefaults.standard.set(comps.hour ?? 21, forKey: NotificationService.hourKey)
@@ -752,12 +747,6 @@ struct SettingsView: View {
                 }
             }
         }
-        .padding(14)
-        .background(LFColor.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 18))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(LFColor.ink.opacity(0.08), lineWidth: 1)
-        }
     }
 
     private var accountSection: some View {
@@ -768,8 +757,8 @@ struct SettingsView: View {
                 } label: {
                     Text("Sign out")
                         .font(LFFont.copy(16))
-                        .foregroundStyle(LFColor.ink)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
                 .buttonStyle(.plain)
                 .disabled(deletingAccount)
@@ -780,14 +769,14 @@ struct SettingsView: View {
                     Text("Delete account")
                         .font(LFFont.label(15))
                         .foregroundStyle(LFColor.deepRust)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
                 .buttonStyle(.plain)
                 .disabled(deletingAccount)
             } else {
                 Text("Records are stored only on this device.")
                     .font(LFFont.label(13))
-                    .foregroundStyle(LFColor.ink.opacity(0.55))
+                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.55))
 
                 Button {
                     auth.stopLocalMode()
@@ -795,8 +784,8 @@ struct SettingsView: View {
                 } label: {
                     Text("Sign in to sync and use harbors")
                         .font(LFFont.copy(16))
-                        .foregroundStyle(LFColor.ink)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 }
                 .buttonStyle(.plain)
             }
@@ -804,21 +793,23 @@ struct SettingsView: View {
             if let message = auth.errorMessage {
                 Text(message)
                     .font(LFFont.label(13))
-                    .foregroundStyle(LFColor.coral)
+                    .foregroundStyle(LFColor.deepRust)
             }
 
             Divider()
-                .overlay(LFColor.ink.opacity(0.12))
+                .overlay(LFHomeFeatureStyle.ink.opacity(0.12))
 
             if let privacyURL = URL(string: "https://aftide.app/privacy") {
                 Link("Privacy policy", destination: privacyURL)
                     .font(LFFont.label(14))
-                    .foregroundStyle(LFColor.ink.opacity(0.72))
+                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.72))
+                    .frame(minHeight: 44)
             }
             if let supportURL = URL(string: "mailto:ari.initx@gmail.com") {
                 Link("Support", destination: supportURL)
                     .font(LFFont.label(14))
-                    .foregroundStyle(LFColor.ink.opacity(0.72))
+                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.72))
+                    .frame(minHeight: 44)
             }
         }
     }
@@ -856,14 +847,13 @@ struct SettingsView: View {
 
     private func sectionLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
-            .font(LFFont.label(15))
-            .tracking(2)
-            .foregroundStyle(LFColor.ink.opacity(0.55))
+            .font(LFFont.label(13))
+            .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
     }
 
     /// 端末や部屋の明かりで海と砂の見え方は変わる。標準を真ん中に置いた
     private var islandBrightnessSection: some View {
-        HomeIslandBrightnessControl(token: $islandBrightness, ink: LFColor.ink)
+        HomeIslandBrightnessControl(token: $islandBrightness, ink: LFHomeFeatureStyle.ink)
     }
 
     private func themePill(_ theme: AppTheme) -> some View {
@@ -874,13 +864,13 @@ struct SettingsView: View {
         } label: {
             Text(theme.label)
                 .font(LFFont.label(15))
-                .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
+                .foregroundStyle(selected ? Color.white : LFHomeFeatureStyle.ink)
                 .padding(.horizontal, 16)
                 .frame(minHeight: 44)
-                .background(selected ? LFColor.ink : Color.clear)
+                .background(selected ? LFHomeFeatureStyle.ink : Color.clear)
                 .overlay(
                     Capsule(style: .continuous)
-                        .stroke(LFColor.ink.opacity(selected ? 0 : 0.25), lineWidth: 1)
+                        .stroke(LFHomeFeatureStyle.ink.opacity(selected ? 0 : 0.25), lineWidth: 1)
                 )
                 .clipShape(Capsule(style: .continuous))
                 .contentShape(Capsule(style: .continuous))
@@ -904,13 +894,13 @@ struct SettingsView: View {
                 }
             }
             .font(LFFont.label(15))
-            .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
+            .foregroundStyle(selected ? Color.white : LFHomeFeatureStyle.ink)
             .padding(.horizontal, 16)
             .frame(minHeight: 44)
-            .background(selected ? LFColor.ink : Color.clear)
+            .background(selected ? LFHomeFeatureStyle.ink : Color.clear)
             .overlay(
                 Capsule(style: .continuous)
-                    .stroke(LFColor.ink.opacity(selected ? 0 : 0.25), lineWidth: 1)
+                    .stroke(LFHomeFeatureStyle.ink.opacity(selected ? 0 : 0.25), lineWidth: 1)
             )
             .clipShape(Capsule(style: .continuous))
             .contentShape(Capsule(style: .continuous))
@@ -937,13 +927,13 @@ struct SettingsView: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .strokeBorder(
-                                selected ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
+                                selected ? LFHomeFeatureStyle.ink : LFHomeFeatureStyle.outline,
                                 lineWidth: selected ? 3 : 1
                             )
                     )
                 Text(option.displayName)
                     .font(LFFont.label(14))
-                    .foregroundStyle(selected ? LFColor.ink : LFColor.ink.opacity(0.5))
+                    .foregroundStyle(selected ? LFHomeFeatureStyle.ink : LFHomeFeatureStyle.ink.opacity(0.5))
             }
         }
         .buttonStyle(.plain)

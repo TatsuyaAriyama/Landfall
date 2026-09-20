@@ -105,6 +105,7 @@ struct RecordSessionSheet: View {
     /// 閉じ忘れ疑いの長時間航海を着岸するときの確認。
     @State private var confirmingLong = false
     @State private var pendingMinutes = 0
+    @State private var correctingTimerStart: Double?
     @State private var saveError = false
     @FocusState private var noteFocused: Bool
 
@@ -124,49 +125,76 @@ struct RecordSessionSheet: View {
         AccessPolicy.isDeveloper()
     }
 
+    private var isCorrectingLongVoyage: Bool {
+        correctingTimerStart != nil
+    }
+
+    private var maximumManualMinutes: Int {
+        isCorrectingLongVoyage ? min(pendingMinutes, WorkRecordPolicy.maximumSessionMinutes) : 600
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
+        VStack(alignment: .leading, spacing: 16) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
 
-            timerSection
-                .padding(.top, 28)
+                    timerSection
+                        .padding(.top, 28)
 
-            if canEnterWorkTimeManually {
-                manualSection
-                    .padding(.top, 28)
+                    if canEnterWorkTimeManually || isCorrectingLongVoyage {
+                        manualSection
+                            .padding(.top, 28)
+                    }
+
+                    TextField(
+                        "What you worked on (optional)", text: $note,
+                        prompt: Text("What you worked on (optional)")
+                            .foregroundColor(LFHomeFeatureStyle.secondaryInk)
+                    )
+                        .font(LFFont.label(16))
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
+                        .tint(LFHomeFeatureStyle.ink)
+                        .focused($noteFocused)
+                        .submitLabel(.done)
+                        .onSubmit { noteFocused = false }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 14)
+                        .frame(minHeight: 52)
+                        .background(LFHomeFeatureStyle.field, in: RoundedRectangle(cornerRadius: 16))
+                        .padding(.top, 28)
+                }
+                .padding(.bottom, 4)
             }
+            .scrollDismissesKeyboard(.interactively)
 
-            TextField("What you worked on (optional)", text: $note)
-                .font(LFFont.label(16))
-                .foregroundStyle(LFColor.ink)
-                .tint(LFColor.ink)
-                .focused($noteFocused)
-                .submitLabel(.done)
-                .padding(.horizontal, 18)
-                .frame(height: 52)
-                .background(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
-                )
-                .padding(.top, 28)
-
-            Spacer()
-
-            if canEnterWorkTimeManually {
+            if canEnterWorkTimeManually || isCorrectingLongVoyage {
                 saveButton
             }
         }
-        .padding(LFMetrics.cardPadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(LFColor.paper)
+        .padding(20)
+        .lfHomeFeatureCard()
+        .frame(maxWidth: 560)
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background { LFHarborBackdrop() }
+        .tint(LFHomeFeatureStyle.ink)
         .presentationDetents([.large])
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Done") { noteFocused = false }
+            }
+        }
         .alert("A long voyage", isPresented: $confirmingLong) {
             Button("Log the whole time") {
                 stopTimerAndSave(confirmLong: true)
             }
             Button("Pick the length instead") {
-                clearTimer()
-                minutes = 0   // 手入力モードに切り替え、長さを選び直せる。
+                // Keep the measured timer until the corrected record is saved.
+                // Recovery is available to every player, bounded by elapsed work.
+                correctingTimerStart = timerStart
+                minutes = min(pendingMinutes, WorkRecordPolicy.maximumSessionMinutes)
             }
             Button("Keep sailing", role: .cancel) { }   // タイマーは残す。
         } message: {
@@ -185,6 +213,8 @@ struct RecordSessionSheet: View {
             }
             #endif
         }
+        .onChange(of: timerStart) { _, _ in resetCorrectionIfTimerChanged() }
+        .onChange(of: timerItemID) { _, _ in resetCorrectionIfTimerChanged() }
     }
 
     // MARK: - ヘッダー
@@ -195,7 +225,7 @@ struct RecordSessionSheet: View {
                 .frame(width: 52, height: 52)
             Text(item.name)
                 .font(LFFont.copy(20))
-                .foregroundStyle(LFColor.ink)
+                .foregroundStyle(LFHomeFeatureStyle.ink)
                 .lineLimit(2)
             Spacer()
         }
@@ -210,7 +240,7 @@ struct RecordSessionSheet: View {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     Text(elapsedText(at: context.date))
                         .font(LFFont.number(44))
-                        .foregroundStyle(LFColor.ink)
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
                 }
                 HStack(spacing: 12) {
                     Button {
@@ -218,10 +248,10 @@ struct RecordSessionSheet: View {
                     } label: {
                         Text("Make landfall")
                             .font(LFFont.copy(17))
-                            .foregroundStyle(LFColor.paper)
+                            .foregroundStyle(Color.white)
                             .frame(maxWidth: .infinity)
                             .frame(height: 56)
-                            .background(LFColor.ink)
+                            .background(LFHomeFeatureStyle.primaryFill)
                             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                     }
                     .buttonStyle(.plain)
@@ -230,12 +260,12 @@ struct RecordSessionSheet: View {
                     } label: {
                         Text("Cancel")
                             .font(LFFont.label(15))
-                            .foregroundStyle(LFColor.ink.opacity(0.5))
+                            .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
                             .padding(.horizontal, 16)
                             .frame(height: 56)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                    .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
+                                    .stroke(LFHomeFeatureStyle.outline, lineWidth: 1)
                             )
                     }
                     .buttonStyle(.plain)
@@ -244,7 +274,7 @@ struct RecordSessionSheet: View {
         } else if timerRunningElsewhere {
             Text("Under sail on another item.")
                 .font(LFFont.label(15))
-                .foregroundStyle(LFColor.ink.opacity(0.5))
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
         } else {
             Button {
                 KeelMiraWidgetStore.start(
@@ -261,12 +291,12 @@ struct RecordSessionSheet: View {
             } label: {
                 Text("Set sail")
                     .font(LFFont.copy(17))
-                    .foregroundStyle(LFColor.ink)
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
                     .frame(maxWidth: .infinity)
                     .frame(height: 56)
                     .overlay(
                         RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(LFColor.ink, lineWidth: 1.5)
+                            .stroke(LFHomeFeatureStyle.ink, lineWidth: 1.5)
                     )
             }
             .buttonStyle(.plain)
@@ -278,34 +308,39 @@ struct RecordSessionSheet: View {
     private var manualSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             // 記録する日(既定は今日)。過去日も選べる=後からつけられる。
-            HStack {
-                Text("Date")
-                    .font(LFFont.label(13))
-                    .foregroundStyle(LFColor.ink.opacity(0.5))
-                Spacer()
-                DatePicker(
-                    "",
-                    selection: $recordDate,
-                    in: ...Date(),
-                    displayedComponents: [.date, .hourAndMinute]
-                )
-                .labelsHidden()
-                .tint(LFColor.ink)
+            if !isCorrectingLongVoyage {
+                HStack {
+                    Text("Date")
+                        .font(LFFont.label(13))
+                        .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                    Spacer()
+                    DatePicker(
+                        "",
+                        selection: $recordDate,
+                        in: ...Date(),
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .labelsHidden()
+                    .tint(LFHomeFeatureStyle.ink)
+                }
             }
 
             Text("Or pick a voyage length")
                 .font(LFFont.label(13))
-                .foregroundStyle(LFColor.ink.opacity(0.5))
-            HStack(spacing: 10) {
-                ForEach([15, 30, 45, 60], id: \.self) { value in
-                    minuteChip(value)
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach([15, 30, 45, 60], id: \.self) { value in
+                        minuteChip(value)
+                    }
                 }
+                .padding(.vertical, 2)
             }
-            Stepper(value: $minutes, in: 0...600, step: 5) {
+            Stepper(value: $minutes, in: 0...maximumManualMinutes, step: 5) {
                 Text(minutes > 0 ? "\(minutes) min" : "0 min")
                     .font(LFFont.copy(17))
                     .monospacedDigit()
-                    .foregroundStyle(minutes > 0 ? LFColor.ink : LFColor.ink.opacity(0.35))
+                    .foregroundStyle(minutes > 0 ? LFHomeFeatureStyle.ink : LFHomeFeatureStyle.ink.opacity(0.35))
             }
         }
     }
@@ -318,13 +353,14 @@ struct RecordSessionSheet: View {
             Text("\(value) min")
                 .font(LFFont.label(15))
                 .monospacedDigit()
-                .foregroundStyle(selected ? LFColor.paper : LFColor.ink)
+                .foregroundStyle(selected ? Color.white : LFHomeFeatureStyle.ink)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 9)
-                .background(selected ? LFColor.ink : Color.clear)
+                .frame(minHeight: 44)
+                .background(selected ? LFHomeFeatureStyle.ink : Color.clear)
                 .overlay(
                     Capsule(style: .continuous)
-                        .stroke(LFColor.ink.opacity(selected ? 0 : 0.25), lineWidth: 1)
+                        .stroke(LFHomeFeatureStyle.ink.opacity(selected ? 0 : 0.25), lineWidth: 1)
                 )
                 .clipShape(Capsule(style: .continuous))
         }
@@ -335,14 +371,23 @@ struct RecordSessionSheet: View {
 
     private var saveButton: some View {
         Button {
-            save(minutes: minutes, date: recordDate)
+            if let correctingTimerStart {
+                guard timerRunningHere, timerStart == correctingTimerStart else {
+                    resetCorrectionIfTimerChanged()
+                    return
+                }
+                save(minutes: min(minutes, maximumManualMinutes), date: Date(), clearsTimerAfterSave: true)
+            } else {
+                save(minutes: minutes, date: recordDate)
+            }
         } label: {
             Text("Log this voyage")
                 .font(LFFont.copy(18))
-                .foregroundStyle(minutes > 0 ? LFColor.paper : LFColor.paper.opacity(0.6))
+                .foregroundStyle(minutes > 0 ? Color.white : Color.white.opacity(0.6))
                 .frame(maxWidth: .infinity)
-                .frame(height: 64)
-                .background(minutes > 0 ? LFColor.ink : LFColor.ink.opacity(0.3))
+                .padding(.vertical, 18)
+                .frame(minHeight: 64)
+                .background(minutes > 0 ? LFHomeFeatureStyle.ink : LFHomeFeatureStyle.ink.opacity(0.3))
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -379,8 +424,15 @@ struct RecordSessionSheet: View {
 
     private func clearTimer() {
         StudyTimer.clear(ifMatching: item.uuid.uuidString)
-        timerStart = 0
-        timerItemID = ""
+        correctingTimerStart = nil
+    }
+
+    private func resetCorrectionIfTimerChanged() {
+        guard let correctingTimerStart else { return }
+        if timerStart != correctingTimerStart || !timerRunningHere {
+            self.correctingTimerStart = nil
+            minutes = 0
+        }
     }
 
     private func save(minutes: Int, date: Date, timingJSON: String? = nil, clearsTimerAfterSave: Bool = false) {

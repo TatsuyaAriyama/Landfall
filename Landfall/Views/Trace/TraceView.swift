@@ -37,6 +37,7 @@ struct TraceView: View {
     @State private var selectedItemID: UUID?
     @State private var editingSession: StudySession?
     @State private var pendingDelete: StudySession?
+    @State private var deleteError = false
     @FocusState private var dayNoteFocused: Bool
 
     init(onClose: (() -> Void)? = nil, initialDay: Date? = nil, readOnly: Bool = false) {
@@ -95,11 +96,10 @@ struct TraceView: View {
 
     var body: some View {
         ZStack {
-            LFColor.paper.ignoresSafeArea()
+            LFHarborBackdrop()
 
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
-                    header
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         WorkRecordWeeklySummaryView(
                             sessions: sessions, now: max(context.date, Date()),
@@ -121,8 +121,12 @@ struct TraceView: View {
                         switch section {
                         case .calendar:
                             calendarSection
+                                .padding(18)
+                                .lfHomeFeatureCard()
                         case .index:
                             notesIndex
+                                .padding(18)
+                                .lfHomeFeatureCard()
                         }
                     }
                     .padding(.top, 24)
@@ -133,8 +137,21 @@ struct TraceView: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollDismissesKeyboard(.interactively)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                header
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 12)
+                    .frame(maxWidth: 760)
+                    .frame(maxWidth: .infinity)
+                    .background(.ultraThinMaterial)
+            }
         }
-        .tint(LFColor.ink)
+        .tint(LFHomeFeatureStyle.ink)
+        .alert("Could not delete the record", isPresented: $deleteError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Your record has not been deleted. Please try again.")
+        }
         .sheet(item: $editingSession) { session in
             SessionEditSheet(session: session)
         }
@@ -196,9 +213,11 @@ struct TraceView: View {
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(LFColor.paper)
+                        .foregroundStyle(Color.white)
                         .frame(width: 36, height: 36)
-                        .background(LFColor.ink, in: Circle())
+                        .background(LFHomeFeatureStyle.ink, in: Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(LFPressableButtonStyle())
                 .accessibilityLabel(Text("Close"))
@@ -206,7 +225,7 @@ struct TraceView: View {
 
             Text("Trace")
                 .font(LFFont.copy(26))
-                .foregroundStyle(LFColor.ink)
+                .foregroundStyle(LFHomeFeatureStyle.ink)
 
             Spacer(minLength: 0)
         }
@@ -224,19 +243,19 @@ struct TraceView: View {
                     Text(candidate.title)
                         .font(LFFont.label(14))
                         .foregroundStyle(
-                            section == candidate ? LFColor.paper : LFColor.ink.opacity(0.72)
+                            section == candidate ? Color.white : LFHomeFeatureStyle.ink.opacity(0.72)
                         )
                         .padding(.horizontal, 17)
                         .frame(height: 44)
                         .background(
-                            section == candidate ? LFColor.ink : Color.clear,
+                            section == candidate ? LFHomeFeatureStyle.ink : Color.clear,
                             in: Capsule(style: .continuous)
                         )
                         .overlay(
                             Capsule(style: .continuous)
                                 .stroke(
                                     section == candidate
-                                        ? Color.clear : LFColor.ink.opacity(0.22),
+                                        ? Color.clear : LFHomeFeatureStyle.ink.opacity(0.22),
                                     lineWidth: 1
                                 )
                         )
@@ -261,11 +280,11 @@ struct TraceView: View {
                     } label: {
                         Text("Today")
                             .font(LFFont.label(13))
-                            .foregroundStyle(LFColor.ink.opacity(0.72))
+                            .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.72))
                             .padding(.horizontal, 16)
                             .frame(height: 40)
                             .overlay(
-                                Capsule().stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
+                                Capsule().stroke(LFHomeFeatureStyle.ink.opacity(0.2), lineWidth: 1)
                             )
                     }
                     .buttonStyle(LFPressableButtonStyle())
@@ -304,7 +323,7 @@ struct TraceView: View {
                 )
             )
             .font(LFFont.copy(20))
-            .foregroundStyle(LFColor.ink)
+            .foregroundStyle(LFHomeFeatureStyle.ink)
 
             Spacer()
 
@@ -331,7 +350,7 @@ struct TraceView: View {
         } label: {
             Image(systemName: systemName)
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(LFColor.ink.opacity(enabled ? 0.72 : 0.2))
+                .foregroundStyle(LFHomeFeatureStyle.ink.opacity(enabled ? 0.72 : 0.2))
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
@@ -350,7 +369,7 @@ struct TraceView: View {
             ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
                 Text(verbatim: symbol)
                     .font(LFFont.label(11))
-                    .foregroundStyle(LFColor.ink.opacity(0.44))
+                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.44))
                     .frame(maxWidth: .infinity)
                     .frame(height: 24)
             }
@@ -388,13 +407,13 @@ struct TraceView: View {
                 .foregroundStyle(
                     studied || rested
                         ? LFColor.inkFixed
-                        : LFColor.ink.opacity(isFuture || beforeStart ? 0.28 : 0.76)
+                        : LFHomeFeatureStyle.ink.opacity(isFuture || beforeStart ? 0.28 : 0.76)
                 )
                 .frame(width: 40, height: 40)
                 .background(
                     studied
-                        ? LFColor.seaGreen
-                        : (rested ? LFColor.sunYellow : Color.clear),
+                        ? LFColor.seaGreen.opacity(0.48)
+                        : (rested ? LFColor.harborSand.opacity(0.42) : Color.clear),
                     in: Circle()
                 )
                 .overlay(
@@ -405,7 +424,7 @@ struct TraceView: View {
                 )
                 .overlay(
                     Circle()
-                        .stroke(selected ? LFColor.ink : Color.clear, lineWidth: 2)
+                        .stroke(selected ? LFHomeFeatureStyle.ink : Color.clear, lineWidth: 2)
                         .padding(-3)
                 )
                 .frame(maxWidth: .infinity)
@@ -443,12 +462,12 @@ struct TraceView: View {
             Text(verbatim: value)
                 .font(compact ? LFFont.number(20) : LFFont.number(28))
                 .monospacedDigit()
-                .foregroundStyle(LFColor.ink)
+                .foregroundStyle(LFHomeFeatureStyle.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             Text(label)
                 .font(LFFont.label(11))
-                .foregroundStyle(LFColor.returnOrange)
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
@@ -462,7 +481,7 @@ struct TraceView: View {
                 Text(LF.dayWithWeekday(selectedDay))
                     .font(LFFont.label(13))
                     .tracking(0.5)
-                    .foregroundStyle(LFColor.ink.opacity(0.58))
+                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.58))
                 if selectedTotal > 0 {
                     Text(verbatim: "· \(LF.duration(minutes: selectedTotal))")
                         .font(LFFont.label(12))
@@ -474,7 +493,7 @@ struct TraceView: View {
                 if selectedDayEntry != nil && canEditSelectedReflection {
                     TextField("Reflections on this day", text: $dayNoteDraft)
                         .font(LFFont.copy(15))
-                        .foregroundStyle(LFColor.ink)
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
                         .tint(LFColor.returnOrange)
                         .focused($dayNoteFocused)
                         .submitLabel(.done)
@@ -486,24 +505,21 @@ struct TraceView: View {
                         .frame(height: 50)
                         .background(
                             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                                .stroke(LFColor.ink.opacity(0.18), lineWidth: 1)
+                                .stroke(LFHomeFeatureStyle.ink.opacity(0.18), lineWidth: 1)
                         )
                         .accessibilityLabel(Text("Reflections on this day"))
                 } else if !dayNoteDraft.isEmpty {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(verbatim: dayNoteDraft)
                             .font(LFFont.copy(15))
-                            .foregroundStyle(LFColor.ink)
+                            .foregroundStyle(LFHomeFeatureStyle.ink)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("Only today and yesterday can be edited.")
-                            .font(LFFont.label(11))
-                            .foregroundStyle(LFColor.ink.opacity(0.42))
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(15)
                     .overlay {
                         RoundedRectangle(cornerRadius: 15, style: .continuous)
-                            .stroke(LFColor.ink.opacity(0.13), lineWidth: 1)
+                            .stroke(LFHomeFeatureStyle.ink.opacity(0.13), lineWidth: 1)
                     }
                 }
 
@@ -512,7 +528,7 @@ struct TraceView: View {
             if timeline.timed.contains(where: { $0.continuesFromPreviousDay || $0.continuesToNextDay }) {
                 Text("Totals follow the saved date. Overnight work is shown on each day of the timeline.")
                     .font(LFFont.label(11))
-                    .foregroundStyle(LFColor.ink.opacity(0.6))
+                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.6))
                     .fixedSize(horizontal: false, vertical: true)
             }
             WorkRecordTimelineView(
@@ -530,10 +546,10 @@ struct TraceView: View {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 14, weight: .regular))
-                    .foregroundStyle(LFColor.ink.opacity(0.42))
+                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.42))
                 TextField("Search notes", text: $searchText)
                     .font(LFFont.copy(15))
-                    .foregroundStyle(LFColor.ink)
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
                     .tint(LFColor.returnOrange)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -542,7 +558,7 @@ struct TraceView: View {
             .frame(height: 50)
             .background(
                 RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(LFColor.ink.opacity(0.18), lineWidth: 1)
+                    .stroke(LFHomeFeatureStyle.ink.opacity(0.18), lineWidth: 1)
             )
 
             if !items.isEmpty {
@@ -561,18 +577,18 @@ struct TraceView: View {
                                         .lineLimit(1)
                                 }
                                 .foregroundStyle(
-                                    selectedItemID == item.uuid ? LFColor.paper : LFColor.ink.opacity(0.72)
+                                    selectedItemID == item.uuid ? Color.white : LFHomeFeatureStyle.ink.opacity(0.72)
                                 )
                                 .padding(.horizontal, 12)
                                 .frame(height: 44)
                                 .background(
-                                    selectedItemID == item.uuid ? LFColor.ink : Color.clear,
+                                    selectedItemID == item.uuid ? LFHomeFeatureStyle.ink : Color.clear,
                                     in: Capsule()
                                 )
                                 .overlay(
                                     Capsule().stroke(
                                         selectedItemID == item.uuid
-                                            ? Color.clear : LFColor.ink.opacity(0.18),
+                                            ? Color.clear : LFHomeFeatureStyle.ink.opacity(0.18),
                                         lineWidth: 1
                                     )
                                 )
@@ -590,23 +606,23 @@ struct TraceView: View {
 
             let notes = visibleNotes
             if notes.isEmpty {
-                Text("No notes yet. Add a word to a record and it gathers here.")
+                Text(searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedItemID == nil ? "No notes yet" : "No matching notes")
                     .font(LFFont.copy(15))
-                    .foregroundStyle(LFColor.ink.opacity(0.5))
+                    .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 28)
             } else {
                 Text(LF.format("%lld notes", Int64(notes.count)))
                 .font(LFFont.label(12))
                 .tracking(0.5)
-                .foregroundStyle(LFColor.ink.opacity(0.5))
+                .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.5))
                 .padding(.top, 28)
 
                 VStack(spacing: 0) {
                     ForEach(Array(notes.enumerated()), id: \.element.id) { index, note in
                         if index > 0 {
                             Rectangle()
-                                .fill(LFColor.ink.opacity(0.08))
+                                .fill(LFHomeFeatureStyle.ink.opacity(0.08))
                                 .frame(height: 1)
                         }
                         noteRow(note)
@@ -626,11 +642,11 @@ struct TraceView: View {
                 }
             }
             .font(LFFont.label(11))
-            .foregroundStyle(LFColor.ink.opacity(0.44))
+            .foregroundStyle(LFHomeFeatureStyle.ink.opacity(0.44))
 
             Text(verbatim: note.text)
                 .font(LFFont.copy(15))
-                .foregroundStyle(LFColor.ink)
+                .foregroundStyle(LFHomeFeatureStyle.ink)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -820,12 +836,12 @@ struct TraceView: View {
     private func deleteSession(_ session: StudySession) {
         guard !readOnly else { return }
         let date = session.date
-        SyncService.shared.delete(session)
-        modelContext.delete(session)
-        StudyDayStore.unmarkDayIfEmpty(date, context: modelContext)
-        try? modelContext.save()
-        PublicHarborService.shared.publishCurrentMonth(context: modelContext)
-        WidgetBridge.refresh(context: modelContext)
+        do {
+            try StudySessionStore.delete(session, context: modelContext)
+        } catch {
+            deleteError = true
+            return
+        }
         if calendar.isDate(date, inSameDayAs: selectedDay) {
             loadDayNote()
         }

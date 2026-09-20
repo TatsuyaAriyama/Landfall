@@ -214,7 +214,7 @@ private struct ProfileStylePicker: View, Equatable {
     var body: some View {
         // カードの配色は項目タイルより数が多いので、シンボルと同じく横スクロール。
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 14) {
+            HStack(spacing: 10) {
                 ForEach(TileStyle.allCases) { style in
                     Button {
                         onSelect(style.rawValue)
@@ -225,20 +225,22 @@ private struct ProfileStylePicker: View, Equatable {
                             .overlay(
                                 Circle().stroke(
                                     selected == style.rawValue
-                                        ? LFColor.returnOrange : LFColor.ink.opacity(0.12),
+                                        ? LFHomeFeatureStyle.ink : LFHomeFeatureStyle.outline,
                                     lineWidth: selected == style.rawValue ? 3 : 1
                                 )
                             )
                             .overlay(alignment: .bottomTrailing) {
                                 ProfileSelectionBadge(isVisible: selected == style.rawValue)
                             }
+                            .frame(width: 48, height: 48)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(LFPressableButtonStyle())
                     .accessibilityLabel(Text(style.accessibilityName))
                     .accessibilityAddTraits(selected == style.rawValue ? .isSelected : [])
                 }
             }
-            .padding(.vertical, 4)   // 選択枠が切れないように
+            .padding(3) // Keep selection outlines inside the scrollable bounds.
         }
     }
 }
@@ -253,15 +255,15 @@ private struct ProfileSymbolPicker: View, Equatable {
     var body: some View {
         // 数が増えたので横スクロール。
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 14) {
+            HStack(spacing: 10) {
                 ForEach(TileSymbol.allCases) { symbol in
                     Button {
                         onSelect(symbol.rawValue)
                     } label: {
                         ZStack {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(LFColor.ink.opacity(0.06))
-                            TileSymbolView(symbol: symbol, fg: LFColor.ink, bg: LFColor.paper)
+                                .fill(LFHomeFeatureStyle.field)
+                            TileSymbolView(symbol: symbol, fg: LFHomeFeatureStyle.ink, bg: .white)
                                 .frame(width: 26, height: 26)
                         }
                         .frame(width: 44, height: 44)
@@ -269,29 +271,30 @@ private struct ProfileSymbolPicker: View, Equatable {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .stroke(
                                     selected == symbol.rawValue
-                                        ? LFColor.returnOrange : .clear,
+                                        ? LFHomeFeatureStyle.ink : .clear,
                                     lineWidth: 3
                                 )
                         )
                         .overlay(alignment: .bottomTrailing) {
                             ProfileSelectionBadge(isVisible: selected == symbol.rawValue)
                         }
+                        .frame(width: 48, height: 48)
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(LFPressableButtonStyle())
                     .accessibilityLabel(Text(symbol.accessibilityName))
                     .accessibilityAddTraits(selected == symbol.rawValue ? .isSelected : [])
                 }
             }
-            .padding(.vertical, 4)   // 選択枠が切れないように
+            .padding(3) // Keep selection outlines inside the scrollable bounds.
         }
     }
 }
 
 struct ProfileEditorSheet: View {
     var onSaved: () -> Void = {}
-    /// Rendered inside the island's floating player panel: the form keeps its
-    /// full content but drops the sheet-sized header and paper background so it
-    /// fits a small card.
+    /// Embedded editing inherits the island panel's glass and leaves the world
+    /// visible; standalone editing uses the same form over the harbor backdrop.
     var compact = false
     /// Supplied when the editor is embedded rather than presented, because an
     /// embedded view has no presentation to dismiss.
@@ -305,163 +308,164 @@ struct ProfileEditorSheet: View {
     @State private var working = false
 
     var body: some View {
-        VStack(spacing: 0) {
+        Group {
             if compact {
-                HStack(spacing: 8) {
-                    Button(action: close) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(LFColor.ink.opacity(0.62))
-                            .frame(width: 26, height: 26)
-                            .background(LFColor.ink.opacity(0.06), in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text("Back"))
-
-                    Text("Player card")
-                        .font(LFFont.label(10))
-                        .tracking(1.1)
-                        .foregroundStyle(LFColor.ink.opacity(0.62))
-                    Spacer(minLength: 0)
-                }
-                .padding(.bottom, 8)
+                editorContent
             } else {
-                LFBackHeader(title: "Player card") { close() }
-                    .padding(.horizontal, LFMetrics.cardPadding)
-                    .padding(.vertical, 6)
+                VStack(spacing: 0) {
+                    editorContent
+                        .padding(20)
+                        .lfHomeFeatureCard()
+                        .frame(maxWidth: 560)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 16)
+                    Spacer(minLength: 20)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background { LFHarborBackdrop() }
+            }
+        }
+        .tint(LFHomeFeatureStyle.ink)
+    }
 
-                Rectangle()
-                    .fill(LFColor.ink.opacity(0.08))
-                    .frame(height: 1)
+    private var editorContent: some View {
+        VStack(spacing: 16) {
+            editorHeader
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    identityField
+                    resolveField
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionLabel("Color")
+                        // Keep the visual choices stable while Japanese text is composed.
+                        ProfileStylePicker(selected: styleToken) { styleToken = $0 }
+                            .equatable()
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        sectionLabel("Symbol")
+                        ProfileSymbolPicker(selected: symbolToken) { symbolToken = $0 }
+                            .equatable()
+                    }
+                }
+                .padding(.bottom, 6)
+            }
+            .frame(maxHeight: compact ? 350 : 430)
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollDismissesKeyboard(.interactively)
+        }
+    }
+
+    private var editorHeader: some View {
+        HStack(spacing: 10) {
+            Button(action: close) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
+                    .frame(width: 44, height: 44)
+                    .background(LFHomeFeatureStyle.field, in: Circle())
+            }
+            .buttonStyle(LFPressableButtonStyle())
+            .accessibilityLabel(Text("Back"))
+
+            Text("Player card")
+                .font(LFFont.copy(compact ? 16 : 18))
+                .foregroundStyle(LFHomeFeatureStyle.ink)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+
+            Button(action: submit) {
+                HStack(spacing: 6) {
+                    if working {
+                        ProgressView()
+                            .tint(.white)
+                    }
+                    Text(working ? "Saving…" : "Save")
+                        .font(LFFont.copy(14))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .background(LFHomeFeatureStyle.primaryFill, in: Capsule())
+            }
+            .buttonStyle(LFPressableButtonStyle())
+            .disabled(working)
+            .opacity(working ? 0.65 : 1)
+        }
+    }
+
+    private var identityField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                sectionLabel("Player name")
+                Spacer(minLength: 8)
+                Text(verbatim: "\(trimmedNameCount)/\(PlayerProfile.nameCharacterLimit)")
+                    .font(LFFont.label(12))
+                    .foregroundStyle(
+                        trimmedNameCount > PlayerProfile.nameCharacterLimit
+                            ? LFColor.deepRust : LFHomeFeatureStyle.secondaryInk
+                    )
+                    .accessibilityLabel(
+                        Text(verbatim: LF.format(
+                            "%lld of %lld characters",
+                            Int64(trimmedNameCount),
+                            Int64(PlayerProfile.nameCharacterLimit)
+                        ))
+                    )
             }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                // プレビュー: 入力がそのままカードになる。
-                PlayerCardView(
-                    name: previewName,
-                    styleToken: styleToken,
-                    symbolToken: symbolToken,
-                    resolve: resolve,
-                    sinceDay: PlayerProfile.sinceDay
-                )
-                .padding(.top, 20)
+            HStack(spacing: 12) {
+                PlayerAvatarArt(styleToken: styleToken, symbolToken: symbolToken)
+                    .frame(width: 52, height: 52)
+                    .overlay(Circle().stroke(LFHomeFeatureStyle.outline, lineWidth: 1))
+                    .accessibilityHidden(true)
 
-                HStack {
-                    sectionLabel("Player name")
-                    Spacer()
-                    Text(verbatim: "\(trimmedNameCount)/\(PlayerProfile.nameCharacterLimit)")
-                        .font(LFFont.label(11))
-                        .foregroundStyle(
-                            trimmedNameCount > PlayerProfile.nameCharacterLimit
-                                ? LFColor.returnOrange : LFColor.ink.opacity(0.42)
-                        )
-                        .accessibilityLabel(
-                            Text(
-                                verbatim: LF.format(
-                                    "%lld of %lld characters",
-                                    Int64(trimmedNameCount),
-                                    Int64(PlayerProfile.nameCharacterLimit)
-                                )
-                            )
-                        )
-                }
-                    .padding(.top, 32)
-                TextField("Player name", text: $name)
-                    .font(LFFont.label(16))
-                    .foregroundStyle(LFColor.ink)
-                    .tint(LFColor.ink)
-                    .padding(.horizontal, 18)
-                    .frame(height: 52)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
-                    )
-                    .padding(.top, 12)
+                // Limits are applied only when saving, never to marked IME text.
+                TextField(
+                    "Player name", text: $name,
+                    prompt: Text("Player name").foregroundColor(LFHomeFeatureStyle.secondaryInk)
+                )
+                    .font(LFFont.copy(17))
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 52)
+                    .background(LFHomeFeatureStyle.field, in: RoundedRectangle(cornerRadius: 14))
                     .autocorrectionDisabled()
                     .submitLabel(.done)
                     .onSubmit(submit)
-
-                sectionLabel("Color")
-                    .padding(.top, 28)
-                // 名前や決意を一文字打つたびに、この二十枚の絵柄まで描き直して
-                // いた。選んでいるトークンだけを見る等値ビューにして、打鍵中は
-                // そのまま据え置く。
-                ProfileStylePicker(selected: styleToken) { styleToken = $0 }
-                    .equatable()
-                    .padding(.top, 12)
-
-                sectionLabel("Symbol")
-                    .padding(.top, 28)
-                ProfileSymbolPicker(selected: symbolToken) { symbolToken = $0 }
-                    .equatable()
-                    .padding(.top, 12)
-
-                sectionLabel("Resolve")
-                    .padding(.top, 28)
-                // 打鍵ごとにresolveを書き戻すと、日本語入力の変換中文字(未確定文字列)が
-                // 毎回リセットされ、日本語が一切打てなくなる。上限は保存時にのみ適用する。
-                // 二行に折り返したいので縦書き軸のまま。改行キーは onSubmit を
-                // 呼ばないので、入った改行を取り除いて保存に振り替える。
-                TextField("Write your resolve", text: $resolve, axis: .vertical)
-                    .font(LFFont.label(16))
-                    .foregroundStyle(LFColor.ink)
-                    .tint(LFColor.ink)
-                    .lineLimit(2)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 14)
-                    .background(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(LFColor.ink.opacity(0.2), lineWidth: 1)
-                    )
-                    .padding(.top, 12)
-                    .onChange(of: resolve) { _, value in
-                        guard value.contains(where: \.isNewline) else { return }
-                        resolve = value
-                            .split(whereSeparator: \.isNewline)
-                            .joined(separator: " ")
-                        submit()
-                    }
-
-                Button(action: submit) {
-                    HStack(spacing: 9) {
-                        if working {
-                            ProgressView()
-                                .tint(LFColor.paper)
-                        }
-                        Text(working ? "Saving…" : "Save this card")
-                    }
-                    .font(LFFont.copy(17))
-                    .foregroundStyle(LFColor.paper)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .background(LFColor.ink)
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .disabled(working)
-                .opacity(working ? 0.45 : 1)
-                .padding(.top, 32)
-                }
-                .padding(compact ? 0 : LFMetrics.cardPadding)
             }
-            .frame(maxHeight: compact ? 380 : .infinity)
-            .scrollBounceBehavior(compact ? .basedOnSize : .automatic)
         }
-        .background(compact ? Color.clear : LFColor.paper)
     }
 
-    /// 保存ボタンと、名前・決意の改行キーの行き先。二重に走らせない。
+    private var resolveField: some View {
+        TextField(
+            "Resolve", text: $resolve,
+            prompt: Text("Resolve").foregroundColor(LFHomeFeatureStyle.secondaryInk),
+            axis: .vertical
+        )
+            .font(LFFont.label(16))
+            .foregroundStyle(LFHomeFeatureStyle.ink)
+            .lineLimit(2...3)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(minHeight: 52)
+            .background(LFHomeFeatureStyle.field, in: RoundedRectangle(cornerRadius: 14))
+            .accessibilityLabel(Text("Resolve"))
+    }
+
+    /// 保存ボタンと名前の確定キーの行き先。二重に走らせない。
     private func submit() {
         guard !working else { return }
+        working = true
         Task {
-            working = true
             // 上限はここでのみ適用(打鍵中に書き戻すとIME変換が壊れるため)。
             PlayerProfile.save(
                 name: name,
                 styleToken: styleToken,
                 symbolToken: symbolToken,
-                resolve: resolve
+                resolve: resolve.split(whereSeparator: \.isNewline).joined(separator: " ")
             )
             name = PlayerProfile.name
             resolve = PlayerProfile.resolve
@@ -486,17 +490,11 @@ struct ProfileEditorSheet: View {
     private func sectionLabel(_ text: LocalizedStringKey) -> some View {
         Text(text)
             .font(LFFont.label(13))
-            .tracking(1)
-            .foregroundStyle(LFColor.ink.opacity(0.5))
+            .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
     }
 
     private var trimmedNameCount: Int {
         name.trimmingCharacters(in: .whitespacesAndNewlines).count
-    }
-
-    private var previewName: String {
-        let normalized = PlayerProfile.normalizedName(name)
-        return normalized.isEmpty ? LF.text("Sailor") : normalized
     }
 }
 
@@ -507,11 +505,11 @@ private struct ProfileSelectionBadge: View {
         if isVisible {
             Image(systemName: "checkmark")
                 .font(.system(size: 8, weight: .black))
-                .foregroundStyle(LFColor.paper)
+                .foregroundStyle(Color.white)
                 .frame(width: 17, height: 17)
-                .background(LFColor.returnOrange, in: Circle())
-                .overlay(Circle().stroke(LFColor.paper.opacity(0.85), lineWidth: 1))
-                .offset(x: 3, y: 3)
+                .background(LFHomeFeatureStyle.ink, in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 1))
+                .offset(x: 1, y: 1)
                 .accessibilityHidden(true)
         }
     }

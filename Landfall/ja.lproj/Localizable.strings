@@ -1528,3 +1528,19 @@
 "Your record has not been saved. Please try again." = "記録はまだ保存されていません。もう一度お試しください。";
 
 "Totals follow the saved date. Overnight work is shown on each day of the timeline." = "合計は記録を保存した日で集計します。日をまたぐ作業は、タイムラインでは各日に分けて表示します。";
+
+"Could not delete the record" = "記録を削除できませんでした";
+
+"Your record has not been deleted. Please try again." = "記録は削除されていません。もう一度お試しください。";
+
+"Could not update the record" = "記録を更新できませんでした";
+
+"Your changes have not been saved. Please try again." = "変更は保存されていません。もう一度お試しください。";
+
+"Could not delete the item" = "項目を削除できませんでした";
+
+"Your item has not been saved. Please try again." = "項目は保存されていません。もう一度お試しください。";
+
+"No notes yet" = "メモはまだありません";
+
+"No matching notes" = "該当するメモはありません";
