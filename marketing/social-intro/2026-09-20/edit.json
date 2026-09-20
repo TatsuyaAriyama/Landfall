@@ -1,0 +1,58 @@
+[
+  {
+    "name": "home",
+    "source": "departure-final.mov",
+    "start": 23.0,
+    "source_duration": 3.0,
+    "duration": 3.0,
+    "caption": "学ぶことを、選んで。"
+  },
+  {
+    "name": "select",
+    "source": "departure-final.mov",
+    "start": 27.0,
+    "source_duration": 6.0,
+    "duration": 3.0,
+    "caption": "学ぶことを、選んで。"
+  },
+  {
+    "name": "departure",
+    "source": "departure-final.mov",
+    "start": 33.0,
+    "source_duration": 10.0,
+    "duration": 8.0,
+    "caption": "さあ、出航。"
+  },
+  {
+    "name": "voyage",
+    "source": "voyage-take.mov",
+    "start": 14.0,
+    "source_duration": 6.0,
+    "duration": 6.0,
+    "caption": "学ぶ時間が、航海になる。"
+  },
+  {
+    "name": "complete",
+    "source": "voyage-take.mov",
+    "start": 58.0,
+    "source_duration": 5.0,
+    "duration": 5.0,
+    "caption": ""
+  },
+  {
+    "name": "return",
+    "source": "voyage-take.mov",
+    "start": 68.0,
+    "source_duration": 7.0,
+    "duration": 7.0,
+    "caption": "今日の学びを、持ち帰ろう。"
+  },
+  {
+    "name": "bench",
+    "source": "bench-final.mov",
+    "start": 60.0,
+    "source_duration": 8.0,
+    "duration": 8.0,
+    "caption": "おつかれさま。"
+  }
+]
