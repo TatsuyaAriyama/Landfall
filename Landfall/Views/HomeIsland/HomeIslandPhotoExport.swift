@@ -54,14 +54,23 @@ enum HomeIslandPhotoExport {
             toneMapped = fallbackToneMap(scene)
         }
 
-        // Use the same cached strip and saved brightness as the live stage.
-        // A fixed flat color here used to discard the user's sky brightness.
-        guard let sky = CIImage(image: HomeIslandSky.image(for: brightness))
+        // Rasterize with UIKit before compositing so the cloud field uses the
+        // same image sampling at small export sizes as it does on screen.
+        let skyFormat = UIGraphicsImageRendererFormat()
+        skyFormat.scale = 1
+        skyFormat.opaque = true
+        skyFormat.preferredRange = .standard
+        let skyImage = UIGraphicsImageRenderer(
+            size: scene.extent.size, format: skyFormat
+        ).image { _ in
+            HomeIslandSky.image(for: brightness).draw(
+                in: CGRect(origin: .zero, size: scene.extent.size)
+            )
+        }
+        guard let sky = CIImage(image: skyImage)
         else { return nil }
         let background = sky.transformed(by: CGAffineTransform(
-            a: scene.extent.width / sky.extent.width, b: 0,
-            c: 0, d: scene.extent.height / sky.extent.height,
-            tx: scene.extent.minX, ty: scene.extent.minY
+            translationX: scene.extent.minX, y: scene.extent.minY
         )).cropped(to: scene.extent)
         let photo = toneMapped.composited(over: background)
         guard let cgImage = imageContext.createCGImage(
