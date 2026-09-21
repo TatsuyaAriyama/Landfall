@@ -18,6 +18,7 @@ struct DressView: View {
     /// 鍵の掛かった船を触ったときだけ、開く条件を見出しへ出す。
     @State private var lockedShipTapped: ShipDesign?
     @State private var showingVoyagePass = false
+    @State private var controlContentHeight: CGFloat = 0
     /// 航海士のポーズ。Web版と同じローカルキーへ保存する。
     @State private var navPose: PhoenixPose = {
         #if DEBUG
@@ -61,42 +62,28 @@ struct DressView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                // Web版は一つの Canvas の中で背景とカメラを使い回し、船／航海士だけを
-                // 差し替える。iOSも一枚のSceneKitビューを画面全体へ敷いて同じ構造にする。
-                DressStudioSceneView(
-                    parts: boatParts,
-                    pose: navPose,
-                    showsNavigator: mode == .navigator,
-                    resetToken: cameraResetToken
-                )
-                .ignoresSafeArea()
-
-                // 文字の背後だけ夜色を少し深くし、3D世界そのものは隠さない。
-                VStack(spacing: 0) {
-                    LinearGradient(
-                        colors: [
-                            Color(hex: 0x071C19).opacity(0.78),
-                            Color(hex: 0x071C19).opacity(0.26),
-                            Color.clear
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
+            GeometryReader { geometry in
+                ZStack {
+                    // Web版は一つの Canvas の中で背景とカメラを使い回し、船／航海士だけを
+                    // 差し替える。iOSも一枚のSceneKitビューを画面全体へ敷いて同じ構造にする。
+                    DressStudioSceneView(
+                        parts: boatParts,
+                        pose: navPose,
+                        showsNavigator: mode == .navigator,
+                        resetToken: cameraResetToken
                     )
-                    .frame(height: 250)
-                    Spacer()
-                }
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
+                    .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    topControls
-                    Spacer(minLength: 16)
-                    controlPanel
+                    VStack(spacing: 0) {
+                        topControls
+                        Spacer(minLength: 16)
+                        controlPanel(maximumHeight: max(120, geometry.size.height * 0.48))
+                    }
                 }
+                .background(Color(hex: 0x123830).ignoresSafeArea())
             }
-            .background(Color(hex: 0x123830).ignoresSafeArea())
         }
+        .tint(LFHomeFeatureStyle.ink)
         .toolbar(.hidden, for: .navigationBar)
         .fullScreenCover(isPresented: $showingVoyagePass) {
             VoyagePassView()
@@ -113,34 +100,24 @@ struct DressView: View {
     }
 
     private var topControls: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                Text(mode == .boat ? "Your boat" : "Your navigator")
-                    .font(LFFont.copy(21))
-                    .fontWeight(.medium)
-                    .foregroundStyle(LFColor.paper)
-
-                HStack {
-                    backButton
-                    Spacer()
-                    resetCameraButton
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                backButton
+                HStack(spacing: 4) {
+                    modeChip("Boat", .boat)
+                    modeChip("Navigator", .navigator)
                 }
+                .padding(4)
+                .lfHomeFeatureCard(cornerRadius: 28)
+                resetCameraButton
             }
-
-            HStack(spacing: 4) {
-                modeChip("Boat", .boat)
-                modeChip("Navigator", .navigator)
-            }
-            .padding(4)
-            .background(Color(hex: 0x071C19).opacity(0.66), in: Capsule())
-            .overlay(Capsule().stroke(LFColor.harborSand.opacity(0.18), lineWidth: 1))
 
             Text("Drag to look around.")
                 .font(LFFont.label(12))
-                .foregroundStyle(LFColor.paper.opacity(0.72))
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
                 .padding(.horizontal, 12)
-                .frame(minHeight: 28)
-                .background(Color(hex: 0x071C19).opacity(0.52), in: Capsule())
+                .padding(.vertical, 7)
+                .lfHomeFeatureCard(cornerRadius: 16)
         }
         .padding(.horizontal, 18)
         .safeAreaPadding(.top, 10)
@@ -157,17 +134,11 @@ struct DressView: View {
                 dismiss()
             }
         } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("Back")
-                    .font(LFFont.label(13))
-            }
-            .foregroundStyle(LFColor.paper.opacity(0.92))
-            .padding(.horizontal, 12)
-            .frame(height: 42)
-            .background(Color(hex: 0x071C19).opacity(0.68), in: Capsule())
-            .overlay(Capsule().stroke(LFColor.harborSand.opacity(0.18), lineWidth: 1))
+            Image(systemName: "chevron.left")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(LFHomeFeatureStyle.ink)
+                .frame(width: 44, height: 44)
+                .lfHomeFeatureCard(cornerRadius: 22)
         }
         .buttonStyle(LFPressableButtonStyle(scale: 0.94))
         .accessibilityLabel(Text("Back"))
@@ -179,17 +150,42 @@ struct DressView: View {
             Haptics.tap(.light)
         } label: {
             Image(systemName: "arrow.counterclockwise")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(LFColor.paper.opacity(0.90))
-                .frame(width: 42, height: 42)
-                .background(Color(hex: 0x071C19).opacity(0.68), in: Circle())
-                .overlay(Circle().stroke(LFColor.harborSand.opacity(0.18), lineWidth: 1))
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(LFHomeFeatureStyle.ink)
+                .frame(width: 44, height: 44)
+                .lfHomeFeatureCard(cornerRadius: 22)
         }
         .buttonStyle(LFPressableButtonStyle(scale: 0.92))
         .accessibilityLabel(Text("Reset view"))
     }
 
-    private var controlPanel: some View {
+    private func controlPanel(maximumHeight: CGFloat) -> some View {
+        ScrollView {
+            controlContent
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(
+                            key: DressControlPanelHeightKey.self,
+                            value: geometry.size.height
+                        )
+                    }
+                }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxWidth: 680)
+        .frame(height: min(controlContentHeight > 0 ? controlContentHeight : maximumHeight, maximumHeight))
+        .onPreferenceChange(DressControlPanelHeightKey.self) { height in
+            if abs(controlContentHeight - height) > 0.5 {
+                controlContentHeight = height
+            }
+        }
+        .lfHomeFeatureCard(cornerRadius: 26)
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .padding(.horizontal, 12)
+        .safeAreaPadding(.bottom, 8)
+    }
+
+    private var controlContent: some View {
         Group {
             if mode == .navigator {
                 navigatorControls
@@ -197,25 +193,13 @@ struct DressView: View {
                 boatControls
             }
         }
-        .frame(maxWidth: 680)
-        // 船は「どの船か」と「帆の色」の二段になる。航海士は一段のまま。
-        .frame(height: mode == .boat ? 246 : 164)
-        .background(Color(hex: 0x071C19).opacity(0.88))
-        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .strokeBorder(LFColor.harborSand.opacity(0.22), lineWidth: 1)
-        )
-        .padding(.horizontal, 12)
-        .safeAreaPadding(.bottom, 8)
     }
 
     private var navigatorControls: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Pose")
                 .font(LFFont.label(13))
-                .tracking(1)
-                .foregroundStyle(LFColor.paper.opacity(0.58))
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -228,24 +212,20 @@ struct DressView: View {
             .scrollClipDisabled()
         }
         .padding(.horizontal, 20)
-        .padding(.top, 16)
+        .padding(.vertical, 16)
     }
 
     private var boatControls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("Ship")
-                    .font(LFFont.label(13))
-                    .tracking(1)
-                    .foregroundStyle(LFColor.paper.opacity(0.58))
+            Text("Ship")
+                .font(LFFont.label(13))
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
 
-                Spacer(minLength: 8)
-
-                shipHint
+            if let lockedShipTapped {
+                shipLockText(lockedShipTapped)
                     .font(LFFont.label(12))
-                    .foregroundStyle(LFColor.paper.opacity(0.52))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -260,8 +240,7 @@ struct DressView: View {
 
             Text("Sail color")
                 .font(LFFont.label(13))
-                .tracking(1)
-                .foregroundStyle(LFColor.paper.opacity(0.58))
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
                 .padding(.top, 6)
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -275,16 +254,7 @@ struct DressView: View {
             .scrollClipDisabled()
         }
         .padding(.horizontal, 20)
-        .padding(.top, 16)
-    }
-
-    /// 見出しの右は、いま選んでいる船の一行紹介。鍵の掛かった船を
-    /// 触ったときだけ、開く条件へ差し替わる。
-    private var shipHint: Text {
-        if let locked = lockedShipTapped {
-            return shipLockText(locked)
-        }
-        return Text(BoatCustomization.effectiveSelectedShip.summary)
+        .padding(.vertical, 16)
     }
 
     private func shipChip(_ ship: ShipDesign) -> some View {
@@ -313,8 +283,8 @@ struct DressView: View {
             }
         } label: {
             HStack(spacing: 7) {
-                Image(systemName: unlocked ? ship.symbolName : "lock.fill")
-                    .font(.system(size: unlocked ? 14 : 11, weight: .semibold))
+                Image(systemName: selected ? "checkmark" : (unlocked ? ship.symbolName : "lock.fill"))
+                    .font(.system(size: unlocked ? 14 : 11, weight: .medium))
                     .foregroundStyle(chipForeground(selected: selected, unlocked: unlocked))
 
                 Text(ship.title)
@@ -324,16 +294,17 @@ struct DressView: View {
                 if !unlocked {
                     Text(verbatim: lockReason == .voyagePass ? "PASS" : "LV\(ship.unlockLevel)")
                         .font(LFFont.label(11))
-                        .foregroundStyle(LFColor.harborSand.opacity(0.82))
+                        .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
                 }
             }
             .padding(.horizontal, 15)
-            .frame(height: 46)
-            .background(Capsule().fill(selected ? LFColor.coral : LFColor.paper.opacity(0.06)))
+            .padding(.vertical, 12)
+            .frame(minHeight: 46)
+            .background(Capsule().fill(selected ? LFHomeFeatureStyle.primaryFill : LFHomeFeatureStyle.field))
             .overlay(
                 Capsule()
                     .strokeBorder(
-                        selected ? LFColor.coral : LFColor.harborSand.opacity(0.16),
+                        selected ? LFHomeFeatureStyle.primaryFill : LFHomeFeatureStyle.outline,
                         lineWidth: 1
                     )
             )
@@ -349,8 +320,8 @@ struct DressView: View {
     }
 
     private func chipForeground(selected: Bool, unlocked: Bool) -> Color {
-        if selected { return LFColor.midnight }
-        return LFColor.paper.opacity(unlocked ? 0.78 : 0.44)
+        if selected { return .white }
+        return unlocked ? LFHomeFeatureStyle.ink : LFHomeFeatureStyle.secondaryInk
     }
 
     private func selectShip(_ ship: ShipDesign) {
@@ -381,11 +352,14 @@ struct DressView: View {
         } label: {
             Text(title)
                 .font(LFFont.copy(14))
-                .foregroundStyle(selected ? LFColor.midnight : LFColor.paper.opacity(0.72))
-                .padding(.horizontal, 16)
+                .foregroundStyle(selected ? Color.white : LFHomeFeatureStyle.ink)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
                 .frame(maxWidth: .infinity)
-                .frame(height: 40)
-                .background(Capsule().fill(selected ? LFColor.coral : Color.clear))
+                .frame(minHeight: 44)
+                .background(Capsule().fill(selected ? LFHomeFeatureStyle.primaryFill : Color.clear))
         }
         .buttonStyle(LFPressableButtonStyle(scale: 0.97))
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -400,14 +374,15 @@ struct DressView: View {
         } label: {
             Text(pose.title)
                 .font(LFFont.copy(14))
-                .foregroundStyle(selected ? LFColor.midnight : LFColor.paper.opacity(0.78))
+                .foregroundStyle(selected ? Color.white : LFHomeFeatureStyle.ink)
                 .padding(.horizontal, 15)
-                .frame(height: 46)
-                .background(Capsule().fill(selected ? LFColor.coral : LFColor.paper.opacity(0.06)))
+                .padding(.vertical, 12)
+                .frame(minHeight: 46)
+                .background(Capsule().fill(selected ? LFHomeFeatureStyle.primaryFill : LFHomeFeatureStyle.field))
                 .overlay(
                     Capsule()
                         .strokeBorder(
-                            selected ? LFColor.coral : LFColor.harborSand.opacity(0.16),
+                            selected ? LFHomeFeatureStyle.primaryFill : LFHomeFeatureStyle.outline,
                             lineWidth: 1
                         )
                 )
@@ -432,28 +407,37 @@ struct DressView: View {
                     .overlay(
                         Circle()
                             .strokeBorder(
-                                LFColor.harborSand,
-                                lineWidth: selected ? 2.5 : 0
+                                selected ? LFHomeFeatureStyle.ink : LFHomeFeatureStyle.outline,
+                                lineWidth: selected ? 2.5 : 1
                             )
                     )
+                    .overlay {
+                        if selected {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(LFHomeFeatureStyle.ink)
+                                .frame(width: 20, height: 20)
+                                .background(.white.opacity(0.9), in: Circle())
+                        }
+                    }
 
                 Text(option.title)
                     .font(LFFont.label(11))
-                    .foregroundStyle(LFColor.paper.opacity(selected ? 0.94 : 0.66))
-                    .minimumScaleFactor(0.8)
-                    .lineLimit(1)
+                    .foregroundStyle(selected ? LFHomeFeatureStyle.ink : LFHomeFeatureStyle.secondaryInk)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(width: 72)
-            .frame(height: 72)
-            .padding(.vertical, 4)
+            .frame(minHeight: 72)
+            .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(selected ? LFColor.coral.opacity(0.14) : LFColor.paper.opacity(0.04))
+                    .fill(selected ? LFHomeFeatureStyle.ink.opacity(0.12) : LFHomeFeatureStyle.field)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
-                        selected ? LFColor.coral : LFColor.harborSand.opacity(0.12),
+                        selected ? LFHomeFeatureStyle.ink.opacity(0.5) : LFHomeFeatureStyle.outline,
                         lineWidth: 1
                     )
             )
@@ -461,6 +445,14 @@ struct DressView: View {
         .buttonStyle(LFPressableButtonStyle(scale: 0.96))
         .accessibilityLabel(Text(option.title))
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+private struct DressControlPanelHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat { 0 }
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

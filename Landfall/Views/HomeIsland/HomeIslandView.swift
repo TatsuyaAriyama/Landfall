@@ -1850,14 +1850,9 @@ struct HomeIslandView: View {
 
     private var boatCustomizationTopBar: some View {
         HStack(spacing: 10) {
-            Label {
-                Text("Your boat")
-                    .font(LFFont.copy(15))
-            } icon: {
-                Image(systemName: "sailboat.fill")
-                    .font(.system(size: 15, weight: .semibold))
-            }
-            .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+            Label("Your boat", systemImage: "sailboat.fill")
+                .font(LFFont.copy(15))
+                .foregroundStyle(LFHomeFeatureStyle.ink)
 
             Spacer(minLength: 8)
 
@@ -1866,54 +1861,50 @@ struct HomeIslandView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
                     .frame(width: 44, height: 44)
             }
             .buttonStyle(LFPressableButtonStyle())
             .accessibilityLabel(Text("Close boat customization"))
         }
-        .padding(.leading, 15)
-        .padding(.trailing, 3)
-        .frame(maxWidth: 420)
-        .frame(height: 50)
-        .background(hudBackground, in: Capsule())
-        .overlay(Capsule().stroke(.white.opacity(0.14), lineWidth: 1))
+        .padding(.leading, 16)
+        .padding(.trailing, 4)
+        .frame(maxWidth: 480)
+        .frame(minHeight: 52)
+        .lfHomeFeatureCard(cornerRadius: 26)
         .padding(.horizontal, 12)
         .frame(maxWidth: .infinity)
         .safeAreaPadding(.top, 8)
     }
 
     private var boatCustomizationDock: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Text("Ship")
-                    .font(LFFont.label(11))
-                    .tracking(0.8)
-                    .foregroundStyle(.white.opacity(0.58))
-                Spacer(minLength: 8)
-                Text(ShipCatalog.design(id: selectedBoatShipID).title)
-                    .font(LFFont.copy(13))
-                    .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
-            }
+        VStack(spacing: 12) {
+            Text("Ship")
+                .font(LFFont.label(12))
+                .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            HStack(spacing: 7) {
-                ForEach(ShipCatalog.all) { ship in
-                    boatShipButton(ship)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(ShipCatalog.all) { ship in
+                        boatShipButton(ship)
+                    }
                 }
             }
+            .fixedSize(horizontal: false, vertical: true)
 
-            Divider()
-                .overlay(.white.opacity(0.12))
+            Rectangle()
+                .fill(LFHomeFeatureStyle.outline)
+                .frame(height: 1)
 
             HStack(spacing: 8) {
                 Text("Sail color")
-                    .font(LFFont.label(11))
-                    .tracking(0.8)
-                    .foregroundStyle(.white.opacity(0.58))
+                    .font(LFFont.label(12))
+                    .foregroundStyle(LFHomeFeatureStyle.secondaryInk)
                 Spacer(minLength: 8)
                 Text(BoatCustomization.selectedSail.title)
                     .font(LFFont.copy(13))
-                    .foregroundStyle(Color(uiColor: VoyageSceneKit.sand))
+                    .foregroundStyle(LFHomeFeatureStyle.ink)
             }
 
             HStack(spacing: 6) {
@@ -1922,18 +1913,10 @@ struct HomeIslandView: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: 420)
-        .background(
-            hudBackground,
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(.white.opacity(0.14), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+        .padding(16)
+        .frame(maxWidth: 480)
+        .lfHomeFeatureCard(cornerRadius: 24)
+        .shadow(color: LFHomeFeatureStyle.ink.opacity(0.10), radius: 18, y: 8)
         .padding(.horizontal, 12)
         .safeAreaPadding(.bottom, 8)
         .accessibilityElement(children: .contain)
@@ -1954,41 +1937,35 @@ struct HomeIslandView: View {
             selectBoatShip(ship, lockReason: lockReason)
         } label: {
             HStack(spacing: 6) {
-                Image(systemName: unlocked ? ship.symbolName : "lock.fill")
-                    .font(.system(size: unlocked ? 13 : 10, weight: .semibold))
+                if selected || !unlocked {
+                    Image(systemName: selected ? "checkmark" : "lock.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                }
                 Text(ship.title)
-                    .font(LFFont.copy(12))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
+                    .font(LFFont.copy(13))
+                    .fixedSize()
                 if !unlocked {
                     Text(verbatim: lockReason == .voyagePass ? "PASS" : "LV\(ship.unlockLevel)")
-                        .font(LFFont.label(9))
+                        .font(LFFont.label(10))
                 }
             }
-            .foregroundStyle(selected ? LFColor.midnight : .white.opacity(unlocked ? 0.82 : 0.48))
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity)
-            .frame(height: 42)
+            .foregroundStyle(selected ? Color.white : LFHomeFeatureStyle.ink)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
             .background(
-                selected ? Color(uiColor: VoyageSceneKit.sand) : .white.opacity(0.055),
-                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                selected ? LFHomeFeatureStyle.primaryFill : LFHomeFeatureStyle.field,
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .stroke(
-                        selected ? Color(uiColor: VoyageSceneKit.sand) : .white.opacity(0.13),
-                        lineWidth: 1
-                    )
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(selected ? Color.clear : LFHomeFeatureStyle.outline, lineWidth: 1)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(LFPressableButtonStyle(scale: 0.96))
         .accessibilityLabel(Text(ship.title))
-        .accessibilityHint(
-            unlocked
-                ? Text(ship.summary)
-                : shipLockText(ship)
-        )
+        .accessibilityHint(unlocked ? Text(ship.summary) : shipLockText(ship))
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
@@ -2000,18 +1977,15 @@ struct HomeIslandView: View {
             ZStack {
                 Circle()
                     .fill(option.color)
-                    .frame(width: 32, height: 32)
-                    .shadow(
-                        color: selected ? option.color.opacity(0.55) : .clear,
-                        radius: selected ? 8 : 0
-                    )
+                    .frame(width: 30, height: 30)
+                    .overlay(Circle().stroke(LFHomeFeatureStyle.outline, lineWidth: 1))
                 if selected {
                     Circle()
-                        .stroke(Color(uiColor: VoyageSceneKit.sand), lineWidth: 2.5)
-                        .frame(width: 40, height: 40)
+                        .stroke(LFHomeFeatureStyle.ink, lineWidth: 2)
+                        .frame(width: 38, height: 38)
                     Image(systemName: "checkmark")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(LFColor.midnight)
+                        .foregroundStyle(LFHomeFeatureStyle.ink)
                 }
             }
             .frame(maxWidth: .infinity)
