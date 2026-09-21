@@ -153,13 +153,13 @@ enum PhoenixNavigator {
     static let deepMaterialName = "LF_NavDeep"
 
     private static func robeMat(_ p: NavigatorPalette) -> SCNMaterial {
-        named(mat(p.robe, roughness: 0.8), robeMaterialName)
+        named(NavigatorSurface.cloth(p.robe, roughness: 0.8), robeMaterialName)
     }
     private static func trimMat(_ p: NavigatorPalette) -> SCNMaterial {
-        named(mat(p.trim, roughness: 0.85), trimMaterialName)
+        named(NavigatorSurface.cloth(p.trim, roughness: 0.85), trimMaterialName)
     }
     private static func deepMat(_ p: NavigatorPalette) -> SCNMaterial {
-        named(mat(p.deep, roughness: 0.9), deepMaterialName)
+        named(NavigatorSurface.leather(p.deep), deepMaterialName)
     }
     private static func named(_ material: SCNMaterial, _ name: String) -> SCNMaterial {
         material.name = name
@@ -180,13 +180,13 @@ enum PhoenixNavigator {
             }
         }
     }
-    private static var sandMat: SCNMaterial { mat(sand, roughness: 0.85) }
-    private static var ropeMat: SCNMaterial { mat(sand, roughness: 0.95) }
+    private static var sandMat: SCNMaterial { NavigatorSurface.brass(sand) }
+    private static var ropeMat: SCNMaterial { NavigatorSurface.cloth(sand, roughness: 0.95) }
     private static var collarMat: SCNMaterial {
-        mat(midnight, roughness: 0.7, doubleSided: true)
+        NavigatorSurface.cloth(midnight, roughness: 0.9, doubleSided: true)
     }
     private static var faceMat: SCNMaterial { mat(midnight, roughness: 0.6) }
-    private static var capeMat: SCNMaterial { mat(midnight, roughness: 0.9, doubleSided: true) }
+    private static var capeMat: SCNMaterial { NavigatorSurface.cloth(midnight, roughness: 0.9, doubleSided: true) }
     private static var eyeMat: SCNMaterial {
         mat(sand, roughness: 0.7, emission: sand, emissionIntensity: 0.85)
     }
@@ -197,7 +197,8 @@ enum PhoenixNavigator {
         _ verts: [SCNVector3],
         _ indices: [UInt32],
         material: SCNMaterial,
-        textureCoordinates: [CGPoint]? = nil
+        textureCoordinates: [CGPoint]? = nil,
+        normalSeams: [(Int, Int)] = []
     ) -> SCNGeometry {
         var normals = [SCNVector3](repeating: SCNVector3(0, 0, 0), count: verts.count)
         var i = 0
@@ -208,6 +209,12 @@ enum PhoenixNavigator {
             normals[b] = v3add(normals[b], n)
             normals[c] = v3add(normals[c], n)
             i += 3
+        }
+        // UVs split the wrap edge; its two vertices still share one smooth normal.
+        for (first, last) in normalSeams {
+            let shared = v3add(normals[first], normals[last])
+            normals[first] = shared
+            normals[last] = shared
         }
         let nrm = normals.map { v3norm($0) }
         var sources = [
@@ -230,25 +237,35 @@ enum PhoenixNavigator {
 
     /// 回転体(three LatheGeometry 相当)。profile=(半径, 高さ) を Y軸まわりに segments 分割で回す。
     private static func lathe(_ profile: [(r: Float, y: Float)], segments: Int,
-                             material: SCNMaterial) -> SCNGeometry {
+                             material: SCNMaterial, folds: Bool = false) -> SCNGeometry {
         var verts: [SCNVector3] = []
+        var uv: [CGPoint] = []
+        let stride = segments + 1
+        let bottom = profile.first!.y
+        let height = max(0.001, profile.last!.y - bottom)
         for p in profile {
-            for j in 0..<segments {
-                let t = Float(j) / Float(segments) * 2 * .pi
-                verts.append(SCNVector3(p.r * cos(t), p.y, p.r * sin(t)))
+            for j in 0...segments {
+                let u = Float(j) / Float(segments)
+                let t = u * 2 * .pi
+                // Broad, shallow folds give the hem weight without changing the rig.
+                let drape = folds ? max(0, min(1, (0.64 - p.y) / 0.34)) : 0
+                let radius = p.r + drape * 0.004 * cos(t * 8 + p.y * 1.8)
+                verts.append(SCNVector3(radius * cos(t), p.y, radius * sin(t)))
+                uv.append(CGPoint(x: CGFloat(u), y: CGFloat((p.y - bottom) / height)))
             }
         }
         var indices: [UInt32] = []
         for i in 0..<(profile.count - 1) {
             for j in 0..<segments {
-                let a = UInt32(i * segments + j)
-                let b = UInt32(i * segments + (j + 1) % segments)
-                let d = UInt32((i + 1) * segments + j)
-                let e = UInt32((i + 1) * segments + (j + 1) % segments)
+                let a = UInt32(i * stride + j)
+                let b = a + 1
+                let d = UInt32((i + 1) * stride + j)
+                let e = d + 1
                 indices += [a, d, b, b, d, e]
             }
         }
-        return mesh(verts, indices, material: material)
+        return mesh(verts, indices, material: material, textureCoordinates: uv,
+                    normalSeams: profile.indices.map { ($0 * stride, $0 * stride + segments) })
     }
 
     // MARK: ケープ(布の格子)
@@ -321,7 +338,7 @@ enum PhoenixNavigator {
     float time = uCapeMotion.x;
     float wind = uCapeMotion.y;
     float lateral = uCapeMotion.z;
-    float safeV = max(v, 0.0001);
+    float safeV = v; // Both derivative exponents are positive and finite at the shoulder.
     float vPow11 = pow(v, 1.1);
     float vPow15 = pow(v, 1.5);
     float width = 0.17 + 0.25 * vPow11;
@@ -432,7 +449,7 @@ enum PhoenixNavigator {
             let cuff = SCNNode(geometry: cyl(top: 0.062, bottom: 0.07, h: 0.06, mat: trimMat(palette)))
             cuff.position = SCNVector3(0, -0.125, 0.01)
             knee.addChildNode(cuff)
-            let boot = SCNNode(geometry: sphere(0.075, seg: 14, mat: deepMat(palette)))
+            let boot = SCNNode(geometry: sphere(0.075, seg: 20, mat: deepMat(palette)))
             boot.position = SCNVector3(0, -0.188, 0.07)
             boot.scale = SCNVector3(0.95, 0.68, 1.55)
             knee.addChildNode(boot)
@@ -457,8 +474,8 @@ enum PhoenixNavigator {
         // コート: 裾へ広がる袍 + 裾内の深錆の縁
         let skirt = SCNNode()
         skirt.name = "skirt"
-        skirt.addChildNode(SCNNode(geometry: lathe(coatProfile, segments: 22, material: robeMat(palette))))
-        let hem = SCNNode(geometry: lathe(hemProfile, segments: 22, material: trimMat(palette)))
+        skirt.addChildNode(SCNNode(geometry: lathe(coatProfile, segments: 40, material: robeMat(palette), folds: true)))
+        let hem = SCNNode(geometry: lathe(hemProfile, segments: 40, material: trimMat(palette), folds: true))
         hem.name = "skirtHem"
         skirt.addChildNode(hem)
         core.addChildNode(skirt)
@@ -474,7 +491,7 @@ enum PhoenixNavigator {
         core.addChildNode(buckle)
 
         // 肩マント
-        let mantle = SCNNode(geometry: lathe(mantleProfile, segments: 22, material: robeMat(palette)))
+        let mantle = SCNNode(geometry: lathe(mantleProfile, segments: 32, material: robeMat(palette)))
         mantle.position = SCNVector3(0, 0.78, 0)
         core.addChildNode(mantle)
 
@@ -553,13 +570,14 @@ enum PhoenixNavigator {
         hood.position = SCNVector3(0, -0.02, 0)
         hood.eulerAngles.x = -0.03
         head.addChildNode(hood)
-        let face = SCNNode(geometry: sphere(0.075, seg: 14, mat: faceMat))
+        let face = SCNNode(geometry: sphere(0.075, seg: 24, mat: faceMat))
         face.position = SCNVector3(0, 0.03, 0.006)
         face.scale = SCNVector3(0.98, 1.05, 0.9)
         head.addChildNode(face)
         for s: Float in [1, -1] {
-            let eye = SCNNode(geometry: sphere(0.016, seg: 10, mat: eyeMat))
-            eye.position = SCNVector3(s * 0.028, 0.022, 0.094)
+            let eye = SCNNode(geometry: sphere(0.015, seg: 16, mat: eyeMat))
+            eye.position = SCNVector3(s * 0.028, 0.022, 0.070)
+            eye.scale = SCNVector3(0.9, 1, 0.35)
             head.addChildNode(eye)
         }
         core.addChildNode(head)
@@ -711,21 +729,33 @@ enum PhoenixNavigator {
             let lan = SCNNode()
             lan.name = "lantern"
             lan.position = SCNVector3(0, -0.33, 0)
-            let handle = SCNNode(geometry: cyl(top: 0.008, bottom: 0.008, h: 0.06, mat: trimMat(palette)))
+            let hardware = sandMat
+            let handle = SCNNode(geometry: torus(ring: 0.023, pipe: 0.0045, mat: hardware))
+            handle.eulerAngles.x = .pi / 2
             handle.position = SCNVector3(0, -0.03, 0)
             lan.addChildNode(handle)
-            let cap = SCNNode(geometry: cone(bottom: 0.058, h: 0.05, seg: 6, mat: trimMat(palette)))
+            let cap = SCNNode(geometry: cone(bottom: 0.058, h: 0.05, seg: 12, mat: hardware))
             cap.position = SCNVector3(0, -0.075, 0)
             lan.addChildNode(cap)
             let glowMat = mat(self.lantern, roughness: 0.8, emission: self.lantern, emissionIntensity: 1.5)
-            let glow = SCNNode(geometry: sphere(0.042, seg: 12, mat: glowMat))
+            let glow = SCNNode(geometry: sphere(0.032, seg: 20, mat: glowMat))
+            glow.scale = SCNVector3(0.85, 1.25, 0.85)
             glow.name = "lanternGlow"
             glow.position = SCNVector3(0, -0.14, 0)
             lan.addChildNode(glow)
-            let base = SCNNode(geometry: cyl(top: 0.045, bottom: 0.05, h: 0.02, mat: trimMat(palette)))
+            let base = SCNNode(geometry: cyl(top: 0.045, bottom: 0.05, h: 0.02, mat: hardware))
             base.eulerAngles.x = .pi   // 底皿(六角の広い側を下に)
             base.position = SCNVector3(0, -0.19, 0)
             lan.addChildNode(base)
+            // An opaque cage defines the lamp at every distance; no transparent
+            // glass sorting or per-character light/shadow pass is needed.
+            let postGeometry = cyl(top: 0.004, bottom: 0.004, h: 0.087, mat: hardware)
+            for index in 0..<4 {
+                let angle = Float(index) * .pi / 2 + .pi / 4
+                let post = SCNNode(geometry: postGeometry)
+                post.position = SCNVector3(cos(angle) * 0.038, -0.143, sin(angle) * 0.038)
+                lan.addChildNode(post)
+            }
             arm.addChildNode(lan)
         }
         return arm
@@ -736,9 +766,9 @@ enum PhoenixNavigator {
     private static func cyl(top: CGFloat, bottom: CGFloat, h: CGFloat, mat: SCNMaterial) -> SCNGeometry {
         let g: SCNGeometry
         if abs(top - bottom) < 0.0001 {
-            let c = SCNCylinder(radius: top, height: h); c.radialSegmentCount = 12; g = c
+            let c = SCNCylinder(radius: top, height: h); c.radialSegmentCount = 20; g = c
         } else {
-            let c = SCNCone(topRadius: top, bottomRadius: bottom, height: h); c.radialSegmentCount = 12; g = c
+            let c = SCNCone(topRadius: top, bottomRadius: bottom, height: h); c.radialSegmentCount = 20; g = c
         }
         g.firstMaterial = mat
         return g
@@ -754,7 +784,7 @@ enum PhoenixNavigator {
     }
     private static func torus(ring: CGFloat, pipe: CGFloat, mat: SCNMaterial) -> SCNGeometry {
         let t = SCNTorus(ringRadius: ring, pipeRadius: pipe)
-        t.ringSegmentCount = 18; t.pipeSegmentCount = 9; t.firstMaterial = mat; return t
+        t.ringSegmentCount = 28; t.pipeSegmentCount = 10; t.firstMaterial = mat; return t
     }
 
     /// 前面を開けた回転体。three.js LatheGeometry と同じく
@@ -767,12 +797,13 @@ enum PhoenixNavigator {
     ) -> SCNGeometry {
         let span = 2 * Float.pi - gap
         var verts: [SCNVector3] = []
-        for p in profile {
+        var uv: [CGPoint] = []
+        for (row, p) in profile.enumerated() {
             for j in 0...segments {
-                let phi = gap / 2 + Float(j) / Float(segments) * span
-                verts.append(
-                    SCNVector3(p.r * sin(phi), p.y, p.r * cos(phi))
-                )
+                let u = Float(j) / Float(segments)
+                let phi = gap / 2 + u * span
+                verts.append(SCNVector3(p.r * sin(phi), p.y, p.r * cos(phi)))
+                uv.append(CGPoint(x: CGFloat(u), y: CGFloat(row) / CGFloat(profile.count - 1)))
             }
         }
         let stride = segments + 1
@@ -783,35 +814,33 @@ enum PhoenixNavigator {
                 let b = a + 1
                 let d = UInt32((i + 1) * stride + j)
                 let e = d + 1
-                indices += [a, d, b, b, d, e]
+                // sin/cos reverses the winding of the closed cos/sin lathe.
+                indices += [a, b, d, b, e, d]
             }
         }
-        return mesh(verts, indices, material: material)
+        return mesh(verts, indices, material: material, textureCoordinates: uv)
     }
 
-    /// Web版の「前面が開き、先だけ背へ流れる布フード」を同じ輪郭で生成する。
+    /// A softly rounded open hood; the tip is a shared fan, not a ring of
+    /// coincident vertices whose degenerate faces produce black highlights.
     private static func makeHoodGeometry(_ palette: NavigatorPalette) -> SCNGeometry {
         let profile: [(r: Float, y: Float)] = [
-            (0.148, -0.06), (0.14, 0), (0.126, 0.055),
-            (0.104, 0.105), (0.07, 0.15), (0, 0.185),
+            (0.148, -0.06), (0.146, -0.03), (0.14, 0), (0.13, 0.04),
+            (0.118, 0.075), (0.102, 0.109), (0.081, 0.139),
+            (0.055, 0.164), (0.029, 0.179),
         ]
-        let segments = 20
+        let segments = 32
         let gap: Float = 0.72
         let span = 2 * Float.pi - gap
         var verts: [SCNVector3] = []
+        var uv: [CGPoint] = []
         for p in profile {
-            let k = max(0, (p.y - profile[0].y) / (profile.last!.y - profile[0].y))
+            let k = (p.y + 0.06) / 0.245
             for j in 0...segments {
-                let t = gap / 2 + Float(j) / Float(segments) * span
-                // ThreeのLatheGeometryは開口を+Zへ向ける。以前のcos/sin順では
-                // 開口だけが+Xへ90度ずれ、正面カメラから顔と目が見えなかった。
-                verts.append(
-                    SCNVector3(
-                        p.r * sin(t),
-                        p.y,
-                        p.r * cos(t) - k * k * 0.05
-                    )
-                )
+                let u = Float(j) / Float(segments)
+                let t = gap / 2 + u * span
+                verts.append(SCNVector3(p.r * sin(t), p.y, p.r * cos(t) - k * k * 0.05))
+                uv.append(CGPoint(x: CGFloat(u), y: CGFloat(k)))
             }
         }
         let stride = segments + 1
@@ -822,16 +851,19 @@ enum PhoenixNavigator {
                 let b = a + 1
                 let d = UInt32((i + 1) * stride + j)
                 let e = d + 1
-                indices += [a, d, b, b, d, e]
+                indices += [a, b, d, b, e, d]
             }
         }
-        return mesh(
-            verts, indices,
-            material: named(
-                mat(palette.robe, roughness: 0.85, doubleSided: true),
-                robeMaterialName
-            )
-        )
+        let apex = UInt32(verts.count)
+        verts.append(SCNVector3(0, 0.185, -0.05))
+        uv.append(CGPoint(x: 0.5, y: 1))
+        let lastRing = (profile.count - 1) * stride
+        for j in 0..<segments {
+            indices += [UInt32(lastRing + j), UInt32(lastRing + j + 1), apex]
+        }
+        return mesh(verts, indices,
+                    material: named(NavigatorSurface.cloth(palette.robe, roughness: 0.85, doubleSided: true), robeMaterialName),
+                    textureCoordinates: uv)
     }
 
     // コート/肩マントの回転体プロフィール(Web LatheGeometry の点列。r=半径, y=高さ)
@@ -1243,7 +1275,7 @@ private struct DressOrbit {
             maxRadius = 5
             minPolar = .pi * 0.14
             maxPolar = .pi * 0.56
-            capture(camera: camera, target: SCNVector3(0, 0.8, 0))
+            capture(camera: camera, target: SCNVector3(0, 0.64, 0))
         } else {
             minRadius = 3.4
             maxRadius = 9
@@ -1256,8 +1288,8 @@ private struct DressOrbit {
     /// 初期の横斜め構図へ即座に戻す。船と航海士で対象の大きさだけ変える。
     mutating func reset(forNavigator enabled: Bool) {
         if enabled {
-            target = SCNVector3(0, 0.8, 0)
-            radius = 2.75
+            target = SCNVector3(0, 0.64, 0)
+            radius = 3.1
             minRadius = 1.45
             maxRadius = 5
             minPolar = .pi * 0.14
